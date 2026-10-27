@@ -280,13 +280,13 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | CHORD LEARN, saved per Synth; silent or audible learn (Settings) [UI] | p63, p125 | Missing | - | M | none |
 | Chord is applied after the arp and sequencer | p63 | Missing | - | S (with chord + arp) | none |
 | MONO | on/off (p64) | Have | `voices` = Mono, legato, last-note priority | - | - |
-| UNISON: all voices stack, divided among held keys | on/off (p64) | Missing | - | M | high (each stacked voice costs a full voice) |
-| DETUNE of the unison stack, uneven spread around the centre | 0 to 10 (p64) | Missing | - | S (with unison) | none |
-| UNISON COUNT (also works in poly mode) | 2 to POLY COUNT (p65) | Missing | - | S (with unison) | high |
+| UNISON: all voices stack, divided among held keys | on/off (p64) | Partial | `unison`: fixed stacks of `uni_count` voices per note, a stack allocated and stolen whole (8 voices, count 4: two notes); stacks don't re-divide as keys are added (2026-10-27, offline) | M | high (each stacked voice costs a full voice) |
+| DETUNE of the unison stack, uneven spread around the centre | 0 to 10 (p64) | Have | `uni_detune` 0-100%: voices at u*sqrt(abs(u)) of +-50 cents (u evenly -1..1), symmetric, the centre voice stays put; stacks scaled by 1/sqrt(n) in level (2026-10-27, offline) | - | none |
+| UNISON COUNT (also works in poly mode) | 2 to POLY COUNT (p65) | Have | `uni_count` 2-8, capped at the voice count in poly; mono + unison stacks it on one note (2026-10-27, offline) | - | high |
 | POLY COUNT | 2 to hardware voices (p65) | Partial | Mono, 2, 4, 6, 8 | S | high per voice |
 | VOICE STEALING MODE | No Stealing, Oldest, Quietest, Newest (p66) | Partial | Fixed: idle, then quietest releasing, then oldest sustained, then oldest held | S | none |
 | MONOPHONIC NOTE PRIORITY | Low, High, Last (p66) | Partial | Last only | S | none |
-| PITCH VARIANCE: random pitch per new note | 0 to 50 cents (p66) | Partial | Possible with a matrix slot Random to Pitch, but only in 24-cent steps (1% = 0.24 st) | S | none |
+| PITCH VARIANCE: random pitch per new note | 0 to 50 cents (p66) | Have | `pitch_var` 0-50 cents, uniform, drawn per voice for each new note (2026-10-27, offline) | - | none |
 
 ## 15. Modulation (p67-77)
 
@@ -627,12 +627,12 @@ These are licensed algorithms. Only original reverbs in the same spirit can be b
 |---|---|---|---|---|---|
 | OCTAVE SHIFT | -2 to +2 (p112) | Missing | MPC keyboard octave instead | S | none |
 | MIDI panic (hold both octave buttons) | p112 | Have | CC 120/123/121 handled | - | - |
-| GLIDE on/off | p112 | Missing | No portamento (GLIDE_MS only smooths cutoff knobs) | S | none |
-| GLIDE RATE | 0 ms to 10.0 s (p112) | Missing | - | S | none |
-| GLIDE TYPE | LCR (constant rate), LCT (constant time), EXP (exponential) (p116) | Missing | - | S | none |
-| GATED GLIDE: glide pauses while no key is down | off/on (p116) | Missing | - | S | none |
-| LEGATO GLIDE: glide only on legato notes (mono only) | off/on (p116) | Missing | - | S | none |
-| GLISSANDO: glide in semitone steps | off/on (p117) | Missing | - | S | none |
+| GLIDE on/off | p112 | Have | `glide`; each voice glides from its own last pitch (a fresh voice doesn't), at the control rate; keyboard tracking and the Keyboard source follow it (2026-10-27, offline) | - | none |
+| GLIDE RATE | 0 ms to 10.0 s (p112) | Have | `glide_time` 0 ms, then 1 ms to 10 s on a log knob (2026-10-27, offline) | - | none |
+| GLIDE TYPE | LCR (constant rate), LCT (constant time), EXP (exponential) (p116) | Have | `glide_type`: LCR takes the glide time per octave, LCT the glide time for any interval, EXP 95% of the way in the glide time (2026-10-27, offline) | - | none |
+| GATED GLIDE: glide pauses while no key is down | off/on (p116) | Have | `glide_gated`: a voice's glide holds while its key is up (the pedal counts as down) (2026-10-27, offline) | - | none |
+| LEGATO GLIDE: glide only on legato notes (mono only) | off/on (p116) | Have | `glide_legato`; in poly too (a note pressed while another key is held) (2026-10-27, offline) | - | none |
+| GLISSANDO: glide in semitone steps | off/on (p117) | Have | `glissando` (2026-10-27, offline) | - | none |
 | PITCH wheel, spring-loaded | p113 | Have | MIDI pitch bend | - | - |
 | PITCH BEND UP (SHIFT = finer than semitones) | -24 to +24 st (p115) | Partial | `bend_range` 0-12 st, same both ways | S | none |
 | PITCH BEND DOWN | -24 to +24 st (p115) | Partial | (same) | S | none |

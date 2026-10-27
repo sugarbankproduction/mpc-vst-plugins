@@ -20,6 +20,14 @@
  *             stereo; every effect stays bounded at its maximum feedback or decay
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
+ *   glide     LCT takes the same time for any interval, LCR twice as long for twice the interval, EXP slows as it
+ *             nears the note; off is instant; a fresh voice doesn't glide, a used one glides from its last note;
+ *             legato glide skips detached notes; gated glide holds still while the key is up; glissando steps in
+ *             semitones; keyboard tracking follows the glide
+ *   unison    a stack at detune 0 is in phase (2x one voice for 4, after the 1/sqrt(n) level), detune spreads the
+ *             pitches up to +-50 cents and leaves a stack about as loud as one voice; stacks share the voice pool
+ *             (8 voices, count 4: two notes, a third steals a whole stack); never more voices than the voice count;
+ *             mono + unison stacks one note; release lets go of the whole stack; pitch variance stays within range
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
@@ -960,6 +968,288 @@ static void state(void) {
     E->destroy(b);
 }
 
+/* the pitch over time of a near-sine: at each rising zero crossing, the pitch (MIDI note number) from the period since
+ * the last one, at time t (ms from the start of x) */
+enum { MAXPTS = 4096 };
+static int track(const float *x, int n, double *t, double *st) {
+    double last = -1;
+    int k = 0;
+    for (int i = 1; i < n && k < MAXPTS; i++)
+        if (x[i - 1] < 0 && x[i] >= 0) {
+            double at = i - 1 + x[i - 1] / (x[i - 1] - x[i]);
+            if (last >= 0) { t[k] = at / 44.1; st[k] = 69 + 12 * log2(SR / (at - last) / 440); k++; }
+            last = at;
+        }
+    return k;
+}
+
+/* the tracked pitch nearest time ms */
+static double pitch_at(const double *t, const double *st, int k, double ms) {
+    int best = 0;
+    for (int i = 1; i < k; i++)
+        if (fabs(t[i] - ms) < fabs(t[best] - ms)) best = i;
+    return st[best];
+}
+
+/* when the tracked pitch first comes within 25 cents of `to` (ms), or -1 */
+static double arrival(const double *t, const double *st, int k, double to) {
+    for (int i = 0; i < k; i++)
+        if (fabs(st[i] - to) < 0.25) return t[i];
+    return -1;
+}
+
+static const shape_t TRI = {"tri", WAVE_TRI, 50, 50, 0};
+
+/* a triangle (near a sine, so zero crossings track its pitch) through the open ladder, glide on, 2 s release */
+static void *glide_patch(int type, double ms, int mono) {
+    void *e = patch(TRI, 0, 1, 100, 2000);
+    set(e, "flt_cut", 100); set(e, "glide", 1); set(e, "glide_time", knob_ms(ms)); set(e, "glide_type", type);
+    if (mono) set(e, "voices", 0);
+    return e;
+}
+
+/* hold `from`, then press `to` (legato): the tracked pitch from the press on, over `ms` */
+static int glide_run(void *e, int from, int to, int ms, double *t, double *st) {
+    static float x[SR * 4];
+    note(e, 1, from, 100);
+    render_f(e, x, SR / 10);
+    note(e, 1, to, 100);
+    render_f(e, x, SR * ms / 1000);
+    return track(x, SR * ms / 1000, t, st);
+}
+
+static void glide_unison(void) {
+    static double t[MAXPTS], st[MAXPTS];
+    static float x[SR * 2];   /* the longest render here is 1.5 s */
+    char what[240];
+    int k;
+
+    /* LCT: one and two octaves both take the glide time (500 ms); LCR: the glide time per octave */
+    double took[2][2];
+    for (int type = 0; type < 2; type++)
+        for (int oct = 1; oct <= 2; oct++) {
+            void *e = glide_patch(type == 0 ? 1 : 0, 500, 1);
+            k = glide_run(e, 45, 45 + 12 * oct, 1500, t, st);
+            took[type][oct - 1] = arrival(t, st, k, 45 + 12 * oct);
+            E->destroy(e);
+        }
+    snprintf(what, sizeof what, "LCT glide, 500 ms: one octave arrives after %.0f ms, two octaves after %.0f ms (same time)",
+             took[0][0], took[0][1]);
+    check(fabs(took[0][0] - 500) < 50 && fabs(took[0][1] / took[0][0] - 1) < 0.08, what);
+    snprintf(what, sizeof what, "LCR glide, 500 ms per octave: one octave after %.0f ms, two after %.0f ms (twice as long)",
+             took[1][0], took[1][1]);
+    check(fabs(took[1][0] - 500) < 50 && fabs(took[1][1] / took[1][0] - 2) < 0.15, what);
+
+    void *e = glide_patch(2, 600, 1);   /* EXP: quick at first, slowing as it nears the note */
+    k = glide_run(e, 45, 57, 2000, t, st);
+    double third = pitch_at(t, st, k, 200) - 45, two = pitch_at(t, st, k, 400) - 45, end = pitch_at(t, st, k, 1900) - 57;
+    snprintf(what, sizeof what, "EXP glide, 600 ms, up an octave: %.1f st after 200 ms, %.1f after 400 ms, %+.1f cents at 1.9 s",
+             third, two, end * 100);
+    check(third > 6.6 && third < 8.6 && two - third < third && two - third > 1.5 && fabs(end) < 0.05, what);
+    E->destroy(e);
+
+    e = glide_patch(1, 500, 1);   /* glide off: straight to the note */
+    set(e, "glide", 0);
+    k = glide_run(e, 45, 57, 300, t, st);
+    double worst = 0;
+    for (int i = 0; i < k; i++) if (t[i] > 15) worst = fmax(worst, fabs(st[i] - 57));
+    snprintf(what, sizeof what, "glide off: the new note is in tune from 15 ms on (worst %.1f cents)", worst * 100);
+    check(worst < 0.1, what);
+    E->destroy(e);
+
+    e = glide_patch(1, 500, 0);   /* poly: a fresh voice starts at its note; a used one glides from its own last note */
+    set(e, "voices", 1); set(e, "amp_r", knob_ms(20));
+    note(e, 1, 45, 100);
+    render_f(e, x, SR / 4);
+    k = track(x, SR / 4, t, st);
+    double fresh = fabs(pitch_at(t, st, k, 30) - 45);
+    note(e, 0, 45, 0);
+    render_f(e, x, SR / 2);
+    note(e, 1, 57, 100);
+    render_f(e, x, SR / 2);
+    k = track(x, SR / 2, t, st);
+    double mid = pitch_at(t, st, k, 250);
+    snprintf(what, sizeof what, "poly: a fresh voice is %.1f cents off its note at 30 ms; the reused voice is at %.1f st "
+             "half way through its glide from 45 to 57 (want 51)", fresh * 100, mid);
+    check(fresh < 0.1 && fabs(mid - 51) < 0.6, what);
+    E->destroy(e);
+
+    double det[2];   /* legato glide: a detached note jumps; without it, the same detached note glides */
+    for (int lg = 0; lg < 2; lg++) {
+        e = glide_patch(1, 500, 1);
+        set(e, "glide_legato", lg);
+        note(e, 1, 45, 100);
+        render_f(e, x, SR / 10);
+        note(e, 0, 45, 0);
+        render_f(e, x, SR / 20);
+        note(e, 1, 57, 100);
+        render_f(e, x, SR / 2);
+        k = track(x, SR / 2, t, st);
+        det[lg] = pitch_at(t, st, k, 125);
+        E->destroy(e);
+    }
+    e = glide_patch(1, 500, 1);
+    set(e, "glide_legato", 1);
+    k = glide_run(e, 45, 57, 500, t, st);
+    double leg = pitch_at(t, st, k, 250);
+    snprintf(what, sizeof what, "legato glide: a detached note is at %.1f st after 125 ms (want 57; %.1f without legato "
+             "glide), a legato one at %.1f st half way (want 51)", det[1], det[0], leg);
+    check(fabs(det[1] - 57) < 0.1 && det[0] < 55 && fabs(leg - 51) < 0.6, what);
+    E->destroy(e);
+
+    double spread[2], held = 0, back = 0, final = 0;   /* gated glide: the pitch holds still while the key is up */
+    for (int gated = 0; gated < 2; gated++) {
+        e = glide_patch(1, 1000, 1);
+        set(e, "glide_gated", gated);
+        note(e, 1, 45, 100); note(e, 0, 45, 0);
+        note(e, 1, 69, 100);
+        render_f(e, x, SR * 3 / 10);
+        note(e, 0, 69, 0);
+        render_f(e, x, SR * 6 / 10);
+        k = track(x, SR * 6 / 10, t, st);
+        double lo = 200, hi = 0;
+        for (int i = 0; i < k; i++) if (t[i] > 15) { lo = fmin(lo, st[i]); hi = fmax(hi, st[i]); }
+        spread[gated] = hi - lo;
+        if (gated) {   /* pressing the key again picks the glide up where it stopped */
+            held = pitch_at(t, st, k, 590);
+            note(e, 1, 69, 100);
+            render_f(e, x, SR * 15 / 10);
+            k = track(x, SR * 15 / 10, t, st);
+            back = pitch_at(t, st, k, 15);
+            final = pitch_at(t, st, k, 1400);
+        }
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "gated glide: with the key up the pitch moves %.2f st (%.1f st ungated); pressed again it "
+             "goes on from %.1f st (was %.1f) to %.1f st (want 69)", spread[1], spread[0], back, held, final);
+    check(spread[1] < 0.1 && spread[0] > 3 && fabs(back - held) < 0.5 && fabs(final - 69) < 0.1, what);
+
+    e = glide_patch(1, 1200, 1);   /* glissando: the heard pitch moves in semitone steps */
+    set(e, "glissando", 1);
+    k = glide_run(e, 45, 57, 1300, t, st);
+    int on_step = 0, total = 0, visited[13] = {0}, steps = 0;
+    for (int i = 0; i < k; i++)
+        if (t[i] > 20 && t[i] < 1150) {
+            total++;
+            double r = round(st[i]);
+            if (fabs(st[i] - r) < 0.1) { on_step++; if (r >= 45 && r <= 57 && !visited[(int)r - 45]++) steps++; }
+        }
+    snprintf(what, sizeof what, "glissando: %d of %d pitch readings sit on a semitone, %d different semitones on the way",
+             on_step, total, steps);
+    check(on_step > 0.85 * total && steps >= 11, what);
+    E->destroy(e);
+
+    e = patch(SAW, 0, 1, 100, 10);   /* keyboard tracking follows the glide: a self-oscillating ladder at 100% */
+    set(e, "voices", 0); set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(440));
+    set(e, "lad_kbd", 100); set(e, "glide", 1); set(e, "glide_type", 1); set(e, "glide_time", knob_ms(500));
+    note(e, 1, 60, 100);
+    render_f(e, x, SR);
+    note(e, 1, 72, 100);
+    render_f(e, x, SR);
+    k = track(x, SR, t, st);
+    double half = pitch_at(t, st, k, 250), done = pitch_at(t, st, k, 900);
+    snprintf(what, sizeof what, "keyboard tracking follows the glide: the filter rings at %.1f st half way, %.1f st at the "
+             "end (want 75, 81)", half, done);
+    check(fabs(half - 75) < 0.6 && fabs(done - 81) < 0.2, what);
+    E->destroy(e);
+
+    /* unison: level, in phase at detune 0 (volume low: below the limiter) */
+    double lvl[4];
+    for (int c = 0; c < 4; c++) {   /* unison off; 4 at detune 0; 4 at detune 100; 8 voices asked of a 2-voice pool */
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "volume", 10); set(e, "unison", c > 0); set(e, "uni_detune", c == 2 ? 100 : 0);
+        if (c == 3) { set(e, "voices", 1); set(e, "uni_count", 6); }
+        note(e, 1, 57, 127);
+        lvl[c] = rms_of(e, SR / 2);
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "unison 4: %.2fx one voice at detune 0 (in phase, want 2), %.2fx at detune 100%% (want "
+             "about 1); count 8 on 2 voices stacks 2: %.2fx (want 1.41)", lvl[1] / lvl[0], lvl[2] / lvl[0], lvl[3] / lvl[0]);
+    check(fabs(lvl[1] / lvl[0] - 2) < 0.1 && lvl[2] / lvl[0] > 0.7 && lvl[2] / lvl[0] < 1.4 &&
+          fabs(lvl[3] / lvl[0] - sqrt(2)) < 0.08, what);
+
+    double inner[2], outer = 0;   /* detune spreads the stack around the note, at most +-50 cents */
+    for (int d = 0; d < 2; d++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "volume", 20); set(e, "flt_cut", 100); set(e, "unison", 1); set(e, "uni_detune", d ? 100 : 0);
+        note(e, 1, 93, 127);
+        render_f(e, x, N + 8192);
+        const double *pw = spectrum(x + 8192);
+        int c0 = (int)(note_hz(93) / ((double)SR / N) + 0.5);
+        double a5 = 0, a25 = 0, a60 = 0;
+        for (int b = c0 - 60; b <= c0 + 60; b++) {
+            if (abs(b - c0) <= 5) a5 += pw[b];
+            if (abs(b - c0) <= 25) a25 += pw[b];
+            a60 += pw[b];
+        }
+        inner[d] = a5 / a25;
+        if (d) outer = a25 / a60;
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "unison detune: %.0f%% of the fundamental's power within 13 Hz of 1760 Hz at detune 0, "
+             "%.0f%% at 100%%; %.1f%% of it within 66 cents", inner[0] * 100, inner[1] * 100, outer * 100);
+    check(inner[0] > 0.97 && inner[1] < 0.7 && outer > 0.97, what);
+
+    static const int keys3[] = {48, 52, 55};   /* 8 voices, count 4: two notes, a third steals a whole stack */
+    double hz3[3] = {note_hz(48), note_hz(52), note_hz(55)}, db2[3], db3[3];
+    e = patch(SAW, 0, 1, 100, 10);
+    set(e, "voices", 4); set(e, "unison", 1); set(e, "uni_count", 2); set(e, "uni_detune", 0);
+    set(e, "flt_cut", knob_for_hz(600)); set(e, "volume", 25);
+    note(e, 1, keys3[0], 100); note(e, 1, keys3[1], 100);
+    render_f(e, x, N + 8192);
+    powers_db(x + 8192, hz3, 3, db2);
+    note(e, 1, keys3[2], 100);
+    render_f(e, x, N + 8192);
+    powers_db(x + 8192, hz3, 3, db3);
+    snprintf(what, sizeof what, "unison 4 of 8 voices: C3 + E3 held both sound (%.0f, %.0f dB); adding G3 steals C3's "
+             "stack (C3 %.0f | E3 %.0f, G3 %.0f dB)", db2[0], db2[1], db3[0], db3[1], db3[2]);
+    check(db2[0] > -6 && db2[1] > -6 && db3[0] < -25 && db3[1] > -6 && db3[2] > -6, what);
+    note(e, 0, 52, 0); note(e, 0, 55, 0);
+    check(silent_after(e, 1000), "releasing the keys lets go of every voice in their stacks");
+    E->destroy(e);
+
+    double mono_lvl[2];   /* mono + unison: one note stacked; a second key moves the whole stack */
+    for (int u = 0; u < 2; u++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "voices", 0); set(e, "volume", 10); set(e, "unison", u); set(e, "uni_count", 2); set(e, "uni_detune", 0);
+        set(e, "flt_cut", knob_for_hz(600));
+        note(e, 1, 48, 100);
+        mono_lvl[u] = rms_of(e, SR / 2);
+        if (u) {
+            note(e, 1, 52, 100);
+            render_f(e, x, N + 8192);
+            powers_db(x + 8192, hz3, 2, db2);
+        }
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "mono + unison 4: %.2fx the mono level (want 2); C3 then E3 held plays E3 only (C3 %.0f dB)",
+             mono_lvl[1] / mono_lvl[0], db2[0]);
+    check(fabs(mono_lvl[1] / mono_lvl[0] - 2) < 0.1 && db2[0] < -40 && db2[1] > -1, what);
+
+    double lo = 1e9, hi = -1e9;   /* pitch variance 50 cents: each new note lands within +-50 cents, and they differ */
+    e = patch(SAW, 0, 1, 100, 10);
+    set(e, "pitch_var", 50);
+    for (int n = 0; n < 16; n++) {
+        note(e, 1, 57, 127);
+        render_f(e, x, N + 2048);
+        double c = cents(peak_hz(x + 2048), 220);
+        lo = fmin(lo, c); hi = fmax(hi, c);
+        note(e, 0, 57, 0);
+    }
+    snprintf(what, sizeof what, "pitch variance 50 cents: 16 notes land between %+.1f and %+.1f cents", lo, hi);
+    check(lo > -51 && hi < 51 && hi - lo > 30, what);
+    E->destroy(e);
+
+    e = E->create(NULL);
+    char a[32], b[32], c[32];
+    set(e, "glide_time", 0); E->get_param(e, "glide_time_display", a, sizeof a);
+    set(e, "glide_time", 50); E->get_param(e, "glide_time_display", b, sizeof b);
+    set(e, "glide_time", 100); E->get_param(e, "glide_time_display", c, sizeof c);
+    snprintf(what, sizeof what, "glide time knob reads \"%s\", \"%s\", \"%s\" at 0, 50, 100", a, b, c);
+    check(!strcmp(a, "0 ms") && !strcmp(b, "100 ms") && !strcmp(c, "10.00 s"), what);
+    E->destroy(e);
+}
+
 static void put32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 static void put16(FILE *f, uint16_t v) { fwrite(&v, 2, 1, f); }
 
@@ -1090,6 +1380,23 @@ static void bench(void) {
                " device numbers need tools/bench.sh)\n", counts[c], counts[c] > 1 ? "s" : " ", us, us / counts[c]);
         E->destroy(e);
     }
+    void *u = patch(SAW, 5, 300, 70, 250);   /* the same busy patch as 2 unison stacks of 4, gliding (the first 10 s) */
+    set(u, "voices", 4); set(u, "o2_level", 80); set(u, "o3_level", 60);
+    route(u, "o1", 2); set(u, "flt_route", 1); set(u, "lad_env", 40); set(u, "flt_res", 50);
+    set(u, "mod2_src", 6); set(u, "mod2_dst", 9); set(u, "mod2_amt", 30);
+    set(u, "unison", 1); set(u, "uni_count", 2); set(u, "uni_detune", 40); set(u, "pitch_var", 10);
+    set(u, "glide", 1); set(u, "glide_type", 1); set(u, "glide_time", 100);   /* 10 s */
+    note(u, 1, 36, 100); note(u, 1, 40, 100); note(u, 0, 36, 0); note(u, 0, 40, 0);
+    note(u, 1, 72, 100); note(u, 1, 76, 100);
+    struct timespec u0, u1;
+    clock_gettime(CLOCK_MONOTONIC, &u0);
+    for (int b = 0; b < BLOCKS; b++) E->render(u, buf, 128);
+    clock_gettime(CLOCK_MONOTONIC, &u1);
+    double uus = ((u1.tv_sec - u0.tv_sec) * 1e9 + (u1.tv_nsec - u0.tv_nsec)) / 1e3 / BLOCKS;
+    printf("bench: 8 voices as 2 unison stacks + glide %6.2f us per 128-frame block on this PC (%.2f per voice)\n",
+           uus, uus / 8);
+    E->destroy(u);
+
     void *e = patch(SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
     set(e, "voices", 4); set(e, "modfx_type", 1); set(e, "modfx_mix", 50); set(e, "dly_mix", 30); set(e, "rev_mix", 30);
     for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
@@ -1123,6 +1430,7 @@ int main(int argc, char **argv) {
     envelope();
     keys();
     state();
+    glide_unison();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;

@@ -127,7 +127,17 @@
   {"key": "rev_decay", "name": "Reverb Decay", "min": 0, "max": 100, "unit": "%", "default": 60, "display": "int"},
   {"key": "rev_damp", "name": "Reverb Damping", "min": 0, "max": 100, "unit": "%", "default": 40, "display": "int"},
   {"key": "rev_pre", "name": "Reverb Pre-delay", "min": 0, "max": 200, "unit": "ms", "default": 10, "display": "int"},
-  {"key": "rev_mix", "name": "Reverb Mix", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
+  {"key": "rev_mix", "name": "Reverb Mix", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "glide", "name": "Glide", "options": ["Off", "On"], "default": "Off"},
+  {"key": "glide_time", "name": "Glide Time", "min": 0, "max": 100, "default": 50.0, "dynamic_display": true},
+  {"key": "glide_type", "name": "Glide Type", "options": ["LCR", "LCT", "EXP"], "default": "LCR"},
+  {"key": "glide_legato", "name": "Legato Glide", "options": ["Off", "On"], "default": "Off"},
+  {"key": "glide_gated", "name": "Gated Glide", "options": ["Off", "On"], "default": "Off"},
+  {"key": "glissando", "name": "Glissando", "options": ["Off", "On"], "default": "Off"},
+  {"key": "unison", "name": "Unison", "options": ["Off", "On"], "default": "Off"},
+  {"key": "uni_count", "name": "Unison Count", "options": ["2", "3", "4", "5", "6", "7", "8"], "default": "4"},
+  {"key": "uni_detune", "name": "Unison Detune", "min": 0, "max": 100, "unit": "%", "default": 25, "display": "int"},
+  {"key": "pitch_var", "name": "Pitch Variance", "min": 0, "max": 50, "unit": "ct", "default": 0, "display": "int"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -160,6 +170,8 @@
   {"label": "MOD FX", "keys": ["modfx_type", "modfx_rate", "modfx_depth", "modfx_fb", "modfx_mix"]},
   {"label": "DELAY", "keys": ["dly_time", "dly_sync", "dly_fb", "dly_tone", "dly_pp", "dly_mix"]},
   {"label": "REVERB", "keys": ["rev_decay", "rev_damp", "rev_pre", "rev_mix"]},
-  {"label": "OUT", "keys": ["volume"]}
+  {"label": "OUT", "keys": ["volume"]},
+  {"label": "GLIDE", "keys": ["glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando"]},
+  {"label": "UNISON", "keys": ["unison", "uni_count", "uni_detune", "pitch_var"]}
  ]
 }

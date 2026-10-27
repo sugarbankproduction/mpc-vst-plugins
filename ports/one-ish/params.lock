@@ -125,3 +125,13 @@ rev_decay
 rev_damp
 rev_pre
 rev_mix
+glide
+glide_time
+glide_type
+glide_legato
+glide_gated
+glissando
+unison
+uni_count
+uni_detune
+pitch_var

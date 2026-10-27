@@ -52,11 +52,12 @@ PATCHES = [
     ("Acid Line", {**amp(1, 250, 60, 60), **fenv(1, 220, 0, 60),
                    "o1_mix": 100, "flt_cut": hz(260), "flt_res": 82, "flt_drive": 55, "lad_env": 55,
                    "lad_kbd": 50, "flt_slope": "24 dB", "voices": "Mono",
-                   "mod2_src": "Velocity", "mod2_dst": "Ladder Cutoff", "mod2_amt": 20}),
+                   "mod2_src": "Velocity", "mod2_dst": "Ladder Cutoff", "mod2_amt": 20,
+                   "glide": "On", "glide_type": "LCT", "glide_time": ms(70), "glide_legato": "On"}),
     ("Sync Lead", {**amp(3, 500, 85, 250), **menv(1, 900, 0, 300),
                    "o1_level": 0, "o2_level": 100, "o2_sync": "On", "o2_freq": 7, "o3_level": 55, "o3_freq": 0.06,
                    "o3_oct": "16'", "flt_cut": hz(5000), "flt_res": 20, "mod3_src": "Mod Env", "mod3_dst": "Osc 2 Pitch",
-                   "mod3_amt": 40, "mod1_amt": 3, "voices": "Mono",
+                   "mod3_amt": 40, "mod1_amt": 3, "voices": "Mono", "glide": "On", "glide_time": ms(90),
                    "dly_sync": "On", "dly_time": div("1/8T"), "dly_fb": 30, "dly_mix": 25, "rev_mix": 15}),
     ("Brass Stack", {**amp(25, 600, 75, 300), **fenv(60, 700, 45, 350),
                      "o2_level": 90, "o2_freq": 0.06, "o3_level": 70, "o3_freq": -0.05,
@@ -114,6 +115,12 @@ PATCHES = [
                     "o2_beat": 1.5, "mod2_src": "Mod Env", "mod2_dst": "Osc 1 Angle", "mod2_amt": 40,
                     "flt_cut": hz(3500), "flt_res": 25, "pitch_lfo": 2, "lfo1_rate": lfo(5.5), "lfo1_wave": "Sine",
                     "voices": "Mono", "dly_sync": "On", "dly_time": div("1/8"), "dly_fb": 25, "dly_mix": 20}),
+    ("Unison Lead", {**amp(4, 700, 85, 300), **fenv(2, 600, 40, 300),
+                     "o2_level": 80, "o2_freq": 0.05, "o3_level": 60, "o3_oct": "16'", "o3_mix": 100, "o3_pw": 40,
+                     "flt_cut": hz(1400), "flt_res": 25, "flt_drive": 30, "lad_env": 30, "lad_kbd": 50,
+                     "voices": "Mono", "unison": "On", "uni_count": "6", "uni_detune": 35, "pitch_var": 6,
+                     "glide": "On", "glide_type": "EXP", "glide_time": ms(150), "glide_legato": "On",
+                     "mod1_amt": 3, "dly_sync": "On", "dly_time": div("1/8"), "dly_fb": 30, "dly_mix": 20, "rev_mix": 20}),
 ]
 
 
