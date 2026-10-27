@@ -1,10 +1,13 @@
 /* ONE-ish offline checks beyond tools/test_port.sh, run through the engine API (mpc_engine()) on x86:
  *   aliasing  high saw and square notes: power that is not a harmonic of the note (aliasing folds back as
  *             inharmonic tones, the "whistle"), against a naive oscillator at the same pitch
+ *   sync      the same for oscillator 2 hard-synced to oscillator 1, against a naive hard sync
+ *   tuning    octave, semitone and fine move each oscillator's pitch by that much
+ *   noise/mix noise level; all sources at full level are limited, not clipped
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
  *   state     save/restore round trip; damaged or oversized states don't break the instance
- *   wav       writes test/out/phase2_demo.wav to listen to
+ *   wav       writes test/out/demo.wav to listen to
  *   bench     (argv[1] == "bench") microseconds per 128-frame block on this machine; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
 #include <math.h>
@@ -72,8 +75,8 @@ static void fft(double *re, double *im, int n) {
     }
 }
 
-/* inharmonic power relative to the total, in dB, of N samples of a tone at f0 (Blackman-Harris window) */
-static double alias_db(const float *x, double f0) {
+/* power spectrum of N samples (Blackman-Harris window): pw[0..N/2) */
+static const double *spectrum(const float *x) {
     static double re[N], im[N];
     for (int i = 0; i < N; i++) {
         double t = 2 * M_PI * i / (N - 1);
@@ -81,13 +84,30 @@ static double alias_db(const float *x, double f0) {
         im[i] = 0;
     }
     fft(re, im, N);
+    for (int k = 0; k < N / 2; k++) re[k] = re[k] * re[k] + im[k] * im[k];
+    return re;
+}
+
+/* inharmonic power relative to the total, in dB, of N samples of a tone at f0 */
+static double alias_db(const float *x, double f0) {
+    const double *pw = spectrum(x);
     double harm = 0, other = 0, bin = (double)SR / N;
     for (int k = 4; k < N / 2; k++) {   /* skip DC */
-        double p = re[k] * re[k] + im[k] * im[k], f = k * bin, h = f / f0;
-        if (fabs(h - round(h)) * f0 <= 6 * bin && round(h) >= 1) harm += p;
-        else other += p;
+        double f = k * bin, h = f / f0;
+        if (fabs(h - round(h)) * f0 <= 6 * bin && round(h) >= 1) harm += pw[k];
+        else other += pw[k];
     }
     return 10 * log10(other / (harm + other) + 1e-30);
+}
+
+/* frequency of the strongest partial (a saw's or square's fundamental), interpolated between bins */
+static double peak_hz(const float *x) {
+    const double *pw = spectrum(x);
+    int best = 4;
+    for (int k = 4; k < N / 2 - 1; k++)
+        if (pw[k] > pw[best]) best = k;
+    double a = log(pw[best - 1] + 1e-30), b = log(pw[best] + 1e-30), c = log(pw[best + 1] + 1e-30);
+    return (best + 0.5 * (a - c) / (a - 2 * b + c)) * SR / N;
 }
 
 static void naive(float *x, int n, double f0, int wave) {
@@ -126,6 +146,91 @@ static void aliasing(void) {
             /* regression guard. First measured 2026-10-27: -25.8 dB (saw, note 108) to -34.4 dB, 15-18 dB below naive */
             check(ours < ref - 12 && ours < -24, what);
         }
+}
+
+/* naive hard sync: the slave restarts on the sample the master wraps */
+static void naive_sync(float *x, int n, double f0, double ratio) {
+    double tm = 0, ts = 0;
+    for (int i = 0; i < n; i++) {
+        x[i] = (float)(2 * ts - 1) * 0.35f;
+        tm += f0 / SR;
+        ts += f0 * ratio / SR;
+        if (ts >= 1) ts -= 1;
+        if (tm >= 1) { tm -= 1; ts = 0; }
+    }
+}
+
+/* a synced oscillator repeats at the master's pitch, so its aliasing is what isn't a harmonic of the master */
+static void sync_aliasing(void) {
+    static float x[N + 4096];
+    static const int notes[] = {60, 72, 84, 96};
+    double ratio = pow(2, 7.0 / 12);
+    for (unsigned n = 0; n < sizeof notes / sizeof notes[0]; n++) {
+        double f0 = 440 * pow(2, (notes[n] - 69) / 12.0);
+        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        set(e, "o1_level", 0); set(e, "o2_level", 100); set(e, "o2_sync", 1); set(e, "o2_semi", 7);
+        note(e, 1, notes[n], 127);
+        render_f(e, x, N + 4096);
+        double ours = alias_db(x + 4096, f0);
+        E->destroy(e);
+        naive_sync(x, N, f0, ratio);
+        double ref = alias_db(x, f0);
+        char what[160];
+        snprintf(what, sizeof what, "sync   note %3d (%5.0f Hz), osc 2 +7 st: aliasing %6.1f dB, naive sync %6.1f dB",
+                 notes[n], f0, ours, ref);
+        /* regression guard. First measured 2026-10-27: -26.6 dB (note 96) to -36.3 dB, 15-16 dB below naive sync */
+        check(ours < ref - 12 && ours < -24, what);
+    }
+}
+
+static double cents(double hz, double want) { return 1200 * log2(hz / want); }
+
+/* each oscillator's octave, semitone and fine settings move its pitch by exactly that much */
+static void tuning(void) {
+    static float x[N + 4096];
+    static const struct { const char *osc, *key; double val, ratio; } t[] = {
+        {"o1", "o1_oct", 1, 0.5}, {"o1", "o1_oct", 4, 4.0}, {"o1", "o1_semi", 7, 1.4983070768766815},
+        {"o1", "o1_semi", -12, 0.5}, {"o1", "o1_fine", 50, 1.0293022366434921}, {"o2", "o2_oct", 3, 2.0},
+        {"o3", "o3_fine", -25, 0.98566319864018},
+    };
+    for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
+        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        char lvl[16];
+        snprintf(lvl, sizeof lvl, "%s_level", t[i].osc);
+        set(e, "o1_level", 0); set(e, lvl, 100); set(e, t[i].key, t[i].val);
+        note(e, 1, 69, 127);
+        render_f(e, x, N + 4096);
+        double want = 440 * t[i].ratio, got = peak_hz(x + 4096), off = cents(got, want);
+        char what[128];
+        snprintf(what, sizeof what, "%s = %g plays %.1f Hz (want %.1f, %+.2f cents)", t[i].key, t[i].val, got, want, off);
+        check(fabs(off) < 2, what);
+        E->destroy(e);
+    }
+}
+
+static void noise_and_mix(void) {
+    static float x[SR];
+    void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+    set(e, "o1_level", 0); set(e, "noise_level", 100);
+    note(e, 1, 60, 127);
+    render_f(e, x, SR);
+    double sum = 0, sq = 0;
+    for (int i = 4096; i < SR; i++) { sum += x[i]; sq += x[i] * x[i]; }
+    double mean = sum / (SR - 4096), rms = sqrt(sq / (SR - 4096));
+    char what[128];
+    snprintf(what, sizeof what, "noise alone: rms %.3f (want about 0.29), mean %+.4f", rms, mean);
+    check(rms > 0.25 && rms < 0.33 && fabs(mean) < 0.01, what);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 0, 1, 100, 10);
+    set(e, "o2_level", 100); set(e, "o3_level", 100); set(e, "noise_level", 100);
+    note(e, 1, 36, 127);
+    render_f(e, x, SR);
+    float peak = 0;
+    for (int i = 0; i < SR; i++) peak = fmaxf(peak, fabsf(x[i]));
+    snprintf(what, sizeof what, "three oscillators and noise at full level peak at %.2f: limited, not clipped", peak);
+    check(peak > 0.75f && peak < 1.0f, what);
+    E->destroy(e);
 }
 
 static void envelope(void) {
@@ -206,7 +311,6 @@ static void state(void) {
 static void put32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 static void put16(FILE *f, uint16_t v) { fwrite(&v, 2, 1, f); }
 
-/* a short riff on each wave, then a run up to the top of the keyboard where aliasing would show */
 static int16_t *play(void *e, int16_t *o, int n, int blocks) {   /* one note, `blocks` x 128 frames long */
     note(e, 1, n, 110);
     for (int b = 0; b < blocks; b++, o += 256) E->render(e, o, 128);
@@ -214,19 +318,43 @@ static int16_t *play(void *e, int16_t *o, int n, int blocks) {   /* one note, `b
     return o;
 }
 
+static int16_t *rest(void *e, int16_t *o, int blocks) {
+    for (int b = 0; b < blocks; b++, o += 256) E->render(e, o, 128);
+    return o;
+}
+
+/* 1: one saw (the Phase 2 sound); 2: three oscillators, osc 2 detuned and osc 3 a square an octave down;
+ * 3: a sync lead, osc 2 synced to 1 and rising a semitone per note; 4: noise hits; 5: a run to the top of the keyboard */
 static void demo_wav(const char *path) {
     enum { STEP = 86, RUN = 43, TAIL = 172 };   /* in 128-frame blocks: 0.25 s, 0.125 s, 0.5 s */
     static const int riff[] = {36, 48, 43, 46, 36, 48, 51, 50};
-    static int16_t pcm[(WAVE_COUNT * 8 * STEP + 13 * RUN + TAIL) * 256];
+    static int16_t pcm[(4 * 8 * STEP + 13 * RUN + 4 * TAIL) * 256];
     int16_t *o = pcm;
-    for (int w = 0; w < WAVE_COUNT; w++) {
-        void *e = patch(w, 5, 400, 40, 150);
-        for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
-        E->destroy(e);
+    void *e = patch(WAVE_SAW, 5, 400, 40, 150);
+    for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
+    set(e, "o2_level", 80); set(e, "o2_fine", 8);
+    set(e, "o3_level", 60); set(e, "o3_wave", WAVE_SQUARE); set(e, "o3_oct", 1);
+    for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
+    o = rest(e, o, TAIL);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 5, 600, 60, 200);
+    set(e, "o1_level", 0); set(e, "o2_level", 100); set(e, "o2_sync", 1);
+    for (int k = 0; k < 8; k++) {
+        set(e, "o2_semi", k + 3);
+        o = play(e, o, riff[k] + 24, STEP);
     }
-    void *e = patch(WAVE_SAW, 2, 200, 80, 60);
+    o = rest(e, o, TAIL);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 0, 120, 0, 120);
+    set(e, "o1_level", 0); set(e, "noise_level", 100);
+    for (int k = 0; k < 8; k++) o = play(e, o, 60, STEP);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 2, 200, 80, 60);
     for (int n = 72; n <= 108; n += 3) o = play(e, o, n, RUN);   /* 13 notes */
-    for (int b = 0; b < TAIL; b++, o += 256) E->render(e, o, 128);
+    o = rest(e, o, TAIL);
     E->destroy(e);
 
     uint32_t frames = (uint32_t)((o - pcm) / 2), bytes = frames * 4;
@@ -257,10 +385,13 @@ int main(int argc, char **argv) {
     E = mpc_engine();
     if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); return 0; }
     aliasing();
+    sync_aliasing();
+    tuning();
+    noise_and_mix();
     envelope();
     keys();
     state();
-    demo_wav(argc > 1 ? argv[1] : "phase2_demo.wav");
+    demo_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }

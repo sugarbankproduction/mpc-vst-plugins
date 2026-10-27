@@ -6,10 +6,30 @@
   {"key": "amp_d", "name": "Amp Decay", "min": 1, "max": 5000, "unit": "ms", "default": 300},
   {"key": "amp_s", "name": "Amp Sustain", "min": 0, "max": 100, "unit": "%", "default": 70, "display": "int"},
   {"key": "amp_r", "name": "Amp Release", "min": 1, "max": 5000, "unit": "ms", "default": 250},
-  {"key": "volume", "name": "Volume", "min": 0, "max": 100, "unit": "%", "default": 70, "display": "int"}
+  {"key": "volume", "name": "Volume", "min": 0, "max": 100, "unit": "%", "default": 70, "display": "int"},
+  {"key": "o1_oct", "name": "Osc 1 Octave", "options": ["32'", "16'", "8'", "4'", "2'"], "default": "8'"},
+  {"key": "o1_semi", "name": "Osc 1 Semi", "min": -12, "max": 12, "unit": "st", "default": 0, "display": "int"},
+  {"key": "o1_fine", "name": "Osc 1 Fine", "min": -50, "max": 50, "unit": "ct", "default": 0},
+  {"key": "o1_level", "name": "Osc 1 Level", "min": 0, "max": 100, "unit": "%", "default": 100, "display": "int"},
+  {"key": "o2_wave", "name": "Osc 2 Wave", "options": ["Saw", "Square"], "default": "Saw"},
+  {"key": "o2_oct", "name": "Osc 2 Octave", "options": ["32'", "16'", "8'", "4'", "2'"], "default": "8'"},
+  {"key": "o2_semi", "name": "Osc 2 Semi", "min": -12, "max": 12, "unit": "st", "default": 0, "display": "int"},
+  {"key": "o2_fine", "name": "Osc 2 Fine", "min": -50, "max": 50, "unit": "ct", "default": 0},
+  {"key": "o2_level", "name": "Osc 2 Level", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "o2_sync", "name": "Osc 2 Sync", "options": ["Off", "On"], "default": "Off"},
+  {"key": "o3_wave", "name": "Osc 3 Wave", "options": ["Saw", "Square"], "default": "Saw"},
+  {"key": "o3_oct", "name": "Osc 3 Octave", "options": ["32'", "16'", "8'", "4'", "2'"], "default": "8'"},
+  {"key": "o3_semi", "name": "Osc 3 Semi", "min": -12, "max": 12, "unit": "st", "default": 0, "display": "int"},
+  {"key": "o3_fine", "name": "Osc 3 Fine", "min": -50, "max": 50, "unit": "ct", "default": 0},
+  {"key": "o3_level", "name": "Osc 3 Level", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "o3_sync", "name": "Osc 3 Sync", "options": ["Off", "On"], "default": "Off"},
+  {"key": "noise_level", "name": "Noise Level", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
  ],
  "sections": [
-  {"label": "OSC 1", "keys": ["o1_wave"]},
+  {"label": "OSC 1", "keys": ["o1_wave", "o1_oct", "o1_semi", "o1_fine"]},
+  {"label": "OSC 2", "keys": ["o2_wave", "o2_oct", "o2_semi", "o2_fine", "o2_sync"]},
+  {"label": "OSC 3", "keys": ["o3_wave", "o3_oct", "o3_semi", "o3_fine", "o3_sync"]},
+  {"label": "MIXER", "keys": ["o1_level", "o2_level", "o3_level", "noise_level"]},
   {"label": "AMP ENV", "keys": ["amp_a", "amp_d", "amp_s", "amp_r"]},
   {"label": "OUT", "keys": ["volume"]}
  ]
