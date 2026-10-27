@@ -4,7 +4,7 @@
  * path, audio path and presets on Windows itself; with a second path, writes all the presets to one WAV to listen
  * to; with a third, pictures of the editor. User patches (save, load, rename, delete, import, export) are tested in
  * a temporary folder:
- *   load_test.exe path	o\ONE-ish.dll [presets.wav] [editor.bmp] */
+ *   load_test.exe path\to\ONE-ish.dll [presets.wav] [editor.bmp] */
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
