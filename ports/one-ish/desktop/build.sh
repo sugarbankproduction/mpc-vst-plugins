@@ -28,6 +28,6 @@ $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/editor_draw.c" -o "$OUT/editor_draw.o"
 # -static: winpthreads and libgcc go inside the DLL, so it needs nothing else installed
 $CC -shared "${OBJS[@]}" "$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/editor_draw.o" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
   -o "$OUT/ONE-ish.dll"
-$CC -O2 -std=gnu11 -Wall -Wextra -I"$OUT" "$P/desktop/load_test.c" -static -lgdi32 -luser32 -o "$OUT/load_test.exe"
+$CC -O2 -std=gnu11 -Wall -Wextra -I"$OUT" -I"$P/build" "$P/desktop/load_test.c" -static -lgdi32 -luser32 -o "$OUT/load_test.exe"
 $CC -O2 -std=gnu11 -I"$P/build" -Iwrapper $CFLAGS tools/host_test.c $SOURCES wrapper/vst2_wrap.c $LIBS -static -lpthread -o "$OUT/host_test.exe"
 ls -l "$OUT"/*.dll "$OUT"/*.exe

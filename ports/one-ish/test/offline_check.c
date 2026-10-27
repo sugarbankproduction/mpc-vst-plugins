@@ -59,8 +59,12 @@
  *             centre and left origin, CC 121) and its quick assignment; the effects as destinations (an LFO moves the
  *             synth effect's mix and rate and the reverb send, a mix stepped by a square LFO doesn't zipper, the
  *             newest voice's velocity drives the effect pass); a state with every param off its default fits the chunk
+ *   random    the patch randomiser (src/randomize.h): 300 RANDOMISE sounds each heard on a chord, never slamming the
+ *             limiter (peak, rms, zero runs while held), single notes bounded; the never-touched params and locked
+ *             sections keep their values exactly; the same seed gives the same sound; MUTATE at 10% moves a few params a
+ *             little; MUTATE at 100% and chains of mutations stay heard and safe
  *   state     save/restore round trip; damaged or oversized states don't break the instance
- *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav)
+ *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
  *             MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
@@ -79,6 +83,7 @@
 #include "env.h"
 #include "modmatrix.h"
 #include "fx.h"
+#include "randomize.h"
 
 #define SR 44100
 #define N 16384   /* FFT length: 2.7 Hz per bin */
@@ -3634,9 +3639,242 @@ static void matrix_wiring(void) {
     }
 }
 
+/* ---- the patch randomiser (src/randomize.h): RANDOMISE and MUTATE make sounds that are heard, never slam the limiter,
+ * keep the never-touched params and the locked sections, and repeat for the same seed ---- */
+static void rnd_apply_norm(void *e, const float *n) {   /* a normalized param array into the engine, as the wrapper would */
+    for (int i = 0; i < NPARAMS; i++) {
+        const param_t *p = &PARAMS[i];
+        double v = p->nopts ? (p->nopts > 1 ? round(n[i] * (p->nopts - 1)) : 0) : p->min + n[i] * (p->max - p->min);
+        set(e, p->key, v);
+    }
+}
+static void rnd_defaults(float *n) { for (int i = 0; i < NPARAMS; i++) n[i] = PARAMS[i].def; }
+
+typedef struct { double rms, peak, over, note_rms[3], note_peak; int zero_run; } rnd_stats_t;
+/* a chord (C3 G3 C4 E4) held 1.5 s then 0.5 s of release, then C2, C4 and C6 alone (0.4 s held, 0.2 s released) */
+static rnd_stats_t rnd_play(void *e) {
+    enum { HOLD = SR * 3 / 2, REL = SR / 2, NHOLD = SR * 2 / 5, NREL = SR / 5 };
+    static float l[HOLD + REL], r[HOLD + REL];
+    static const int chord[4] = {48, 55, 60, 64}, single[3] = {36, 60, 84};
+    rnd_stats_t st = {0};
+    for (int k = 0; k < 4; k++) note(e, 1, chord[k], 100);
+    render_lr(e, l, r, HOLD);
+    for (int k = 0; k < 4; k++) note(e, 0, chord[k], 0);
+    render_lr(e, l + HOLD, r + HOLD, REL);
+    double sum = 0;
+    int over = 0, run = 0;
+    for (int i = 0; i < HOLD + REL; i++) {
+        double a = fabs(l[i]) > fabs(r[i]) ? fabs(l[i]) : fabs(r[i]);
+        sum += 0.5 * (l[i] * (double)l[i] + r[i] * (double)r[i]);
+        if (a > st.peak) st.peak = a;
+        over += a > 0.5;
+        if (i >= SR * 2 / 5 && i < HOLD) {   /* while held, after the slowest attack has begun: never exactly silent */
+            run = l[i] == 0.0f && r[i] == 0.0f ? run + 1 : 0;
+            if (run > st.zero_run) st.zero_run = run;
+        }
+    }
+    st.rms = sqrt(sum / (HOLD + REL));
+    st.over = over / (double)(HOLD + REL);
+    E->midi(e, (const uint8_t[]){0xB0, 120, 0}, 3);   /* all sound off between the chord and the notes */
+    for (int k = 0; k < 3; k++) {
+        note(e, 1, single[k], 100);
+        render_lr(e, l, r, NHOLD);
+        note(e, 0, single[k], 0);
+        render_lr(e, l + NHOLD, r + NHOLD, NREL);
+        double s = 0;
+        for (int i = 0; i < NHOLD + NREL; i++) {
+            s += 0.5 * (l[i] * (double)l[i] + r[i] * (double)r[i]);
+            double a = fabs(l[i]) > fabs(r[i]) ? fabs(l[i]) : fabs(r[i]);
+            if (a > st.note_peak) st.note_peak = a;
+        }
+        st.note_rms[k] = sqrt(s / (NHOLD + NREL));
+        E->midi(e, (const uint8_t[]){0xB0, 120, 0}, 3);
+    }
+    return st;
+}
+static int rnd_safe(const rnd_stats_t *s) {
+    return s->rms > 0.004 && s->rms < 0.5 && s->peak < 0.98 && s->note_peak < 0.98 && s->zero_run < 2048;
+}
+static int cmp_d(const void *a, const void *b) { double x = *(const double *)a, y = *(const double *)b; return (x > y) - (x < y); }
+
+static void randomiser(void) {
+    enum { SOUNDS = 300, MUT = 100 };
+    static double rms[SOUNDS];
+    float def[NPARAMS], out[NPARAMS], out2[NPARAMS], cur[NPARAMS];
+    char what[640];
+    rnd_defaults(def);
+    int heard = 0, safe = 0, arch_n[RA_COUNT] = {0}, worst = -1;
+    double max_peak = 0, max_over = 0, max_rms = 0, quiet_note = 1, sum_over = 0;
+    for (int s = 0; s < SOUNDS; s++) {
+        uint32_t seed = 1000 + s * 7919;
+        int arch = rnd_generate(def, out, 0, &seed);
+        arch_n[arch]++;
+        void *e = E->create(NULL);
+        rnd_apply_norm(e, out);
+        rnd_stats_t st = rnd_play(e);
+        E->destroy(e);
+        rms[s] = st.rms;
+        heard += st.rms > 0.004 && st.zero_run < 2048;
+        int ok = rnd_safe(&st);
+        safe += ok;
+        if (!ok && worst < 0) {
+            char d[256];
+            rnd_describe(out, d, sizeof d);
+            printf("     sound %d (%s) fails: rms %.4f peak %.3f note peak %.3f zero run %d: %s\n", s, RND_ARCH[arch], st.rms,
+                   st.peak, st.note_peak, st.zero_run, d);
+            worst = s;
+        }
+        if (st.peak > max_peak) max_peak = st.peak;
+        if (st.note_peak > max_peak) max_peak = st.note_peak;
+        if (st.over > max_over) max_over = st.over;
+        if (st.rms > max_rms) max_rms = st.rms;
+        sum_over += st.over;
+        for (int k = 0; k < 3; k++) if (st.note_rms[k] < quiet_note) quiet_note = st.note_rms[k];
+    }
+    qsort(rms, SOUNDS, sizeof rms[0], cmp_d);
+    snprintf(what, sizeof what, "randomise: %d sounds (bass %d, lead %d, pad %d, pluck %d, poly %d, texture %d): %d heard, %d "
+             "safe; chord rms %.3f / %.3f / %.3f (min / median / max), peak at most %.3f, at most %.1f%% (mean %.1f%%) of "
+             "samples in the limiter, quietest single note rms %.4f", SOUNDS, arch_n[0], arch_n[1], arch_n[2], arch_n[3],
+             arch_n[4], arch_n[5], heard, safe, rms[0], rms[SOUNDS / 2], rms[SOUNDS - 1], max_peak, 100 * max_over,
+             100 * sum_over / SOUNDS, quiet_note);
+    check(heard == SOUNDS && safe == SOUNDS && max_over < 0.35 && sum_over / SOUNDS < 0.03, what);
+
+    /* the same seed gives the same sound and the same mutation */
+    uint32_t a = 42, b = 42;
+    rnd_generate(def, out, 0, &a);
+    rnd_generate(def, out2, 0, &b);
+    int same = !memcmp(out, out2, sizeof out) && a == b;
+    a = b = 43;
+    rnd_mutate(out, cur, 0.5f, 0, &a);
+    rnd_mutate(out, out2, 0.5f, 0, &b);
+    check(same && !memcmp(cur, out2, sizeof cur), "randomise and mutate: the same seed gives the same result");
+
+    /* never-touched params and locked sections keep their values exactly, from any starting point */
+    uint32_t x = 99;
+    int kept = 1, moved = 0, tries = 0;
+    for (int t = 0; t < 60; t++) {
+        for (int i = 0; i < NPARAMS; i++) {   /* a random starting sound (every param anywhere) */
+            x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+            float u = (x >> 8) / 16777216.0f;
+            cur[i] = PARAMS[i].nopts > 1 ? roundf(u * (PARAMS[i].nopts - 1)) / (PARAMS[i].nopts - 1) : u;
+        }
+        unsigned locks = t < 10 ? 0 : (x >> 3) & ((1u << RS_COUNT) - 1);
+        uint32_t seed = 7 + t;
+        if (t % 2) rnd_generate(cur, out, locks, &seed); else rnd_mutate(cur, out, 0.6f, locks, &seed);
+        for (int i = 0; i < NPARAMS; i++) {
+            int sec = rnd_section_of(i), fixed = sec == RS_NEVER || (locks >> sec & 1u);
+            if (fixed && out[i] != cur[i]) {
+                if (kept) printf("     %s (%s) moved: %g -> %g\n", PARAMS[i].key, sec == RS_NEVER ? "never" : RND_SECTION[sec], cur[i], out[i]);
+                kept = 0;
+            }
+            moved += !fixed && out[i] != cur[i];
+        }
+        tries++;
+    }
+    int never = 0;
+    for (int i = 0; i < NPARAMS; i++) never += rnd_section_of(i) == RS_NEVER;
+    snprintf(what, sizeof what, "locks: %d never-touched params and every locked section keep their values in %d runs "
+             "(%d values moved elsewhere)", never, tries, moved);
+    check(kept && moved > 0 && never >= 20 && rnd_section_of(rnd_key("volume")) == RS_NEVER, what);
+
+    /* MUTATE at 10%: a few params, small steps; at 100% and after a chain of mutations: still heard and safe */
+    double n_changed = 0, d_sum = 0, d_max = 0;
+    int d_n = 0, most = 0;
+    for (int s = 0; s < MUT; s++) {
+        uint32_t seed = 500 + s;
+        rnd_generate(def, cur, 0, &seed);
+        int c = rnd_mutate(cur, out, 0.1f, 0, &seed);
+        n_changed += c;
+        if (c > most) most = c;
+        for (int i = 0; i < NPARAMS; i++)
+            if (!PARAMS[i].nopts && out[i] != cur[i]) {
+                double d = fabs(out[i] - cur[i]);
+                d_sum += d;
+                d_n++;
+                if (d > d_max) d_max = d;
+            }
+    }
+    snprintf(what, sizeof what, "mutate 10%%: %.1f params changed on average (at most %d of %d), knobs moved %.1f%% of their "
+             "range on average (at most %.0f%%)", n_changed / MUT, most, NPARAMS, 100 * d_sum / (d_n ? d_n : 1), 100 * d_max);
+    check(n_changed / MUT < 30 && d_sum / (d_n ? d_n : 1) < 0.04, what);
+    int m_safe = 0;
+    double m_min = 1, m_peak = 0;
+    for (int s = 0; s < MUT; s++) {
+        uint32_t seed = 900 + s;
+        rnd_generate(def, cur, 0, &seed);
+        if (s < MUT / 2) rnd_mutate(cur, out, 1.0f, 0, &seed);
+        else {   /* ten mutations in a row at 50% */
+            for (int k = 0; k < 10; k++) { rnd_mutate(cur, out, 0.5f, 0, &seed); memcpy(cur, out, sizeof cur); }
+        }
+        void *e = E->create(NULL);
+        rnd_apply_norm(e, out);
+        rnd_stats_t st = rnd_play(e);
+        E->destroy(e);
+        m_safe += rnd_safe(&st);
+        if (st.rms < m_min) m_min = st.rms;
+        if (st.peak > m_peak) m_peak = st.peak;
+        if (!rnd_safe(&st) && m_safe == s) {
+            char d[256];
+            rnd_describe(out, d, sizeof d);
+            printf("     mutation %d fails: rms %.4f peak %.3f zero run %d: %s\n", s, st.rms, st.peak, st.zero_run, d);
+        }
+    }
+    snprintf(what, sizeof what, "mutate 100%% (50 sounds) and ten 50%% mutations in a row (50 sounds): %d of %d heard and "
+             "safe, quietest chord rms %.4f, peak at most %.3f", m_safe, MUT, m_min, m_peak);
+    check(m_safe == MUT, what);
+}
+
+/* <dir>/random_demo.wav: twelve RANDOMISE results (two of each archetype), each a short line and a chord */
+static void random_demo_wav(const char *demo_path) {
+    enum { STEP = 103, CHORD = 413, TAIL = 310, SOUNDS = 12 };   /* 0.3 s, 1.2 s, 0.9 s in 128-frame blocks */
+    static int16_t pcm[SOUNDS * (4 * STEP + CHORD + TAIL) * 256];
+    static const int line[4] = {48, 55, 60, 63}, chord[4] = {48, 55, 60, 63};
+    char dir[256], path[320];
+    snprintf(dir, sizeof dir, "%s", demo_path);
+    char *slash = strrchr(dir, '/');
+    if (slash) slash[1] = 0; else dir[0] = 0;
+    float def[NPARAMS], out[NPARAMS];
+    rnd_defaults(def);
+    int16_t *o = pcm;
+    uint32_t next = 20261027u;
+    for (int k = 0; k < SOUNDS; k++) {
+        int arch;
+        do {   /* the next seed whose sound is archetype k % 6: two of each, in turn */
+            uint32_t seed = next;
+            next += 104729u;
+            arch = rnd_generate(def, out, 0, &seed);
+        } while (arch != k % RA_COUNT);
+        char d[256];
+        rnd_describe(out, d, sizeof d);
+        printf("     random_demo %2d (%4.1f s) %-7s %s\n", k + 1, (o - pcm) / 2.0 / SR, RND_ARCH[arch], d);
+        void *e = E->create(NULL);
+        rnd_apply_norm(e, out);
+        for (int n = 0; n < 4; n++) {
+            note(e, 1, line[n], 100);
+            for (int b = 0; b < STEP * 3 / 4; b++, o += 256) E->render(e, o, 128);
+            note(e, 0, line[n], 0);
+            for (int b = STEP * 3 / 4; b < STEP; b++, o += 256) E->render(e, o, 128);
+        }
+        for (int n = 0; n < 4; n++) note(e, 1, chord[n] + (n ? 0 : -12), 90);
+        for (int b = 0; b < CHORD; b++, o += 256) E->render(e, o, 128);
+        for (int n = 0; n < 4; n++) note(e, 0, chord[n] + (n ? 0 : -12), 0);
+        o = rest(e, o, TAIL);
+        E->destroy(e);
+    }
+    snprintf(path, sizeof path, "%srandom_demo.wav", dir);
+    write_wav(path, pcm, (uint32_t)((o - pcm) / 2));
+    printf("wrote %s (%d random sounds)\n", path, SOUNDS);
+}
+
 int main(int argc, char **argv) {
     E = mpc_engine();
     if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); return 0; }
+    if (argc > 2 && !strcmp(argv[1], "random")) {   /* just the randomiser: offline_check random <dir>/demo.wav */
+        randomiser();
+        random_demo_wav(argv[2]);
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     aliasing();
     sync_aliasing();
     shapes();
@@ -3664,9 +3902,11 @@ int main(int argc, char **argv) {
     voice_keyboard_options();
     noise_stereo_drift();
     analog_character();
+    randomiser();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     analog_wavs(argc > 1 ? argv[1] : "demo.wav");
+    random_demo_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }

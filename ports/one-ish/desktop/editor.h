@@ -43,11 +43,13 @@ enum { audioMasterAutomate = 0, audioMasterUpdateDisplay = 42, audioMasterBeginE
 AEffect *one_ish_wrapped_main(audioMasterCallback host);   /* wrapper/vst2_wrap.c's VSTPluginMain, renamed */
 
 /* ---- the panel, scaled to fit the screen (layout.h is in base units) ---- */
-/* what the centre screen shows: the mod matrix, the list of MORE pages, or one MORE page (0..NPAGES-1) */
-enum { SCR_MATRIX = -1, SCR_INDEX = -2 };
+/* what the centre screen shows: the mod matrix, the list of MORE pages, the randomiser, or one MORE page (0..NPAGES-1) */
+enum { SCR_MATRIX = -1, SCR_INDEX = -2, SCR_RANDOM = -3 };
 enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 keys, C2..C7 at octave 0 */
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
-       Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_PAGE = 100100 };   /* Z_PAGE + p */
+       Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
+       Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
+       Z_PAGE = 100100 };   /* Z_PAGE + p */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 enum { VENDOR_SPECIFIC = 50 };                   /* effVendorSpecific */
 #define TEST_MIDI_LOG 0x4F314D4C   /* VENDOR_SPECIFIC index: copy the MIDI the window passed to the engine (tests) */
@@ -61,7 +63,7 @@ typedef struct {
     const char *label[NPARAMS];
     const char *const *leds[NPARAMS];
     RECT screen, name, prev, next, tabline, head, row[ROWS], help, sub_prev, sub_next;
-    RECT tab_matrix, tab_more, tab_analog, encoder, bprev, bnext, brand;
+    RECT tab_matrix, tab_more, tab_analog, tab_random, encoder, bprev, bnext, brand;
     RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon;
     RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
 } layout_t;
@@ -74,6 +76,7 @@ static inline int rh(const RECT *r) { return r->bottom - r->top; }
 
 /* ---- per instance ---- */
 #define MQ 256   /* UI MIDI queue: a power of two */
+#define RND_HIST 32   /* sounds the randomiser's UNDO / REDO keep (the oldest goes) */
 enum { MLOG = 64 };
 typedef struct {
     AEffect *fx;
@@ -92,8 +95,16 @@ typedef struct {
     unsigned mq_w, mq_r;
     unsigned char mlog[MLOG][3];               /* the last MIDI the audio thread passed on, for load_test */
     unsigned mlog_n;
+    /* the randomiser page (src/randomize.h): mutate amount 0..1, locked sections (bit per RS_*), its own random
+     * stream, and a history of sounds for UNDO / REDO (hist_pos: the one playing now) */
+    float rnd_amount;
+    unsigned rnd_locks;
+    uint32_t rnd_seed;
+    int rnd_count, mut_count, hist_n, hist_pos;
+    float hist[RND_HIST][NPARAMS];
+    char hist_name[RND_HIST][40];
 } ed_t;
-enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON };
+enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT };
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -106,6 +117,7 @@ int page_items(ed_t *e, int p, int *items);   /* the items of page p shown now (
 int screen_subs(ed_t *e);                     /* how many sub-pages the screen has now (1 or more) */
 void slot_rects(int slot, RECT *name, RECT *ctl);   /* a page's slot 0..SLOTS-1: its name and its control */
 RECT matrix_cell(int r, int col);             /* the matrix on the screen: row r, column 0 (#) .. MX_COLS */
+RECT rnd_rect(int z);                         /* the randomiser page: where control z (Z_RND_*) sits */
 static inline int note_of_white(int j, int base) {   /* white key j of the keyboard, from note `base` (a C) */
     static const int s[] = {0, 2, 4, 5, 7, 9, 11};
     return base + 12 * (j / 7) + s[j % 7];
