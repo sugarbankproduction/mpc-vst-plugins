@@ -78,7 +78,7 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | EXT INPUT: XLR/TRS combo, TRIM -9 dB to +65 dB; LINE input [HW] | p20 | Missing | An MPC instrument plugin gets no audio input | - | none |
 | CV IN 1-2, CV OUT 1-4; pedal jacks usable as CV inputs [HW] | p20-21 | Missing | - | - | none |
 | MIDI IN/THRU/OUT (DIN), USB MIDI, USB host, LAN [HW] | p20-21 | Partial | MIDI in from the host only | - | none |
-| Pedal jacks: SUSTAIN, EXP 1, EXP 2, assignable | p21, p140 | Partial | Sustain (CC 64) works; expression pedals not read (CC 11 / CC 4 could map) | S | none |
+| Pedal jacks: SUSTAIN, EXP 1, EXP 2, assignable | p21, p140 | Partial | Sustain (CC 64) and sostenuto (CC 66) work; expression CC 11 is read into a stored value, not yet a matrix source (2026-10-27, offline) | S | none |
 
 ## 3. Oscillators (p22-26)
 
@@ -96,11 +96,11 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | MIX: tri/saw only, equal blend, pulse only | knob (p24) | Have | `oN_mix` 0..100% | - | - |
 | Wave angle and pulse width modulatable (PWM etc.) | p22 | Have | Matrix destinations "Osc n Angle", "Osc n PW", "Osc n Wave Mix", ramped per sample | - | - |
 | HARD SYNC on OSC 2 and OSC 3 to OSC 1 | on/off (p24-25) | Have | `o2_sync`, `o3_sync`, band-limited reset | - | - |
-| HARD SYNC SRC (MORE) | OSC 2: VCO 1 or VCO 3; OSC 3: VCO 1 or VCO 2 (p26) | Missing | Always oscillator 1 | S (render order must follow the source) | none |
-| PITCH TRACKING (MORE) | 0% to 200% (p26) | Missing | Always 100% | S | none |
-| NOTE-ON RESET (MORE): phase to zero on each note | off/on (p26) | Partial | Phases reset only when a voice starts from silence; no switch | S | none |
-| BEND UP OFFSET per oscillator | -24 to +24 st (p26) | Missing | One bend range for all oscillators | S | none |
-| BEND DOWN OFFSET per oscillator | -24 to +24 st (p26) | Missing | - | S | none |
+| HARD SYNC SRC (MORE) | OSC 2: VCO 1 or VCO 3; OSC 3: VCO 1 or VCO 2 (p26) | Have | `o2_sync_src` Osc 1/Osc 3, `o3_sync_src` Osc 1/Osc 2; osc 2 from osc 3 looks ahead to osc 3's wrap (one render order), a restart counts as a wrap so a chain 1 > 2 > 3 follows; 2 and 3 syncing each other: osc 3 takes osc 2's wrap one sample late (2026-10-27, offline) | - | none |
+| PITCH TRACKING (MORE) | 0% to 200% (p26) | Have | `oN_track` 0-200%: scales the key's distance from the key track centre (0%: the centre note's pitch on every key) (2026-10-27, offline) | - | none |
+| NOTE-ON RESET (MORE): phase to zero on each note | off/on (p26) | Have | `oN_reset`: a band-limited restart at phase 0 on every note-on, legato ones too; an oscillator hard-synced to it restarts with it (2026-10-27, offline) | - | none |
+| BEND UP OFFSET per oscillator | -24 to +24 st (p26) | Have | `oN_bend_up_off`, whole semitones, added to `bend_up` (2026-10-27, offline) | - | none |
+| BEND DOWN OFFSET per oscillator | -24 to +24 st (p26) | Have | `oN_bend_dn_off`, added to `bend_down` (2026-10-27, offline) | - | none |
 | MORE page wave image and values [UI] | p25 | Missing | - | M | none |
 | Analog VCO character: slight drift and warm-up instability [ANALOG] | p7 (warm-up note) | Missing | Ideal digital oscillators | S-M (slow per-oscillator random pitch wander) | low |
 | Clean top end under sync and FM | implied (analog) | Partial | PolyBLEP; no oversampling | M-L | medium-high (2x oversampling) |
@@ -275,7 +275,7 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| HOLD: latch held notes; legato adds, non-legato replaces; with sustain it adds; latches the arp | on/off (p63) | Missing | - | S | none |
+| HOLD: latch held notes; legato adds, non-legato replaces; with sustain it adds; latches the arp | on/off (p63) | Have | `hold`: as the manual; off lets go of what it latched (the pedals keep theirs); no arp yet (2026-10-27, offline) | - | none |
 | CHORD memory: one key plays a stored interval stack, first note is the root | on/off (p63) | Missing | - | M | high (multiplies sounding voices) |
 | CHORD LEARN, saved per Synth; silent or audible learn (Settings) [UI] | p63, p125 | Missing | - | M | none |
 | Chord is applied after the arp and sequencer | p63 | Missing | - | S (with chord + arp) | none |
@@ -283,9 +283,9 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | UNISON: all voices stack, divided among held keys | on/off (p64) | Partial | `unison`: fixed stacks of `uni_count` voices per note, a stack allocated and stolen whole (8 voices, count 4: two notes); stacks don't re-divide as keys are added (2026-10-27, offline) | M | high (each stacked voice costs a full voice) |
 | DETUNE of the unison stack, uneven spread around the centre | 0 to 10 (p64) | Have | `uni_detune` 0-100%: voices at u*sqrt(abs(u)) of +-50 cents (u evenly -1..1), symmetric, the centre voice stays put; stacks scaled by 1/sqrt(n) in level (2026-10-27, offline) | - | none |
 | UNISON COUNT (also works in poly mode) | 2 to POLY COUNT (p65) | Have | `uni_count` 2-8, capped at the voice count in poly; mono + unison stacks it on one note (2026-10-27, offline) | - | high |
-| POLY COUNT | 2 to hardware voices (p65) | Partial | Mono, 2, 4, 6, 8 | S | high per voice |
-| VOICE STEALING MODE | No Stealing, Oldest, Quietest, Newest (p66) | Partial | Fixed: idle, then quietest releasing, then oldest sustained, then oldest held | S | none |
-| MONOPHONIC NOTE PRIORITY | Low, High, Last (p66) | Partial | Last only | S | none |
+| POLY COUNT | 2 to hardware voices (p65) | Have | `voices` Mono, 2, 3, 4, 5, 6, 7, 8 (2026-10-27, offline) | - | high per voice |
+| VOICE STEALING MODE | No Stealing, Oldest, Quietest, Newest (p66) | Have | `steal_mode`, after an idle voice: Oldest (default, the old behaviour: quietest releasing, then oldest held by a pedal or HOLD, then oldest held), Quietest (lowest level x velocity of all), Newest (quietest releasing, then newest), No Stealing (quietest releasing, else the note is dropped) (2026-10-27, offline) | - | none |
+| MONOPHONIC NOTE PRIORITY | Low, High, Last (p66) | Have | `note_priority`; a key that loses to a held one changes nothing; releasing the sounding key moves to the next by priority, without a retrigger (2026-10-27, offline) | - | none |
 | PITCH VARIANCE: random pitch per new note | 0 to 50 cents (p66) | Have | `pitch_var` 0-50 cents, uniform, drawn per voice for each new note (2026-10-27, offline) | - | none |
 
 ## 15. Modulation (p67-77)
@@ -625,7 +625,7 @@ These are licensed algorithms. Only original reverbs in the same spirit can be b
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| OCTAVE SHIFT | -2 to +2 (p112) | Missing | MPC keyboard octave instead | S | none |
+| OCTAVE SHIFT | -2 to +2 (p112) | Have | `octave_shift` (an engine param; follows live, keyboard tracking too) (2026-10-27, offline) | - | none |
 | MIDI panic (hold both octave buttons) | p112 | Have | CC 120/123/121 handled | - | - |
 | GLIDE on/off | p112 | Have | `glide`; each voice glides from its own last pitch (a fresh voice doesn't), at the control rate; keyboard tracking and the Keyboard source follow it (2026-10-27, offline) | - | none |
 | GLIDE RATE | 0 ms to 10.0 s (p112) | Have | `glide_time` 0 ms, then 1 ms to 10 s on a log knob (2026-10-27, offline) | - | none |
@@ -634,15 +634,15 @@ These are licensed algorithms. Only original reverbs in the same spirit can be b
 | LEGATO GLIDE: glide only on legato notes (mono only) | off/on (p116) | Have | `glide_legato`; in poly too (a note pressed while another key is held) (2026-10-27, offline) | - | none |
 | GLISSANDO: glide in semitone steps | off/on (p117) | Have | `glissando` (2026-10-27, offline) | - | none |
 | PITCH wheel, spring-loaded | p113 | Have | MIDI pitch bend | - | - |
-| PITCH BEND UP (SHIFT = finer than semitones) | -24 to +24 st (p115) | Partial | `bend_range` 0-12 st, same both ways | S | none |
-| PITCH BEND DOWN | -24 to +24 st (p115) | Partial | (same) | S | none |
+| PITCH BEND UP (SHIFT = finer than semitones) | -24 to +24 st (p115) | Have | `bend_up` -24..+24 st, fine values allowed; the old `bend_range` is retired (an older project's value sets both directions) (2026-10-27, offline) | - | none |
+| PITCH BEND DOWN | -24 to +24 st (p115) | Have | `bend_down` -24..+24 st (default -2: down a whole tone) (2026-10-27, offline) | - | none |
 | MOD wheel, not spring-loaded | p113 | Have | CC 1 | - | - |
 | X/Y PAD: X, Y, pressure, gate; X/Y HOLD saves the held value [HW] | p113-114 | Missing | Could map MIDI CCs (MPC has XYFX pads) | S | none |
 | PAD POLARITY [HW] | Unipolar, Bipolar (p115) | Missing | - | S | none |
-| VELOCITY CURVE, per Synth | Soft, Medium, Hard, Compress, Expand (p116) | Missing | Linear velocity | S | none |
+| VELOCITY CURVE, per Synth | Soft, Medium, Hard, Compress, Expand (p116) | Have | `vel_curve`: Soft sqrt(v), Medium v (default, as before), Hard v^2, Compress and Expand flatten or steepen around the middle; all keep both ends (2026-10-27, offline) | - | none |
 | LOAD SAVED POS. (mod wheel, pad position with the Synth) | Off, Mod Wheel, Pad, Both (p117) | Missing | Wheel always starts at 0 | S | none |
-| SEMITONE TRANSP. | -12 to Off to +12 (p117) | Missing | - | S | none |
-| KEY TRACK CENTER for all key tracking | C0 to G10, default middle C (p117) | Missing | Fixed at middle C (note 60) | S | none |
+| SEMITONE TRANSP. | -12 to Off to +12 (p117) | Have | `transpose` -12..+12 st (2026-10-27, offline) | - | none |
+| KEY TRACK CENTER for all key tracking | C0 to G10, default middle C (p117) | Have | `key_center` MIDI note 0-127, shown as "C4 (60)": both filters' tracking, the Keyboard matrix source and oscillator pitch tracking (2026-10-27, offline) | - | none |
 | HEADPHONES jacks [HW] | p114 | Missing | - | - | none |
 
 ## 20. Browser, presets and timbres (p118-121)
@@ -698,7 +698,7 @@ These are licensed algorithms. Only original reverbs in the same spirit can be b
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | CV IN 1/2, EXP IN 1/2: FUNCTION, SYNTHS, VOLTAGE MIN/MAX [HW] | None, Next/Previous Preset, Next/Previous Set; -5 V to +5 V (p131-132) | Missing | - | - | none |
-| SUSTAIN IN FUNCTION | Off, Sustain Pedal, Sostenuto Pedal (p131) | Partial | Sustain (CC 64) only; no sostenuto (CC 66) | S | none |
+| SUSTAIN IN FUNCTION | Off, Sustain Pedal, Sostenuto Pedal (p131) | Have | Both at once, as MIDI sends them: sustain CC 64, sostenuto CC 66 (holds the notes sounding as it goes down) (2026-10-27, offline) | - | none |
 | SUSTAIN IN SYNTH target [MULTI] | Synth 1/2/3, pairs, All (p131) | Missing | - | S (with parts) | none |
 | SUSTAIN SWITCH TYPE [HW] | Open, Closed (p131) | Missing | Host | - | none |
 | CV OUT 1-4: SOURCE, OUT VOLTAGE MIN/MAX [HW] | Gate, Pitch Wheel, Mod Wheel, Aftertouch, Pad X/Y/Pressure/Gate; -5 V to +5 V (p132) | Missing | - | - | none |
@@ -711,8 +711,8 @@ These are licensed algorithms. Only original reverbs in the same spirit can be b
 | USER SPACES: switch, create (factory or empty), rename, copy [UI] | p134-135 | Missing | - | - | none |
 | EXPORT / IMPORT to USB: presets, sequences, sets, effect presets, matrix presets, globals, all [UI] | p136-137 | Missing | Host/project files | - | none |
 | Edit CATEGORY, MOOD, GROUP tag lists [UI] | p137-138 | Missing | - | - | none |
-| MASTER FREQUENCY (A above middle C) | 400 Hz to 480 Hz, default 440 (p139) | Missing | Fixed 440 Hz | S | none |
-| MASTER FINE TUNE | -100 to +100 cents (p139) | Missing | - | S | none |
+| MASTER FREQUENCY (A above middle C) | 400 Hz to 480 Hz, default 440 (p139) | Have | `master_tune` (2026-10-27, offline) | - | none |
+| MASTER FINE TUNE | -100 to +100 cents (p139) | Have | `fine_tune` (2026-10-27, offline) | - | none |
 
 ## 23. Specifications cross-check (p140-141)
 

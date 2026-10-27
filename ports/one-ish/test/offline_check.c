@@ -33,6 +33,10 @@
  *             (8 voices, count 4: two notes, a third steals a whole stack); never more voices than the voice count;
  *             mono + unison stacks one note; release lets go of the whole stack; pitch variance stays within range
  *   env extras  curves, delay, hold, loop, latch, sync, time scale, velocity amount, multi trig and reset
+ *   keyboard  mono note priority low/high/last; each voice stealing mode with a full pool; HOLD (legato adds,
+ *             non-legato replaces, with the pedal it adds, off lets go); sostenuto; pitch bend up/down ranges and
+ *             per-oscillator offsets, the retired bend_range; velocity curves; transpose, octave shift, master and fine
+ *             tune; the key-track centre moves tracking; pitch tracking 0/100/200%; note-on reset; hard sync sources
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
@@ -1616,7 +1620,7 @@ static void glide_unison(void) {
     static const int keys3[] = {48, 52, 55};   /* 8 voices, count 4: two notes, a third steals a whole stack */
     double hz3[3] = {note_hz(48), note_hz(52), note_hz(55)}, db2[3], db3[3];
     e = patch(SAW, 0, 1, 100, 10);
-    set(e, "voices", 4); set(e, "unison", 1); set(e, "uni_count", 2); set(e, "uni_detune", 0);
+    set(e, "voices", 7); set(e, "unison", 1); set(e, "uni_count", 2); set(e, "uni_detune", 0);
     set(e, "flt_cut", knob_for_hz(600)); set(e, "volume", 25);
     note(e, 1, keys3[0], 100); note(e, 1, keys3[1], 100);
     render_f(e, x, N + 8192);
@@ -1670,6 +1674,283 @@ static void glide_unison(void) {
     set(e, "glide_time", 100); E->get_param(e, "glide_time_display", c, sizeof c);
     snprintf(what, sizeof what, "glide time knob reads \"%s\", \"%s\", \"%s\" at 0, 50, 100", a, b, c);
     check(!strcmp(a, "0 ms") && !strcmp(b, "100 ms") && !strcmp(c, "10.00 s"), what);
+    E->destroy(e);
+}
+
+/* the pitch (Hz) of a held note after the wheel and pitch settings: render past the first control steps, then measure */
+static double held_hz(void *e, int key) {
+    static float x[N + 4096];
+    note(e, 1, key, 127);
+    render_f(e, x, N + 4096);
+    return peak_hz(x + 4096);
+}
+
+/* which of the keys sound now (power at each fundamental against the strongest, dB), through a 600 Hz ladder */
+static void key_powers(void *e, const int *keys, int n, double *db) {
+    static float x[N + 8192];
+    double hz[8];
+    for (int i = 0; i < n; i++) hz[i] = note_hz(keys[i]);
+    render_f(e, x, N + 8192);
+    powers_db(x + 8192, hz, n, db);
+}
+
+/* a patch of held saws (sustain 100%, 10 ms release) through a 600 Hz ladder, with `voices` (option index) */
+static void *held_patch(int voices) {
+    void *e = patch(SAW, 0, 1, 100, 10);
+    set(e, "voices", voices); set(e, "flt_cut", knob_for_hz(600)); set(e, "volume", 40);
+    return e;
+}
+
+/* the largest sample difference between two runs of a mono patch: a first note held for `blocks1` x 128 frames, then a
+ * legato second note; compared over the 2048 samples after the second note */
+static void reset_run(int reset, int blocks1, float *out) {
+    static float x[128 * 32];
+    void *e = patch(SAW, 0, 1, 100, 10);
+    set(e, "voices", 0); set(e, "o1_reset", reset); set(e, "volume", 40);
+    note(e, 1, 57, 127);
+    render_f(e, x, 128 * blocks1);
+    note(e, 1, 60, 127);
+    render_f(e, out, 2048);
+    E->destroy(e);
+}
+
+/* Tier 2 voice and keyboard options: mono note priority, voice stealing modes, HOLD, sostenuto, pitch bend up/down and
+ * per-oscillator offsets, velocity curves, transpose / octave shift / master and fine tune, key-track centre, pitch
+ * tracking, note-on reset and the hard sync source */
+static void voice_keyboard_options(void) {
+    static float x[N + 8192];
+    char what[260];
+    double db[8];
+
+    /* mono note priority: keys 48, 55, 52 held in that order; then the sounding key is released */
+    static const int k3[] = {48, 52, 55};
+    static const char *const PRIO[] = {"Low", "High", "Last"};
+    static const int plays[3] = {48, 55, 52}, then[3] = {52, 52, 55};
+    for (int pr = 0; pr < 3; pr++) {
+        void *e = held_patch(0);
+        set(e, "note_priority", pr);
+        note(e, 1, 48, 100); note(e, 1, 55, 100); note(e, 1, 52, 100);
+        double a[3], b[3];
+        key_powers(e, k3, 3, a);
+        note(e, 0, plays[pr], 0);
+        key_powers(e, k3, 3, b);
+        int ok = 1;
+        for (int i = 0; i < 3; i++) {
+            ok &= k3[i] == plays[pr] ? a[i] > -1 : a[i] < -25;
+            ok &= k3[i] == then[pr] ? b[i] > -1 : b[i] < -25;
+        }
+        snprintf(what, sizeof what, "note priority %s: 48, 55, 52 held plays %d (%.0f/%.0f/%.0f dB); releasing it plays %d "
+                 "(%.0f/%.0f/%.0f dB)", PRIO[pr], plays[pr], a[0], a[1], a[2], then[pr], b[0], b[1], b[2]);
+        check(ok, what);
+        E->destroy(e);
+    }
+
+    /* voice stealing with 2 voices full (48 then 52 held) and a third key, 55 */
+    static const char *const STEAL[] = {"No Stealing", "Oldest", "Quietest", "Newest"};
+    static const int stolen[4] = {55, 48, 52, 52};   /* the key that ends up silent */
+    for (int m = 0; m < 4; m++) {
+        void *e = held_patch(1);
+        set(e, "steal_mode", m);
+        note(e, 1, 48, 127); note(e, 1, 52, m == 2 ? 30 : 127);   /* Quietest: the newer, softer note goes */
+        render_f(e, x, SR / 10);
+        note(e, 1, 55, 127);
+        key_powers(e, k3, 3, db);
+        int ok = 1;
+        for (int i = 0; i < 3; i++) ok &= k3[i] == stolen[m] ? db[i] < -25 : db[i] > -15;
+        snprintf(what, sizeof what, "steal mode %s, 2 voices: 48 and 52 held, then 55: %d is silent (48 %.0f, 52 %.0f, "
+                 "55 %.0f dB)", STEAL[m], stolen[m], db[0], db[1], db[2]);
+        check(ok, what);
+        E->destroy(e);
+    }
+
+    /* HOLD: released keys keep sounding; a legato key adds; a non-legato key replaces; with the pedal down it adds */
+    void *e = held_patch(3);
+    set(e, "hold", 1);
+    note(e, 1, 48, 100); note(e, 1, 52, 100); note(e, 0, 48, 0); note(e, 0, 52, 0);
+    double h1[3], h2[3], h3[3];
+    key_powers(e, k3, 3, h1);
+    note(e, 1, 55, 100); note(e, 0, 55, 0);   /* non-legato: replaces */
+    key_powers(e, k3, 3, h2);
+    midi3(e, 0xb0, 64, 127);
+    note(e, 1, 48, 100); note(e, 0, 48, 0);   /* non-legato with the pedal down: adds */
+    midi3(e, 0xb0, 64, 0);
+    key_powers(e, k3, 3, h3);
+    snprintf(what, sizeof what, "hold: 48 + 52 released still sound (%.0f, %.0f dB); 55 alone replaces them (48 %.0f, 52 "
+             "%.0f, 55 %.0f dB); 48 with the pedal down adds (48 %.0f, 55 %.0f dB)", h1[0], h1[1], h2[0], h2[1], h2[2],
+             h3[0], h3[2]);
+    check(h1[0] > -6 && h1[1] > -6 && h2[0] < -25 && h2[1] < -25 && h2[2] > -1 && h3[0] > -6 && h3[2] > -6, what);
+    set(e, "hold", 0);
+    check(silent_after(e, 500), "hold: switching it off lets go of the latched notes");
+    E->destroy(e);
+
+    e = held_patch(3);   /* legato under hold adds */
+    set(e, "hold", 1);
+    note(e, 1, 48, 100); note(e, 1, 52, 100); note(e, 0, 48, 0); note(e, 1, 55, 100); note(e, 0, 52, 0);
+    note(e, 0, 55, 0);
+    key_powers(e, k3, 3, db);
+    snprintf(what, sizeof what, "hold: keys played legato all stay (%.0f, %.0f, %.0f dB)", db[0], db[1], db[2]);
+    check(db[0] > -6 && db[1] > -6 && db[2] > -6, what);
+    E->destroy(e);
+
+    /* sostenuto (CC 66): 48 held as it goes down holds after release; 52 played after it does not */
+    e = held_patch(3);
+    note(e, 1, 48, 100);
+    midi3(e, 0xb0, 66, 127);
+    note(e, 1, 52, 100); note(e, 0, 48, 0); note(e, 0, 52, 0);
+    key_powers(e, k3, 3, db);
+    snprintf(what, sizeof what, "sostenuto: the note held as it went down sounds on (%.0f dB), the one played after "
+             "stops on release (%.0f dB)", db[0], db[1]);
+    check(db[0] > -1 && db[1] < -25, what);
+    midi3(e, 0xb0, 66, 0);
+    check(silent_after(e, 500), "sostenuto: lifting the pedal lets the held note go");
+    E->destroy(e);
+
+    /* pitch bend up / down with their own ranges, the retired bend_range, and per-oscillator offsets (note 57: 220 Hz) */
+    static const struct { int wheel_hi, wheel_lo; double up, down, osc, up_off, dn_off; double want_st; } B[] = {
+        {0x7f, 0x7f, 12, -2, 1, 0, 0, 12}, {0x00, 0x00, 2, -7, 1, 0, 0, -7}, {0x7f, 0x7f, -5, -2, 1, 0, 0, -5},
+        {0x7f, 0x7f, 2, -2, 1, 7, 0, 9}, {0x7f, 0x7f, 2, -2, 2, 0, 0, 2}, {0x00, 0x00, 2, -2, 1, 0, -12, -14},
+    };
+    for (unsigned i = 0; i < sizeof B / sizeof B[0]; i++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "bend_up", B[i].up); set(e, "bend_down", B[i].down);
+        set(e, "o1_bend_up_off", B[i].up_off); set(e, "o1_bend_dn_off", B[i].dn_off);   /* osc 1's offsets only */
+        if (B[i].osc == 2) { set(e, "o1_level", 0); set(e, "o2_level", 100); set(e, "o1_bend_up_off", 7); }
+        midi3(e, 0xe0, B[i].wheel_lo, B[i].wheel_hi);
+        double got = held_hz(e, 57), want = 220 * pow(2, B[i].want_st / 12);
+        snprintf(what, sizeof what, "bend up %+g / down %+g, osc %g offsets %+g / %+g, wheel %s: %.1f Hz (want %.1f)",
+                 B[i].up, B[i].down, B[i].osc, B[i].osc == 2 ? 7.0 : B[i].up_off, B[i].dn_off,
+                 B[i].wheel_hi ? "up" : "down", got, want);
+        check(fabs(cents(got, want)) < 3, what);
+        E->destroy(e);
+    }
+    e = E->create(NULL);
+    set(e, "bend_range", 5);
+    snprintf(what, sizeof what, "an older project's bend_range 5 becomes bend up %+g, down %+g", get(e, "bend_up"),
+             get(e, "bend_down"));
+    check(get(e, "bend_up") == 5 && get(e, "bend_down") == -5, what);
+    E->destroy(e);
+
+    /* velocity curves: the level at velocities 32, 64, 96 against 127 (amp velocity amount 100%: level = velocity) */
+    static const char *const CURVE[] = {"Soft", "Medium", "Hard", "Compress", "Expand"};
+    for (int c = 0; c < 5; c++) {
+        double ref = 0, got[3], want[3];
+        int ok = 1;
+        for (int k = 0; k < 4; k++) {
+            e = patch(SAW, 0, 1, 100, 10);
+            set(e, "volume", 10); set(e, "vel_curve", c);
+            int vel = k < 3 ? 32 * (k + 1) : 127;
+            note(e, 1, 57, vel);
+            double r = rms_of(e, SR / 4);
+            E->destroy(e);
+            if (k == 3) { ref = r; break; }
+            got[k] = r;
+            double v = vel / 127.0, u = 2 * v - 1;
+            want[k] = c == 0 ? sqrt(v) : c == 1 ? v : c == 2 ? v * v : c == 3 ? 0.5 + 0.5 * u * fabs(u)
+                    : 0.5 + 0.5 * copysign(sqrt(fabs(u)), u);
+        }
+        for (int k = 0; k < 3; k++) { got[k] /= ref; ok &= fabs(got[k] - want[k]) < 0.02; }
+        snprintf(what, sizeof what, "velocity curve %s: levels %.2f %.2f %.2f at velocity 32/64/96 (want %.2f %.2f %.2f)",
+                 CURVE[c], got[0], got[1], got[2], want[0], want[1], want[2]);
+        check(ok, what);
+    }
+
+    /* transpose, octave shift, master and fine tune (note 57: 220 Hz) */
+    static const struct { const char *k1; double v1; const char *k2; double v2; double want; } T[] = {
+        {"transpose", 5, NULL, 0, 220 * 1.3348398541700344}, {"transpose", -12, NULL, 0, 110},
+        {"octave_shift", 3, NULL, 0, 440}, {"octave_shift", 0, "transpose", 7, 55 * 1.4983070768766815},
+        {"master_tune", 432, NULL, 0, 216}, {"fine_tune", 50, NULL, 0, 220 * 1.0293022366434921},
+        {"master_tune", 415, "fine_tune", -100, 207.5 / 1.0594630943592953},
+    };
+    for (unsigned i = 0; i < sizeof T / sizeof T[0]; i++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, T[i].k1, T[i].v1);
+        if (T[i].k2) set(e, T[i].k2, T[i].v2);
+        double got = held_hz(e, 57);
+        snprintf(what, sizeof what, "%s %g%s%s %g: note 57 plays %.2f Hz (want %.2f)", T[i].k1, T[i].v1, T[i].k2 ? ", " : "",
+                 T[i].k2 ? T[i].k2 : "", T[i].k2 ? T[i].v2 : 0, got, T[i].want);
+        check(fabs(cents(got, T[i].want)) < 2, what);
+        E->destroy(e);
+    }
+
+    /* key-track centre: a self-oscillating ladder at 100% tracking rings an octave lower for key 72 with the centre
+     * moved from 60 to 72 */
+    double ring[2];
+    for (int c = 0; c < 2; c++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(440)); set(e, "lad_kbd", 100);
+        set(e, "key_center", c ? 72 : 60);
+        note(e, 1, 72, 100);
+        render_f(e, x, N + 8192);
+        ring[c] = peak_hz(x + 8192);
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "key track centre 60 -> 72: key 72 rings the ladder at %.0f Hz, then %.0f Hz (an octave "
+             "down: %.0f cents)", ring[0], ring[1], cents(ring[0], ring[1]));
+    check(fabs(cents(ring[0], ring[1]) - 1200) < 15, what);
+    e = E->create(NULL);
+    char kt[2][32];
+    E->get_param(e, "key_center_display", kt[0], sizeof kt[0]);
+    set(e, "key_center", 69); E->get_param(e, "key_center_display", kt[1], sizeof kt[1]);
+    snprintf(what, sizeof what, "key track centre reads \"%s\" by default, \"%s\" at 69", kt[0], kt[1]);
+    check(!strcmp(kt[0], "C4 (60)") && !strcmp(kt[1], "A4 (69)"), what);
+    E->destroy(e);
+
+    /* pitch tracking: 0% plays the centre note's pitch whatever the key, 200% doubles the distance from it */
+    static const struct { double track; int key; double want; } P[] = {
+        {0, 72, 261.6255653}, {0, 50, 261.6255653}, {100, 64, 329.6275569}, {200, 66, 523.2511306}, {200, 57, 184.9972114},
+    };
+    for (unsigned i = 0; i < sizeof P / sizeof P[0]; i++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "o1_track", P[i].track);
+        double got = held_hz(e, P[i].key);
+        snprintf(what, sizeof what, "pitch tracking %g%%: key %d plays %.2f Hz (want %.2f)", P[i].track, P[i].key, got,
+                 P[i].want);
+        check(fabs(cents(got, P[i].want)) < 3, what);
+        E->destroy(e);
+    }
+
+    /* note-on reset: after a legato note the waveform is the same whatever the oscillator's phase was */
+    static float r1[2048], r2[2048];
+    double diff[2];
+    for (int rs = 0; rs < 2; rs++) {
+        reset_run(rs, 10, r1);
+        reset_run(rs, 13, r2);
+        diff[rs] = 0;
+        for (int i = 16; i < 2048; i++) diff[rs] = fmax(diff[rs], fabs(r1[i] - r2[i]));
+    }
+    snprintf(what, sizeof what, "note-on reset: two legato notes after different held times differ by at most %.4f "
+             "with it (%.3f without)", diff[1], diff[0]);
+    check(diff[1] < 0.01 && diff[0] > 0.1, what);
+
+    /* hard sync source: osc 2 synced to osc 3 repeats at osc 3's pitch, not osc 1's */
+    static const struct { const char *slave, *src_key; int src; const char *master_freq; } S[] = {
+        {"o2", "o2_sync_src", 0, "o3_freq"}, {"o2", "o2_sync_src", 1, "o3_freq"}, {"o3", "o3_sync_src", 1, "o2_freq"},
+    };
+    for (unsigned i = 0; i < sizeof S / sizeof S[0]; i++) {
+        char k[24];
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "o1_level", 0); set(e, "volume", 30);
+        snprintf(k, sizeof k, "%s_level", S[i].slave); set(e, k, 100);
+        snprintf(k, sizeof k, "%s_sync", S[i].slave); set(e, k, 1);
+        snprintf(k, sizeof k, "%s_freq", S[i].slave); set(e, k, 4);   /* 277 Hz: no simple ratio to either */
+        set(e, S[i].src_key, S[i].src);
+        set(e, S[i].master_freq, -5);   /* the other oscillator: 164.8 Hz; osc 1 at 220 */
+        note(e, 1, 57, 127);
+        render_f(e, x, N + 8192);
+        powers_db(x + 8192, (const double[]){note_hz(52), 220}, 2, db);
+        int from_osc1 = S[i].src == 0;
+        snprintf(what, sizeof what, "%s synced to %s: power at 164.8 Hz %.0f dB, at 220 Hz %.0f dB", S[i].slave,
+                 from_osc1 ? "osc 1" : S[i].slave[1] == '2' ? "osc 3" : "osc 2", db[0], db[1]);
+        check(from_osc1 ? db[0] < -30 && db[1] > -1 : db[1] < -30 && db[0] > -1, what);
+        E->destroy(e);
+    }
+    e = patch(SAW, 0, 1, 100, 10);   /* each syncing the other: bounded */
+    set(e, "o2_level", 100); set(e, "o3_level", 100); set(e, "o2_sync", 1); set(e, "o3_sync", 1);
+    set(e, "o2_sync_src", 1); set(e, "o3_sync_src", 1); set(e, "o3_freq", 3);
+    note(e, 1, 57, 127);
+    double r = rms_of(e, SR / 4);
+    snprintf(what, sizeof what, "osc 2 and 3 synced to each other: rms %.3f, finite", r);
+    check(isfinite(r) && r > 0.01, what);
     E->destroy(e);
 }
 
@@ -1787,7 +2068,7 @@ static void demo_wav(const char *path) {
 static void bench(void) {
     enum { BLOCKS = 50000 };
     int16_t buf[256];
-    static const int counts[] = {1, 4, 8}, opt[] = {0, 2, 4};
+    static const int counts[] = {1, 4, 8}, opt[] = {0, 3, 7};
     for (int c = 0; c < 3; c++) {
         void *e = patch(SAW, 5, 300, 70, 250);
         set(e, "voices", opt[c]); set(e, "o2_level", 80); set(e, "o3_level", 60);
@@ -1804,7 +2085,7 @@ static void bench(void) {
         E->destroy(e);
     }
     void *u = patch(SAW, 5, 300, 70, 250);   /* the same busy patch as 2 unison stacks of 4, gliding (the first 10 s) */
-    set(u, "voices", 4); set(u, "o2_level", 80); set(u, "o3_level", 60);
+    set(u, "voices", 7); set(u, "o2_level", 80); set(u, "o3_level", 60);
     route(u, "o1", 2); set(u, "flt_route", 1); set(u, "lad_env", 40); set(u, "flt_res", 50);
     set(u, "mod2_src", 6); set(u, "mod2_dst", 9); set(u, "mod2_amt", 30);
     set(u, "unison", 1); set(u, "uni_count", 2); set(u, "uni_detune", 40); set(u, "pitch_var", 10);
@@ -1821,7 +2102,7 @@ static void bench(void) {
     E->destroy(u);
     for (int fm = 0; fm < 2; fm++) {   /* 8 voices of the busy patch with the SVF pair in series, filter FM off and on */
         void *e = patch(SAW, 5, 300, 70, 250);
-        set(e, "voices", 4); set(e, "o2_level", 80); set(e, "o3_level", 60);
+        set(e, "voices", 7); set(e, "o2_level", 80); set(e, "o3_level", 60);
         route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
         set(e, "mod2_src", 6); set(e, "mod2_dst", 9); set(e, "mod2_amt", 30);
         set(e, "svf_pair", SVF_SERIES); set(e, "svf_space", 25);
@@ -1837,7 +2118,7 @@ static void bench(void) {
         E->destroy(e);
     }
     void *e = patch(SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
-    set(e, "voices", 4); set(e, "modfx_type", 1); set(e, "modfx_mix", 50); set(e, "dly_mix", 30); set(e, "rev_mix", 30);
+    set(e, "voices", 7); set(e, "modfx_type", 1); set(e, "modfx_mix", 50); set(e, "dly_mix", 30); set(e, "rev_mix", 30);
     for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -1872,6 +2153,7 @@ int main(int argc, char **argv) {
     envelope_extras();
     state();
     glide_unison();
+    voice_keyboard_options();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;

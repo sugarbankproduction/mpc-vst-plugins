@@ -29,7 +29,8 @@ typedef struct {
     float prev_t;   /* the previous sample of each wave (triangle, pulse), still open to the first half of a correction */
     float prev_p;
     float tri_out;  /* after osc_next: the triangle/saw wave alone in the sample returned (ring mod taps it) */
-    float wrap_d;   /* after osc_next: how long ago this oscillator wrapped, in samples (0..1), or -1 (sync source) */
+    float wrap_d;   /* after osc_next: how long ago this oscillator wrapped or was restarted, in samples (0..1), or -1
+                     * (sync source) */
 } osc_t;
 
 static inline void osc_reset(osc_t *o) { o->phase = 0.0f; o->prev_t = o->prev_p = o->tri_out = 0.0f; o->wrap_d = -1.0f; }
@@ -118,6 +119,7 @@ __attribute__((noinline)) static float osc_next_events(osc_t *o, const osc_shape
         osc_blamp(&o->prev_t, &ct, (osc_tri_slope(s, 0.0f) - osc_tri_slope(s, at)) * inc, sync_d);
         osc_blep(&o->prev_p, &cp, osc_pulse(s, 0.0f) - osc_pulse(s, at), sync_d);
         t = sync_d * inc;
+        o->wrap_d = sync_d;   /* the restart is this oscillator's latest wrap: an oscillator synced to it follows */
     } else {
         t = end >= 1.0f ? end - 1.0f : end;
     }
@@ -127,6 +129,23 @@ __attribute__((noinline)) static float osc_next_events(osc_t *o, const osc_shape
     o->prev_p = osc_pulse(s, t) + cp;
     o->tri_out = tri;
     return tri + s->mix * (pul - tri);
+}
+
+/* restart at phase 0 now (NOTE-ON RESET): the jump and change of slope land exactly on the sample not yet returned,
+ * smoothed like a sync reset (d = 1: the next sample needs no correction) */
+static inline void osc_restart(osc_t *o, const osc_shape_t *s) {
+    float t = o->phase, ct = 0.0f, cp = 0.0f;
+    osc_blep(&o->prev_t, &ct, osc_tri(s, 0.0f) - osc_tri(s, t), 1.0f);
+    osc_blamp(&o->prev_t, &ct, (osc_tri_slope(s, 0.0f) - osc_tri_slope(s, t)) * o->inc, 1.0f);
+    osc_blep(&o->prev_p, &cp, osc_pulse(s, 0.0f) - osc_pulse(s, t), 1.0f);
+    o->phase = 0.0f;
+}
+
+/* what wrap_d will be after the next osc_next(o, ..., sync_d), without running it: so an oscillator can sync to one
+ * that runs after it */
+static inline float osc_wrap_ahead(const osc_t *o, float sync_d) {
+    float end = o->phase + o->inc;
+    return sync_d >= 0.0f ? sync_d : end >= 1.0f && o->inc > 0.0f ? (end - 1.0f) / o->inc : -1.0f;
 }
 
 /* the next sample, the two waves blended by the shape's mix. sync_d >= 0: the master wrapped sync_d samples ago, so
