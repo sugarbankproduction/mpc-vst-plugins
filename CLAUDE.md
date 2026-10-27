@@ -40,7 +40,10 @@ Ground rules:
   `ports/one-ish/build/desktop/load_test.exe` and `host_test.exe` on Windows, then `ports/one-ish/desktop/install.sh`
   (to `%USERPROFILE%\VST2`) so the owner can play it in a VST2 host. The engine runs at 44.1 kHz only. The host is
   Carla 2.5.10 (`%USERPROFILE%\Tools\Carla-2.5.10-win64`); `%USERPROFILE%\Tools\Play ONE-ish.bat` opens it with
-  `%USERPROFILE%\VST2\ONE-ish.carxp`. A rebuilt DLL is picked up when the plugin is reloaded in Carla.
+  `%USERPROFILE%\VST2\ONE-ish.carxp`. A rebuilt DLL is picked up when the plugin is reloaded in Carla. Carla is set to
+  DirectSound, Speakers (Realtek), 44100 Hz, Continuous Rack. On Windows Carla does not wire its output to the sound card
+  by itself: the .carxp carries `<ExternalPatchbay>` connections `Carla:AudioOut1/2` -> `AudioOut:Left/Right`
+  (fixed silence, 2026-10-27).
 - MPC builds (`tools/build_port.sh ... all`, `tools/test_port.sh` x86 and aarch64) and an independent code review run at
   milestones only: after Phase 5 (both filters), after Phase 8 (polyphony; needs an on-device `tools/bench.sh`), after
   Phase 9 (page and Q-Links) and before a release. Inside this Dropbox folder `build_port.sh` fails at random (Dropbox
