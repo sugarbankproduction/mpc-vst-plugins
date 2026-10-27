@@ -24,8 +24,12 @@
  *             slots 9-16, Constant and Exp 1 sources, LFO rate and envelope time / time scale destinations
  *   voices    chords; with 4 voices six held keys keep the newest four; a repeated key doesn't double up; the
  *             sustain pedal holds and lets go; mono plays only the newest key
- *   effects   delay echoes on time (free and synced), ping-pong alternates, reverb tail grows with decay, chorus is
- *             stereo; every effect stays bounded at its maximum feedback or decay
+ *   effects   master delay echoes on time (free and synced, left and right, ping-pong and its offset); sends at 0,
+ *             master off and a synth effect off or at mix 0 are exactly dry; every reverb's tail grows with decay and
+ *             holds when frozen; a bigger size rings longer; series feeds the echoes to the reverb; width 0 is mono
+ *   tier3     every synth effect type stays bounded at full feedback/depth/resonance and changes the sound; delay
+ *             types are on time; chorus spread; bit crusher levels and rate; resonator peaks; phaser notches (6 vs 12
+ *             stages); CTRL 1/2 read and move their targets
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
  *   glide     LCT takes the same time for any interval, LCR twice as long for twice the interval, EXP slows as it
@@ -1004,21 +1008,32 @@ static void voices(void) {
     check(env.stage == ENV_IDLE, "a pluck envelope (sustain 0) is idle once its decay ends, with the key still down");
 }
 
-static fx_t fxs;   /* 1.3 MB: static, not on the stack */
+static fx_t fxs;   /* about 3.1 MB: static, not on the stack */
 
+/* every effect off or neutral: the master effects on with both sends at 0, neutral settings for the rest */
 static fx_params_t fx_none(void) {
     fx_params_t p;
     memset(&p, 0, sizeof p);
-    p.dly_tone = 1;
+    p.gain = 1; p.tone = 1; p.time_ms = 7; p.time_r_ms = 7; p.dtime_ms = 100; p.rate_hz = 0.5f; p.rate_r_hz = 0.5f;
+    p.vib_hz = 5; p.bits = 8; p.srate_hz = FX_SR; p.reso = 0.5f; p.ftype = RES_BP;
+    p.cut_hz[0] = 500; p.cut_hz[1] = 1000; p.cut_hz[2] = 5000; p.lvl[0] = p.lvl[1] = p.lvl[2] = 1;
+    p.mfx_on = 1; p.width = 1;
+    p.dly_l_ms = p.dly_r_ms = 250; p.dly_tone = 1;
+    p.rev_rt60 = 2; p.rev_size = 1; p.rev_diff = 1; p.rev_tone = 1; p.rev_mod = 1; p.rev_early = 0.5f; p.rev_damp = 0.3f;
     return p;
 }
 
-/* run the effects on `n` samples of `in` (NULL: an impulse at 0), into l, r */
+/* run the effects on `n` samples of `in` (NULL: an impulse at IMP, after the first block: a send fades in over the
+ * block it starts in) on both inputs, into l, r; from a fresh state */
+#define IMP 128
 static void fx_run(const fx_params_t *p, const float *in, float *l, float *r, int n) {
-    static float x[SR * 4];
+    static float x[SR * 6];
     memset(&fxs, 0, sizeof fxs);
-    for (int i = 0; i < n; i++) x[i] = in ? in[i] : (i == 0);
-    for (int at = 0; at < n; at += 128) fx_process(&fxs, p, x + at, l + at, r + at, n - at < 128 ? n - at : 128);
+    for (int i = 0; i < n; i++) x[i] = in ? in[i] : (i == IMP);
+    for (int at = 0; at < n; at += 128) {
+        int m = n - at < 128 ? n - at : 128;
+        fx_process(&fxs, p, x + at, x + at, l + at, r + at, m);
+    }
 }
 
 static int loudest(const float *x, int from, int to) {
@@ -1028,31 +1043,168 @@ static int loudest(const float *x, int from, int to) {
     return best;
 }
 
+static double energy_db(const float *l, const float *r, int from, int to) {
+    double e = 0;
+    for (int i = from; i < to; i++) e += l[i] * l[i] + r[i] * r[i];
+    return 10 * log10(e + 1e-30);
+}
+
+static const char *const SFX_NAMES[SFX_NTYPES] = {"delay", "bbd", "tape", "echo", "flanger", "stereo_flanger", "chorus",
+    "dual_chorus", "ensemble", "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator"};
+static const char *const REV_NAMES[3] = {"plate", "room", "hall"};
+
+/* the master delay and reverb, and the routing around them */
 static void effects(void) {
-    static float l[SR * 4], r[SR * 4], saw[SR * 4];
-    char what[200];
+    static float l[SR * 6], r[SR * 6], saw[SR * 6];
+    char what[240];
     fx_params_t p = fx_none();
-    p.dly_ms = 250; p.dly_mix = 1;   /* one echo, 250 ms after an impulse */
+    p.send1 = 1;   /* one echo, 250 ms after an impulse */
     fx_run(&p, NULL, l, r, SR);
-    int at = loudest(l, 100, SR);
-    snprintf(what, sizeof what, "delay 250 ms: echo at %.1f ms (level %.2f)", at / 44.1, l[at]);
-    check(abs(at - 11025) <= 2 && l[at] > 0.8f, what);
+    int at = loudest(l, IMP + 100, SR) - IMP;
+    snprintf(what, sizeof what, "delay 250 ms: echo at %.2f ms (level %.2f)", at / 44.1, l[at + IMP]);
+    check(at == 11025 && l[at + IMP] > 0.99f, what);
 
-    p.dly_fb = 0.5f; p.dly_pingpong = 1;   /* ping-pong: first repeat left, second right */
+    p.dly_r_ms = 400;   /* left and right times of their own */
     fx_run(&p, NULL, l, r, SR);
-    int l1 = loudest(l, 100, 16000), r2 = loudest(r, 16000, 27000);
+    int al = loudest(l, IMP + 100, SR) - IMP, ar = loudest(r, IMP + 100, SR) - IMP;
+    snprintf(what, sizeof what, "stereo delay 250/400 ms: left echo at %.1f ms, right at %.1f ms", al / 44.1, ar / 44.1);
+    check(al == 11025 && ar == 17640 && l[al + IMP] > 0.99f && r[ar + IMP] > 0.99f, what);
+
+    p.dly_r_ms = 250; p.dly_fb = 0.5f; p.dly_pp = 1;   /* ping-pong: first repeat left, second right */
+    fx_run(&p, NULL, l, r, SR);
+    int l1 = loudest(l, IMP + 100, 16000) - IMP, r2 = loudest(r, 16000, 27000) - IMP;
     snprintf(what, sizeof what, "ping-pong: first echo left at %.0f ms (%.2f, right %.2f), second right at %.0f ms (%.2f)",
-             l1 / 44.1, l[l1], r[l1], r2 / 44.1, r[r2]);
-    check(abs(l1 - 11025) <= 2 && fabsf(r[l1]) < 0.01f && abs(r2 - 22050) <= 4 && r[r2] > 0.2f, what);
+             l1 / 44.1, l[l1 + IMP], r[l1 + IMP], r2 / 44.1, r[r2 + IMP]);
+    check(l1 == 11025 && fabsf(r[l1 + IMP]) < 0.01f && abs(r2 - 22050) <= 1 && r[r2 + IMP] > 0.2f, what);
+    p.dly_offset = 1;   /* offset 100%: the right repeat half the left time later */
+    fx_run(&p, NULL, l, r, SR);
+    r2 = loudest(r, 16000, 33000) - IMP;
+    snprintf(what, sizeof what, "ping-pong offset 100%%: second echo right at %.0f ms (want 625)", r2 / 44.1);
+    check(abs(r2 - 27563) <= 1 && r[r2 + IMP] > 0.2f, what);
 
+    /* synced times: the division, at the host tempo */
+    void *e = patch(SAW, 0, 1, 100, 10);
+    char txt[48], txt2[48];
+    E->set_param(e, "lfo_bpm", "120"); set(e, "dly_sync", 1); set(e, "dly_time", 50); set(e, "dly_time_r", 55);
+    E->get_param(e, "dly_time_display", txt, sizeof txt);
+    E->get_param(e, "dly_time_r_display", txt2, sizeof txt2);
+    snprintf(what, sizeof what, "delay synced reads \"%s\" / \"%s\" (want 1/8, 1/8.); 1/8 at 120 BPM is %.1f ms, 1/4T %.1f ms",
+             txt, txt2, fx_div_ms(50, 120), fx_div_ms(60, 120));
+    check(!strcmp(txt, "1/8") && !strcmp(txt2, "1/8.") && fabsf(fx_div_ms(50, 120) - 250) < 0.01f
+          && fabsf(fx_div_ms(60, 120) - 1000.0f / 3) < 0.01f, what);
+    set(e, "dly_sync", 0); set(e, "dly_time", 100);
+    E->get_param(e, "dly_time_display", txt, sizeof txt);
+    set(e, "modfx_sync", 1); set(e, "modfx_rate", 0);
+    E->get_param(e, "modfx_rate_display", txt2, sizeof txt2);
+    snprintf(what, sizeof what, "delay time at full reads \"%s\" (want 2.00 s); synth FX rate synced at 0 reads \"%s\" (want 4)",
+             txt, txt2);
+    check(!strcmp(txt, "2.00 s") && !strcmp(txt2, "4"), what);
+    E->destroy(e);
+
+    /* sends at 0, master off, synth effect off or at mix 0: exactly dry */
+    for (int i = 0; i < SR * 6; i++) saw[i] = 0.8f * (2.0f * (float)fmod(i * 110.0 / SR, 1.0) - 1.0f);
+    int exact = 1;
+    for (int k = 0; k < 4; k++) {
+        p = fx_none();
+        if (k == 1) { p.mfx_on = 0; p.send1 = p.send2 = 1; }
+        if (k == 2) { p.sfx_on = 1; p.sfx_type = SFX_CHORUS; p.mix = 0; }
+        if (k == 3) { p.sfx_on = 0; p.sfx_type = SFX_ECHO; p.mix = 1; p.width = 2; p.series = 1; }
+        fx_run(&p, saw, l, r, SR);
+        for (int i = 0; i < SR; i++) exact &= l[i] == saw[i] && r[i] == saw[i];
+    }
+    check(exact, "sends at 0, master effects off, synth effect at mix 0 or off: the output is the input exactly");
+
+    /* the reverb tails grow with decay, every type; freeze holds the tail */
+    for (int t = 0; t < 3; t++) {
+        double tail[2];
+        for (int k = 0; k < 2; k++) {
+            p = fx_none(); p.send2 = 1; p.rev_type = t; p.rev_rt60 = k ? 5.0f : 0.5f;
+            fx_run(&p, NULL, l, r, SR * 2);
+            tail[k] = energy_db(l, r, SR, SR + SR / 2);
+        }
+        snprintf(what, sizeof what, "%s reverb: tail 1-1.5 s after an impulse %.0f dB at 0.5 s decay, %.0f dB at 5 s",
+                 REV_NAMES[t], tail[0], tail[1]);
+        check(tail[1] > tail[0] + 30 && tail[1] > -60, what);
+
+        p = fx_none(); p.send2 = 1; p.rev_type = t; p.rev_rt60 = 3;   /* 1 s of saw, then freeze */
+        memset(&fxs, 0, sizeof fxs);
+        for (int at2 = 0; at2 < SR * 5; at2 += 128) {
+            p.rev_freeze = at2 >= SR;
+            fx_process(&fxs, &p, saw + at2, saw + at2, l + at2, r + at2, 128);
+        }
+        for (int i = 0; i < SR * 5; i++) { l[i] -= saw[i]; r[i] -= saw[i]; }   /* the reverb alone */
+        double e2 = energy_db(l, r, SR * 2, SR * 2 + SR / 2), e4 = energy_db(l, r, SR * 4, SR * 4 + SR / 2);
+        snprintf(what, sizeof what, "%s reverb freeze: %.1f dB at 2 s, %.1f dB at 4 s (holds within 3 dB)", REV_NAMES[t], e2, e4);
+        check(fabs(e2 - e4) < 3 && e2 > 0, what);
+    }
+
+    /* size: through the engine, a bigger space at the same decay knob rings longer */
+    double sz[2];
+    for (int k = 0; k < 2; k++) {
+        void *v = patch(SAW, 0, 30, 0, 10);
+        static float buf[SR * 3];
+        set(v, "mfx_send2", 100); set(v, "rev_type", REV_HALL); set(v, "rev_decay", 40); set(v, "rev_size", k ? 100 : 0);
+        note(v, 1, 60, 100);
+        render_f(v, buf, SR / 10);
+        note(v, 0, 60, 0);
+        render_f(v, buf, SR * 2);
+        sz[k] = energy_db(buf + SR, buf + SR, 0, SR / 2);
+        E->destroy(v);
+    }
+    snprintf(what, sizeof what, "hall size 50%% vs 200%%: tail 1.1-1.6 s after a note %.0f dB vs %.0f dB", sz[0], sz[1]);
+    check(sz[1] > sz[0] + 20, what);
+
+    /* series: the delay's echoes go through the reverb only; width 0: the returns in mono */
+    p = fx_none(); p.send1 = 1; p.series = 1;
+    fx_run(&p, NULL, l, r, SR);
+    float direct = fabsf(l[IMP + 11025]);
+    double rv = energy_db(l, r, 11025, SR);
+    p.series = 0;
+    fx_run(&p, NULL, l, r, SR);
+    snprintf(what, sizeof what, "series 100%%: the 250 ms echo comes back through the reverb (%.2f at the echo, was %.2f; "
+             "%.0f dB after it)", direct, l[IMP + 11025], rv);
+    check(direct < 0.3f && l[IMP + 11025] > 0.99f && rv > -20, what);
+    p = fx_none(); p.send1 = 0.5f; p.send2 = 1; p.dly_r_ms = 330; p.width = 0;
+    fx_run(&p, saw, l, r, SR);
+    float side = 0;
+    for (int i = 0; i < SR; i++) side = fmaxf(side, fabsf(l[i] - r[i]));
+    snprintf(what, sizeof what, "width 0: left and right returns equal (largest difference %.2g)", side);
+    check(side < 1e-5f, what);
+}
+
+/* the synth effect types and the parameters the manual gives them */
+static void effects_tier3(void) {
+    static float l[SR * 4], r[SR * 4], saw[SR * 4];
+    char what[240];
     for (int i = 0; i < SR * 4; i++) saw[i] = 2.0f * (float)fmod(i * 110.0 / SR, 1.0) - 1.0f;
+
+    /* every type stays bounded at its extremes: full feedback, depth, resonance, noise and gain */
     float worst = 0;
-    int bad = 0;
+    int bad = 0, same = 0;
+    for (int t = 0; t < SFX_NTYPES; t++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = t; p.mix = 1; p.fb = p.fb_r = p.dfb = 0.95f; p.depth = 1; p.reso = 1;
+        p.noise = 1; p.decay = 1; p.room = 1; p.wow = 1; p.flutter = 1; p.bias = 1; p.vib_depth = 1; p.rate_hz = 3;
+        p.time_ms = fx_mod_time_ms(t, 100); p.time_r_ms = fx_mod_time_ms(t, 60); p.dtime_ms = 80; p.bits = 2;
+        p.srate_hz = 3000;
+        fx_run(&p, saw, l, r, SR * 4);
+        float w = 0, d = 0;
+        for (int i = 0; i < SR * 4; i++) {
+            if (!isfinite(l[i]) || !isfinite(r[i])) bad++;
+            w = fmaxf(w, fmaxf(fabsf(l[i]), fabsf(r[i])));
+            d = fmaxf(d, fabsf(l[i] - saw[i]));
+        }
+        if (d < 0.01f) same++;
+        if (w > worst) worst = w;
+    }
+    snprintf(what, sizeof what, "all %d synth effect types at full feedback, depth and resonance stay bounded "
+             "(largest %.1f) and change the sound (%d unchanged)", SFX_NTYPES, worst, same);
+    check(!bad && worst < 50 && !same, what);
     fx_params_t hot[4] = {fx_none(), fx_none(), fx_none(), fx_none()};
-    hot[0].dly_ms = 80; hot[0].dly_fb = 0.95f; hot[0].dly_mix = 1; hot[0].dly_tone = 1;
-    hot[1].mod_type = MODFX_FLANGER; hot[1].mod_rate_hz = 0.3f; hot[1].mod_depth = 1; hot[1].mod_fb = 0.95f; hot[1].mod_mix = 1;
-    hot[2].mod_type = MODFX_PHASER; hot[2].mod_rate_hz = 0.3f; hot[2].mod_depth = 1; hot[2].mod_fb = 0.95f; hot[2].mod_mix = 1;
-    hot[3].rev_decay = 0.97f; hot[3].rev_damp = 0; hot[3].rev_mix = 1;
+    hot[0].send1 = 1; hot[0].dly_fb = 0.95f; hot[0].dly_pp = 1; hot[0].dly_l_ms = 80;
+    for (int k = 1; k < 4; k++) { hot[k].send2 = 1; hot[k].rev_type = k - 1; hot[k].rev_rt60 = 20; hot[k].rev_size = 2;
+                                  hot[k].rev_damp = 0; hot[k].rev_mod = 2; hot[k].rev_freeze = k == 2; }
+    worst = 0;
     for (int k = 0; k < 4; k++) {
         fx_run(&hot[k], saw, l, r, SR * 4);
         for (int i = 0; i < SR * 4; i++) {
@@ -1060,34 +1212,106 @@ static void effects(void) {
             worst = fmaxf(worst, fmaxf(fabsf(l[i]), fabsf(r[i])));
         }
     }
-    snprintf(what, sizeof what, "delay, flanger, phaser at 95%% feedback and reverb at full decay stay bounded (largest %.1f)", worst);
-    check(!bad && worst < 25, what);
+    snprintf(what, sizeof what, "master delay at 95%% feedback, reverbs at 20 s decay, size 200%% and freeze stay bounded "
+             "(largest %.1f)", worst);
+    check(!bad && worst < 50, what);
 
-    double tail[2];   /* reverb: energy 1.0-1.5 s after an impulse, short and long decay */
-    for (int k = 0; k < 2; k++) {
-        p = fx_none(); p.rev_mix = 1; p.rev_decay = k ? 0.9f : 0.4f; p.rev_damp = 0.3f;
-        fx_run(&p, NULL, l, r, SR * 2);
-        double e = 0;
-        for (int i = SR; i < SR + SR / 2; i++) e += l[i] * l[i] + r[i] * r[i];
-        tail[k] = 10 * log10(e + 1e-30);
+    /* delay-type times are exact */
+    for (int t = SFX_DELAY; t <= SFX_ECHO; t++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = t; p.mix = 1; p.dtime_ms = 100; p.depth = 0; p.wow = 0; p.flutter = 0; p.bias = 0;
+        fx_run(&p, NULL, l, r, SR / 2);
+        int at = IMP + 10;
+        while (at < SR / 2 - 1 && fabsf(l[at]) < 0.1f) at++;
+        at -= IMP;
+        snprintf(what, sizeof what, "%s: the echo of an impulse arrives at %.2f ms (want 100)", SFX_NAMES[t], at / 44.1);
+        check(t == SFX_DELAY ? at == 4410 && l[at + IMP] > 0.99f : abs(at - 4410) <= 6, what);
     }
-    snprintf(what, sizeof what, "reverb tail 1-1.5 s after an impulse: %.0f dB at short decay, %.0f dB at long", tail[0], tail[1]);
-    check(tail[1] > tail[0] + 20 && tail[1] > -60, what);
 
-    p = fx_none(); p.mod_type = MODFX_CHORUS; p.mod_rate_hz = 0.8f; p.mod_depth = 0.7f; p.mod_mix = 0.5f;
+    /* chorus spreads to stereo; spread 0 keeps it centred */
+    for (int k = 0; k < 2; k++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = SFX_CHORUS; p.rate_hz = 0.8f; p.depth = 0.7f; p.mix = 0.5f; p.spread = k ? 0.5f : 0;
+        fx_run(&p, saw, l, r, SR);
+        double diff = 0, sum = 0;
+        for (int i = SR / 2; i < SR; i++) { diff += (l[i] - r[i]) * (l[i] - r[i]); sum += l[i] * l[i]; }
+        snprintf(what, sizeof what, "chorus spread %d%%: left-right difference %.0f dB below the left", k ? 50 : 0,
+                 10 * log10(sum / (diff + 1e-30)));
+        check(k ? diff > sum * 0.01 : diff < sum * 1e-9, what);
+    }
+
+    /* bit crusher: 4 bits leave at most 17 levels; 1 kHz holds each value for about 44 samples */
+    fx_params_t p = fx_none();
+    p.sfx_on = 1; p.sfx_type = SFX_CRUSH; p.mix = 1; p.bits = 4; p.srate_hz = FX_SR;
     fx_run(&p, saw, l, r, SR);
-    double diff = 0, sum = 0;
-    for (int i = SR / 2; i < SR; i++) { diff += (l[i] - r[i]) * (l[i] - r[i]); sum += l[i] * l[i]; }
-    snprintf(what, sizeof what, "chorus spreads to stereo: left-right difference %.0f dB below the left", 10 * log10(sum / diff));
-    check(diff > sum * 0.01, what);
+    int levels = 0;
+    static float seen[64];
+    for (int i = 0; i < SR && levels < 64; i++) {
+        int found = 0;
+        for (int j = 0; j < levels; j++) found |= seen[j] == l[i];
+        if (!found) seen[levels++] = l[i];
+    }
+    p.bits = 24; p.srate_hz = 1000;
+    fx_run(&p, saw, l, r, SR);
+    int changes = 0;
+    for (int i = 1; i < SR; i++) changes += l[i] != l[i - 1];
+    snprintf(what, sizeof what, "bit crusher: 4 bits give %d levels (want <= 17); 1 kHz changes %d times a second (want ~1000)",
+             levels, changes);
+    check(levels <= 17 && levels > 4 && changes >= 990 && changes <= 1001, what);
 
-    void *e = patch(SAW, 0, 1, 100, 10);   /* synced delay time reads as the division */
-    char txt[32];
-    E->set_param(e, "lfo_bpm", "120"); set(e, "dly_sync", 1); set(e, "dly_time", 60);
-    E->get_param(e, "dly_time_display", txt, sizeof txt);
-    snprintf(what, sizeof what, "delay synced at 120 BPM reads \"%s\" (want 1/8)", txt);
-    check(!strcmp(txt, "1/8"), what);
+    /* resonator: a band-pass bank rings at its three cutoffs */
+    p = fx_none(); p.sfx_on = 1; p.sfx_type = SFX_RESON; p.mix = 1; p.reso = 0.95f; p.depth = 0;
+    p.cut_hz[0] = 300; p.cut_hz[1] = 1200; p.cut_hz[2] = 4000;
+    static float noise[SR];
+    uint32_t seed = 1;
+    for (int i = 0; i < SR; i++) noise[i] = fx_white(&seed) * 0.3f;
+    fx_run(&p, noise, l, r, N);
+    double pk[3], off = band_db(l, 700);
+    for (int j = 0; j < 3; j++) pk[j] = band_db(l, p.cut_hz[j]);
+    snprintf(what, sizeof what, "resonator on noise: %.0f, %.0f, %.0f dB at 300 Hz, 1.2 kHz, 4 kHz; %.0f dB at 700 Hz between",
+             pk[0], pk[1], pk[2], off);
+    check(pk[0] > off + 10 && pk[1] > off + 10 && pk[2] > off + 10, what);
+
+    /* phasers, all stages at 1 kHz (depth 0), mix 50%: 6 stages notch 1 kHz out; 12 stages pass it and notch where each
+     * stage turns 75 degrees instead */
+    double lv[2][2];
+    for (int k = 0; k < 2; k++)
+        for (int q = 0; q < 2; q++) {
+            double t0 = tan(M_PI * 1000.0 / SR), hz = q ? SR / M_PI * atan(t0 * tan(37.5 * M_PI / 180)) : 1000.0;
+            static float sine[SR];
+            for (int i = 0; i < SR; i++) sine[i] = (float)(0.5 * sin(2 * M_PI * hz * i / SR));
+            p = fx_none(); p.sfx_on = 1; p.sfx_type = k ? SFX_PHASER12 : SFX_PHASER6; p.mix = 0.5f; p.depth = 0;
+            p.sweep = (float)(log(25.0) / log(100.0));
+            fx_run(&p, sine, l, r, SR);
+            double e = 0, ein = 0;
+            for (int i = SR / 2; i < SR; i++) { e += l[i] * l[i]; ein += sine[i] * sine[i]; }
+            lv[k][q] = 10 * log10(e / ein + 1e-30);
+        }
+    snprintf(what, sizeof what, "phasers at 1 kHz: 6-stage %.0f dB (a notch), 12-stage %.1f dB (passes); 12-stage at %.0f Hz "
+             "%.0f dB (a notch)", lv[0][0], lv[1][0], SR / M_PI * atan(tan(M_PI * 1000.0 / SR) * tan(37.5 * M_PI / 180)), lv[1][1]);
+    check(lv[0][0] < -30 && lv[1][0] > -1 && lv[1][1] < -30, what);
+
+    /* CTRL 1/2 read as their targets; they move them */
+    void *e = patch(SAW, 0, 1, 100, 10);
+    char a[48], b[48], c[48];
+    set(e, "modfx_type", SFX_CHORUS); set(e, "modfx_ctrl1", 50); set(e, "modfx_ctrl2", -20);
+    E->get_param(e, "modfx_ctrl1_display", a, sizeof a);
+    E->get_param(e, "modfx_ctrl2_display", b, sizeof b);
+    set(e, "modfx_c1_dst", FXD_MIX);
+    E->get_param(e, "modfx_ctrl1_display", c, sizeof c);
+    snprintf(what, sizeof what, "chorus CTRL 1 / 2 read \"%s\" / \"%s\"; targeted at Mix: \"%s\"", a, b, c);
+    check(!strcmp(a, "Rate +50%") && !strcmp(b, "Depth -20%") && !strcmp(c, "Mix +50%"), what);
+    /* CTRL 1 at -100% on Mix silences the wet signal: the output equals the dry one */
+    static float o1[SR], o2[SR];
+    set(e, "modfx_on", 1); set(e, "modfx_mix", 60); set(e, "modfx_ctrl1", -100);
+    note(e, 1, 57, 100); render_f(e, o1, SR / 2); note(e, 0, 57, 0);
     E->destroy(e);
+    e = patch(SAW, 0, 1, 100, 10);
+    note(e, 1, 57, 100); render_f(e, o2, SR / 2); note(e, 0, 57, 0);
+    E->destroy(e);
+    int eq = 1;
+    for (int i = 0; i < SR / 2; i++) eq &= o1[i] == o2[i];
+    check(eq, "CTRL 1 at -100% on Mix 60%: the output is the dry sound exactly");
 }
 
 static void cutoff_text(void) {
@@ -2069,6 +2293,89 @@ static void demo_wav(const char *path) {
     printf("wrote %s (%.1f s)\n", path, frames / (double)SR);
 }
 
+/* each effect alone on a saw, its typical settings: microseconds per 128-frame block (the effects run once, shared) */
+static double fx_time(const fx_params_t *p) {
+    enum { BLOCKS = 20000 };
+    static float x[128], l[128], r[128];
+    for (int i = 0; i < 128; i++) x[i] = 2.0f * (float)fmod(i * 110.0 / SR, 1.0) - 1.0f;
+    memset(&fxs, 0, sizeof fxs);
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for (int b = 0; b < BLOCKS; b++) fx_process(&fxs, p, x, x, l, r, 128);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    return ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+}
+
+static void fx_bench(void) {
+    printf("bench: effect buffers %.2f MB (synth effect %.2f, delay %.2f, reverb %.2f), allocated with the instance\n",
+           sizeof(fx_t) / 1048576.0, sizeof(sfx_t) / 1048576.0, sizeof(mdly_t) / 1048576.0, sizeof(rev_t) / 1048576.0);
+    for (int t = 0; t < SFX_NTYPES; t++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = t; p.mix = 0.5f; p.fb = 0.3f; p.depth = 0.5f; p.dtime_ms = 350; p.noise = 0.2f;
+        p.time_ms = fx_mod_time_ms(t, 60); p.time_r_ms = fx_mod_time_ms(t, 70); p.vib_depth = 0.2f; p.tone = 0.7f;
+        printf("bench: synth FX %-15s %6.2f us per 128-frame block\n", SFX_NAMES[t], fx_time(&p));
+    }
+    fx_params_t p = fx_none();
+    p.send1 = 0.3f; p.dly_fb = 0.4f; p.dly_r_ms = 375;
+    printf("bench: master delay (stereo)    %6.2f us per 128-frame block\n", fx_time(&p));
+    for (int t = 0; t < 3; t++) {
+        p = fx_none(); p.send2 = 0.3f; p.rev_type = t;
+        printf("bench: master reverb %-10s %6.2f us per 128-frame block\n", REV_NAMES[t], fx_time(&p));
+    }
+    p = fx_none(); p.sfx_on = 1; p.sfx_type = SFX_ENSEMBLE; p.mix = 0.5f; p.send1 = 0.3f; p.send2 = 0.3f;
+    p.rev_type = REV_HALL; p.series = 0.3f;
+    printf("bench: ensemble + delay + hall  %6.2f us per 128-frame block (the heaviest likely chain)\n", fx_time(&p));
+}
+
+static void write_wav(const char *path, const int16_t *pcm, uint32_t frames) {
+    uint32_t bytes = frames * 4;
+    FILE *f = fopen(path, "wb");
+    if (!f) { perror(path); failures++; return; }
+    fwrite("RIFF", 1, 4, f); put32(f, 36 + bytes); fwrite("WAVEfmt ", 1, 8, f);
+    put32(f, 16); put16(f, 1); put16(f, 2); put32(f, SR); put32(f, SR * 4); put16(f, 4); put16(f, 16);
+    fwrite("data", 1, 4, f); put32(f, bytes); fwrite(pcm, 4, frames, f);
+    fclose(f);
+}
+
+/* one short phrase per effect (a chord, a run, the tail) into <dir>/fx_<name>.wav, to listen to each type */
+static void fx_wavs(const char *demo_path) {
+    enum { CHORD = 344, NOTE = 86, TAIL = 516 };   /* 1 s, 0.25 s, 1.5 s in 128-frame blocks */
+    static int16_t pcm[(CHORD + 4 * NOTE + TAIL) * 256];
+    static const int run[4] = {64, 67, 72, 74};
+    char dir[256], path[320];
+    snprintf(dir, sizeof dir, "%s", demo_path);
+    char *slash = strrchr(dir, '/');
+    if (slash) slash[1] = 0; else dir[0] = 0;
+    for (int k = 0; k < SFX_NTYPES + 5; k++) {
+        void *e = patch(SAW, 5, 400, 70, 300);
+        set(e, "o2_level", 70); set(e, "o2_freq", 0.08); set(e, "flt_cut", 70); set(e, "volume", 70);
+        const char *name;
+        if (k < SFX_NTYPES) {
+            name = SFX_NAMES[k];
+            set(e, "modfx_on", 1); set(e, "modfx_type", k);
+            if (k <= SFX_ECHO) set(e, "modfx_mix", 35);
+            if (k == SFX_CRUSH) { set(e, "modfx_mix", 100); set(e, "modfx_bits", 6); }
+            if (k == SFX_RESON) set(e, "modfx_mix", 80);
+        } else if (k == SFX_NTYPES) {   /* 300 ms left, 450 ms right */
+            name = "master_delay"; set(e, "mfx_send1", 40); set(e, "dly_time", 80.8); set(e, "dly_time_r", 84.9);
+        } else if (k == SFX_NTYPES + 1) {
+            name = "master_pingpong"; set(e, "mfx_send1", 40); set(e, "dly_pp", 1); set(e, "dly_fb", 45);
+        } else {
+            name = REV_NAMES[k - SFX_NTYPES - 2]; set(e, "mfx_send2", 40); set(e, "rev_type", k - SFX_NTYPES - 2);
+        }
+        int16_t *o = pcm;
+        note(e, 1, 48, 100); note(e, 1, 55, 100); note(e, 1, 60, 100);
+        for (int b = 0; b < CHORD; b++, o += 256) E->render(e, o, 128);
+        note(e, 0, 48, 0); note(e, 0, 55, 0); note(e, 0, 60, 0);
+        for (int n = 0; n < 4; n++) o = play(e, o, run[n], NOTE);
+        o = rest(e, o, TAIL);
+        E->destroy(e);
+        snprintf(path, sizeof path, "%sfx_%s.wav", dir, name);
+        write_wav(path, pcm, (uint32_t)((o - pcm) / 2));
+    }
+    printf("wrote %d effect WAVs to %s (fx_*.wav)\n", SFX_NTYPES + 5, dir[0] ? dir : "./");
+}
+
 /* a busy patch (three oscillators, both filters in series, the matrix busy) held at 1, 4 and 8 voices */
 static void bench(void) {
     enum { BLOCKS = 50000 };
@@ -2161,7 +2468,8 @@ static void bench(void) {
         E->destroy(e);
     }
     void *e = patch(SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
-    set(e, "voices", 7); set(e, "modfx_type", 1); set(e, "modfx_mix", 50); set(e, "dly_mix", 30); set(e, "rev_mix", 30);
+    set(e, "voices", 7); set(e, "modfx_on", 1); set(e, "modfx_type", SFX_CHORUS); set(e, "mfx_send1", 30);
+    set(e, "mfx_send2", 30);
     for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
@@ -2170,6 +2478,7 @@ static void bench(void) {
     double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
     printf("bench: 4 voices + chorus, delay, reverb %6.2f us per 128-frame block on this PC\n", us);
     E->destroy(e);
+    fx_bench();
 }
 
 /* a triangle (near a sine, so zero crossings track its pitch) through the open ladder, for pitch modulation */
@@ -2427,6 +2736,7 @@ int main(int argc, char **argv) {
     lfo_matrix();
     voices();
     effects();
+    effects_tier3();
     envelope();
     keys();
     envelope_extras();
@@ -2434,6 +2744,7 @@ int main(int argc, char **argv) {
     glide_unison();
     voice_keyboard_options();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
+    fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }

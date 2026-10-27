@@ -121,7 +121,11 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   3. Tier 2: LFOs 3-4 and their options, 16-slot matrix with transforms and the missing sources/destinations, noise
      colours and noise envelope, voice/keyboard options, stereo voices and pan, analog drift.
   4. Tier 3: the full effect list (original designs; the Eventide reverbs are licensed, so original reverbs in their
-     spirit). Tier 4: arpeggiator, chord, then a decision with the owner on the sequencer and multitimbral parts.
+     spirit). Done 2026-10-27 (offline): a synth effect slot with 15 types and CTRL 1/2, master delay (stereo or
+     ping-pong, L/R times, offset) and reverb (plate, room, hall; size, freeze) on two sends with series and width; 3.1 MB
+     of buffers; 1.5-7 us per block per synth type, 3.6 delay, 6-18 reverb on the PC. Left: vocoders (no mic input),
+     shimmer and blackhole reverbs (CPU), per-type effect presets. Tier 4: arpeggiator, chord, then a decision with the
+     owner on the sequencer and multitimbral parts.
   5. After Tier 2/3 (owner, 2026-10-27): an Analog Character section, all 0 by default: per-voice component
      differences (cutoff, envelope times, level, slight detune), drift, and a non-linear ladder if the CPU allows.
   6. Later (owner, 2026-10-27): the open-source Plaits macro-oscillator models (Mutable Instruments, MIT licence:
