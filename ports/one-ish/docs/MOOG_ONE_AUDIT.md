@@ -1,0 +1,886 @@
+# Moog One vs ONE-ish: feature and parameter gap audit
+
+Date: 2026-10-27. Sources: the Moog One owner's manual (edition 8/2/19, 158 pages; page numbers below are the
+printed page numbers, which match the PDF pages) read in full, and ONE-ish as of commit 1706085:
+`ports/one-ish/params.json` (108 params), `src/engine.c` (header, constants, voice, MIDI and state code),
+`src/osc.h`, `ladder.h`, `svf.h`, `env.h`, `lfo.h`, `modmatrix.h`, `fx.h`.
+
+Manual wording is summarised, not quoted; only parameter names and ranges are copied.
+
+## How to read this
+
+**Status:** Have = ONE-ish does it (perhaps in a different form); Partial = some of it, or a fixed version of
+something the Moog One makes adjustable; Missing = not there.
+
+**Tags in the feature column:**
+- **[HW]** hardware-only on the Moog One (jacks, panel, display, fans, storage). On an MPC plugin these are either
+  the host's job or impossible; they are listed for completeness and are not build candidates.
+- **[UI]** screen, menu or librarian behaviour, not sound. Some could be done on an MPC skin page; none change the sound.
+- **[ANALOG]** analog circuit behaviour that software can only approximate (it can be modelled, never matched).
+- **[LIC]** a licensed or trademarked algorithm (the Eventide reverbs). It cannot be copied; only an original
+  effect in the same spirit can be built.
+- **[MULTI]** only meaningful once ONE-ish has multitimbral parts.
+
+**Effort:** S = a few hours, contained change (under ~100 lines); M = one to three days, new code in one module;
+L = more than three days or a new subsystem.
+
+**Per-voice CPU impact**, relative to one ONE-ish voice today (PLAN.md's offline estimate is about 5.3 us per voice per
+128-sample block on the PC; nothing is measured on the MPC yet): none = no audio-path work; low = under ~10% of a
+voice; medium = ~10-40%; high = over ~40%, or the feature adds whole voices. Effects and other post-voice work run
+once, not per voice, so they read "none/voice" plus their shared cost.
+
+**Not in the Moog One but in ONE-ish (kept for reference):** ladder Drive (`flt_drive`), Ladder Drive and Amp Level as
+matrix destinations, an always-on delay + reverb chain alongside the mod effect.
+
+---
+
+## 0. Architecture and overview (p8-10)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| All-analog voice path; digital FX can be bypassed for a 100% analog path [ANALOG] | p8, p96, p140 | Partial | Virtual-analog models: PolyBLEP oscillators, zero-delay-feedback ladder with one saturator, TPT SVF; no oversampling | L (to deepen the models) | medium-high |
+| Polyphony | 8 or 16 voices (p8, p140) | Partial | `voices` Mono/2/4/6/8 (MAX_VOICES 8) | S for more counts; 16 is CPU-bound | high (each voice) |
+| Three-part multitimbral: up to 3 Synths per Preset, split, layered or zoned [MULTI] | p8-9 | Missing | One part. On the MPC, 3 instances on 3 tracks get close | L | high (voices are shared) |
+| Per-Synth Timbre: own sound, note range, voice count, MIDI channel, arp, sequencer [MULTI] | p9 | Missing | - | L | none |
+| Hardware voices shared between Synths at will [MULTI] | p9 | Missing | - | M | none |
+| One Synth Effect per Synth plus two Master Effects on sends | p9, p96-101 | Partial | One fixed insert chain: mod FX, delay, reverb | M | none/voice; shared medium |
+| Voice: 3 VCOs, ring mod, noise, external input, mixer to SVF pair and ladder, VCA | p9-10 | Partial | 3 oscillators + noise to SVF and ladder to amp; no ring mod, no external input, one SVF | see sections 3-7 | - |
+| Each Synth: 4 LFOs and 3 EGs per voice (manual wording p10) | p10 | Partial | 3 EGs per voice; 2 LFOs shared by all voices | M | low |
+| Modulation: hard-wired, Quick Assign (DEST buttons), Mod Matrix with controllers and transforms | p10, p67 | Partial | Hard-wired pitch and cutoff amounts, 8-slot matrix with "via"; no transforms, no quick assign | M | low |
+| Programmable: every knob and hidden parameter stored in Presets | p8 | Have | Full state string per instance (`get_state`/`set_state`), 13 programs | - | none |
+
+## 1. Front panel, centre console, keyboard (p10-18)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Traditional knobs, soft knobs, master encoder; lit and red buttons [HW] | p11 | Missing | MPC knobs and Q-Links (host) | - | none |
+| MORE pages: a second layer of parameters per module [UI] | p11, every module | Partial | One flat parameter list grouped in `sections` | M (skin pages) | none |
+| DEST button on each LFO and EG: next touched control becomes a destination [UI] | p11, p43, p47, p68 | Missing | Matrix slots set by hand | M | none |
+| HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Missing | MPC's own plugin page | - | none |
+| SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Missing | See sections 15, 20, 21 | - | none |
+| SHIFT: fine resolution on soft knobs, latching shift [UI] | p14 | Partial | Host parameter resolution | - | none |
+| New initialised preset (SHIFT + COMPARE) | p14 | Have | "Init" program | - | none |
+| Panel Focus: SYNTH 1/2/3, multi-select for joint edits, SHIFT = solo [UI][MULTI] | p14-15 | Missing | - | M | none |
+| Keyboard Control: per-Synth ON, LOW/HIGH RANGE key zone, both = full G0..C10 [MULTI] | p15 | Missing | MPC track note range can stand in | S (with parts) | none |
+| Expression Assign buttons: MW, PAD X, PAD Y, KB, VEL, AT, EXP 1 [UI] | p15, p68 | Missing | Matrix slots set by hand | M | none |
+| Selecting presets from the browser [UI] | p15-16 | Partial | VST program list (13) | - | none |
+| 61-key keybed, velocity and aftertouch [HW] | p17, p140 | Have | Via MIDI: velocity to amp, channel pressure as a matrix source | - | none |
+| Selectable velocity curves | p17, p116 | Missing | See section 19 | S | none |
+| OCTAVE buttons; both = default; hold both = MIDI panic | p17, p112 | Partial | CC 120/123 (all off) and 121 handled; no octave shift parameter | S | none |
+| Oscillator OLED waveform displays [UI] | p10, p22 | Missing | Could be drawn on the MPC skin | M | none |
+
+## 2. Rear panel (p19-21)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MAIN L/R and SUB L/R balanced outs, each Synth to either or both [HW] | p19 | Partial | One stereo output into the MPC mixer | - | none |
+| INSERT 1-4 send/return jacks, stereo-normalled pairs [HW] | p19, p56 | Missing | - | - | none |
+| EXT INPUT: XLR/TRS combo, TRIM -9 dB to +65 dB; LINE input [HW] | p20 | Missing | An MPC instrument plugin gets no audio input | - | none |
+| CV IN 1-2, CV OUT 1-4; pedal jacks usable as CV inputs [HW] | p20-21 | Missing | - | - | none |
+| MIDI IN/THRU/OUT (DIN), USB MIDI, USB host, LAN [HW] | p20-21 | Partial | MIDI in from the host only | - | none |
+| Pedal jacks: SUSTAIN, EXP 1, EXP 2, assignable | p21, p140 | Partial | Sustain (CC 64) works; expression pedals not read (CC 11 / CC 4 could map) | S | none |
+
+## 3. Oscillators (p22-26)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Three VCOs per voice | p22 | Have | `osc[3]` per voice | - | - |
+| Two generators per VCO running at once: tri/saw plus pulse | p22 | Missing | One waveform per oscillator | M | low-medium (about doubles oscillator cost) |
+| OCTAVE | 32', 16', 8', 4', 2' (p22) | Have | `o1_oct`..`o3_oct` | - | none |
+| FREQUENCY, continuous | -7 to +7 semitones (p22) | Have | `oN_semi` (+-12 st, whole steps) + `oN_fine` (+-50 ct); matrix "Osc n Pitch" | - | none |
+| BEAT FREQ: constant offset in Hz, same beat rate across the keyboard | -7 to +7 (Hz, p23, p140) | Missing | Only cents (beat rate rises with pitch) | S | none |
+| WAVE button / VCO MODE | TRI, SAW (p23, p26) | Partial | `oN_wave` Saw / Square; no triangle | S | low |
+| WAVE ANGLE, TRI mode: saw to triangle to ramp, rise and fall both scale with pitch | knob, centre = triangle (p23) | Missing | - | M (variable-slope triangle with PolyBLAMP corners) | low |
+| WAVE ANGLE, SAW mode: reset time of the saw, darker as it lengthens [ANALOG] | 6 us to 1 ms (p24) | Missing | Instant reset only | M (finite-slope reset, PolyBLAMP) | low |
+| PULSE WIDTH: narrow, square at centre, wide | knob (p24) | Partial | Square fixed at 50% | S (PolyBLEP at both edges) | low |
+| MIX: tri/saw only, equal blend, pulse only | knob (p24) | Missing | - | S (once both generators run) | low |
+| Wave angle and pulse width modulatable (PWM etc.) | p22 | Missing | - | S | low (control rate) |
+| HARD SYNC on OSC 2 and OSC 3 to OSC 1 | on/off (p24-25) | Have | `o2_sync`, `o3_sync`, band-limited reset | - | - |
+| HARD SYNC SRC (MORE) | OSC 2: VCO 1 or VCO 3; OSC 3: VCO 1 or VCO 2 (p26) | Missing | Always oscillator 1 | S (render order must follow the source) | none |
+| PITCH TRACKING (MORE) | 0% to 200% (p26) | Missing | Always 100% | S | none |
+| NOTE-ON RESET (MORE): phase to zero on each note | off/on (p26) | Partial | Phases reset only when a voice starts from silence; no switch | S | none |
+| BEND UP OFFSET per oscillator | -24 to +24 st (p26) | Missing | One bend range for all oscillators | S | none |
+| BEND DOWN OFFSET per oscillator | -24 to +24 st (p26) | Missing | - | S | none |
+| MORE page wave image and values [UI] | p25 | Missing | - | M | none |
+| Analog VCO character: slight drift and warm-up instability [ANALOG] | p7 (warm-up note) | Missing | Ideal digital oscillators | S-M (slow per-oscillator random pitch wander) | low |
+| Clean top end under sync and FM | implied (analog) | Partial | PolyBLEP; no oversampling | M-L | medium-high (2x oversampling) |
+
+## 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| PITCH MOD: LFO 1 AMT to all three oscillators | 0 to 10 (p27) | Have | `pitch_lfo` (+-100% = +-12 st) | - | - |
+| PITCH MOD: MOD EG AMT to all three oscillators | -10 to +10 (p27) | Have | `pitch_env` (+-100% = +-24 st) | - | - |
+| RING MOD as its own mixer channel | p27, p31 | Missing | - | M | low (one multiply; the product can alias) |
+| RING MOD SOURCES, tapped from the tri/saw generators only | 1x2, 2x3 (p27) | Missing | - | S (with ring mod) | none |
+| WAVE ANGLE / LFO 3 AMT | 0 to 10 (p28) | Missing | Needs LFO 3 and wave angle | S (after both) | low |
+| PULSE WIDTH / LFO 3 AMT | 0 to 10 (p28) | Missing | Needs LFO 3 and PWM | S (after both) | low |
+| FM AMT, linear FM | 0 to 10 (p28) | Missing | - | M | medium (per-sample phase modulation; oversampling would be high) |
+| FM ROUTE | 1 to 2, 1 to 3, 3 to 1 (p28) | Missing | - | S (with FM) | none |
+
+## 5. Noise (p29-30)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Noise as a mixer source | p29 | Have | `noise_level`, per-voice xorshift white noise | - | - |
+| Noise EG: ATTACK | 1 ms to 10 s (p29) | Missing | Noise follows the amp envelope only | S | low |
+| Noise EG: RELEASE | 1 ms to 10 s (p29) | Missing | - | S | low |
+| Noise EG: SUSTAIN button (off: release acts as decay after the attack) | on/off (p29) | Missing | - | S | none |
+| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Missing | - | S | low |
+| Colours: white, red (-6 dB/oct), purple (+6 dB/oct) | p30 | Partial | White only | S (one-pole lowpass, first difference) | low |
+| COLOR pair select | Red+White, Red+Purple, White+Purple (p30) | Missing | - | S | none |
+| COLOR MIX between the two selected colours (also a matrix destination) | knob (p30, p76) | Missing | - | S | low |
+| Pink noise by mixing red and white | p30 | Missing | Follows from the above | - | - |
+
+## 6. Mixer (p31-32)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Six input channels: OSC 1-3, RING MOD, NOISE, EXT | p31 | Partial | Four: oscillators 1-3 and noise | - | - |
+| Level knob per channel (oscillators, noise) | 0 to max (p31-32) | Have | `o1_level`..`o3_level`, `noise_level` | - | - |
+| RING MOD level | p31 | Missing | Needs ring mod | S | low |
+| SVF and LADDER bus buttons per channel (either, both, neither) | p31-32 | Have | `oN_route`, `noise_route`: Ladder / SVF / Both ("neither" = level 0) | - | - |
+| EXT INPUT LEVEL [HW] | 0% to 100% (p32) | Missing | No audio input on an MPC instrument plugin | - | none |
+| EXT INPUT ROUTE [HW] | None, SVF, Ladder, Both (p32) | Missing | - | - | none |
+| EXT INPUT SOURCE [HW] | None, Mic/Line, Line, Mic/Line+Line (p32) | Missing | - | - | none |
+| MORE page bar-graph of levels and buses [UI] | p32 | Missing | - | - | none |
+| Mixer levels as matrix destinations | p76 | Have | "Osc n Level", "Noise Level" | - | - |
+
+## 7. Filters (p33-39)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Three analog filters: an SVF pair acting as one, plus a ladder | p33 | Partial | One TPT SVF (12 dB) + ladder | M | low |
+| SVF CUTOFF | 20 Hz to 20 kHz (p33) | Have | `svf_cut` (log 20 Hz-20 kHz) | - | - |
+| SVF RESONANCE | 0 to 10 (p33) | Have | `svf_res` (peak up to +20 dB; does not self-oscillate) | - | - |
+| SVF MODE | Notch, BP, HP, LP (p34) | Have | `svf_mode` LP/BP/HP/Notch | - | - |
+| SVF slope from the two elements | -12 dB or -24 dB (spec p140) | Missing | 12 dB only | S (with the second element) | low |
+| SVF SPACING: element B's cutoff above or below A | -100% to +100% (p38) | Missing | - | M | low (second SVF, ~10 multiplies a sample) |
+| SVF SERIES/PARALLEL (inside the SVF) | Series, Parallel (p38) | Missing | - | M (with the second element) | low |
+| LADDER CUTOFF | 20 Hz to 20 kHz (p34) | Have | `flt_cut` | - | - |
+| LADDER RESONANCE, self-oscillates to a sine | 0 to 10 (p34) | Have | `flt_res` (feedback up to 4.4) | - | - |
+| LADDER MODE | HP, LP (p35) | Have | `flt_mode` | - | - |
+| LADDER SLOPE | 24, 18, 12, 6 dB (p35) | Have | `flt_slope` | - | - |
+| Transistor-ladder character: per-stage non-linearity, how resonance thins the bass [ANALOG] | p34 | Partial | Linear ZDF ladder, one input saturator, half bass compensation | L | medium-high (per-stage saturation needs an iterative solve or 2x oversampling) |
+| LINK CUTOFF: either knob moves both, offset kept, clamps recover | on/off (p35) | Missing | - | S | none |
+| ROUTE: SVF and ladder side by side, or SVF into ladder | PAR, SER (p36) | Have | `flt_route` | - | - |
+| MIX between filter outputs | SVF to ladder (p36) | Have | `flt_mix` | - | - |
+| SVF MOD / LADDER MOD: which filter the three knobs edit [UI] | on/off each (p36-37) | Have | Separate amount knobs per filter do the same job | - | - |
+| EG AMT per filter (filter envelope to cutoff) | -10 to +10 (p37) | Have | `lad_env`, `svf_env` | - | - |
+| LFO 2 AMT per filter | 0 to 10 (p37) | Have | `lad_lfo`, `svf_lfo` (bipolar) | - | - |
+| FM AMT per filter: audio-rate cutoff FM from an oscillator | 0 to 10 (p37) | Missing | Cutoffs update every 16 samples | M | high (coefficients per sample; tanf needs an approximation) |
+| SVF FM SOURCE (MORE) | OSC 1, OSC 2, OSC 3 (p38) | Missing | - | S (with filter FM) | none |
+| LADDER FM SOURCE (MORE) | OSC 1, OSC 2, OSC 3 (p38) | Missing | - | S (with filter FM) | none |
+| SVF KEY TRACK | -200% to +200% (p39) | Partial | `svf_kbd` 0% to 100% | S | none |
+| LADDER KEY TRACK | -200% to +200% (p39) | Partial | `lad_kbd` 0% to 100% | S | none |
+| Filter MORE page diagram [UI] | p38 | Missing | - | - | none |
+
+## 8. Envelopes (p40-45)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Three EGs per voice: filter, amplifier, modulation | p40 | Have | `fenv_*`, `amp_*`, `menv_*` | - | - |
+| DELAY TIME (MORE) | 0.0 ms to 10.0 s (p44) | Missing | - | S | none |
+| ATTACK | 1 ms to 10 s, plus MIN (p41) | Have | `*_a` 1 ms to 10 s, log knob; linear attack | - | - |
+| HOLD TIME (MORE) | 0.0 ms to 10.0 s (p44) | Missing | - | S | none |
+| DECAY | 1 ms to 10 s (p41) | Have | `*_d`, exponential | - | - |
+| SUSTAIN | 0 to 10 (p41) | Have | `*_s` 0-100% | - | - |
+| RELEASE | 1 ms to 10 s (p41) | Have | `*_r`, exponential | - | - |
+| MIN setting below 1 ms, ignored by TIME SCALE | p40 | Partial | Shortest time 1 ms | S | none |
+| ATTACK CURVE | 100% log to linear to 100% exp (p45) | Partial | Fixed linear | M (shared curve shaper for all stages) | low |
+| DECAY CURVE | 100% log to linear to 100% exp (p45) | Partial | Fixed exponential | (same) | low |
+| RELEASE CURVE | 100% log to linear to 100% exp (p45) | Partial | Fixed exponential | (same) | low |
+| MULTI TRIG: legato notes restart the envelope or not | on/off (p42) | Partial | Fixed: poly always restarts, mono legato never does | S | none |
+| RESET: restart the attack from zero (mono/unison with multi trig) | off/on (p44) | Partial | Always from the current level (from zero only after silence) | S | none |
+| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Missing | - | S | none |
+| LOOP: repeat the whole DAHDSR (trapezoid) | on/off (p42) | Missing | - | S | none |
+| LATCH: hold at sustain after key up; with LOOP keeps cycling | on/off (p42) | Missing | - | S | none |
+| TIME SCALE, keeps the stage ratios; modulatable | 10% to 1000% (p44) | Missing | - | S | none (control rate) |
+| VEL MOD AMT: velocity scales the envelope output | -100% to +100% (p45) | Partial | Velocity always scales the amp 100%; other envelopes only through a matrix slot | S | none |
+| DEST quick assign [UI] | p43 | Missing | - | M | none |
+| Envelope picture with curves [UI] | p43, p45 | Missing | - | - | none |
+| EG stage times and time scale as matrix destinations | p76 | Missing | See section 15 | M | low-medium |
+
+## 9. LFOs (p46-49)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Four LFOs (hard-wired: 1 to pitch, 2 to cutoffs, 3 to wave shape) | p46, p27-28 | Partial | Two (`lfo1_*`, `lfo2_*`); LFO 1 to pitch and LFO 2 to cutoffs are hard-wired | M | low |
+| LFOs per voice (manual p10) so they can restart per note | p10 | Partial | Shared, free-running for all voices | M | low (control rate) |
+| RATE | 0 to 10 within the RANGE (p46) | Have | `lfoN_rate`, log 0.05 Hz to 50 Hz | - | - |
+| RANGE | Slow 0.001-1 Hz, Low 0.01-10 Hz, Medium 0.1-100 Hz, High 1 Hz-1 kHz (p48) | Partial | One fixed range, 0.05-50 Hz | S (High needs per-sample LFOs) | low; medium for High |
+| WAVE: Triangle/Sine | p46 | Partial | Triangle and Sine as separate choices | - | - |
+| WAVE: Pulse with variable width | p46 | Partial | Square at 50% only | S | none |
+| WAVE: Saw/Ramp | p46 | Partial | Saw and Ramp as separate choices | - | - |
+| WAVE: S&H/Noise (smooth random) | p46 | Partial | S&H only | S | none |
+| VARIATION: morph within the wave category | 0% to 100% (p48-49) | Missing | - | S | none |
+| POLARITY | Unipolar, Bipolar (p49) | Missing | Always bipolar | S | none |
+| START PHASE (used on reset, repeats, clock start) | 0% to 100% (p49) | Missing | - | S | none |
+| SYNC to the Master Clock | on/off (p49) | Have | `lfoN_sync`, host tempo | - | - |
+| SYNC DIVISION | 64, 32, 16, 8, 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (p49) | Partial | 4 bars to 1/32 (11 values) | S | none |
+| SYNC TIMING | Straight, Dotted, Triplet (p49) | Partial | A few triplets in the list; no dotted | S | none |
+| Reset to start phase on Master Clock start when synced | p49 | Missing | Host transport not read | S | none |
+| NOTE-ON RESET | off/on (p49) | Missing | - | S (needs per-voice LFOs) | low |
+| DELAY TIME before the LFO starts | Off, 0.1 ms to 10.0 s (p50) | Missing | - | S | none |
+| FADE IN TIME | Off, 0.1 ms to 10.0 s (p50) | Missing | - | S | none |
+| FADE OUT TIME | Off, 0.1 ms to 10.0 s (p50) | Missing | - | S | none |
+| REPEATS: a set number of cycles after note-on | Infinite, 1 to 32 (p50) | Missing | - | S | none |
+| SMOOTHING: one-pole lowpass on the LFO | 0% to 100% (p50) | Missing | - | S | none |
+| DEST quick assign; wave picture [UI] | p47-48 | Missing | - | M | none |
+
+## 10. VCA (p50-52)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| LEVEL of the active Synth | 0 to 10 (p51) | Have | `volume` | - | - |
+| PAN of the active Synth | Left to Right (p51) | Missing | Centre only | S | none |
+| VCA MORE: level and pan of all three Synths on one page [MULTI][UI] | 0-100%, 100% L to 100% R (p52) | Missing | - | S (with parts) | none |
+| SPREAD: per-voice stereo placement around the pan | 0% to 100% (p52) | Missing | Voices sum to mono | M (stereo voice bus) | low |
+| Per-voice pan as a matrix destination | p76, p96 | Missing | - | M | low |
+
+## 11. Output (p53-56)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MASTER VOLUME, HEADPHONES (global, never stored) [HW] | 0 to 10 (p53) | Missing | MPC master and headphone levels | - | none |
+| Per-Synth routing to MAIN and SUB outputs [HW][MULTI] | on/off each (p54) | Missing | Host routing | - | none |
+| SUB VOLUME [HW] | -96 dB to +22 dB (p54) | Missing | - | - | none |
+| Per-Synth routing to INSERT 1-4, one Synth per insert; EXT 1/4" to Insert 3, EXT XLR to Insert 4 [HW] | on/off (p54-55) | Missing | - | - | none |
+| INSERT 1-4 VOLUME [HW] | -96 dB to +22 dB (p55) | Missing | - | - | none |
+| Synth Effect applied before the insert send | p56 | Missing | - | - | none |
+
+## 12. Performance Sets and text entry (p57-60)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Performance Sets: up to 128 sets of 64 preset pointers (banks A-H x 1-8) [UI] | p57, p141 | Partial | VST program list of 13 presets; MPC programs do the rest | - | none |
+| Assign current preset by long press; dim/lit/dark buttons [HW][UI] | p57 | Missing | - | - | none |
+| CURRENT SET, BROWSE SETS, ARRANGE SETS: move, copy, delete, add, name, notes [UI] | p58-59 | Missing | - | - | none |
+| Remote MIDI program and bank selection of sets | p57 | Partial | Host program selection of the 13 presets | - | none |
+| Text entry from the keyboard or a USB keyboard [UI] | p60, p143 | Missing | Host naming | - | none |
+
+## 13. Master Clock (p60-62)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| TEMPO | 10 BPM to 280 BPM (p61) | Partial | Follows host tempo (`lfo_bpm`, 20-400 BPM) | - | none |
+| TAP tempo [HW] | p61 | Missing | Host | - | none |
+| NUDGE + / - and NUDGE MODE [HW] | Increment (1 or 0.1 BPM), Bend (2 or 1 BPM) (p62) | Missing | Host | - | none |
+| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Missing | - | S | none |
+| LOAD PRESET TEMPO | on/off (p62) | Missing | Host owns tempo | - | none |
+| External clock overrides the Master Clock | p60 | Partial | Host tempo only; no transport start/stop | - | none |
+| What can sync: arp, sequencer, LFOs, EGs, effects | p60 | Partial | LFOs and the delay | see 8, 9, 16, 18 | none |
+
+## 14. Voice allocation: Hold, Chord, Polyphony (p63-66)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| HOLD: latch held notes; legato adds, non-legato replaces; with sustain it adds; latches the arp | on/off (p63) | Missing | - | S | none |
+| CHORD memory: one key plays a stored interval stack, first note is the root | on/off (p63) | Missing | - | M | high (multiplies sounding voices) |
+| CHORD LEARN, saved per Synth; silent or audible learn (Settings) [UI] | p63, p125 | Missing | - | M | none |
+| Chord is applied after the arp and sequencer | p63 | Missing | - | S (with chord + arp) | none |
+| MONO | on/off (p64) | Have | `voices` = Mono, legato, last-note priority | - | - |
+| UNISON: all voices stack, divided among held keys | on/off (p64) | Missing | - | M | high (each stacked voice costs a full voice) |
+| DETUNE of the unison stack, uneven spread around the centre | 0 to 10 (p64) | Missing | - | S (with unison) | none |
+| UNISON COUNT (also works in poly mode) | 2 to POLY COUNT (p65) | Missing | - | S (with unison) | high |
+| POLY COUNT | 2 to hardware voices (p65) | Partial | Mono, 2, 4, 6, 8 | S | high per voice |
+| VOICE STEALING MODE | No Stealing, Oldest, Quietest, Newest (p66) | Partial | Fixed: idle, then quietest releasing, then oldest sustained, then oldest held | S | none |
+| MONOPHONIC NOTE PRIORITY | Low, High, Last (p66) | Partial | Last only | S | none |
+| PITCH VARIANCE: random pitch per new note | 0 to 50 cents (p66) | Partial | Possible with a matrix slot Random to Pitch, but only in 24-cent steps (1% = 0.24 st) | S | none |
+
+## 15. Modulation (p67-77)
+
+### 15a. Structure
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Hard-wired: pitch (LFO 1, Mod EG), wave (LFO 3 to angle and width), FM, cutoff (EG, LFO 2, FM) | p67 | Partial | Pitch and cutoff hard-wires; no wave or FM ones | see 4, 7 | - |
+| Quick Assign: DEST and Expression Assign; ADD DESTINATION, EDIT MODULATIONS, DONE, CANCEL [UI] | p68-69 | Missing | - | M | none |
+| Matrix slots (numbered list; the count is not stated in this manual) | p70 | Partial | 8 fixed slots (`modN_*`) | S (16 slots) | low per slot (control rate) |
+| Per-slot DISABLE/ENABLE without deleting | p70 | Partial | Set the source to Off or the amount to 0 | S | none |
+| SOURCE AMOUNT | -300% to +300% (p70) | Partial | `modN_amt` -100% to +100% | S | none |
+| CONTROLLER with its own amount (negative inverts; a controller alone acts as a source) | -100% to +100% (p71) | Partial | `modN_via` scales at full strength; no amount, no inversion, no via-only slot | S | none |
+| Order: controller and transform first, source amount last | p70 | Partial | Via multiplies, then amount; no transform stage | S | none |
+| TRANSFORM stage | see 15d (p71) | Missing | - | S | none |
+| DESTINATION chosen as module, then parameter | see 15e (p71) | Partial | One flat list of 15 destinations | S | none |
+| DELETE a slot (later slots renumber); filter list by source or destination [UI] | p72 | Missing | - | - | none |
+| SAVE / LOAD (add or replace) whole matrices as named presets with notes [UI] | p73-74 | Missing | - | M | none |
+
+### 15b. Matrix sources (p75)
+
+| Moog One source | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|
+| NONE | Have | "Off" | - | - |
+| LFO 1 | Have | "LFO 1" | - | - |
+| LFO 2 | Have | "LFO 2" | - | - |
+| LFO 3 | Missing | - | M (with the LFO) | low |
+| LFO 4 | Missing | - | M (with the LFO) | low |
+| FILTER EG | Have | "Filter Env" | - | - |
+| AMPLIFIER EG | Have | "Amp Env" | - | - |
+| MODULATION EG | Have | "Mod Env" | - | - |
+| NOISE EG | Missing | - | S (with noise EG) | low |
+| MOD WHEEL | Have | "Mod Wheel" (CC 1) | - | - |
+| PITCH WHEEL | Missing | Bend only goes to pitch | S | none |
+| PAD X [HW] | Missing | Could map to a MIDI CC | S | none |
+| PAD Y [HW] | Missing | Could map to a MIDI CC | S | none |
+| PAD PRESSURE [HW] | Missing | Could map to a MIDI CC | S | none |
+| PAD GATE [HW] | Missing | - | S | none |
+| VELOCITY | Have | "Velocity" | - | - |
+| AFTERTOUCH | Have | "Aftertouch" (channel pressure) | - | - |
+| KEY PITCH | Have | "Keyboard" (-1..1 around middle C) | - | - |
+| KB GATE | Missing | - | S | none |
+| SUSTAIN | Missing | Pedal state is known, not a source | S | none |
+| EXP 1 | Missing | Could map CC 11 | S | none |
+| EXP 2 | Missing | Could map CC 4 | S | none |
+| CV IN 1 [HW] | Missing | - | - | none |
+| CV IN 2 [HW] | Missing | - | - | none |
+| RANDOM (unipolar) | Partial | Only the bipolar per-note random | S | none |
+| RANDOM BIPOLAR | Have | "Random" (-1..1, per note) | - | - |
+| CONSTANT | Missing | - | S | none |
+
+### 15c. Matrix controllers (p75)
+
+| Moog One controller list | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|
+| Same 26 entries as the sources (NONE, MOD WHEEL, PITCH WHEEL, PAD X/Y/PRESSURE/GATE, VELOCITY, AFTERTOUCH, KEY PITCH, KB GATE, SUSTAIN, EXP 1/2, CV IN 1/2, the four EGs, LFO 1-4, RANDOM, RANDOM BIPOLAR, CONSTANT) | Partial | `modN_via` offers the same 10 entries as ONE-ish's sources; same gaps as 15b | S | none |
+
+### 15d. Matrix transforms (p71, p75)
+
+| Moog One transform | Range | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| NONE | - | Have | (no transform stage) | - | - |
+| LIMIT LOW | 0% to 100% | Missing | - | S | none |
+| LIMIT HIGH | 0% to 100% | Missing | - | S | none |
+| SQUARED | fixed | Missing | - | S | none |
+| CUBED | fixed | Missing | - | S | none |
+
+### 15e. Matrix destinations (p76-77)
+
+| Moog One destination | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|
+| All oscillators: PITCH LFO 1 MOD (the hard-wired amount) | Missing | - | S | none |
+| All oscillators: PITCH EG MOD | Missing | - | S | none |
+| All oscillators: TRIANGLE LFO 3 MOD | Missing | Needs LFO 3 + wave angle | S | none |
+| All oscillators: PULSE LFO 3 MOD | Missing | Needs LFO 3 + PWM | S | none |
+| All oscillators: FM MOD | Missing | Needs FM | S | none |
+| All oscillators: PITCH OFFSET | Have | "Pitch" (+-24 st) | - | - |
+| Oscillator 1-3: FREQUENCY | Have | "Osc 1/2/3 Pitch" | - | - |
+| Oscillator 1-3: BEAT | Missing | Needs beat frequency | S | none |
+| Oscillator 1-3: SAW (reset-time angle) | Missing | Needs wave angle | S | low |
+| Oscillator 1-3: TRIANGLE (angle) | Missing | Needs wave angle | S | low |
+| Oscillator 1-3: PULSE (width) | Missing | Needs PWM | S | low |
+| Oscillator 1-3: MIX | Missing | Needs two generators | S | none |
+| Oscillator 1-3: OCTAVE (step-mod list, p91) | Missing | - | S | none |
+| Noise: COLOR MIX | Missing | Needs colours | S | none |
+| Noise: ATTACK, SUSTAIN, RELEASE (noise EG) | Missing | Needs noise EG | S | none |
+| Mixer: OSC 1, 2, 3 LEVEL | Have | "Osc n Level" | - | - |
+| Mixer: RMOD LEVEL | Missing | Needs ring mod | S | none |
+| Mixer: NOISE LEVEL | Have | "Noise Level" | - | - |
+| Mixer: EXT LEVEL [HW] | Missing | No audio input | - | none |
+| VCA: LEVEL | Have | "Amp Level" (x0..x2) | - | - |
+| VCA: PAN | Missing | Needs stereo voices | M | low |
+| Filters: SVF/LADDER MIX | Have | "Filter Mix" | - | - |
+| SVF: CUTOFF | Have | "SVF Cutoff" (+-5 oct) | - | - |
+| SVF: RESONANCE | Have | "SVF Res" | - | - |
+| SVF: SPACING | Missing | Needs SVF pair | S | none |
+| SVF: EG AMOUNT | Missing | - | S | none |
+| SVF: LFO 2 AMOUNT | Missing | - | S | none |
+| SVF: FM AMOUNT | Missing | Needs filter FM | S | none |
+| Ladder: CUTOFF | Have | "Ladder Cutoff" | - | - |
+| Ladder: RESONANCE | Have | "Ladder Res" | - | - |
+| Ladder: EG AMOUNT | Missing | - | S | none |
+| Ladder: LFO 2 AMOUNT | Missing | - | S | none |
+| Ladder: FM AMOUNT | Missing | Needs filter FM | S | none |
+| EG 1-3: DELAY, HOLD | Missing | Needs those stages | S | none |
+| EG 1-3: ATTACK, DECAY, RELEASE | Missing | Times are set per patch, not per voice | M | low-medium (per-voice coefficient updates, one expf each) |
+| EG 1-3: SUSTAIN | Missing | - | S | none |
+| EG 1-3: TIME SCALE | Missing | Needs time scale | S | low |
+| EG 1-3: MULTI TRIGGER, SYNC, LOOP, LATCH (step-mod list, p91) | Missing | - | S | none |
+| LFO 1-4: RATE | Missing | - | S | none |
+| LFO 1-4: RATE (SEMITONES) | Missing | - | S | none |
+| LFO 1-4: VARIATION | Missing | Needs variation | S | none |
+| LFO 1-4: DELAY | Missing | Needs LFO delay | S | none |
+| LFO 1-4: FADE IN TIME, FADE OUT TIME (RAMP UP/DOWN TIME in the step-mod list) | Missing | Needs fades | S | none |
+| LFO 1-4: WAVEFORM (step-mod list, p91) | Missing | - | S | none |
+
+## 16. Arpeggiator (p78-81)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Arpeggiator per Synth, saved with the Timbre | p78 | Missing | (MPC has its own arpeggiator and note repeat) | M | none |
+| ON | on/off (p78) | Missing | - | (in M) | none |
+| RATE, free | 10 BPM to 280 BPM (p78) | Missing | - | (in M) | none |
+| OCTAVE ORDER: each note through all octaves before the next note | on/off (p78) | Missing | - | S | none |
+| PENDULUM: play the pattern back reversed | on/off (p79) | Missing | - | S | none |
+| OCTAVE range | 1, 2, 3, 4 (p79) | Missing | - | S | none |
+| DIRECTION of the octaves | Up, Down, Up/Down, Down/Up (p79) | Missing | - | S | none |
+| PATTERN | Up, Down, Order, Random (p80) | Missing | - | S | none |
+| SYNC to the Master Clock | on/off (p81) | Missing | - | S | none |
+| CLOCK DIVISION | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p81) | Missing | - | S | none |
+| CLOCK TIMING | Straight, Dotted, Triplet (p81) | Missing | - | S | none |
+| GATE LENGTH | 1% to 100% (p81) | Missing | - | S | none |
+| FOLLOW SWING | off/on (p81) | Missing | - | S | none |
+| NOTE RESET: restart at once on a new note, or wait for the next division | off/on (p81) | Missing | - | S | none |
+| PENDULUM MODE: end notes played once or twice | Once, Twice (p81) | Missing | - | S | none |
+| RANDOM MODE | Non-repeating, Repeating (p81) | Missing | - | S | none |
+| HOLD latches the arpeggiator | p63 | Missing | - | S | none |
+
+## 17. Sequencer (p82-95)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Polyphonic step sequencer per Synth, up to 64 steps in pages of 16 | p82 | Missing | (MPC's own sequencer) | L | none |
+| ON (whether the sequencer plays the Synth) | on/off (p82) | Missing | - | (in L) | none |
+| RATE, free | 10 BPM to 280 BPM (p82) | Missing | - | (in L) | none |
+| CURRENT PAGE / ACTIVE STEP LEDs [HW] | p82 | Missing | - | - | none |
+| RETURN TO ZERO, START/STOP, RECORD, ADV back/forward [HW][UI] | p83 | Missing | - | M | none |
+| REST per step | on/off (p84) | Missing | - | S | none |
+| TIE per step (no envelope retrigger) | on/off (p84) | Missing | - | S | none |
+| STEP MOD: record knob moves as per-step offsets while running | on/off (p84) | Missing | MPC automation is the nearest thing | M | none |
+| TRANSPOSE from the keyboard (keys then do not sound) | on/off (p84) | Missing | - | S | none |
+| NOTE TRIG: play while keys are held, stop on release | on/off (p85) | Missing | - | S | none |
+| STEP EDIT screen with lanes (one note per lane per step) [UI] | p85-86 | Missing | - | L | none |
+| Per-step NOTE | Off, C0 to G10 (p88) | Missing | - | (in L) | none |
+| Per-step VELOCITY | 1 to 127 (p88) | Missing | - | (in L) | none |
+| Per-step GATE | 1% to 100% (p88) | Missing | - | (in L) | none |
+| Per-step RATCHET (repeats inside one step) | 1 to 4 (p88) | Missing | - | S | none |
+| Modulation lanes: one destination each, bipolar % offset per step, CONTROLLER and AMOUNT per lane | p89-91 | Missing | - | M | low |
+| Step-mod destination list (CATEGORY/DESTINATION) | p91 (see 15e) | Missing | - | (in M) | none |
+| SYNC | off/on (p92) | Missing | - | S | none |
+| CLOCK DIVISION (also divides the free rate) | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p92) | Missing | - | S | none |
+| CLOCK TIMING | Straight, Dotted, Triplet (p92) | Missing | - | S | none |
+| LENGTH | 1 to 64 (p93) | Missing | - | S | none |
+| FOLLOW SWING | off/on (p93) | Missing | - | S | none |
+| NOTE RESET (with Note Trig) | off/on (p93) | Missing | - | S | none |
+| RESTART ON HOLD | off/on (p93) | Missing | - | S | none |
+| RESTART ON TRIG | off/on (p93) | Missing | - | S | none |
+| TRANSPOSE MODE | Start Key, Interval (from middle C) (p93) | Missing | - | S | none |
+| ONE SHOT | off/on (p94) | Missing | - | S | none |
+| RECORDING MODE | Replace, Overdub, Focused (p94) | Missing | - | M | none |
+| OUTPUT: which Synth(s) the sequence plays [MULTI] | Synth 1/2/3, All Synths (p94) | Missing | - | S | none |
+| CLEAR SEQUENCE, DUPLICATE X-Y [UI] | p94 | Missing | - | S | none |
+| LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Missing | - | M | none |
+
+## 18. Effects (p96-111)
+
+### 18a. Effects architecture
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Effects can all be switched off for a pure dry path | p96 | Have | Each effect is skipped when its mix is 0 / type Off | - | none |
+| SYNTH EFFECT per Synth: one chosen type, mono in, stereo out, MIX always first | p96 | Partial | Three fixed effects in series (mod FX, delay, reverb), mono in, stereo out | M (selectable type slot) | none/voice; shared low-medium |
+| Synth Effect ON button | on/off (p96) | Partial | `modfx_type` Off, or mix 0 | - | none |
+| CTRL 1 and CTRL 2 knobs, re-assignable to any effect parameter | p96-97 | Partial | MPC Q-Links can map any parameter | - | none |
+| Effect presets per type: load, save, initialise [UI] | p97-98 | Missing | - | M | none |
+| Up to 5 effects at once (3 synth + 2 master) | p96 | Partial | 3 at once, fixed order | M | shared medium |
+| MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Missing | - | M | shared |
+| Master Effects ON button | on/off (p99) | Missing | - | S | none |
+| MASTER BUSS MODE | Dual Mono (two effects), Stereo (one effect) (p100) | Missing | - | M | shared |
+| STEREO WIDTH at the end of the master chain | 0% to 100% to 200% (p100) | Missing | - | S | none/voice; shared low |
+| EFFECT 1 -> 2 SERIES (parallel to series blend) | 0% to 100% (p100) | Missing | - | S | none |
+| Only one Eventide effect at a time [LIC] | p99 | Missing | - | - | - |
+| SYNC per effect: time parameters become divisions | 1/64T..1/64., 1/32T.., 1/16T.., 1/8T.., 1/4T.., 1/2T.., 1, 2, 4 (21 values, p103) | Partial | Delay only, 11 divisions; mod FX rate not syncable | S | none |
+| Per-voice pan kept in the stereo master bus, lost in mono buses | p96, p99 | Missing | Mono voice sum | (with section 10) | low |
+
+### 18b. Effect types (Synth Effects and Master Effects share the list, p103-109)
+
+**Delay** (single tap, cubic interpolation, p103)
+
+| Parameter | Range | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MIX (CTRL 1) | 0% to 100% | Have | `dly_mix` | - | none/voice |
+| FEEDBACK | 0% to 100% | Have | `dly_fb` | - | none/voice |
+| TIME (CTRL 2) | 0.1 ms to 2000 ms | Partial | `dly_time` 10 ms to 2 s, Hermite (cubic) read | S | none/voice |
+| GAIN | 0% to 100% | Missing | - | S | none/voice |
+| SYNC | on/off | Have | `dly_sync` | - | none/voice |
+
+**Stereo Delay** (two taps, p103)
+
+| Parameter | Range | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MIX (CTRL 1), FEEDBACK (CTRL 2) | 0% to 100% | Have | `dly_mix`, `dly_fb` | - | none/voice |
+| TIME LEFT, TIME RIGHT | 0.1 ms to 2000 ms each | Partial | One time for both sides | S | none/voice |
+| FEEDBACK LEFT, FEEDBACK RIGHT | 0% to 100% | Missing | - | S | none/voice |
+| MOD RATE LEFT/RIGHT, MOD DEPTH LEFT/RIGHT | 0% to 100% | Missing | - | S | none/voice; shared low |
+| TONE (lowpass) | 0% to 100% | Have | `dly_tone` | - | none/voice |
+| GAIN | 0% to 100% | Missing | - | S | none/voice |
+| SYNC | on/off | Have | `dly_sync` | - | none/voice |
+
+**Ping Pong** (alternating stereo taps, p104)
+
+| Parameter | Range | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MIX (CTRL 1), FEEDBACK (CTRL 2) | 0% to 100% | Have | `dly_mix`, `dly_fb` with `dly_pp` On | - | none/voice |
+| TIME LEFT, TIME RIGHT | 0.1 ms to 2000 ms | Partial | One time | S | none/voice |
+| OFFSET between left and right | 0% to 100% | Missing | - | S | none/voice |
+| TONE | 0% to 100% | Have | `dly_tone` | - | none/voice |
+| GAIN | 0% to 100% | Missing | - | S | none/voice |
+| SYNC | on/off | Have | `dly_sync` | - | none/voice |
+
+**Other delay types**
+
+| Effect type and parameters | Ranges | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| BBD DELAY (bucket-brigade emulation, p104): MIX (CTRL 1), FEEDBACK (CTRL 2), TIME, NOISE (clock noise), TONE, MOD (random wobble), GAIN, SYNC | 0-100%; time 0.1-2000 ms; sync on/off | Missing | - | M | none/voice; shared low |
+| TAPE DELAY (tape emulation, p104): MIX (CTRL 1), FEEDBACK (CTRL 2), TIME, FLUTTER (rate), WOW (depth and slow rate), TAPE BIAS (highpass and bias mix), GAIN, SYNC | 0-100%; time 0.1-2000 ms | Missing | - | M | none/voice; shared low |
+| ECHO (delay with spring-style diffusion, p105): MIX (CTRL 1), TONE (CTRL 2), TIME, FEEDBACK, ROOM, DECAY, MOD RATE, MOD DEPTH, GAIN, SYNC | 0-100%; time 0.1-2000 ms; mod rate 0.1-10 Hz | Missing | - | M | none/voice; shared low-medium |
+
+**Flanger** (single tap, p105)
+
+| Parameter | Range | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MIX | 0% to 100% | Have | `modfx_mix` (type Flanger) | - | none/voice |
+| FEEDBACK | -100% to +100% | Have | `modfx_fb` | - | none/voice |
+| TIME (CTRL 1) | 0.1 ms to 15 ms | Missing | Fixed 1 ms base + up to 4 ms sweep | S | none/voice |
+| RATE (CTRL 2) | 0.1 Hz to 10 Hz | Have | `modfx_rate` 0.05-10 Hz | - | none/voice |
+| DEPTH | 0% to 100% | Have | `modfx_depth` | - | none/voice |
+| TONE (lowpass) | 0% to 100% | Missing | - | S | none/voice |
+| NOISE | 0% to 100% | Missing | - | S | none/voice |
+| SPREAD (stereo) | 0% to 100% | Partial | Fixed quarter-cycle L/R offset | S | none/voice |
+| GAIN | 0% to 100% | Missing | - | S | none/voice |
+| SYNC | on/off | Missing | - | S | none/voice |
+
+**Stereo Flanger** (one line per channel, p105)
+
+| Effect type and parameters | Ranges | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MIX, FEEDBACK LEFT, FEEDBACK RIGHT, TIME LEFT (CTRL 1), TIME RIGHT (CTRL 2), RATE LEFT, RATE RIGHT, DEPTH, PHASE OFFSET, TONE, GAIN, SYNC | mix 0-100%; feedback -100 to +100%; time 0.1-25 ms; rate 0.01-20 Hz; phase 0-100% | Partial | ONE-ish flanger is already two lines with a fixed 90-degree offset and shared settings | S | none/voice; shared low |
+
+**Chorus** (single tap, p106)
+
+| Parameter | Range | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MIX | 0% to 100% | Have | `modfx_mix` (type Chorus) | - | none/voice |
+| FEEDBACK | -100% to +100% | Missing | `modfx_fb` is ignored in chorus mode | S | none/voice |
+| TIME | 0.1 ms to 50 ms | Missing | Fixed 7 ms base + 6 ms sweep | S | none/voice |
+| RATE (CTRL 1) | 0.1 Hz to 20 Hz | Partial | `modfx_rate` up to 10 Hz | S | none/voice |
+| DEPTH (CTRL 2) | 0% to 100% | Have | `modfx_depth` | - | none/voice |
+| TONE | 0% to 100% | Missing | - | S | none/voice |
+| SPREAD | 0% to 100% | Partial | Fixed quarter-cycle offset | S | none/voice |
+| GAIN | 0% to 100% | Missing | - | S | none/voice |
+| SYNC | on/off | Missing | - | S | none/voice |
+
+**Other chorus types**
+
+| Effect type and parameters | Ranges | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| DUAL CHORUS (two taps, bi-phase, p106): MIX (CTRL 1), FEEDBACK (CTRL 2), TIME offset, DEPTH, RATE, TONE, VIBRATO RATE, VIBRATO DEPTH, GAIN, SYNC | mix 0-100%; feedback -100 to +100%; time 3-60 ms; rate Low/Med/High; vibrato rate 0.1-10 Hz | Missing | - | S-M | none/voice; shared low |
+| ENSEMBLE (three taps 120 degrees apart, p106): MIX (CTRL 1), FEEDBACK (CTRL 2), TIME, RATE, DEPTH, TONE, VIBRATO RATE, VIBRATO DEPTH, SPREAD, GAIN, SYNC | feedback 0-100%; time 3-60 ms; rate Low/Med/High; vibrato rate 0.1-10 Hz | Missing | - | M | none/voice; shared low-medium |
+| STEREO CHORUS (one line per channel, p107): MIX (CTRL 1), FEEDBACK LEFT (CTRL 2), FEEDBACK RIGHT, TIME LEFT, TIME RIGHT, RATE LEFT, RATE RIGHT, DEPTH, TONE, GAIN, SYNC | feedback -100 to +100%; time 1-50 ms; rate 0.01-20 Hz | Partial | ONE-ish chorus is two lines with shared settings | S | none/voice; shared low |
+
+**6 Stage Phaser** (six all-pass stages, modelled on a Moog pedal phaser per the manual, p107)
+
+| Parameter | Range | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| MIX (CTRL 1) | 0% to 100% | Have | `modfx_mix` (type Phaser, 6 stages) | - | none/voice |
+| FEEDBACK (CTRL 2) | 0% to 100% | Have | `modfx_fb` (-100 to +100%) | - | none/voice |
+| SWEEP (zero point) | 0% to 100% | Missing | Sweep fixed to start at 200 Hz | S | none/voice |
+| RATE | 0.01 Hz to 20 Hz | Partial | 0.05-10 Hz | S | none/voice |
+| DEPTH | 0% to 100% | Have | `modfx_depth` | - | none/voice |
+| TONE (lowpass on the mix) | 0% to 100% | Missing | - | S | none/voice |
+| NOISE | 0% to 100% | Missing | - | S | none/voice |
+| GAIN | 0% to 100% | Missing | - | S | none/voice |
+| SYNC | on/off | Missing | - | S | none/voice |
+
+**Other modulation and character types**
+
+| Effect type and parameters | Ranges | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| 12 STAGE PHASER (p107): same parameters as the 6-stage | as 6-stage | Missing | - | S (stage count) | none/voice; shared low |
+| TIME PHASER (four-stage phaser into a delay, p108): MIX (CTRL 1), PHASER FEEDBACK (CTRL 2), SWEEP, RATE, DEPTH, TONE, NOISE, DELAY FEEDBACK, TIME, GAIN, SYNC | 0-100%; rate 0.01-20 Hz; time 0.1-2000 ms | Missing | - | S-M | none/voice; shared low |
+| BIT CRUSHER (crossover filter, dual crushing, p108): MIX (CTRL 1), DEPTH (CTRL 2), RATE, GAIN | depth 2-24 bit; rate 128 Hz-48 kHz | Missing | - | S | none/voice; shared low |
+| RESONATOR (three-filter bank, p108): MIX (CTRL 1), RESONANCE (CTRL 2), CUTOFF LOW/MID/HIGH, LEVEL LOW/MID/HIGH, FILTER TYPE, MOD RATE, MOD DEPTH, GAIN | cutoffs 10 Hz-22 kHz (defaults 500 Hz, 1 kHz, 5 kHz); type LP/BP/HP; mod rate 0.01-10 Hz | Missing | - | S-M | none/voice; shared low |
+| 10 BAND VOCODER (p109): MIX (CTRL 1), SIBILANCE (CTRL 2), SENSITIVITY (mic gate), TONE, NOISE [HW: needs a mic input] | 0-100% | Missing | No audio input on an MPC instrument plugin | L | none/voice; shared medium |
+| 16 BAND VOCODER (p109): same parameters [HW: needs a mic input] | 0-100% | Missing | - | L | none/voice; shared medium-high |
+
+### 18c. Eventide Master Effects (master bus only, one at a time) [LIC]
+
+These are licensed algorithms. Only original reverbs in the same spirit can be built; none can match them.
+
+**Eventide Plate** (p110) against ONE-ish's plate (Dattorro figure-of-eight tank)
+
+| Parameter | Range | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| (the reverb itself) [LIC] | - | Partial | Dattorro plate, `rev_mix` | - | none/voice; shared medium |
+| DISTANCE (early-reflection delay) | 0 to 100 | Missing | - | S | none/voice |
+| DIFFUSION (early network feedback) | 0 to 100 | Missing | Diffusers fixed at the paper's values | S | none/voice |
+| MOD LEVEL | 0 to 100 | Missing | Fixed tank excursion | S | none/voice |
+| TONE (input lowpass) | -100 to 100 | Missing | Fixed input bandwidth | S | none/voice |
+| HIGH DAMP | 100 to 0 | Have | `rev_damp` | - | none/voice |
+| LOW DAMP | 100 to 0 | Missing | - | S | none/voice |
+| PRE DELAY | 0 ms to 1500 ms | Partial | `rev_pre` 0-200 ms (buffer allows ~370 ms) | S (bigger buffer) | none/voice |
+| SIZE | 0 to 100 | Missing | Fixed tank lengths | M | none/voice |
+| DECAY | 0.25 s to 10 s, Infinite, Freeze | Partial | `rev_decay` as a % feedback; no infinite or freeze | S | none/voice |
+
+**Other Eventide reverbs**
+
+| Effect type and parameters | Ranges | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| EVENTIDE ROOM [LIC] (p109): early/late balance (unnamed first row, 20 detents from all-early to all-late), DIFFUSION, MOD LEVEL, HIGH FREQ (post-crossover lowpass), HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, DECAY | 0-100; high freq 1-5 kHz; high level -100 to 100; low level 0-1; pre-delay 0-500 ms | Missing | - | M (original room) | none/voice; shared medium |
+| EVENTIDE HALL [LIC] (p110): LOW DECAY, HIGH DECAY, MOD LEVEL, MID LEVEL, HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, DECAY | low/high decay 0.1-5.0x, Infinite, Freeze; levels -100 to 100; pre-delay 0-1500 ms; decay 0-20 s, Infinite, Freeze | Missing | - | L (original multiband hall) | none/voice; shared medium-high |
+| EVENTIDE SHIMMER [LIC] (p111): A PITCH, B PITCH, PITCH DECAY (with Pitch Freeze, Pitch+Reverb Freeze), MID DECAY, LOW DECAY, HIGH DECAY, DELAY, SIZE, DECAY | pitches about +-24 semitones in cents (printed "-2410C - +2410"); 0-100; delay 50-1000 ms | Missing | - | L (pitch shifters in the feedback loop) | none/voice; shared high |
+| EVENTIDE BLACKHOLE [LIC] (p111): MOD DEPTH, MOD RATE, FEEDBACK, RESONANCE, HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, GRAVITY | 0-100; feedback 0-100, Infinite, Freeze; levels -100 to 100; pre-delay 0-2000 ms; gravity -100 to 100 | Missing | - | L (very large modulated tank) | none/voice; shared high |
+
+## 19. Left Hand Controller (p17-18, p112-117)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| OCTAVE SHIFT | -2 to +2 (p112) | Missing | MPC keyboard octave instead | S | none |
+| MIDI panic (hold both octave buttons) | p112 | Have | CC 120/123/121 handled | - | - |
+| GLIDE on/off | p112 | Missing | No portamento (GLIDE_MS only smooths cutoff knobs) | S | none |
+| GLIDE RATE | 0 ms to 10.0 s (p112) | Missing | - | S | none |
+| GLIDE TYPE | LCR (constant rate), LCT (constant time), EXP (exponential) (p116) | Missing | - | S | none |
+| GATED GLIDE: glide pauses while no key is down | off/on (p116) | Missing | - | S | none |
+| LEGATO GLIDE: glide only on legato notes (mono only) | off/on (p116) | Missing | - | S | none |
+| GLISSANDO: glide in semitone steps | off/on (p117) | Missing | - | S | none |
+| PITCH wheel, spring-loaded | p113 | Have | MIDI pitch bend | - | - |
+| PITCH BEND UP (SHIFT = finer than semitones) | -24 to +24 st (p115) | Partial | `bend_range` 0-12 st, same both ways | S | none |
+| PITCH BEND DOWN | -24 to +24 st (p115) | Partial | (same) | S | none |
+| MOD wheel, not spring-loaded | p113 | Have | CC 1 | - | - |
+| X/Y PAD: X, Y, pressure, gate; X/Y HOLD saves the held value [HW] | p113-114 | Missing | Could map MIDI CCs (MPC has XYFX pads) | S | none |
+| PAD POLARITY [HW] | Unipolar, Bipolar (p115) | Missing | - | S | none |
+| VELOCITY CURVE, per Synth | Soft, Medium, Hard, Compress, Expand (p116) | Missing | Linear velocity | S | none |
+| LOAD SAVED POS. (mod wheel, pad position with the Synth) | Off, Mod Wheel, Pad, Both (p117) | Missing | Wheel always starts at 0 | S | none |
+| SEMITONE TRANSP. | -12 to Off to +12 (p117) | Missing | - | S | none |
+| KEY TRACK CENTER for all key tracking | C0 to G10, default middle C (p117) | Missing | Fixed at middle C (note 60) | S | none |
+| HEADPHONES jacks [HW] | p114 | Missing | - | - | none |
+
+## 20. Browser, presets and timbres (p118-121)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Preset store (tens of thousands), browse and load | p118-119, p140 | Partial | 13 factory programs; MPC saves plugin state with programs and projects | - | none |
+| Tags: TYPE (Single, Layer, Split, Multi), CATEGORY, MOOD, GROUP; filter the browser by tags [UI] | p118-120 | Missing | - | - | none |
+| Notes saved with a preset [UI] | p118, p120 | Missing | - | - | none |
+| Load a Timbre from any preset into any Synth [MULTI] | p119 | Missing | - | M | none |
+| SAVE PRESET / SAVE PRESET AS, unique names, overwrite prompt [UI] | p120 | Partial | Host saves the state | - | none |
+| SAVE TIMBRE to a new single-Timbre preset [UI][MULTI] | p121 | Missing | - | - | none |
+| A preset restores everything (sequences, matrices, arps, effects, held wheel and pad) | p119 | Partial | The state string restores every ONE-ish parameter | - | none |
+
+## 21. Editing and saving (p122-123)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| Edited indicator (SAVE lit dimly) [UI] | p122 | Missing | MPC marks unsaved projects | - | none |
+| COMPARE edited vs saved (A/B) | p122 | Missing | - | S-M (engine-side compare buffer) | none |
+| SNAPSHOT: timestamped micro-saves with notes, browse and load [UI] | p122-123 | Missing | Host undo | - | none |
+| AUTOSAVE snapshot on preset change [UI] | p123 | Missing | - | - | none |
+
+## 22. Settings (p124-139)
+
+### 22a. Global hardware settings (p125-127)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| KNOB MODE [HW] | Absolute, Pass Through, Relative (p125) | Missing | MPC knob behaviour | - | none |
+| CHORD MEMORY learn mode | Silent Learn, Audible Learn (p125) | Missing | Needs chord memory | S | none |
+| LCD BRIGHTNESS, PANEL LED BRIGHTNESS [HW] | 0% to 100% (p125) | Missing | - | - | none |
+| SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Missing | - | - | none |
+| DUPLICATE NAMES ON IMPORT / EXPORT [UI] | Ignore, Overwrite, Auto Rename, Manual Rename (p126) | Missing | - | - | none |
+| STEP EDIT AUTO-SCROLL [UI] | off/on (p126) | Missing | - | - | none |
+| NOISE REDUCTION between notes [ANALOG][HW] | -24 dB to 0 dB, default -12 dB (p126) | Missing | Not needed: no analog hiss (ONE-ish adds only a -100 dB floor) | - | none |
+| SET DATE/TIME, formats [HW] | p127 | Missing | - | - | none |
+| FAN MODE [HW] | Normal, Low (p127) | Missing | - | - | none |
+
+### 22b. MIDI (p128-130)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| RECEIVE MIDI CLOCK | off/on (p128) | Partial | Host tempo via `lfo_bpm` | - | none |
+| RECEIVE MIDI START/STOP | off/on (p128) | Missing | Host transport not read | S | none |
+| MIDI I/O LOAD FROM PRESET [UI] | off/on (p129) | Missing | - | - | none |
+| MIDI IN PORTS [HW] | DIN, USB, DIN & USB (p129) | Missing | Host | - | none |
+| MIDI IN ROUTE and channels [MULTI] | All Synths (Off, 1-16) or Per Synth (Off, 1-16 each) (p129) | Partial | Omni: the channel nibble is ignored | S (with parts) | none |
+| MIDI OUT PORTS, ROUTE, channels [HW] | DIN/USB; All or Per Synth (p129-130) | Missing | The plugin sends no MIDI | - | none |
+
+### 22c. CV inputs and outputs, pedals (p131-132)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| CV IN 1/2, EXP IN 1/2: FUNCTION, SYNTHS, VOLTAGE MIN/MAX [HW] | None, Next/Previous Preset, Next/Previous Set; -5 V to +5 V (p131-132) | Missing | - | - | none |
+| SUSTAIN IN FUNCTION | Off, Sustain Pedal, Sostenuto Pedal (p131) | Partial | Sustain (CC 64) only; no sostenuto (CC 66) | S | none |
+| SUSTAIN IN SYNTH target [MULTI] | Synth 1/2/3, pairs, All (p131) | Missing | - | S (with parts) | none |
+| SUSTAIN SWITCH TYPE [HW] | Open, Closed (p131) | Missing | Host | - | none |
+| CV OUT 1-4: SOURCE, OUT VOLTAGE MIN/MAX [HW] | Gate, Pitch Wheel, Mod Wheel, Aftertouch, Pad X/Y/Pressure/Gate; -5 V to +5 V (p132) | Missing | - | - | none |
+
+### 22d. Utilities, library, tuning (p133-139)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| LIGHT SHOW, RESTORE DEFAULT SETTINGS, UPDATE FIRMWARE, version/build info, IP ADDRESS [HW] | p133-134 | Missing | - | - | none |
+| USER SPACES: switch, create (factory or empty), rename, copy [UI] | p134-135 | Missing | - | - | none |
+| EXPORT / IMPORT to USB: presets, sequences, sets, effect presets, matrix presets, globals, all [UI] | p136-137 | Missing | Host/project files | - | none |
+| Edit CATEGORY, MOOD, GROUP tag lists [UI] | p137-138 | Missing | - | - | none |
+| MASTER FREQUENCY (A above middle C) | 400 Hz to 480 Hz, default 440 (p139) | Missing | Fixed 440 Hz | S | none |
+| MASTER FINE TUNE | -100 to +100 cents (p139) | Missing | - | S | none |
+
+## 23. Specifications cross-check (p140-141)
+
+Cross-reference only: these rows repeat items already counted above and are left out of the totals.
+
+| Spec line | Where audited | Note |
+|---|---|---|
+| Polyphonic, tri-timbral analog; 8 or 16 voices | 0 | ONE-ish: one part, up to 8 voices |
+| Keybed 61 keys with velocity and aftertouch (Fatar TP-8S) [HW] | 1 | - |
+| Controllers: pitch and mod wheels, X/Y pad with pressure and hold, sustain, EXP 1, EXP 2 | 19, 22c | - |
+| 73 knobs, 144 buttons, LCD [HW] | 1 | - |
+| Oscillators x3: saw with variable reset or triangle with variable rise/fall, variable pulse, octave, frequency +-7 st, beat +-7 Hz, wave angle, PW, mix, FM, hard sync | 3, 4 | Beat range confirmed in Hz here |
+| Ring modulator 1-2 or 2-3 | 4 | - |
+| Dual-source noise with colour pairs, colour mix and a dedicated ARS envelope | 5 | - |
+| Mixer: OSC 1-3, ring mod, noise, ext in | 6 | - |
+| SVF: two 12 dB filters acting as one, notch/BP/LP/HP, 12 or 24 dB | 7 | 24 dB is only stated here |
+| Ladder: HP or LP, 6/12/18/24 dB | 7 | - |
+| Envelopes x3: DAHDSR, curves per stage, multi-trigger, loop, latch, sync | 8 | - |
+| LFOs x4: dual-wave categories with variable shapes, fades, repeat count, start phase | 9 | - |
+| Glide: LCR, LCT, EXP, gated, legato, glissando | 19 | - |
+| Arpeggiator per Synth; 64-step sequencer per Synth with step mod | 16, 17 | - |
+| Synth effects per Synth; master effects dual mono or stereo; Eventide on master only | 18 | - |
+| Voice allocation: mono or poly per Synth, unison/mono detune (48 oscillators max), chord memory, stealing | 14 | 48 = 16 voices x 3 oscillators |
+| Snapshot, compare; VCA level and pan per Synth; outputs, inserts, ext inputs, CV, pedals, MIDI, USB, LAN | 2, 10, 11, 21, 22 | - |
+
+## 24. Appendices A and B (p143-158)
+
+| Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
+|---|---|---|---|---|---|
+| USB computer keyboard for naming and Panel Focus shortcuts [HW][UI] | p143 | Missing | - | - | none |
+| MIDI CONTROL OUTPUT: panel moves sent as CC, MIDI MAP or NRPN; ALWAYS SEND NRPN NUM [HW] | p144 | Missing | The plugin sends no MIDI | - | none |
+| LEARN MIDI CC: map a CC to any panel control, 7- or 14-bit | p145-146 | Partial | Every parameter is a host-automatable VST parameter; MPC does the learning | - | none |
+| EDIT MIDI MAPPING list, reserved CCs [UI] | p147-148 | Partial | Host side | - | none |
+| NRPN input for every parameter per Synth (table p149-158: LFO wave and free/synced rate; oscillator octave, frequency, beat, saw, triangle, PW, mix, wave, sync; pitch mod; ring mod source; wave mod; FM; noise; polyphony; mixer; filters; cutoff mod; three envelopes with free and synced times, multi trig, sync, loop, latch; VCA; output) | p149-158 | Missing | Only CC 1, 64, 120, 121, 123 are read | M | none |
+| 14-bit parameter resolution over MIDI | p145 | Missing | Host parameter resolution | S | none |
+
+---
+
+## Summary counts per module
+
+Counted from the tables above (section 23 excluded). "Of which HW/UI" counts Missing rows tagged [HW] or [UI],
+which are not build candidates for an MPC plugin.
+
+| Module | Have | Partial | Missing | of which HW/UI |
+|---|---|---|---|---|
+| 0. Architecture and overview | 1 | 6 | 3 | 0 |
+| 1. Front panel, centre console, keyboard | 2 | 4 | 9 | 7 |
+| 2. Rear panel | 0 | 3 | 3 | 3 |
+| 3. Oscillators | 4 | 4 | 12 | 1 |
+| 4. Oscillator common (pitch mod, ring mod, wave mod, FM) | 2 | 0 | 6 | 0 |
+| 5. Noise | 1 | 1 | 7 | 0 |
+| 6. Mixer | 3 | 1 | 5 | 4 |
+| 7. Filters | 12 | 4 | 8 | 1 |
+| 8. Envelopes | 5 | 7 | 9 | 2 |
+| 9. LFOs | 2 | 9 | 11 | 1 |
+| 10. VCA | 1 | 0 | 4 | 1 |
+| 11. Output | 0 | 0 | 6 | 5 |
+| 12. Performance Sets | 0 | 2 | 3 | 3 |
+| 13. Master Clock | 0 | 3 | 4 | 2 |
+| 14. Voice allocation (Hold, Chord, Polyphony) | 1 | 4 | 7 | 1 |
+| 15. Modulation (structure, sources, controllers, transforms, destinations) | 22 | 9 | 57 | 10 |
+| 16. Arpeggiator | 0 | 0 | 17 | 0 |
+| 17. Sequencer | 0 | 0 | 31 | 5 |
+| 18. Effects (architecture, every type, Eventide) | 20 | 17 | 50 | 3 |
+| 19. Left Hand Controller (glide, bend, pad, curves) | 3 | 2 | 14 | 3 |
+| 20. Browser, presets and timbres | 0 | 3 | 4 | 3 |
+| 21. Editing and saving | 0 | 0 | 4 | 3 |
+| 22. Settings (global, MIDI, CV, utilities, library, tuning) | 0 | 3 | 23 | 18 |
+| 24. Appendices A and B (USB keyboard, MIDI learn, NRPN) | 0 | 2 | 4 | 2 |
+| **Total** | **79** | **84** | **301** | **78** |
+
+Rows are features or parameters, so the totals weigh a 30-row sequencer the same as 30 oscillator parameters; read
+them per module, not as one score. Leaving out [HW]/[UI] rows, 223 sound or behaviour items are missing.
+
+## Prioritised build order
+
+Ordered by how much each group matters to how a Moog One sounds and plays, cheapest wins first inside each tier.
+Effort totals are rough. CPU is per voice unless marked shared.
+
+### Tier 1: the Moog One sound (do these first)
+
+1. **Oscillator wave shaping** (section 3-4): two generators per oscillator (tri/saw plus pulse), variable pulse width
+   and PWM, triangle wave angle (saw to triangle to ramp), saw reset-time angle, the MIX blend, and the LFO 3 to angle
+   and width hard-wires (once LFO 3 exists). This is the single biggest tonal difference: the Moog One's oscillators
+   are its signature as much as the ladder. Effort: M-L (about 3-5 days). CPU: low-medium, roughly doubles oscillator
+   cost (oscillators are a small part of a voice next to the two filters).
+2. **Glide** (section 19): on/off, rate 0-10 s, LCR/LCT/EXP, legato glide, gated glide, glissando. Essential for
+   leads and basses, nearly free. Effort: S-M (1 day). CPU: none.
+3. **Envelope extras** (section 8): delay and hold stages, per-stage curves, loop, latch, tempo sync, time scale,
+   velocity amount, multi-trig and reset switches, the MIN time. Hold alone gives the classic "envelope clipping" bite
+   the manual recommends. Effort: M (2-3 days). CPU: none-low.
+4. **Linear FM and ring modulator** (section 4, 6): FM 1 to 2, 1 to 3, 3 to 1 and a ring-mod mixer channel (1x2, 2x3)
+   with its own filter routing. Effort: M (2 days). CPU: low for ring mod; medium for FM at 44.1 kHz. Oversampling
+   both to stop aliasing would be high and is not advised on the MPC.
+5. **The SVF pair** (section 7): a second SVF element with spacing and series/parallel (24 dB modes, dual peaks),
+   link cutoff, key tracking to +-200%. Effort: M (2 days). CPU: low (about 10 multiplies a sample a voice).
+6. **Unison** (section 14): unison on/off, detune, unison count, plus pitch variance. The Moog One's huge stacked
+   leads depend on it. Effort: M (2 days). CPU: high by nature (each stacked voice is a whole voice); on the MPC keep
+   the stack inside the voice budget (for example 2-4 stacked out of 8).
+
+Tier 1 total: roughly 12-16 days.
+
+### Tier 2: modulation depth and playability
+
+7. **LFOs to four, per voice** (section 9): LFOs 3 and 4, variation morph, smooth noise, ranges (Slow to Medium),
+   polarity, start phase, note-on reset, delay, fade in/out, repeats, smoothing, dotted/triplet sync with the full
+   division list. Effort: M (2-3 days). CPU: low (control rate; per-voice LFOs cost a few operations each 16 samples).
+8. **Matrix depth** (section 15): 16 slots, +-300% source amounts, controller amount and inversion, the four
+   transforms, the missing sources (pitch wheel, noise EG, LFO 3/4, KB gate, sustain, expression CCs, unipolar random,
+   constant) and destinations (wave shape, beat, ring mod level, pan, noise colour, the hard-wired amounts, EG stage
+   times and time scale, LFO rate/variation/delay/fades). Effort: M (2-3 days). CPU: low; per-voice envelope time
+   modulation is low-medium (coefficient updates per voice).
+9. **Noise colours and noise envelope** (section 5): red/purple, colour pairs and mix, the AR(S) noise EG as a source.
+   Effort: S (half a day). CPU: low.
+10. **Voice and keyboard options** (sections 3, 14, 19, 22): note priority low/high/last, stealing modes, poly counts
+   3/5/7, Hold, separate bend up/down to +-24 and per-oscillator bend offsets, velocity curves, semitone transpose,
+   key-track centre, beat frequency, pitch tracking 0-200%, note-on reset switch, sync source select, master tune
+   400-480 Hz and fine tune, sostenuto, expression pedal CCs. Effort: S each, about 2-3 days together. CPU: none.
+11. **Stereo voices** (section 10): synth pan, voice spread, pan as a matrix destination. Effort: M (1-2 days). CPU:
+   low (a stereo voice bus; the effects still take a mono sum, as on the Moog One).
+12. **Analog character** (sections 3, 7): slow oscillator drift; later, per-stage ladder saturation. Effort: S for
+   drift, L for the ladder. CPU: low for drift; medium-high for a non-linear ladder (only if the bench allows).
+
+Tier 2 total: roughly 10-14 days (plus L for the ladder model).
+
+### Tier 3: effects
+
+13. **Synth effect type slot** (section 18a-b): one selectable effect per part (later per part plus master sends),
+   adding the missing parameters to the existing types (chorus time and feedback, flanger time, phaser sweep, tone,
+   gain, spread, sync for all time parameters, separate L/R delay times and ping-pong offset), then new types: dual
+   chorus, ensemble, stereo chorus/flanger, 12-stage and time phaser, BBD, tape, echo, bit crusher, resonator.
+   Effort: M-L (4-6 days). CPU: none per voice; each effect is shared and low to low-medium.
+14. **Master reverbs** (section 18c): original room and hall designs, plate size/diffusion/tone/low damp/longer
+   pre-delay and freeze. Effort: M-L (3-5 days). CPU: shared medium to medium-high.
+15. **Shimmer and blackhole-style reverbs**: Effort: L. CPU: shared high. Defer; likely too heavy next to 8 voices.
+
+### Tier 4: performance tools and structure (lowest priority on an MPC)
+
+16. **Arpeggiator** (section 16): full feature set is M (2-3 days), CPU none. The MPC already has an arpeggiator and
+   note repeat, so this is mainly for preset portability.
+17. **Chord memory** (section 14): M (1-2 days); voice cost scales with chord size.
+18. **Multitimbral parts** (sections 0, 10-14, 22b): up to 3 parts with key zones, per-part MIDI channel, shared voice
+   pool, per-part effects and master sends. Effort: L (1-2 weeks). CPU: high (all parts share one voice budget, and
+   each part effect adds shared cost). On the MPC, three ONE-ish instances on three tracks give most of this for free.
+19. **Sequencer with modulation lanes** (section 17): L (1-2 weeks). CPU none. Recommend skipping: the MPC sequencer
+   and automation cover notes and knob motion. A cut-down "step mod" lane (per-step offsets on one destination, synced)
+   would be the only part worth considering (M).
+20. **Compare buffer, matrix/effect preset libraries, tags, NRPN** (sections 15a, 18a, 20-24): mostly UI or host work;
+   build only if the MPC page can show them.
+
+Not build candidates: everything tagged [HW] (jacks, CV, inserts, panel, displays, storage, fans, firmware) and the
+vocoders (they need a microphone input that an MPC instrument plugin does not get).
+
+### What is likely too CPU-heavy for the MPC
+
+Budget: about 2.9 ms per 128-sample block on Gen1, shared with the whole project; ONE-ish's per-voice cost is not yet
+measured on the device (`tools/bench.sh`), so every "high" item below must be benchmarked before it ships.
+
+- **16-voice polyphony** and **large unison stacks**: each voice is a full voice; stay at the benched voice count and
+  let unison spend it.
+- **Audio-rate filter FM** (cutoff FM from an oscillator): needs per-sample filter coefficients for two filters per
+  voice; high. If attempted, use a tan approximation and only on one filter.
+- **Oversampling** (for clean FM, sync and a driven ladder): 2x roughly doubles the voice cost; high.
+- **Per-stage non-linear ladder**: medium-high; only if the bench leaves room.
+- **Shimmer, blackhole and long multiband halls**: shared but high; one at a time at most, and probably not with 8
+  voices playing.
+- **16-band vocoder**: shared medium-high, and it needs an audio input anyway.
+- **Three multitimbral parts each with its own effect chain**: three effect chains plus the voices; high.
+
+Everything in Tiers 1-2 except unison, FM oversampling and the non-linear ladder is low or none per voice and should
+fit comfortably.

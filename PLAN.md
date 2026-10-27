@@ -106,7 +106,19 @@ for MPC afterwards. Work through the steps without stopping for approval at each
 - **Done and pushed (branch `one-ish` on the owner's fork):** Phases 1-8 offline; 13 presets in the program list
   (`presets/make_presets.py` -> `presets.json`); fixes from the phase 6-8 code review. The desktop `ONE-ish.dll` is
   installed in `%USERPROFILE%\VST2` and plays in Carla.
-- **Now:** the owner plays it in Carla and reports what to change. Fix that first.
+- **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
+  like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (79 have,
+  84 partial, 301 missing, 78 of those hardware-only) and the build order, worked through in this order:
+  1. Tier 1, the sound: dual-wave oscillators (wave angle, pulse width, mix, beat freq) with linear FM and ring mod;
+     glide; envelope extras (delay, hold, loop, latch, sync, curves, velocity); the SVF pair (spacing, link cutoff,
+     key tracking to 200%) and the panel's cutoff-modulation section; unison and detune.
+  2. The front-panel window, laid out from the photos, with the keyboard, wheels and X/Y pad.
+  3. Tier 2: LFOs 3-4 and their options, 16-slot matrix with transforms and the missing sources/destinations, noise
+     colours and noise envelope, voice/keyboard options, stereo voices and pan, analog drift.
+  4. Tier 3: the full effect list (original designs; the Eventide reverbs are licensed, so original reverbs in their
+     spirit). Tier 4: arpeggiator, chord, then a decision with the owner on the sequencer and multitimbral parts.
+  Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
 - **Then, the MPC port (in order):**
   1. MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, from a copy outside Dropbox (CLAUDE.md).
   2. Phase 9: touchscreen page (layout.conf, drawn from scratch, Moog One manual's panel as layout reference only, no
