@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include "params.h"
 #include "layout.h"
+#include "patches.h"
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*audioMasterCallback)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -103,6 +104,7 @@ typedef struct {
     int rnd_count, mut_count, hist_n, hist_pos;
     float hist[RND_HIST][NPARAMS];
     char hist_name[RND_HIST][40];
+    patches_t pt;                              /* user patches and the browser (patches.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT };
 
@@ -125,3 +127,39 @@ static inline int note_of_white(int j, int base) {   /* white key j of the keybo
 /* editor_draw.c */
 void paint(ed_t *e, HDC out);
 void leds_geom(int i, int *x0, int *y0, int *row, RECT *button);
+/* editor.c: the wrapper's own dispatcher (no editor hooks), for patches.c */
+intptr_t wrapped_call(AEffect *fx, int32_t op, int32_t idx, intptr_t v, void *ptr, float opt);
+/* patches.c: user patches and the PATCHES page (patches.h) */
+int patch_name_ok(const char *s, char *why, int n);
+int patch_dir(char *out, int n, int create);
+void patches_init(ed_t *e);
+void patches_free(ed_t *e);
+void patches_rescan(ed_t *e);
+int patches_tick(ed_t *e);
+int patches_edited_now(ed_t *e);
+int patches_total(ed_t *e);
+int patches_pos(ed_t *e);
+int patches_load_pos(ed_t *e, int pos);
+int patches_load_user(ed_t *e, const char *name);
+void patches_step(ed_t *e, int d);
+int patches_save(ed_t *e);
+int patches_save_as(ed_t *e, const char *name, int overwrite);
+int patches_rename(ed_t *e, const char *to, int overwrite);
+int patches_delete(ed_t *e);
+int patches_import(ed_t *e, const char *src, int overwrite);
+void patches_import_name(const char *src, char *out);
+int patches_export(ed_t *e, const char *dst);
+void patches_title(ed_t *e, char *out, int n);
+void patches_open(ed_t *e);
+void patches_toggle(ed_t *e);
+int patches_subs(ed_t *e);
+int patches_hit(ed_t *e, POINT pt);
+int patches_press(ed_t *e, int z);
+void patches_draw(HDC dc, ed_t *e);
+void patches_help(ed_t *e, char *out, int n);
+const char *patches_message(ed_t *e);
+const char *patches_zone_help(int z);
+void patches_program_set(ed_t *e, int before);
+intptr_t patches_get_chunk(ed_t *e, void *ptr);
+void patches_chunk_set(ed_t *e, const void *chunk, intptr_t len);
+intptr_t patches_test(ed_t *e, intptr_t op, char *buf, float opt);

@@ -106,6 +106,7 @@ static const char *help_for(int i) {
 }
 
 static const char *zone_help(int z) {
+    if (z >= Z_PATCH_ACT) return patches_zone_help(z);   /* the PATCHES page */
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) return "MORE: shows this module's other controls on the screen (click again for its next page, if any).";
     switch (z) {
     case Z_KEYS: return "Keyboard: click a key to play it (lower on the key = louder), drag across to slide between notes. "
@@ -117,9 +118,11 @@ static const char *zone_help(int z) {
     case Z_PAD: return "X/Y pad: drag inside it. Up/down sends aftertouch (the matrix source Aftertouch; back to 0 when you let go). "
                        "Left/right sends MIDI CC 2.";
     case Z_OCT_DOWN: case Z_OCT_UP: return "Octave: shifts the on-screen keyboard down or up, two octaves each way.";
-    case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the presets; click it for the list.";
-    case Z_PREV: case Z_NEXT: return "Previous / next preset.";
-    case Z_NAME: return "Click the preset name for the list of presets.";
+    case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the factory presets, then your own "
+                           "patches; click it for the patch list.";
+    case Z_PREV: case Z_NEXT: return "Previous / next patch: the factory presets (F), then your own (U).";
+    case Z_NAME: return "The patch playing now (F: factory, U: yours; * = changed since it was loaded or saved). Click "
+                        "for the patch list, where you can also save, rename, delete, import and export.";
     case Z_TAB_MATRIX: return "MATRIX: the 16 mod matrix rows, 8 at a time (click again, or scroll over the screen, for the others).";
     case Z_TAB_MORE: return "MORE: the list of every module's MORE page. The small triangles on the modules open them directly.";
     case Z_TAB_ANALOG: return "ANALOG: the analog character page (drift and per-voice differences).";
@@ -547,10 +550,8 @@ static void draw_screen(HDC dc, ed_t *e) {
     RECT *s = &L.screen;
     gfx_rect((float)s->left - 3, (float)s->top - 3, (float)rw(s) + 6, (float)rh(s) + 6, 0xFF050505);
     gfx_rect((float)s->left, (float)s->top, (float)rw(s), (float)rh(s), C_SCREEN);
-    char name[64] = "", title[96];
-    int prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0);
-    e->fx->dispatcher(e->fx, effGetProgramNameIndexed, prog, 0, name, 0);
-    snprintf(title, sizeof title, "%03d  %s", prog + 1, name);
+    char title[96];
+    patches_title(e, title, sizeof title);   /* "F 001  Init", "U  Bright Pad *" (patches.c) */
     gfx_frame((float)L.name.left, (float)L.name.top, (float)rw(&L.name), (float)rh(&L.name), 1.2f, 0xFFDCE6EE);
     text(dc, &L.name, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     text(dc, &L.prev, "<", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -563,11 +564,17 @@ static void draw_screen(HDC dc, ed_t *e) {
     if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
     else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
     else if (e->screen == SCR_RANDOM) draw_random(dc, e);
+    else if (e->screen == SCR_PATCHES) {
+        title_line(dc, e, "PATCHES:  factory presets and your own sounds", subs);
+        patches_draw(dc, e);
+    }
     else draw_page(dc, e, subs);
     /* help: what the control under the mouse does */
     char help[480];
-    const char *zh = zone_help(e->hover);
-    if (e->hover >= 0 && e->hover < NPARAMS) {
+    const char *zh = zone_help(e->hover), *pm = patches_message(e);
+    if (pm) {   /* what the last patch operation did (or why it couldn't) */
+        snprintf(help, sizeof help, "%s", pm);
+    } else if (e->hover >= 0 && e->hover < NPARAMS) {
         char val[64];
         param_text(e, e->hover, val, sizeof val);
         const char *h = help_for(e->hover);
@@ -578,6 +585,8 @@ static void draw_screen(HDC dc, ed_t *e) {
         snprintf(help, sizeof help, "RANDOMISE makes a new sound; MUTATE a variation of this one (AMOUNT: how far). "
                                     "Light a section to keep it. UNDO / REDO step through the last sounds. Like it? "
                                     "Save it in your host (a preset or the project).");
+    } else if (e->screen == SCR_PATCHES) {
+        patches_help(e, help, sizeof help);
     } else if (e->screen == SCR_MATRIX) {
         snprintf(help, sizeof help, "Each row: SOURCE x AMOUNT moves DESTINATION. VIA scales it by a second source "
                                     "(V.AMT: how much); XFORM reshapes the source (X.AMT: how strongly). Click a value "
@@ -614,8 +623,8 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     int cx = (L.encoder.left + L.encoder.right) / 2, r = sc(31);
-    int prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), np = e->fx->numPrograms;
-    knob((float)cx, (float)(L.encoder.top + sc(8) + r), (float)r, np > 1 ? (float)prog / (np - 1) : 0.0f, 0);
+    int pos = patches_pos(e), np = patches_total(e);   /* factory presets, then user patches */
+    knob((float)cx, (float)(L.encoder.top + sc(8) + r), (float)r, np > 1 && pos > 0 ? (float)pos / (np - 1) : 0.0f, 0);
     text_c(dc, cx, L.encoder.top + sc(14) + 2 * r, sc(80), sc(14), "PRESET", font_label, e->hover == Z_ENCODER ? T_HOT : T_LABEL);
     text(dc, &L.brand, "ONE-ish", font_brand, RGB(170, 172, 176), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }

@@ -31,8 +31,10 @@ done
 $CC "${FLAGS[@]}" -DVSTPluginMain=one_ish_wrapped_main -c wrapper/vst2_wrap.c -o "$OUT/vst2_wrap.o"
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/editor.c" -o "$OUT/editor.o"
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/editor_draw.c" -o "$OUT/editor_draw.o"
+$CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/patches.c" -o "$OUT/patches.o"
 # -static: winpthreads and libgcc go inside the DLL, so it needs nothing else installed
-$LINK -shared "${OBJS[@]}" "$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/editor_draw.o" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
+$LINK -shared "${OBJS[@]}" "$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/editor_draw.o" "$OUT/patches.o" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
+  -lcomdlg32 -lshell32 \
   -o "$OUT/ONE-ish.dll"
 $CC -O2 -std=gnu11 -Wall -Wextra -I"$OUT" -I"$P/build" "$P/desktop/load_test.c" -static -lgdi32 -luser32 -o "$OUT/load_test.exe"
 $CC "${FLAGS[@]}" -c wrapper/vst2_wrap.c -o "$OUT/vst2_wrap_plain.o"
