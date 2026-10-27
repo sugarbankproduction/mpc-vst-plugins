@@ -63,10 +63,15 @@
  *             limiter (peak, rms, zero runs while held), single notes bounded; the never-touched params and locked
  *             sections keep their values exactly; the same seed gives the same sound; MUTATE at 10% moves a few params a
  *             little; MUTATE at 100% and chains of mutations stay heard and safe
+ *   macro     the MACRO channel (Plaits, src/macro.h): every model finite and bounded at low to high notes and every
+ *             corner of harmonics / timbre / morph; VA, wavetable and additive in tune (note, octave, frequency, bend,
+ *             master tune) at 44.1 kHz; level 0 is exactly the sound without it; the drums, string and modal models
+ *             fire on note-on; the matrix and the ribbon move harmonics, timbre, morph and level
  *   state     save/restore round trip; damaged or oversized states don't break the instance
- *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav)
- *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
- *             MPC's number
+ *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav,
+ *             macro_demo.wav)
+ *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
+ *             MACRO channel at each model; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
 #include <math.h>
 #include <stdint.h>
@@ -84,6 +89,7 @@
 #include "modmatrix.h"
 #include "fx.h"
 #include "randomize.h"
+#include "macro.h"
 
 #define SR 44100
 #define N 16384   /* FFT length: 2.7 Hz per bin */
@@ -3866,9 +3872,263 @@ static void random_demo_wav(const char *demo_path) {
     printf("wrote %s (%d random sounds)\n", path, SOUNDS);
 }
 
+/* ---- the MACRO channel (Plaits: src/macro.h) ---- */
+enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
+       MAC_BASS_DRUM = 13, MAC_SNARE = 14, MAC_HIHAT = 15, MAC_FM6 = 18 };
+static int mac_triggered(int m) {   /* the models played with their trigger input "patched" (src/macro.cc) */
+    return m == MAC_SPEECH || (m >= MAC_STRING && m <= MAC_HIHAT) || (m >= MAC_FM6 && m <= MAC_FM6 + 2);
+}
+
+/* the macro channel alone at full level through the open ladder; the amp envelope fully open */
+static void *mac_patch(int model) {
+    void *e = patch(SAW, 0, 1, 100, 10);
+    set(e, "o1_level", 0); set(e, "mac_level", 100); set(e, "mac_model", model); set(e, "flt_cut", 100);
+    return e;
+}
+
+static double rms(const float *x, int n) {
+    double s = 0;
+    for (int i = 0; i < n; i++) s += (double)x[i] * x[i];
+    return sqrt(s / n);
+}
+
+/* the strongest partial within +-60 cents of `want`, interpolated between bins (the fundamental of a pitched model) */
+static double partial_near(const float *x, double want) {
+    const double *pw = spectrum(x);
+    double bin = (double)SR / N;
+    int lo = (int)(want * pow(2, -0.05) / bin), hi = (int)(want * pow(2, 0.05) / bin) + 1, best = lo;
+    for (int k = lo; k <= hi; k++)
+        if (pw[k] > pw[best]) best = k;
+    double a = log(pw[best - 1] + 1e-30), b = log(pw[best] + 1e-30), c = log(pw[best + 1] + 1e-30);
+    return (best + 0.5 * (a - c) / (a - 2 * b + c)) * bin;
+}
+
+static void macro_osc(void) {
+    static float x[N + 44100], y[N + 44100];
+    char what[160];
+    /* 1. every model through the C API: finite and bounded at low, middle and high notes with every corner of
+     *    harmonics / timbre / morph and the aux output blended in, triggered and gated; and it makes a sound */
+    macro_t *m = macro_create();
+    check(m != NULL, "macro: macro_create");
+    if (!m) return;
+    for (int model = 0; model < MACRO_MODELS; model++) {
+        static const float notes[] = {-24, 12, 36, 60, 84, 108, 127};
+        int finite = 1;
+        double peak = 0, loud = 0;
+        for (unsigned k = 0; k < sizeof notes / sizeof notes[0]; k++)
+            for (int c = 0; c < 9; c++) {
+                float h = c == 8 ? 0.5f : (c & 1), t = c == 8 ? 0.5f : (c >> 1 & 1), mo = c == 8 ? 0.5f : (c >> 2 & 1);
+                macro_set(m, model, notes[k], h, t, mo, c & 1 ? 0.5f : (c == 8 ? 0.0f : 1.0f));
+                macro_trigger(m);
+                macro_gate(m, 1);
+                macro_render(m, x, 2205);
+                macro_gate(m, 0);
+                macro_render(m, x + 2205, 2205);
+                for (int i = 0; i < 4410; i++) {
+                    if (!isfinite(x[i])) finite = 0;
+                    else if (fabs(x[i]) > peak) peak = fabs(x[i]);
+                }
+                if (c == 8 && notes[k] == 60) loud = rms(x, 4410);
+            }
+        snprintf(what, sizeof what, "macro %-14s finite, peak %.2f (<= 1), rms %.3f at C4 (> 0.01) over 7 notes x 9 knob settings",
+                 macro_model_name(model), peak, loud);
+        check(finite && peak <= 1 && loud > 0.01, what);
+    }
+    macro_destroy(m);
+
+    /* 2. through the engine: the pitched models follow the note, octave and frequency knobs within 3 cents */
+    static const int pitched[] = {MAC_VA, MAC_WAVETABLE, MAC_ADDITIVE};
+    static const struct { int key; double oct, freq; } tune[] = {{45, 2, 0}, {57, 2, 0}, {69, 2, 0}, {81, 2, 0},
+                                                                 {57, 3, 0}, {57, 1, 7}, {64, 2, -5}};
+    for (unsigned i = 0; i < 3; i++)
+        for (unsigned t = 0; t < sizeof tune / sizeof tune[0]; t++) {
+            void *e = mac_patch(pitched[i]);
+            set(e, "mac_oct", tune[t].oct); set(e, "mac_freq", tune[t].freq);
+            if (pitched[i] == MAC_ADDITIVE) set(e, "mac_timbre", 0);   /* the fundamental the loudest partial */
+            note(e, 1, tune[t].key, 100);
+            render_f(e, x, N + 4096);
+            double want = 440 * pow(2, (tune[t].key - 69 + 12 * (tune[t].oct - 2) + tune[t].freq) / 12.0);
+            double got = partial_near(x + 4096, want), off = cents(got, want);
+            snprintf(what, sizeof what, "macro %s note %d oct %g freq %+g plays %.2f Hz (want %.2f, %+.2f cents)",
+                     macro_model_name(pitched[i]), tune[t].key, tune[t].oct - 2, tune[t].freq, got, want, off);
+            check(fabs(off) < 3, what);
+            E->destroy(e);
+        }
+    {   /* pitch bend and master tune move it too */
+        void *e = mac_patch(MAC_VA);
+        set(e, "bend_up", 12); set(e, "master_tune", 432);
+        midi3(e, 0xe0, 0x7f, 0x7f);   /* bend fully up: +12 st (8191/8192 of it) */
+        note(e, 1, 57, 100);
+        render_f(e, x, N + 4096);
+        double want = 432 * pow(2, (57 - 69 + 12 * 8191.0 / 8192) / 12.0), off = cents(partial_near(x + 4096, want), want);
+        snprintf(what, sizeof what, "macro follows pitch bend and master tune (%+.2f cents)", off);
+        check(fabs(off) < 3, what);
+        E->destroy(e);
+    }
+
+    /* 3. level 0 (the default) is the same samples as a fresh instance, whatever the other MACRO knobs say; the
+     *    channel off the ladder and the SVF is silent too */
+    {
+        void *a = patch(SAW, 5, 300, 70, 250), *b = patch(SAW, 5, 300, 70, 250), *c = mac_patch(MAC_STRING);
+        set(b, "mac_model", MAC_STRING); set(b, "mac_harm", 90); set(b, "mac_oct", 4); set(b, "mac_aux", 70);
+        set(b, "mac_svf", 1);
+        set(c, "mac_lad", 0);
+        for (int k = 0; k < 3; k++) { note(a, 1, 48 + 7 * k, 100); note(b, 1, 48 + 7 * k, 100); note(c, 1, 48 + 7 * k, 100); }
+        render_f(a, x, 22050);
+        render_f(b, y, 22050);
+        check(!memcmp(x, y, sizeof(float) * 22050), "macro: level 0 renders exactly what an instance without it does");
+        render_f(c, x, 22050);
+        check(rms(x, 22050) == 0, "macro: at full level but routed to neither filter it is silent");
+        E->destroy(a); E->destroy(b); E->destroy(c);
+    }
+
+    /* 4. the drums, string and modal models fire on note-on: a hit, then a decay while the key (and the amp envelope at
+     *    full sustain) stays down; a new note-on hits again */
+    static const int hits[] = {MAC_BASS_DRUM, MAC_SNARE, MAC_HIHAT, MAC_STRING, MAC_MODAL};
+    for (unsigned i = 0; i < sizeof hits / sizeof hits[0]; i++) {
+        void *e = mac_patch(hits[i]);
+        set(e, "voices", 0);   /* mono: the second note-on retriggers the same voice */
+        set(e, "mac_morph", 20);   /* the string's and modal's decay: about half a second */
+        note(e, 1, 48, 127);
+        render_f(e, x, 44100);
+        note(e, 1, 50, 127);
+        render_f(e, y, 4410);
+        double hit = rms(x, 2205), tail = rms(x + 39690, 4410), again = rms(y, 2205);
+        snprintf(what, sizeof what, "macro %s fires on note-on: first 50 ms %.1f dB over the last 100 ms of a 1 s note, "
+                 "a second note-on %.1f dB", macro_model_name(hits[i]), db(hit, tail), db(again, tail));
+        check(hit > 0.01 && db(hit, tail) > 12 && db(again, tail) > 12, what);
+        E->destroy(e);
+    }
+
+    /* 5. the matrix: Constant at +50% to MACRO harmonics / timbre / morph / level from 50% gives exactly what the knob
+     *    at 100% does (both reach 1.0), and the knob at 100% sounds different from 50% */
+    static const int dst[4] = {MD_MAC_HARM, MD_MAC_TIMBRE, MD_MAC_MORPH, MD_MAC_LEVEL};
+    static const char *const key[4] = {"mac_harm", "mac_timbre", "mac_morph", "mac_level"};
+    for (int d = 0; d < 4; d++) {
+        void *a = mac_patch(MAC_WAVETABLE), *b = mac_patch(MAC_WAVETABLE), *c = mac_patch(MAC_WAVETABLE);
+        set(a, key[d], 100);
+        set(b, key[d], 50); slot_set(b, 2, MS_CONST, dst[d], 50);
+        set(c, key[d], 50);
+        note(a, 1, 52, 100); note(b, 1, 52, 100); note(c, 1, 52, 100);
+        render_f(a, x, 22050);
+        render_f(b, y, 22050);
+        int same = !memcmp(x, y, sizeof(float) * 22050);
+        render_f(c, y, 22050);
+        int moved = memcmp(x, y, sizeof(float) * 22050) != 0;
+        snprintf(what, sizeof what, "macro: the matrix moves %s (a slot at +50%% from 50%% = the knob at 100%%)", key[d]);
+        check(same && moved, what);
+        E->destroy(a); E->destroy(b); E->destroy(c);
+    }
+    {   /* the ribbon's quick assignment reaches them too */
+        void *a = mac_patch(MAC_WAVETABLE), *b = mac_patch(MAC_WAVETABLE);
+        set(a, "mac_morph", 100);
+        set(b, "mac_morph", 50); set(b, "ribbon_dst", MD_MAC_MORPH); set(b, "ribbon_amt", 50); set(b, "ribbon_origin", 1);
+        midi3(b, 0xb0, 16, 127);   /* the ribbon at the right end: 1.0 with the origin on the left */
+        for (int k = 0; k < 400; k++) { int16_t buf[256]; E->render(b, buf, 128); }   /* let it glide there */
+        note(a, 1, 52, 100); note(b, 1, 52, 100);
+        render_f(a, x, N); render_f(b, y, N);
+        double r = rms(x + 4096, 8192), d = 0;
+        for (int i = 4096; i < 4096 + 8192; i++) d += (double)(x[i] - y[i]) * (x[i] - y[i]);
+        snprintf(what, sizeof what, "macro: the ribbon's quick assignment moves morph (%.1f dB apart)",
+                 db(sqrt(d / 8192), r));
+        check(db(sqrt(d / 8192), r) < -20, what);
+        E->destroy(a); E->destroy(b);
+    }
+
+    /* 6. how loud each model is at its defaults against oscillator 1's saw at full level (information) */
+    {
+        void *e = patch(SAW, 0, 1, 100, 10);
+        set(e, "flt_cut", 100);
+        note(e, 1, 48, 100);
+        render_f(e, x, 22050);
+        double saw = rms(x + 4410, 17640);
+        E->destroy(e);
+        printf("macro levels at C3 against a full-level saw (dB):");
+        for (int model = 0; model < MACRO_MODELS; model++) {
+            e = mac_patch(model);
+            note(e, 1, 48, 100);
+            render_f(e, x, 22050);
+            printf(" %s %+.1f%s", macro_model_name(model), db(rms(x + (mac_triggered(model) ? 0 : 4410), 17640), saw),
+                   model < MACRO_MODELS - 1 ? "," : "\n");
+            E->destroy(e);
+        }
+    }
+}
+
+/* <dir>/macro_demo.wav: every model playing a short phrase (a rising arpeggio and a held note), in option order */
+static void macro_wav(const char *demo_path) {
+    enum { NOTE = 26, HOLD = 86, GAP = 43 };   /* 0.075 s, 0.25 s, 0.125 s in 128-frame blocks */
+    static int16_t pcm[MACRO_MODELS * (4 * NOTE + HOLD + GAP + 43) * 256];
+    static const int phrase[4] = {48, 55, 60, 63};
+    char dir[256], path[320];
+    snprintf(dir, sizeof dir, "%s", demo_path);
+    char *slash = strrchr(dir, '/');
+    if (slash) slash[1] = 0; else dir[0] = 0;
+    int16_t *o = pcm;
+    for (int model = 0; model < MACRO_MODELS; model++) {
+        void *e = patch(SAW, 2, 400, 60, 150);
+        set(e, "o1_level", 0); set(e, "mac_level", 90); set(e, "mac_model", model); set(e, "flt_cut", knob_for_hz(9000));
+        set(e, "voices", 7); set(e, "mfx_send2", 15);
+        int base = model >= MAC_BASS_DRUM && model <= MAC_SNARE ? -12 : 0;
+        for (int k = 0; k < 4; k++) o = play(e, o, phrase[k] + base, NOTE);
+        o = play(e, o, phrase[0] + 12 + base, HOLD);
+        o = rest(e, o, GAP + 43);
+        E->destroy(e);
+    }
+    snprintf(path, sizeof path, "%smacro_demo.wav", dir);
+    uint32_t frames = (uint32_t)((o - pcm) / 2);
+    write_wav(path, pcm, frames);
+    printf("wrote %s (%.1f s: %d models)\n", path, frames / (double)SR, MACRO_MODELS);
+}
+
+/* microseconds per 128-frame block for 8 voices of the busy patch with the MACRO channel at each model, against the
+ * same patch without it (level 0) */
+static double macro_bench_us(int model, double level) {   /* the fastest of three runs */
+    enum { BLOCKS = 2000 };
+    int16_t buf[256];
+    double best = 1e30;
+    for (int run = 0; run < 3; run++) {
+        void *e = patch(SAW, 5, 300, 70, 250);
+        set(e, "voices", 7); set(e, "o2_level", 80); set(e, "o3_level", 60);
+        route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
+        set(e, "mod2_src", 6); set(e, "mod2_dst", 9); set(e, "mod2_amt", 30);
+        if (model >= 0) { set(e, "mac_model", model); set(e, "mac_level", level); }
+        for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
+        for (int b = 0; b < 200; b++) E->render(e, buf, 128);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        if (us < best) best = us;
+        E->destroy(e);
+    }
+    return best;
+}
+
+static void macro_bench(void) {
+    printf("bench: MACRO channel, 8 voices of the busy patch (3 oscillators, both filters) plus the channel at 70%%:\n");
+    double base = macro_bench_us(-1, 0), off = macro_bench_us(MAC_FM6, 0);
+    printf("bench:   %-16s %7.2f us per block, %6.2f per voice\n", "no MACRO", base, base / 8);
+    printf("bench:   %-16s %7.2f us per block, %6.2f per voice (%+.1f%%)\n", "MACRO level 0", off, off / 8,
+           100 * (off - base) / base);
+    for (int model = 0; model < MACRO_MODELS; model++) {
+        double us = macro_bench_us(model, 70);
+        printf("bench:   %-16s %7.2f us per block, %6.2f per voice; the channel adds %6.2f per voice (%.1fx a voice)%s\n",
+               macro_model_name(model), us, us / 8, (us - base) / 8, (us - base) / base,
+               us - base > 2 * base ? "  HEAVY: likely too much for 8 voices on an MPC" : "");
+    }
+}
+
 int main(int argc, char **argv) {
     E = mpc_engine();
-    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); return 0; }
+    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); return 0; }
+    if (argc > 2 && !strcmp(argv[1], "macro")) {   /* just the MACRO channel: offline_check macro <dir>/demo.wav */
+        macro_osc();
+        macro_wav(argv[2]);
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "random")) {   /* just the randomiser: offline_check random <dir>/demo.wav */
         randomiser();
         random_demo_wav(argv[2]);
@@ -3902,11 +4162,13 @@ int main(int argc, char **argv) {
     voice_keyboard_options();
     noise_stereo_drift();
     analog_character();
+    macro_osc();
     randomiser();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     analog_wavs(argc > 1 ? argv[1] : "demo.wav");
     random_demo_wav(argc > 1 ? argv[1] : "demo.wav");
+    macro_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }

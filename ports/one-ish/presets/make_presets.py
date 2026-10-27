@@ -234,6 +234,21 @@ PATCHES = [
                           "voices": "8", "spread": 70,
                           "an_cut": 60, "an_env": 70, "an_lvl": 60, "an_tune": 50, "an_res": 50, "an_ladder": 80,
                           "drift": 60, **chorus(0.3, 9, 30, 30), **reverb(30, 3.2)}),
+    # the MACRO channel (Plaits): a plucked string through the ladder; a wavetable pad whose morph an LFO sweeps; 6-op
+    # FM keys with a little of the saw under them
+    ("Macro String", {**amp(1, 2500, 0, 1200), "o1_level": 0, "mac_model": "String", "mac_level": 90,
+                      "mac_harm": 35, "mac_timbre": 60, "mac_morph": 65, "flt_cut": hz(6000), "voices": "6",
+                      **delay(280, 25, 12), **reverb(20, 2.0)}),
+    ("Macro Wave Pad", {**amp(600, 1500, 85, 1600), **fenv(800, 2000, 50, 1500),
+                        "o1_level": 0, "mac_model": "Wavetable", "mac_level": 85, "mac_harm": 30, "mac_timbre": 45,
+                        "mac_morph": 20, "flt_cut": hz(2500), "flt_res": 15, "lad_env": 20, "voices": "8",
+                        "lfo2_rate": lfo(0.15), "lfo2_wave": "Sine",
+                        "mod2_src": "LFO 2", "mod2_dst": "Macro Morph", "mod2_amt": 35, "spread": 60,
+                        **chorus(0.3, 8, 35, 30), **reverb(30, 3.0)}),
+    ("Macro FM Keys", {**amp(2, 1800, 40, 700), "o1_level": 25, "o1_oct": "16'", "mac_model": "6-Op FM 1",
+                       "mac_level": 85, "mac_harm": 10, "mac_timbre": 55, "mac_morph": 40, "flt_cut": hz(9000),
+                       "voices": "8", "mod2_src": "Velocity", "mod2_dst": "Macro Timbre", "mod2_amt": 30,
+                       **chorus(0.4, 7, 25, 25), **reverb(20, 1.8)}),
 ]
 
 

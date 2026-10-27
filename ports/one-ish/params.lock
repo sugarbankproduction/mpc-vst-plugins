@@ -400,3 +400,13 @@ ribbon_dst
 ribbon_amt
 ribbon_mode
 ribbon_origin
+mac_model
+mac_harm
+mac_timbre
+mac_morph
+mac_oct
+mac_freq
+mac_aux
+mac_level
+mac_svf
+mac_lad

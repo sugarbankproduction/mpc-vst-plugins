@@ -2,7 +2,9 @@
  * blended with a pulse of any width; octave, frequency +-7 semitones, beat frequency +-7 Hz; 2 and 3 can hard-sync
  * to 1), linear FM (1 to 2, 1 to 3 or 3 to 1), a ring modulator (1 x 2 or 2 x 3, from the triangle/saw waves) and
  * noise (two of white, red and purple, blended by a colour mix, optionally shaped by its own attack/release envelope
- * with a sustain button), each sent to the SVF, the ladder, both or neither by its own two buttons; a state-variable filter
+ * with a sustain button) and the MACRO channel (Mutable Instruments Plaits' 24 models, MIT licence: src/macro.h, its own
+ * pitch knobs, harmonics / timbre / morph, a trigger on each note-on), each sent to the SVF, the ladder, both or neither
+ * by its own two buttons; a state-variable filter
  * (LP/BP/HP/notch; a pair of elements with spacing, in series or parallel: src/svf.h) and a ladder filter (cutoff,
  * resonance, drive, LP/HP, 24-6 dB) in parallel or in series (SVF into ladder) with a mix between them, their cutoff
  * knobs optionally linked; three DAHDSR envelopes (filter, amp, mod: src/env.h, with stage curves, loop, latch, tempo
@@ -52,13 +54,14 @@
 #include "lfo.h"
 #include "modmatrix.h"
 #include "fx.h"
+#include "macro.h"
 
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
 #define MAX_HELD 16
 #define MAX_VOICES 8
 #define NOSC 3
-#define NSRC 5             /* the mixer's channels: oscillators 1-3, noise, ring mod */
+#define NSRC 6             /* the mixer's channels: oscillators 1-3, noise, ring mod, MACRO (Plaits: src/macro.h) */
 #define NLFO 4
 #define HEADROOM 0.5f      /* one full-scale saw at full velocity and volume peaks at -6 dBFS */
 #define STATE_MAX 8192     /* the wrapper's chunk size (wrapper/vst2_wrap.c) */
@@ -162,6 +165,9 @@ enum {
     P_PAN, P_SPREAD, P_DRIFT,
     P_AN_CUT, P_AN_ENV, P_AN_LVL, P_AN_TUNE, P_AN_RES, P_AN_LADDER,   /* ANALOG CHARACTER (with drift) */
     P_RIBBON_DST, P_RIBBON_AMT, P_RIBBON_MODE, P_RIBBON_ORIGIN,   /* the ribbon's quick assignment and behaviour */
+    /* the MACRO channel (Plaits): model, its three knobs, footage and frequency, main/aux blend, level, filter buttons */
+    P_MAC_MODEL, P_MAC_HARM, P_MAC_TIMBRE, P_MAC_MORPH, P_MAC_OCT, P_MAC_FREQ, P_MAC_AUX, P_MAC_LEVEL, P_MAC_SVF,
+    P_MAC_LAD,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -177,11 +183,13 @@ static const int NOISE_PAIR[3][2] = {{NC_RED, NC_WHITE}, {NC_RED, NC_PURPLE}, {N
 enum { AC_LAD_CUT, AC_SVF_CUT, AC_LAD_RES, AC_SVF_RES, AC_ENV, AC_LVL = AC_ENV + 3, AC_TUNE, AC_COUNT = AC_TUNE + NOSC };
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
-/* each mixer channel's level and filter buttons, in channel order (osc 1-3, noise, ring mod: the matrix's order) */
-static const int LEVEL_SLOT[NSRC] = {P_O1_LEVEL, P_O2_LEVEL, P_O3_LEVEL, P_NOISE_LEVEL, P_RING_LEVEL};
-static const int SVF_SLOT[NSRC] = {P_O1_SVF, P_O2_SVF, P_O3_SVF, P_NOISE_SVF, P_RING_SVF};
-static const int LAD_SLOT[NSRC] = {P_O1_LAD, P_O2_LAD, P_O3_LAD, P_NOISE_LAD, P_RING_LAD};
-enum { NOISE = 3, RING = 4 };                   /* the noise and ring modulator channels */
+/* each mixer channel's level and filter buttons, in channel order (osc 1-3, noise, ring mod, MACRO), and its level's
+ * matrix destination (MACRO's came later, after the effects) */
+static const int LEVEL_SLOT[NSRC] = {P_O1_LEVEL, P_O2_LEVEL, P_O3_LEVEL, P_NOISE_LEVEL, P_RING_LEVEL, P_MAC_LEVEL};
+static const int SVF_SLOT[NSRC] = {P_O1_SVF, P_O2_SVF, P_O3_SVF, P_NOISE_SVF, P_RING_SVF, P_MAC_SVF};
+static const int LAD_SLOT[NSRC] = {P_O1_LAD, P_O2_LAD, P_O3_LAD, P_NOISE_LAD, P_RING_LAD, P_MAC_LAD};
+static const int LEVEL_MD[NSRC] = {MD_O1_LEVEL, MD_O2_LEVEL, MD_O3_LEVEL, MD_NOISE_LEVEL, MD_RING_LEVEL, MD_MAC_LEVEL};
+enum { NOISE = 3, RING = 4, MACRO = 5 };        /* the noise, ring modulator and MACRO channels */
 enum { RING_1X2, RING_2X3 };                    /* "ring_src" options */
 enum { FM_1TO2, FM_1TO3, FM_3TO1 };             /* "fm_route" options */
 enum { ENV_FILTER, ENV_AMP, ENV_MOD, NENV, ENV_STRIDE = P_AMP_A - P_ENV_A };
@@ -252,6 +260,8 @@ static const char *const KEYS[P_COUNT] = {
     "pan", "spread", "drift",
     "an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder",
     "ribbon_dst", "ribbon_amt", "ribbon_mode", "ribbon_origin",
+    "mac_model", "mac_harm", "mac_timbre", "mac_morph", "mac_oct", "mac_freq", "mac_aux", "mac_level", "mac_svf",
+    "mac_lad",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -347,6 +357,10 @@ typedef struct {
     float an_gain;           /* level factor */
     float an_tune[NOSC];     /* semitones per oscillator */
     int env_mod[NENV];       /* the envelope's settings had matrix modulation at the last control step */
+    macro_t *mac;            /* the MACRO channel's Plaits state (allocated in create()), run only while it is heard */
+    float mac_note;          /* its pitch (a MIDI note number, modulation included) */
+    float mac_harm, mac_timbre, mac_morph;   /* its three knobs with the matrix's modulation, 0..1 */
+    int mac_trig;            /* a note-on it hasn't seen yet (kept until the channel is heard) */
 } voice_t;
 
 typedef struct {
@@ -402,6 +416,7 @@ typedef struct {
     float shift, center;     /* transpose + octave shift, and the key track centre, in whole semitones */
     float track[NOSC];       /* each oscillator's pitch tracking - 1 (0 at 100%) */
     float bend_off[NOSC][2]; /* each oscillator's bend up / down offset, whole semitones */
+    float mac_st;            /* the MACRO channel's octave and frequency knobs, semitones */
     char state_buf[STATE_MAX];   /* set_state's working copy (allocated with the instance, not per call) */
 } one_t;
 
@@ -536,7 +551,11 @@ static void apply_matrix(one_t *s) {
     s->fx_dst = rd >= MD_FX_FIRST && rd <= MD_FX_END ? 1ull << (rd - MD_FX_FIRST) : 0;
     for (int k = 0; k < n; k++) {
         int d = (int)s->val[P_MOD_BASE + MOD_SLOT_PARAMS * all[k] + 1];
-        if (d >= MD_FX_FIRST) { s->fx_list[s->fx_n++] = all[k]; s->fx_dst |= 1ull << (d - MD_FX_FIRST); continue; }
+        if (d >= MD_FX_FIRST && d <= MD_FX_END) {   /* (the MACRO destinations, past the effects, are the voices') */
+            s->fx_list[s->fx_n++] = all[k];
+            s->fx_dst |= 1ull << (d - MD_FX_FIRST);
+            continue;
+        }
         s->mod_list[s->mod_n++] = all[k];
         s->mod_env |= d >= MD_FENV_DELAY && d <= MD_ENV_END;
         s->mod_lfo |= d >= MD_LFO1_RATE && d <= MD_LFO_END;
@@ -584,6 +603,7 @@ static void apply(one_t *s) {
         s->bend_off[n][0] = roundf(x[XO_BEND_UP]);
         s->bend_off[n][1] = roundf(x[XO_BEND_DN]);
     }
+    s->mac_st = 12.0f * (s->val[P_MAC_OCT] - OCT_CENTRE) + s->val[P_MAC_FREQ];
 }
 
 static const int VOICE_COUNTS[] = {1, 2, 3, 4, 5, 6, 7, 8};   /* the "voices" options */
@@ -649,7 +669,7 @@ static void set_targets(const one_t *s, voice_t *v, const float *dm, float lfo3)
     float angle_lfo = lfo3 * clampf(p[P_ANGLE_LFO3] * 0.01f + dm[MD_ANGLE_LFO3], -1.0f, 1.0f) * LFO_HW_ANGLE;
     float pw_lfo = lfo3 * clampf(p[P_PW_LFO3] * 0.01f + dm[MD_PW_LFO3], -1.0f, 1.0f) * LFO_HW_PW;
     for (int k = 0; k < NSRC; k++) {
-        float l = clampf(p[LEVEL_SLOT[k]] * 0.01f + dm[MD_O1_LEVEL + k], 0.0f, 1.0f);
+        float l = clampf(p[LEVEL_SLOT[k]] * 0.01f + dm[LEVEL_MD[k]], 0.0f, 1.0f);
         v->tgt_lad[k] = p[LAD_SLOT[k]] > 0.5f ? l : 0.0f;
         v->tgt_svf[k] = p[SVF_SLOT[k]] > 0.5f ? l : 0.0f;
     }
@@ -664,6 +684,22 @@ static void set_targets(const one_t *s, voice_t *v, const float *dm, float lfo3)
     v->svf_fm = clampf(p[P_SVF_FM] * 0.01f + dm[MD_SVF_FM], 0.0f, 1.0f);
     v->tgt_mix = clampf(p[P_FLT_MIX] * 0.01f + dm[MD_FLT_MIX], 0.0f, 1.0f);
     v->amp_mod = clampf(1.0f + dm[MD_AMP], 0.0f, 2.0f);
+    v->mac_harm = clampf(p[P_MAC_HARM] * 0.01f + dm[MD_MAC_HARM], 0.0f, 1.0f);
+    v->mac_timbre = clampf(p[P_MAC_TIMBRE] * 0.01f + dm[MD_MAC_TIMBRE], 0.0f, 1.0f);
+    v->mac_morph = clampf(p[P_MAC_MORPH] * 0.01f + dm[MD_MAC_MORPH], 0.0f, 1.0f);
+}
+
+/* the MACRO channel is (or is about to be) heard: a level into either filter, at the last control step or this one */
+static int mac_heard(const voice_t *v) {
+    return v->tgt_lad[MACRO] != 0.0f || v->tgt_svf[MACRO] != 0.0f || v->to_lad[MACRO] != 0.0f || v->to_svf[MACRO] != 0.0f;
+}
+
+/* the MACRO channel's pitch as a MIDI note number (Plaits' unit): the voice's frequency (its note and glide, pitch
+ * variance, unison detune, master tune) moved by the channel's octave and frequency knobs, by oscillator 1's pitch
+ * tracking, and by `semis` (pitch modulation, bend, drift and the voice card's tuning: oscillator 1's) */
+static float mac_pitch(const one_t *s, const voice_t *v, float semis) {
+    return 69.0f + 12.0f * log2f(v->note_hz * (1.0f / 440.0f)) + s->mac_st + (voice_key(s, v) - s->center) * s->track[0]
+           + semis;
 }
 
 /* the pitch wheel in semitones: PITCH BEND UP / DOWN for all oscillators (osc -1), or oscillator osc's BEND UP / DOWN
@@ -795,6 +831,12 @@ static void *create(const char *data_dir) {
         v->nz_m = -1.0f;   /* nothing worked out yet */
         v->cut = s->val[P_FLT_CUT];
         v->svf_cut = s->val[P_SVF_CUT];
+        v->mac_note = 60.0f;
+        if (!(v->mac = macro_create())) {   /* out of memory: no instance */
+            for (int j = 0; j < i; j++) macro_destroy(s->voice[j].mac);
+            free(s);
+            return NULL;
+        }
     }
     /* the voice cards, as in an analog polysynth where no two voices match: for each part, the eight cards take the
      * eight evenly spaced values -1 .. 1 in an order shuffled per part (so at 100% the whole range is in use, and a
@@ -831,7 +873,11 @@ static void *create(const char *data_dir) {
     return s;
 }
 
-static void destroy(void *inst) { free(inst); }
+static void destroy(void *inst) {
+    one_t *s = inst;
+    for (int i = 0; i < MAX_VOICES; i++) macro_destroy(s->voice[i].mac);
+    free(inst);
+}
 
 /* legato: another key is held as this note starts. The voice glides from its own last pitch when glide is on, it has
  * played before, and (with legato glide) the note is legato; else it jumps straight to the note. */
@@ -844,6 +890,7 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
     v->note = note;
     update_note_hz(s, v);
     set_pitch(s, v, 0.0f, v->an_tune);   /* pitch at once (the voice card's tuning); the next control step adds the modulation */
+    v->mac_note = mac_pitch(s, v, v->an_tune[0]);   /* so a drum model's hit (the trigger) lands on the new note */
     if (v->env[ENV_AMP].stage == ENV_IDLE) {   /* from silence every note starts the same way */
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
         ladder_reset(&v->lad);
@@ -889,7 +936,10 @@ static void gate_on(voice_t *v) {
     int legato = v->gate && !v->sustained && v->env[ENV_AMP].stage != ENV_IDLE;
     for (int n = 0; n < NENV; n++)
         if (!legato || v->env[n].cfg->multi) env_gate_on(&v->env[n]);
-    if (!legato || v->env[ENV_AMP].cfg->multi) env_gate_on(&v->nenv);   /* the noise EG retriggers with the amp's */
+    if (!legato || v->env[ENV_AMP].cfg->multi) {   /* the noise EG and the MACRO channel's trigger go with the amp's */
+        env_gate_on(&v->nenv);
+        v->mac_trig = 1;
+    }
     v->gate = 1;
     v->sustained = 0;
     v->sost = 0;   /* a note played now: the sostenuto pedal, if down, doesn't hold it */
@@ -1481,10 +1531,12 @@ static void control_voice(one_t *s, voice_t *v) {
     src[MS_NOISE_EG] = v->noise_env;
     src[MS_SOSTENUTO] = s->sostenuto ? 1.0f : 0.0f;
     src[MS_RIBBON] = ribbon_value(s);
-    /* the voice's slots (none reaches an effect: those are the effect pass's) */
+    /* the voice's slots (none reaches an effect: those are the effect pass's); the MACRO destinations sit past them */
+    memset(dm + MD_MAC_HARM, 0, sizeof(float) * (MD_COUNT - MD_MAC_HARM));
     mod_eval_list(&p[P_MOD_BASE], &p[P_MODX_BASE], s->mod_list, s->mod_n, src, s->bipolar, dm, MD_FX_FIRST);
     int rd = (int)p[P_RIBBON_DST];   /* the ribbon's quick assignment, to a voice destination */
-    if (rd > MD_OFF && rd < MD_FX_FIRST) dm[rd] += src[MS_RIBBON] * p[P_RIBBON_AMT] * 0.01f;
+    if (rd > MD_OFF && (rd < MD_FX_FIRST || (rd > MD_FX_END && rd < MD_COUNT)))
+        dm[rd] += src[MS_RIBBON] * p[P_RIBBON_AMT] * 0.01f;
     memcpy(v->lfo_dm, &dm[MD_LFO1_RATE], sizeof v->lfo_dm);   /* the LFOs read these next step */
     voice_envs(s, v, dm);
     float fenv = src[MS_FENV], key_oct = kc / 12.0f;
@@ -1520,6 +1572,7 @@ static void control_voice(one_t *s, voice_t *v) {
              clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES] + v->an_res[1], 0.0f, 1.0f), (int)p[P_SVF_MODE],
              (int)p[P_SVF_PAIR], SR);
     set_targets(s, v, dm, v->lfo_out[2]);
+    if (mac_heard(v)) v->mac_note = mac_pitch(s, v, semis + dr[0] * DRIFT_ST + v->an_tune[0]);
     noise_targets(s, v, dm[MD_NOISE_MIX]);
     /* pan modulation, and spread's: the knob moved (within 0..100%) times the voice's place in the spread */
     float pan = dm[MD_PAN];
@@ -1580,6 +1633,19 @@ static inline const float *noise_channel(const one_t *s, voice_t *v, int first, 
     return cn;
 }
 
+/* the MACRO channel for n samples, called only while it is heard: Plaits (its model, pitch, knobs, a pending note-on,
+ * the gate) into mb. Out of line for the same reason as noise_block. */
+__attribute__((noinline)) static void mac_channel(const one_t *s, voice_t *v, float *mb, int n) {
+    macro_set(v->mac, (int)s->val[P_MAC_MODEL], v->mac_note, v->mac_harm, v->mac_timbre, v->mac_morph,
+              s->val[P_MAC_AUX] * 0.01f);
+    if (v->mac_trig) {
+        macro_trigger(v->mac);
+        v->mac_trig = 0;
+    }
+    macro_gate(v->mac, v->gate);
+    macro_render(v->mac, mb, n);
+}
+
 /* render n (<= CR) samples of one voice, adding into acc (the mono sum: the mod effect's input, and the dry path of
  * every centred voice) and, for a voice off the centre, its difference from the centre into xl, xr (so the dry path
  * is acc + xl, acc + xr, and centred voices cost nothing extra); returns whether it did. Levels, wave shapes, FM
@@ -1603,6 +1669,9 @@ static int render_voice(one_t *s, voice_t *v, float *acc, float *xl, float *xr, 
         v->to_lad[k] = v->tgt_lad[k];
         v->to_svf[k] = v->tgt_svf[k];
     }
+    float mb[CR];   /* the MACRO channel: not run, and not mixed in, while it isn't heard (its levels are then 0) */
+    int mac_on = heard[MACRO];
+    if (mac_on) mac_channel(s, v, mb, n);
     osc_shape_t sh[NOSC];
     float da[NOSC], dpw[NOSC], dmx[NOSC], dml, dfm;
     int moving = 0;   /* a wave shape changes during this step */
@@ -1665,11 +1734,13 @@ static int render_voice(one_t *s, voice_t *v, float *acc, float *xl, float *xr, 
         float c = run3 ? osc_next(o3, &sh[2], sync3 ? (sync3_2 && !sync2_3 ? o2->wrap_d : m3) : -1.0f) : 0.0f;
         v->fm_prev = c;
         float rm = heard[RING] ? o2->tri_out * (ring23 ? o3->tri_out : o1->tri_out) : 0.0f;
-        float nz = wn[i], nc = ncp[i];
+        float nz = wn[i], nc = ncp[i], mc = mac_on ? mb[i] : 0.0f;
         float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nc * lad[NOISE] + rm * lad[RING];
+        if (mac_on) lad_in += mc * lad[MACRO];
         float svf_out = 0.0f, lad_out = 0.0f;
         if (any_svf) {
             float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
+            if (mac_on) in += mc * svf[MACRO];
             svf_out = svf_fm > 0.0f ? svf2_next_fm(&v->svf, in, exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)))
                                     : svf2_next(&v->svf, in);
             if (series) lad_in += svf_out;

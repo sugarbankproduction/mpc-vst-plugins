@@ -35,7 +35,8 @@ enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };  
  * amp level x0..x2, the hard-wired amounts +-100 of their knob, beat +-7 Hz, envelope and LFO times and LFO rates +-the
  * whole knob, LFO rate (st) +-24 semitones, pan +-1 (the centre to a side), noise colour mix, drift and spread +-the
  * whole knob. The effect destinations (MDF_* below, from MD_FX_FIRST) move each effect control by +-100% of its range;
- * the effects run once for all voices, so the engine evaluates the slots that reach them in a pass of their own. */
+ * the effects run once for all voices, so the engine evaluates the slots that reach them in a pass of their own. The
+ * MACRO destinations come after the effects (MD_MAC_*) but are per voice. */
 /* the effect destinations, in their params.json order: the synth effect, the master sends, delay, reverb */
 enum {
     MDF_MIX, MDF_GAIN, MDF_CTRL1, MDF_CTRL2, MDF_RATE, MDF_RATE_R, MDF_DEPTH, MDF_FB, MDF_FB_R, MDF_TIME, MDF_TIME_R,
@@ -59,6 +60,9 @@ enum {
     MD_LFO1_RATE, MD_LFO_END = MD_LFO1_RATE + 4 * 6 - 1,
     MD_PAN, MD_NOISE_MIX, MD_DRIFT, MD_SPREAD,
     MD_FX_FIRST, MD_FX_END = MD_FX_FIRST + MDF_COUNT - 1,   /* the effects (MDF_* order) */
+    /* the MACRO channel (Plaits), per voice like the ones before the effects: harmonics, timbre, morph and level
+     * +-100% of their range */
+    MD_MAC_HARM, MD_MAC_TIMBRE, MD_MAC_MORPH, MD_MAC_LEVEL,
     MD_COUNT
 };
 enum { MDE_DELAY, MDE_ATTACK, MDE_HOLD, MDE_DECAY, MDE_SUSTAIN, MDE_RELEASE, MDE_SCALE, MDE_COUNT };
