@@ -60,8 +60,13 @@ def fxrate(f):       # synth effect rate knobs: 0.01 .. 20 Hz, log
     return logk(f, 0.01, 20)
 
 
-def rt(sec):         # reverb decay knob: 0.25 .. 10 s at size 100%, log
+def rt(sec):         # plate and room decay knob: 0.25 .. 10 s at size 100%, log
     return logk(sec, 0.25, 10)
+
+
+def hall_rt(sec):    # hall and shimmer decay knob: 0.1 .. 20 s at size 100%, log. The seconds a plate-scale knob gave,
+    k = rt(sec)      # finely, so a hall preset made before the hall's own range rings exactly as it did
+    return round(100 * math.log(0.25 * 40 ** (k / 100) / 0.1) / math.log(200), 4)
 
 
 def chorus(rate_hz, time_ms, depth, mix):   # the synth effect as a chorus (time: 0.1 .. 50 ms, log)
@@ -69,13 +74,19 @@ def chorus(rate_hz, time_ms, depth, mix):   # the synth effect as a chorus (time
             "modfx_depth": depth, "modfx_mix": mix}
 
 
-def delay(time, fb, send, synced=False):   # the master delay, both sides at one time (ms, or a division name)
+def delay(time, fb, send, synced=False):   # master effect 1 (a stereo delay), both sides at one time (ms or a division)
     t = fxdiv(time) if synced else dms(time)
     return {"dly_sync": "On" if synced else "Off", "dly_time": t, "dly_time_r": t, "dly_fb": fb, "mfx_send1": send}
 
 
-def reverb(send, sec=None, **kw):   # the master reverb on send 2
-    return dict({"mfx_send2": send, **({"rev_decay": rt(sec)} if sec else {})}, **kw)
+def reverb(send, sec=None, **kw):   # master effect 2 (a plate unless rev_type says) on send 2
+    t = kw.get("rev_type", "Plate")
+    d = {"mfx_send2": send}
+    if sec:
+        d["rev_decay"] = hall_rt(sec) if t in ("Hall", "Shimmer") else rt(sec)
+    if t == "Room":   # the room's MOD LEVEL came later: 0 keeps the rooms made before it as they were
+        d["rev_mod"] = 0
+    return dict(d, **kw)
 
 
 def amp(a, d, s, r):

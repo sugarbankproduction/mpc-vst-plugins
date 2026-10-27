@@ -163,7 +163,7 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RBELL("mfx_width", RS_FX, 80, 140, 0.6f, 100, 0.02f),
     RCODE("dly_time", RS_FX, 0, 100, 0.02f), RCODE("dly_time_r", RS_FX, 0, 100, 0.02f), RCODE("dly_sync", RS_FX, 0, 0, 0),
     RUNI("dly_fb", RS_FX, 15, 50, 0, 0, 0.05f), RUNI("dly_tone", RS_FX, 35, 75, 0, 0, 0.05f),
-    ROPT("dly_pp", RS_FX, "2 1", 1), RDEF("dly_offset", RS_FX, 0),
+    ROPT("dly_type", RS_FX, "0 0 0 0 0 0 2 1", 1), RDEF("dly_offset", RS_FX, 0),
     RCODE("rev_decay", RS_FX, 30, 85, 0.03f), RUNI("rev_damp", RS_FX, 20, 60, 0, 0, 0.05f),
     RUNI("rev_pre", RS_FX, 0, 40, 0.3f, 10, 0.01f), ROPT("rev_type", RS_FX, "1 1 1", 1),
     RUNI("rev_size", RS_FX, 35, 75, 0, 0, 0.04f), RBELL("rev_diff", RS_FX, 70, 100, 0, 0, 0.04f),

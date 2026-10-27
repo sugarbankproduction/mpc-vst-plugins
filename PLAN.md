@@ -127,7 +127,13 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      spirit). Done 2026-10-27 (offline): a synth effect slot with 15 types and CTRL 1/2, master delay (stereo or
      ping-pong, L/R times, offset) and reverb (plate, room, hall; size, freeze) on two sends with series and width; 3.1 MB
      of buffers; 1.5-7 us per block per synth type, 3.6 delay, 6-18 reverb on the PC. Left: vocoders (no mic input),
-     shimmer and blackhole reverbs (CPU), per-type effect presets. Tier 4: arpeggiator and chord memory done 2026-10-27
+     shimmer and blackhole reverbs (CPU), per-type effect presets. Then (audit package 10, 2026-10-27, offline and the
+     desktop build): two master effect slots, each any of 23 types (the reverbs, now with original Shimmer and
+     Blackhole-style designs, and the manual's delays, choruses, flangers, phasers, bit crusher, resonator), BUSS MODE
+     Dual Mono / Stereo, each slot's own MIX, GAIN and controls (slot 1 `dly_*`, slot 2 `rev_*`), the manual's L/R
+     feedback and modulation, band decays and levels, Infinite, DISTANCE, the room's detents, the crusher's crossover;
+     the synth effect gains Stereo Delay and Ping Pong. 564 params, 158 effect destinations; 4.3 MB of effect buffers;
+     the factory presets sound as before (within 1 LSB). Left: the window's pages for the new controls, effect presets. Tier 4: arpeggiator and chord memory done 2026-10-27
      (offline): the manual's arp (Up/Down/Order/Random, 1-4 octaves up/down/up-down/down-up, octave order, pendulum
      once/twice, random repeating or not, synced 1/1-1/128 straight/dotted/triplet or a free 10-280 BPM, gate, swing,
      latch (and HOLD), note reset) and chord memory (CHORD LEARN as an on/off param, first key the root; 14 built-in
