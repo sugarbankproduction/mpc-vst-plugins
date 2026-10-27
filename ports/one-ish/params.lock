@@ -435,3 +435,13 @@ gen_tm_len
 gen_tm_change
 gen_scale
 gen_range
+mac_model
+mac_harm
+mac_timbre
+mac_morph
+mac_oct
+mac_freq
+mac_aux
+mac_level
+mac_svf
+mac_lad

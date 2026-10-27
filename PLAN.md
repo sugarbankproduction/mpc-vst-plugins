@@ -140,6 +140,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   6. Later (owner, 2026-10-27): the open-source Plaits macro-oscillator models (Mutable Instruments, MIT licence:
      keep its copyright notice) as an extra oscillator mode. To check first: C++ in the MPC build, its 48 kHz
      tuning at 44.1 kHz, and the CPU per voice of each model on the device.
+     Done 2026-10-27 (offline and the desktop DLL): a MACRO mixer channel per voice with all 24 Plaits v1.2 models
+     (`mac_*` params, MACRO OSC section; matrix destinations Macro Harmonics / Timbre / Morph / Level; presets "Macro
+     String", "Macro Wave Pad", "Macro FM Keys"). Vendored unmodified in `ports/one-ish/third_party/` with two patched
+     headers (44.1 kHz constants; one UBSan fix) listed in its `THIRD_PARTY.md`. In tune within 0.1 cent offline; level 0
+     (the default) gives the same samples and CPU as before. On the PC a model adds 0.5-2x a busy voice's CPU (Particles
+     about 2x); needs `tools/bench.sh` on the device before choosing the default voice count with it in use.
   7. Later (owner, 2026-10-27): a patch randomiser for inspiration: a "random" button that makes playable sounds
      (ranges kept musical: audible levels, open-enough cutoffs, sensible envelopes), a "mutate" amount for small
      variations of the current sound, per-section locks (e.g. keep the envelopes), undo, and later per timbral part.

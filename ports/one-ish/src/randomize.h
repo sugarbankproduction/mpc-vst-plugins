@@ -78,6 +78,7 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RNEVER("key_center"), RNEVER("bend_up"), RNEVER("bend_down"), RNEVER("vel_curve"), RNEVER("steal_mode"),
     RNEVER("note_priority"), RNEVER("hold"), RNEVER("ribbon_*"), RNEVER("flt_link"), RNEVER("o*_track"),
     RNEVER("o*_off"), RNEVER("o*_sync_src"),
+    RNEVER("mac_*"),   /* the MACRO channel (Plaits) has no rules yet: RANDOMISE and MUTATE leave it as it is */
 
     /* ---- OSCILLATORS: shapes, footages, tuning, sync, FM, ring source, LFO 3's wave-shape amounts ---- */
     ROPT("o*_wave", RS_OSC, "2 3", 1),                    /* Tri, Saw */
