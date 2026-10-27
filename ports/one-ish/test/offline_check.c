@@ -49,8 +49,13 @@
  *             release, sustain off as a decay, off by default); the pan law (equal power, centre exact, hard left
  *             silences the right), spread places voices apart (mono stays put, a unison stack fans out), the mod
  *             effect's mono input; drift 0 changes nothing, 100% stays within +-4 cents
+ *   analog    every ANALOG knob at 0 is the same samples as a fresh instance; each voice card's cutoff, resonance,
+ *             envelope time, level and tuning spread stays within its range and uses most of it (each voice heard
+ *             alone); the non-linear ladder is the linear one at 0, stable at full resonance and drive in every mode
+ *             and slope (with filter FM too), self-oscillates near the cutoff, distorts more as the level rises and
+ *             softens its resonance when driven
  *   state     save/restore round trip; damaged or oversized states don't break the instance
- *   wav       writes test/out/demo.wav to listen to
+ *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
  *             MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
@@ -2424,6 +2429,266 @@ static void noise_stereo_drift(void) {
     }
 }
 
+/* ANALOG CHARACTER helpers. An 8-voice patch in which voice k alone is heard: keys 40.. held on voices 0..k-1 at
+ * velocity 1 (Hard curve, full velocity amount: -84 dB), then key 40 + k at full velocity on voice k. Oscillator 1
+ * doesn't track the key (it plays 1046.5 Hz on every key), and the ladder doesn't either, so only the card differs. */
+static const char *const AN_KEYS[] = {"an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder"};
+static void *voice_alone_patch(shape_t wave, double a, double d, double s, double r) {
+    void *e = patch(wave, a, d, s, r);
+    set(e, "voices", 7); set(e, "vel_curve", 2); set(e, "amp_vel", 100);
+    set(e, "o1_track", 0); set(e, "o1_oct", 4);
+    return e;
+}
+static void voice_alone(void *e, int k) {
+    for (int j = 0; j < k; j++) note(e, 1, 40 + j, 1);
+    note(e, 1, 40 + k, 127);
+}
+
+/* the non-linear ladder alone: a sine of `amp` at f through cutoff fc, resonance res: harmonics 2-9 against the
+ * fundamental (dB), and the fundamental's gain (dB) */
+static double nl_thd_db(float nl, float amp, float f, float fc, float res, double *gain_db) {
+    static float y[SR];
+    ladder_t l;
+    memset(&l, 0, sizeof l);
+    ladder_set(&l, fc, res, 0, LADDER_LP, LADDER_24DB, SR);
+    l.nl = nl;
+    for (int i = 0; i < SR; i++) y[i] = ladder_next_nl(&l, amp * sinf((float)(2 * M_PI * f * i / SR)));
+    double p[10] = {0};
+    for (int h = 1; h < 10; h++) {   /* the last half second, whole cycles of 110 Hz and 400 Hz */
+        double re = 0, im = 0;
+        for (int i = SR / 2; i < SR; i++) {
+            re += y[i] * cos(2 * M_PI * f * h * i / SR);
+            im += y[i] * sin(2 * M_PI * f * h * i / SR);
+        }
+        p[h] = re * re + im * im;
+    }
+    double harm = 0;
+    for (int h = 2; h < 10; h++) harm += p[h];
+    *gain_db = 20 * log10(2 * sqrt(p[1]) / (SR / 2) / amp);
+    return 10 * log10(harm / p[1] + 1e-30);
+}
+
+/* ANALOG CHARACTER: everything at 0 is today's sound to the sample; each voice card's spread stays within its stated
+ * range and uses most of it; the non-linear ladder is stable, self-oscillates near the cutoff, distorts more as the
+ * level rises and softens its resonance when driven */
+static void analog_character(void) {
+    static float l[SR * 2], r[SR * 2], m[SR * 2], x[SR * 2];
+    char what[240];
+
+    /* 1. all at 0 (after being up): the same samples as a fresh instance, with the matrix on an envelope as well */
+    void *a = patch(SAW, 20, 400, 70, 300), *b = patch(SAW, 20, 400, 70, 300);
+    for (int k = 0; k < 2; k++) {
+        void *e = k ? b : a;
+        set(e, "o2_level", 80); set(e, "o2_freq", 0.07); set(e, "flt_cut", 60); set(e, "flt_res", 60);
+        set(e, "lad_env", 30); set(e, "o1_svf", 1); set(e, "flt_mix", 70);
+        set(e, "mod11_src", MS_VEL); set(e, "mod11_dst", MD_FENV_DELAY + MDE_COUNT + MDE_DECAY); set(e, "mod11_amt", 10);
+    }
+    for (unsigned k = 0; k < sizeof AN_KEYS / sizeof AN_KEYS[0]; k++) set(b, AN_KEYS[k], 100);
+    for (unsigned k = 0; k < sizeof AN_KEYS / sizeof AN_KEYS[0]; k++) set(b, AN_KEYS[k], 0);
+    for (int k = 0; k < 8; k++) { note(a, 1, 48 + 3 * k, 30 + 12 * k); note(b, 1, 48 + 3 * k, 30 + 12 * k); }
+    render_lr(a, l, r, SR);
+    render_lr(b, m, x, SR);
+    int same = 1;
+    for (int i = 0; i < SR; i++) same = same && l[i] == m[i] && r[i] == x[i];
+    for (int k = 0; k < 8; k++) { note(a, 0, 48 + 3 * k, 0); note(b, 0, 48 + 3 * k, 0); }
+    render_lr(a, l, r, SR / 2);
+    render_lr(b, m, x, SR / 2);
+    for (int i = 0; i < SR / 2; i++) same = same && l[i] == m[i] && r[i] == x[i];
+    check(same, "analog character all 0 (after 100%): the same samples as a fresh instance (8-voice chord and release)");
+    E->destroy(a); E->destroy(b);
+
+    /* 2. cutoff spread: each voice's self-oscillation (no input) at a 1 kHz cutoff, in cents from 1 kHz */
+    double lo[2] = {1e9, 1e9}, hi[2] = {-1e9, -1e9};
+    for (int amt = 0; amt < 2; amt++)
+        for (int k = 0; k < 8; k++) {
+            void *e = voice_alone_patch(SAW, 0, 1, 100, 10);
+            set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(1000)); set(e, "an_cut", amt * 100);
+            voice_alone(e, k);
+            render_f(e, x, SR);
+            double c = cents(peak_hz(x + SR - N), 1000);
+            lo[amt] = fmin(lo[amt], c); hi[amt] = fmax(hi[amt], c);
+            E->destroy(e);
+        }
+    snprintf(what, sizeof what, "voice cutoff spread 0 / 100%%: the 8 voices self-oscillate at %+.0f .. %+.0f / %+.0f .. %+.0f "
+             "cents from 1 kHz (want the same / within +-400 and over 600 apart)", lo[0], hi[0], lo[1], hi[1]);
+    check(hi[0] - lo[0] < 2 && lo[1] > lo[0] - 420 && hi[1] < hi[0] + 420 && hi[1] - lo[1] > 600, what);
+
+    /* 3. resonance spread: at 91% (just past where the ladder starts to self-oscillate) some voices ring, some don't */
+    int ring[2] = {0, 0};
+    for (int amt = 0; amt < 2; amt++)
+        for (int k = 0; k < 8; k++) {
+            void *e = voice_alone_patch(SAW, 0, 1, 100, 10);
+            set(e, "o1_level", 0); set(e, "flt_res", 91); set(e, "flt_cut", knob_for_hz(1000)); set(e, "an_res", amt * 100);
+            voice_alone(e, k);
+            render_f(e, x, SR * 2);
+            double sq = 0;
+            for (int i = SR * 7 / 4; i < SR * 2; i++) sq += x[i] * x[i];
+            ring[amt] += sqrt(sq / (SR / 4)) > 0.02;
+            E->destroy(e);
+        }
+    snprintf(what, sizeof what, "voice resonance spread 0 / 100%% at resonance 91%%: %d / %d of 8 voices self-oscillate "
+             "(want all or none / some but not all)", ring[0], ring[1]);
+    check((ring[0] == 0 || ring[0] == 8) && ring[1] > 0 && ring[1] < 8, what);
+
+    /* 4. envelope time spread: each voice's amp attack (100 ms knob) to 95%, against the knob's time */
+    double t0 = 0, tlo = 1e9, thi = 0;
+    for (int amt = 0; amt < 2; amt++)
+        for (int k = 0; k < (amt ? 8 : 1); k++) {
+            void *e = voice_alone_patch(SQUARE, 100, 1000, 100, 100);
+            set(e, "an_env", amt * 100);
+            voice_alone(e, k);
+            render_f(e, x, SR / 2);
+            double ms = time_to(x, SR / 2, 0.95f) / 44.1;
+            if (!amt) t0 = ms;
+            else { tlo = fmin(tlo, ms / t0); thi = fmax(thi, ms / t0); }
+            E->destroy(e);
+        }
+    snprintf(what, sizeof what, "voice envelope time spread 100%%: amp attacks %.2f .. %.2f x the knob's %.0f ms "
+             "(want within 0.75 .. 1.25, over 0.35 apart)", tlo, thi, t0);
+    check(tlo > 0.72 && thi < 1.28 && thi - tlo > 0.35, what);
+
+    /* 5. level spread: each voice's sustained level against the level at 0 */
+    double l0 = 0, dlo = 1e9, dhi = -1e9;
+    for (int amt = 0; amt < 2; amt++)
+        for (int k = 0; k < (amt ? 8 : 1); k++) {
+            void *e = voice_alone_patch(SAW, 1, 1, 100, 10);
+            set(e, "volume", 50); set(e, "an_lvl", amt * 100);
+            voice_alone(e, k);
+            render_f(e, x, SR / 2);
+            double sq = 0;
+            for (int i = SR / 4; i < SR / 2; i++) sq += x[i] * x[i];
+            double db = 10 * log10(sq);
+            if (!amt) l0 = db;
+            else { dlo = fmin(dlo, db - l0); dhi = fmax(dhi, db - l0); }
+            E->destroy(e);
+        }
+    snprintf(what, sizeof what, "voice level spread 100%%: the voices sit %+.2f .. %+.2f dB from the level at 0 "
+             "(want within +-1.5, over 2 apart)", dlo, dhi);
+    check(dlo > -1.6 && dhi < 1.6 && dhi - dlo > 2, what);
+
+    /* 6. tuning spread: each voice's oscillators 1 and 2 (1046.5 Hz), in cents; oscillator 2's card differs from 1's */
+    double clo[2] = {1e9, 1e9}, chi[2] = {-1e9, -1e9}, c0 = 0, off[2][8];
+    for (int osc = 0; osc < 2; osc++)
+        for (int amt = 0; amt < 2; amt++)
+            for (int k = 0; k < (amt ? 8 : 1); k++) {
+                void *e = voice_alone_patch(TRI, 0, 1, 100, 10);
+                set_shape(e, "o2", TRI); set(e, "o2_track", 0); set(e, "o2_oct", 4);
+                set(e, osc ? "o1_level" : "o2_level", 0); set(e, osc ? "o2_level" : "o1_level", 100);
+                set(e, "volume", 30); set(e, "an_tune", amt * 100);
+                voice_alone(e, k);
+                render_f(e, x, N + 4096);
+                double c = cents(peak_hz(x + 4096), 1046.502);
+                if (!amt) c0 = c;
+                else { off[osc][k] = c - c0; clo[osc] = fmin(clo[osc], c - c0); chi[osc] = fmax(chi[osc], c - c0); }
+                E->destroy(e);
+            }
+    int differ = 0;
+    for (int k = 0; k < 8; k++) differ += fabs(off[0][k] - off[1][k]) > 1;
+    snprintf(what, sizeof what, "voice tuning spread 100%%: oscillator 1 %+.2f .. %+.2f, oscillator 2 %+.2f .. %+.2f cents "
+             "(want within +-8, over 10 apart); %d of 8 voices tune their two differently", clo[0], chi[0], clo[1], chi[1],
+             differ);
+    check(clo[0] > -8.5 && chi[0] < 8.5 && chi[0] - clo[0] > 10 && clo[1] > -8.5 && chi[1] < 8.5 && chi[1] - clo[1] > 10
+          && differ >= 6, what);
+
+    /* 7. the non-linear ladder: at 0 it is the linear ladder (to rounding) */
+    {
+        ladder_t p, q;
+        memset(&p, 0, sizeof p); memset(&q, 0, sizeof q);
+        float worst = 0;
+        for (int i = 0; i < SR; i++) {
+            if (i % 128 == 0) {
+                float hz = 200 * powf(2, 5 * (float)i / SR);
+                ladder_set(&p, hz, 0.9f, 0.5f, LADDER_LP, LADDER_24DB, SR);
+                ladder_set(&q, hz, 0.9f, 0.5f, LADDER_LP, LADDER_24DB, SR);
+            }
+            float in = 0.8f * sinf((float)(2 * M_PI * 110 * i / SR));
+            worst = fmaxf(worst, fabsf(ladder_next(&p, in) - ladder_next_nl(&q, in)));
+        }
+        snprintf(what, sizeof what, "non-linear ladder at 0%%: the linear ladder (largest difference %.1e)", worst);
+        check(worst < 1e-4f, what);
+    }
+
+    /* stable at full resonance and drive in every mode and slope, the cutoff swept over the whole range, with and
+     * without filter FM */
+    float worst = 0;
+    int bad = 0;
+    for (int fm = 0; fm < 2; fm++)
+        for (int mode = 0; mode < 2; mode++)
+            for (int slope = 0; slope < 4; slope++) {
+                ladder_t p;
+                memset(&p, 0, sizeof p);
+                double t = 0;
+                for (int blk = 0; blk < 1400; blk++) {
+                    double pos = blk < 700 ? blk / 700.0 : (1400 - blk) / 700.0;
+                    ladder_set(&p, (float)(20 * pow(1000, pos)), 1.0f, 1.0f, mode, slope, SR);
+                    p.nl = 1.0f;
+                    for (int i = 0; i < 128; i++) {
+                        float in = (float)(2 * t - 1) * 3.0f;
+                        float y = fm ? ladder_next_nl_fm(&p, in, exp2f(4 * sinf((float)(2 * M_PI * 333 * (blk * 128 + i) / SR))))
+                                     : ladder_next_nl(&p, in);
+                        t += 55.0 / SR;
+                        if (t >= 1) t -= 1;
+                        if (!isfinite(y)) bad++;
+                        else if (fabsf(y) > worst) worst = fabsf(y);
+                    }
+                }
+            }
+    snprintf(what, sizeof what, "non-linear ladder stable in every mode and slope at full resonance and drive, with and "
+             "without filter FM (largest output %.2f)", worst);
+    check(!bad && worst < 8, what);
+
+    /* self-oscillation through the engine: a steady sine near the cutoff */
+    static const double shz[] = {110, 440, 1000, 3000, 8000};
+    for (unsigned i = 0; i < sizeof shz / sizeof shz[0]; i++) {
+        void *e = patch(SAW, 0, 1, 100, 10);
+        set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(shz[i])); set(e, "an_ladder", 100);
+        note(e, 1, 60, 127);
+        render_f(e, x, SR * 2);
+        const float *tail = x + SR * 2 - N;
+        double f = peak_hz(tail), c = cents(f, shz[i]), r1 = 0, r2 = 0;
+        for (int k = 0; k < SR / 4; k++) {
+            r1 += tail[N - SR / 2 + k] * tail[N - SR / 2 + k];
+            r2 += tail[N - SR / 4 + k] * tail[N - SR / 4 + k];
+        }
+        snprintf(what, sizeof what, "non-linear ladder self-oscillates at %5.0f Hz: %6.1f Hz (%+4.0f cents), rms %.3f, "
+                 "%.2f dB drift", shz[i], f, c, sqrt(r2 / (SR / 4)), fabs(10 * log10(r2 / r1)));
+        check(fabs(c) < 100 && sqrt(r2 / (SR / 4)) > 0.03 && fabs(10 * log10(r2 / r1)) < 0.5, what);
+        E->destroy(e);
+    }
+
+    /* distortion rises with level, more than the linear ladder's; a loud input softens the resonance */
+    double g, thd[2][2], peak[2][2];
+    for (int nl = 0; nl < 2; nl++)
+        for (int lv = 0; lv < 2; lv++) {
+            thd[nl][lv] = nl_thd_db((float)nl, lv ? 1.0f : 0.1f, 110, 400, 0.8f, &g);
+            nl_thd_db((float)nl, lv ? 1.0f : 0.05f, 400, 400, 0.8f, &peak[nl][lv]);
+        }
+    snprintf(what, sizeof what, "non-linear ladder: harmonics of a 110 Hz sine (400 Hz, resonance 80%%) %.1f dB quiet, "
+             "%.1f dB loud (linear %.1f / %.1f)", thd[1][0], thd[1][1], thd[0][0], thd[0][1]);
+    check(thd[1][1] - thd[1][0] > 20 && thd[1][1] > thd[0][1] + 10, what);
+    snprintf(what, sizeof what, "non-linear ladder: the resonant peak's gain falls %.1f dB from a quiet to a loud input "
+             "(linear %.1f dB)", peak[1][0] - peak[1][1], peak[0][0] - peak[0][1]);
+    check(peak[1][0] - peak[1][1] > peak[0][0] - peak[0][1] + 2, what);
+
+    /* through the engine: a loud chord into full resonance and drive stays bounded and sounds different */
+    a = patch(SAW, 1, 1, 100, 10); b = patch(SAW, 1, 1, 100, 10);
+    for (int k = 0; k < 2; k++) {
+        void *e = k ? b : a;
+        set(e, "o2_level", 100); set(e, "o3_level", 100); set(e, "flt_res", 100); set(e, "flt_drive", 100);
+        set(e, "flt_cut", 50); set(e, "an_ladder", k * 100);
+        for (int j = 0; j < 8; j++) note(e, 1, 36 + 5 * j, 127);
+    }
+    render_f(a, l, SR);
+    render_f(b, m, SR);
+    double diff = 0, sum = 0;
+    int fin = 1;
+    for (int i = 0; i < SR; i++) { fin = fin && isfinite(m[i]); diff += (l[i] - m[i]) * (l[i] - m[i]); sum += l[i] * l[i]; }
+    snprintf(what, sizeof what, "non-linear ladder 100%% on a loud 8-voice chord at full resonance and drive: finite, "
+             "%.1f dB from the linear ladder's sound", 10 * log10(diff / sum));
+    check(fin && diff > sum * 0.01, what);
+    E->destroy(a); E->destroy(b);
+}
+
 static void put32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 static void put16(FILE *f, uint16_t v) { fwrite(&v, 2, 1, f); }
 
@@ -2532,6 +2797,61 @@ static void demo_wav(const char *path) {
     fwrite("data", 1, 4, f); put32(f, bytes); fwrite(pcm, 4, frames, f);
     fclose(f);
     printf("wrote %s (%.1f s)\n", path, frames / (double)SR);
+}
+
+/* to hear the ANALOG section: <dir>/analog_pad.wav, a pad's chords with the section at 0, then with every voice
+ * spread at 100% and drift at 60%; <dir>/analog_ladder.wav, a resonant, driven bass line and a loud chord through the
+ * linear ladder, then the non-linear one */
+static void write_wav(const char *path, const int16_t *pcm, uint32_t frames);
+static void analog_wavs(const char *demo_path) {
+    enum { CHORD = 517, NOTE = 43, TAIL = 344 };   /* 1.5 s, 0.125 s, 1 s in 128-frame blocks */
+    static int16_t pcm[2 * (4 * CHORD + TAIL + 16 * NOTE + 2 * CHORD + TAIL) * 256];
+    static const int chords[4][4] = {{48, 55, 59, 64}, {41, 53, 57, 64}, {45, 52, 57, 60}, {43, 50, 55, 62}};
+    static const int line[16] = {36, 36, 48, 36, 39, 36, 46, 36, 34, 34, 46, 34, 41, 39, 36, 43};
+    char dir[256], path[320];
+    snprintf(dir, sizeof dir, "%s", demo_path);
+    char *slash = strrchr(dir, '/');
+    if (slash) slash[1] = 0; else dir[0] = 0;
+    int16_t *o = pcm;
+    for (int on = 0; on < 2; on++) {
+        void *e = patch(SAW, 400, 1500, 85, 900);
+        set(e, "o2_level", 80); set(e, "o2_freq", 0.08); set(e, "o3_level", 60); set(e, "o3_oct", 1);
+        set(e, "flt_cut", knob_for_hz(1200)); set(e, "flt_res", 30); set(e, "lad_env", 20); set(e, "volume", 60);
+        set(e, "fenv_a", knob_ms(600)); set(e, "fenv_d", knob_ms(1500)); set(e, "fenv_s", 40); set(e, "spread", 50);
+        if (on) {
+            for (int k = 0; k < 5; k++) set(e, AN_KEYS[k], 100);
+            set(e, "drift", 60);
+        }
+        for (int c = 0; c < 4; c++) {
+            for (int k = 0; k < 4; k++) note(e, 1, chords[c][k], 90);
+            for (int b = 0; b < CHORD; b++, o += 256) E->render(e, o, 128);
+            for (int k = 0; k < 4; k++) note(e, 0, chords[c][k], 0);
+        }
+        o = rest(e, o, TAIL);
+        E->destroy(e);
+    }
+    snprintf(path, sizeof path, "%sanalog_pad.wav", dir);
+    write_wav(path, pcm, (uint32_t)((o - pcm) / 2));
+    o = pcm;
+    for (int on = 0; on < 2; on++) {
+        void *e = patch(SAW, 1, 300, 60, 120);
+        set(e, "o2_level", 90); set(e, "o2_freq", 0.06); set(e, "o2_mix", 100); set(e, "flt_res", 85);
+        set(e, "flt_drive", 50); set(e, "lad_env", 50); set(e, "fenv_d", knob_ms(250)); set(e, "fenv_s", 10);
+        set(e, "an_ladder", on * 100);
+        for (int k = 0; k < 16; k++) {
+            set(e, "flt_cut", knob_for_hz(150 * pow(2, 2.5 * (k % 8) / 7.0)));
+            o = play(e, o, line[k], NOTE);
+        }
+        set(e, "flt_cut", knob_for_hz(500)); set(e, "amp_s", 100); set(e, "o3_level", 100); set(e, "volume", 100);
+        for (int k = 0; k < 4; k++) note(e, 1, chords[0][k] - 12, 127);
+        for (int b = 0; b < 2 * CHORD; b++, o += 256) E->render(e, o, 128);
+        for (int k = 0; k < 4; k++) note(e, 0, chords[0][k] - 12, 0);
+        o = rest(e, o, TAIL);
+        E->destroy(e);
+    }
+    snprintf(path, sizeof path, "%sanalog_ladder.wav", dir);
+    write_wav(path, pcm, (uint32_t)((o - pcm) / 2));
+    printf("wrote %sanalog_pad.wav and analog_ladder.wav (each: off, then on)\n", dir);
 }
 
 /* each effect alone on a saw, its typical settings: microseconds per 128-frame block (the effects run once, shared) */
@@ -2723,6 +3043,27 @@ static void bench(void) {
         double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
         printf("bench: 8 voices, spread + drift%s: %6.2f us per 128-frame block (%.2f per voice)\n",
                k ? " + red/white noise with its EG" : "", us, us / 8);
+        E->destroy(e);
+    }
+    for (int k = 0; k < 3; k++) {   /* 8 voices of the busy patch: the ladder linear, then non-linear; then every ANALOG knob */
+        void *e = patch(SAW, 5, 300, 70, 250);
+        set(e, "voices", 7); set(e, "o2_level", 80); set(e, "o3_level", 60);
+        route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
+        set(e, "mod2_src", 6); set(e, "mod2_dst", 9); set(e, "mod2_amt", 30);
+        if (k) set(e, "an_ladder", 100);
+        if (k == 2) {
+            for (int j = 0; j < 5; j++) set(e, AN_KEYS[j], 100);
+            set(e, "drift", 100);
+        }
+        for (int j = 0; j < 8; j++) note(e, 1, 48 + 3 * j, 100);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        printf("bench: 8 voices, %s: %6.2f us per 128-frame block (%.2f per voice)\n",
+               k == 0 ? "an_ladder 0 (linear ladder)  " : k == 1 ? "an_ladder 100 (non-linear)   "
+                                                                 : "every ANALOG knob 100 + drift", us, us / 8);
         E->destroy(e);
     }
     void *e = patch(SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
@@ -3002,8 +3343,10 @@ int main(int argc, char **argv) {
     glide_unison();
     voice_keyboard_options();
     noise_stereo_drift();
+    analog_character();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
+    analog_wavs(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }

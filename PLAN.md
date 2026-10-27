@@ -128,6 +128,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      owner on the sequencer and multitimbral parts.
   5. After Tier 2/3 (owner, 2026-10-27): an Analog Character section, all 0 by default: per-voice component
      differences (cutoff, envelope times, level, slight detune), drift, and a non-linear ladder if the CPU allows.
+     Done 2026-10-27 (offline): `an_cut`, `an_res`, `an_env`, `an_lvl`, `an_tune`, `an_ladder` with `drift` in the
+     ANALOG section, preset "Vintage Poly Pad"; the non-linear ladder costs about +21% per voice on the PC.
   6. Later (owner, 2026-10-27): the open-source Plaits macro-oscillator models (Mutable Instruments, MIT licence:
      keep its copyright notice) as an extra oscillator mode. To check first: C++ in the MPC build, its 48 kHz
      tuning at 44.1 kHz, and the CPU per voice of each model on the device.

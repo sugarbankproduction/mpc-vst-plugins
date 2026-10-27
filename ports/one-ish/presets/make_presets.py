@@ -226,6 +226,14 @@ PATCHES = [
                       "flt_cut": hz(5000), "lad_env": 20, "voices": "6",
                       "modfx_on": "On", "modfx_type": "Bit Crusher", "modfx_bits": 6, "modfx_srate": logk(8000, 128, 44100),
                       "modfx_mix": 60, **delay(330, 25, 15)}),
+    # the ANALOG section: every voice card a little different (cutoff, resonance, envelope times, level, tuning), slow
+    # drift, and the non-linear ladder, so each note of a chord sounds slightly its own
+    ("Vintage Poly Pad", {**amp(450, 1800, 80, 1400), **fenv(700, 2200, 45, 1500),
+                          "o1_mix": 30, "o1_pw": 40, "o2_level": 85, "o2_freq": 0.07, "o3_level": 55, "o3_oct": "16'",
+                          "flt_cut": hz(900), "flt_res": 35, "flt_drive": 25, "lad_env": 30, "lad_kbd": 40,
+                          "voices": "8", "spread": 70,
+                          "an_cut": 60, "an_env": 70, "an_lvl": 60, "an_tune": 50, "an_res": 50, "an_ladder": 80,
+                          "drift": 60, **chorus(0.3, 9, 30, 30), **reverb(30, 3.2)}),
 ]
 
 
