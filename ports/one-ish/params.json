@@ -23,13 +23,19 @@
   {"key": "o3_fine", "name": "Osc 3 Fine", "min": -50, "max": 50, "unit": "ct", "default": 0},
   {"key": "o3_level", "name": "Osc 3 Level", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "o3_sync", "name": "Osc 3 Sync", "options": ["Off", "On"], "default": "Off"},
-  {"key": "noise_level", "name": "Noise Level", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
+  {"key": "noise_level", "name": "Noise Level", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "flt_cut", "name": "Ladder Cutoff", "min": 0, "max": 100, "default": 100, "dynamic_display": true},
+  {"key": "flt_res", "name": "Ladder Resonance", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "flt_drive", "name": "Ladder Drive", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "flt_mode", "name": "Ladder Mode", "options": ["LP", "HP"], "default": "LP"},
+  {"key": "flt_slope", "name": "Ladder Slope", "options": ["24 dB", "18 dB", "12 dB", "6 dB"], "default": "24 dB"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_wave", "o1_oct", "o1_semi", "o1_fine"]},
   {"label": "OSC 2", "keys": ["o2_wave", "o2_oct", "o2_semi", "o2_fine", "o2_sync"]},
   {"label": "OSC 3", "keys": ["o3_wave", "o3_oct", "o3_semi", "o3_fine", "o3_sync"]},
   {"label": "MIXER", "keys": ["o1_level", "o2_level", "o3_level", "noise_level"]},
+  {"label": "LADDER", "keys": ["flt_cut", "flt_res", "flt_drive", "flt_mode", "flt_slope"]},
   {"label": "AMP ENV", "keys": ["amp_a", "amp_d", "amp_s", "amp_r"]},
   {"label": "OUT", "keys": ["volume"]}
  ]

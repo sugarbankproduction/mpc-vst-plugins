@@ -4,6 +4,8 @@
  *   sync      the same for oscillator 2 hard-synced to oscillator 1, against a naive hard sync
  *   tuning    octave, semitone and fine move each oscillator's pitch by that much
  *   noise/mix noise level; all sources at full level are limited, not clipped
+ *   filter    self-oscillation is a clean, steady sine near the cutoff; the ladder alone stays stable in every mode
+ *             and slope at full resonance and drive; LP/HP slopes measure 24/18/12/6 dB; the cutoff knob reads in Hz
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
  *   state     save/restore round trip; damaged or oversized states don't break the instance
@@ -19,6 +21,7 @@
 #include "params.h"
 #include "engine.h"
 #include "osc.h"
+#include "ladder.h"
 
 #define SR 44100
 #define N 16384   /* FFT length: 2.7 Hz per bin */
@@ -208,6 +211,108 @@ static void tuning(void) {
     }
 }
 
+static double knob_for_hz(double hz) { return 100 * log(hz / 20) / log(1000); }   /* engine.c's cut_hz, inverted */
+
+/* full resonance, nothing playing into it: the filter rings as a sine at its cutoff, steady and clean */
+static void self_oscillation(void) {
+    static float x[SR * 2];
+    static const double hz[] = {110, 440, 1000, 3000, 8000};
+    for (unsigned i = 0; i < sizeof hz / sizeof hz[0]; i++) {
+        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(hz[i]));
+        note(e, 1, 60, 127);
+        render_f(e, x, SR * 2);
+        const float *tail = x + SR * 2 - N;
+        double f = peak_hz(tail), off = cents(f, hz[i]);
+        const double *pw = spectrum(tail);
+        double fund = 0, all = 0, bin = (double)SR / N;
+        for (int k = 4; k < N / 2; k++) {
+            all += pw[k];
+            if (fabs(k * bin - f) <= 6 * bin) fund += pw[k];
+        }
+        double rest_db = 10 * log10((all - fund) / all + 1e-30), r1 = 0, r2 = 0;
+        for (int k = 0; k < SR / 4; k++) {   /* the last two quarter-seconds: is the level steady? */
+            r1 += tail[N - SR / 2 + k] * tail[N - SR / 2 + k];
+            r2 += tail[N - SR / 4 + k] * tail[N - SR / 4 + k];
+        }
+        double rms = sqrt(r2 / (SR / 4)), drift = fabs(10 * log10(r2 / r1));
+        char what[200];
+        snprintf(what, sizeof what, "self-oscillates at %5.0f Hz: %6.1f Hz (%+5.0f cents), rms %.3f, %.2f dB drift, "
+                 "everything but the sine %5.1f dB", hz[i], f, off, rms, drift, rest_db);
+        check(fabs(off) < 100 && rms > 0.03 && drift < 0.5 && rest_db < -25, what);
+        E->destroy(e);
+    }
+}
+
+/* the filter alone, pushed as hard as it goes: every mode and slope, full resonance and drive, a loud saw while the
+ * cutoff sweeps the whole range and back. Unstable would mean huge, growing or NaN output. */
+static void filter_stability(void) {
+    float worst = 0;
+    int bad = 0;
+    for (int mode = 0; mode < 2; mode++)
+        for (int slope = 0; slope < 4; slope++) {
+            ladder_t l;
+            memset(&l, 0, sizeof l);
+            double t = 0;
+            for (int b = 0; b < 1400; b++) {   /* about 4 s in 128-sample blocks */
+                double pos = b < 700 ? b / 700.0 : (1400 - b) / 700.0;
+                ladder_set(&l, 20 * pow(1000, pos), 1.0f, 1.0f, mode, slope, SR);
+                for (int i = 0; i < 128; i++) {
+                    float y = ladder_next(&l, (float)(2 * t - 1) * 3.0f);
+                    t += 55.0 / SR;
+                    if (t >= 1) t -= 1;
+                    if (!isfinite(y)) bad++;
+                    else if (fabsf(y) > worst) worst = fabsf(y);
+                }
+            }
+        }
+    char what[128];
+    snprintf(what, sizeof what, "filter stable in every mode and slope at full resonance and drive (largest output %.2f)", worst);
+    check(!bad && worst < 8, what);
+}
+
+/* gain of the filter alone for a quiet sine (the linear range), in dB */
+static double filter_gain_db(int mode, int slope, double fc, double f) {
+    ladder_t l;
+    memset(&l, 0, sizeof l);
+    ladder_set(&l, (float)fc, 0, 0, mode, slope, SR);
+    double in = 0, out = 0;
+    for (int i = 0; i < SR; i++) {
+        float s = 0.1f * sinf((float)(2 * M_PI * f * i / SR));
+        float y = ladder_next(&l, s);
+        if (i >= SR / 2) { in += s * s; out += y * y; }
+    }
+    return 10 * log10(out / in);
+}
+
+/* slopes: n poles lose 12.3 dB each two octaves past the cutoff (a one-pole is 1/sqrt(1 + 16) there) */
+static void filter_slopes(void) {
+    static const char *const names[] = {"24 dB", "18 dB", "12 dB", "6 dB"};
+    for (int mode = 0; mode < 2; mode++)
+        for (int slope = 0; slope < 4; slope++) {
+            int poles = 4 - slope;
+            double pass = filter_gain_db(mode, slope, 1000, mode == LADDER_LP ? 250 : 4000);
+            double stop = filter_gain_db(mode, slope, 1000, mode == LADDER_LP ? 4000 : 250);
+            double want = -12.3 * poles;
+            char what[160];
+            snprintf(what, sizeof what, "%s %-5s: two octaves into the stopband %6.1f dB below the passband (want %.1f)",
+                     mode == LADDER_LP ? "LP" : "HP", names[slope], pass - stop, -want);
+            check(fabs((stop - pass) - want) < 3, what);
+        }
+}
+
+static void cutoff_text(void) {
+    void *e = E->create(NULL);
+    char a[32], b[32], c[32];
+    set(e, "flt_cut", 0); E->get_param(e, "flt_cut_display", a, sizeof a);
+    set(e, "flt_cut", 50); E->get_param(e, "flt_cut_display", b, sizeof b);
+    set(e, "flt_cut", 100); E->get_param(e, "flt_cut_display", c, sizeof c);
+    char what[160];
+    snprintf(what, sizeof what, "cutoff knob reads \"%s\", \"%s\", \"%s\" at 0, 50, 100", a, b, c);
+    check(!strcmp(a, "20 Hz") && !strcmp(b, "632 Hz") && !strcmp(c, "20.00 kHz"), what);
+    E->destroy(e);
+}
+
 static void noise_and_mix(void) {
     static float x[SR];
     void *e = patch(WAVE_SAW, 0, 1, 100, 10);
@@ -218,8 +323,9 @@ static void noise_and_mix(void) {
     for (int i = 4096; i < SR; i++) { sum += x[i]; sq += x[i] * x[i]; }
     double mean = sum / (SR - 4096), rms = sqrt(sq / (SR - 4096));
     char what[128];
-    snprintf(what, sizeof what, "noise alone: rms %.3f (want about 0.29), mean %+.4f", rms, mean);
-    check(rms > 0.25 && rms < 0.33 && fabs(mean) < 0.01, what);
+    /* 0.29 raw; the ladder, even fully open, rolls off the top octave, which in white noise is half the power */
+    snprintf(what, sizeof what, "noise alone: rms %.3f (want about 0.24 through the open filter), mean %+.4f", rms, mean);
+    check(rms > 0.21 && rms < 0.28 && fabs(mean) < 0.01, what);
     E->destroy(e);
 
     e = patch(WAVE_SAW, 0, 1, 100, 10);
@@ -323,12 +429,13 @@ static int16_t *rest(void *e, int16_t *o, int blocks) {
     return o;
 }
 
-/* 1: one saw (the Phase 2 sound); 2: three oscillators, osc 2 detuned and osc 3 a square an octave down;
+/* 1: one saw (the Phase 2 sound); 2: three oscillators, osc 2 detuned and osc 3 a square an octave down; then a
+ * resonant ladder sweep, plain and driven;
  * 3: a sync lead, osc 2 synced to 1 and rising a semitone per note; 4: noise hits; 5: a run to the top of the keyboard */
 static void demo_wav(const char *path) {
     enum { STEP = 86, RUN = 43, TAIL = 172 };   /* in 128-frame blocks: 0.25 s, 0.125 s, 0.5 s */
     static const int riff[] = {36, 48, 43, 46, 36, 48, 51, 50};
-    static int16_t pcm[(4 * 8 * STEP + 13 * RUN + 4 * TAIL) * 256];
+    static int16_t pcm[(6 * 8 * STEP + 13 * RUN + 5 * TAIL) * 256];
     int16_t *o = pcm;
     void *e = patch(WAVE_SAW, 5, 400, 40, 150);
     for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
@@ -343,6 +450,16 @@ static void demo_wav(const char *path) {
     for (int k = 0; k < 8; k++) {
         set(e, "o2_semi", k + 3);
         o = play(e, o, riff[k] + 24, STEP);
+    }
+    o = rest(e, o, TAIL);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 3, 300, 70, 120);   /* ladder: a resonant sweep up the riff twice, the second time driven */
+    set(e, "o2_level", 80); set(e, "o2_fine", 7); set(e, "flt_res", 75);
+    for (int k = 0; k < 16; k++) {
+        if (k == 8) set(e, "flt_drive", 80);
+        set(e, "flt_cut", 15 + 60 * (k % 8) / 7.0);
+        o = play(e, o, riff[k % 8], STEP);
     }
     o = rest(e, o, TAIL);
     E->destroy(e);
@@ -388,6 +505,10 @@ int main(int argc, char **argv) {
     sync_aliasing();
     tuning();
     noise_and_mix();
+    self_oscillation();
+    filter_stability();
+    filter_slopes();
+    cutoff_text();
     envelope();
     keys();
     state();

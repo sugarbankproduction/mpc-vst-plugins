@@ -1,5 +1,6 @@
-/* ONE-ish engine, Phase 3: three band-limited oscillators (saw or square; octave, semitone, fine, level; 2 and 3 can
- * hard-sync to 1), white noise, a mixer, an amp envelope, one voice.
+/* ONE-ish engine, Phase 4: three band-limited oscillators (saw or square; octave, semitone, fine, level; 2 and 3 can
+ * hard-sync to 1), white noise, a mixer, a ladder filter (cutoff, resonance, drive, LP/HP, 24-6 dB), an amp envelope,
+ * one voice.
  * Implements mpc_engine() (wrapper/engine.h): 44.1 kHz, interleaved int16 stereo, up to 128 frames per render().
  * Everything is allocated in create(); render() and midi() never allocate, lock or touch files. */
 #include <math.h>
@@ -10,12 +11,17 @@
 #include "engine.h"
 #include "osc.h"
 #include "env.h"
+#include "ladder.h"
 
 #define SR 44100.0f
 #define MAX_HELD 16
 #define NOSC 3
 #define HEADROOM 0.5f      /* one full-scale saw at full velocity and volume peaks at -6 dBFS */
 #define STATE_MAX 8192     /* the wrapper's chunk size (wrapper/vst2_wrap.c) */
+#define NOISE_FLOOR 1e-5f  /* -100 dB of noise into the filter, as in a circuit: starts self-oscillation, avoids denormals */
+#define CUT_MIN_HZ 20.0f   /* the cutoff knob runs 20 Hz .. 20 kHz on a log scale (0..100) */
+#define CUT_RANGE 1000.0f
+#define CUT_GLIDE 0.3f     /* per block: cutoff knob moves are smoothed over about 10 ms, no zipper noise */
 
 /* engine-side slots, matched to params.json by key (so the VST order there can grow freely). Per oscillator the
  * slots run WAVE, OCT, SEMI, FINE, LEVEL, SYNC from P_O1_WAVE + OSC_STRIDE * n (osc 1's SYNC slot is unused) */
@@ -23,14 +29,16 @@ enum {
     P_O1_WAVE, P_O1_OCT, P_O1_SEMI, P_O1_FINE, P_O1_LEVEL, P_O1_SYNC,
     P_O2_WAVE, P_O2_OCT, P_O2_SEMI, P_O2_FINE, P_O2_LEVEL, P_O2_SYNC,
     P_O3_WAVE, P_O3_OCT, P_O3_SEMI, P_O3_FINE, P_O3_LEVEL, P_O3_SYNC,
-    P_NOISE_LEVEL, P_AMP_A, P_AMP_D, P_AMP_S, P_AMP_R, P_VOLUME, P_COUNT
+    P_NOISE_LEVEL, P_FLT_CUT, P_FLT_RES, P_FLT_DRIVE, P_FLT_MODE, P_FLT_SLOPE,
+    P_AMP_A, P_AMP_D, P_AMP_S, P_AMP_R, P_VOLUME, P_COUNT
 };
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_SEMI, O_FINE, O_LEVEL, O_SYNC };
 static const char *const KEYS[P_COUNT] = {
     "o1_wave", "o1_oct", "o1_semi", "o1_fine", "o1_level", "",
     "o2_wave", "o2_oct", "o2_semi", "o2_fine", "o2_level", "o2_sync",
     "o3_wave", "o3_oct", "o3_semi", "o3_fine", "o3_level", "o3_sync",
-    "noise_level", "amp_a", "amp_d", "amp_s", "amp_r", "volume"
+    "noise_level", "flt_cut", "flt_res", "flt_drive", "flt_mode", "flt_slope",
+    "amp_a", "amp_d", "amp_s", "amp_r", "volume"
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 
@@ -39,6 +47,8 @@ typedef struct {
     osc_t osc[NOSC];
     float ratio[NOSC];    /* each oscillator's pitch against the played note */
     env_t amp;
+    ladder_t flt;
+    float cut;            /* the cutoff knob (0..100) as the filter follows it, smoothed per block */
     uint32_t noise;       /* xorshift state */
     float note_hz;
     float velocity;
@@ -105,9 +115,13 @@ static void *create(const char *data_dir) {
 
 static void destroy(void *inst) { free(inst); }
 
+static float cut_hz(float knob) { return CUT_MIN_HZ * powf(CUT_RANGE, knob * 0.01f); }
+
 static void start_note(one_t *s, int note) {
-    if (s->amp.stage == ENV_IDLE)   /* from silence every note starts the same way */
+    if (s->amp.stage == ENV_IDLE) {   /* from silence every note starts the same way */
         for (int n = 0; n < NOSC; n++) osc_reset(&s->osc[n]);
+        ladder_reset(&s->flt);
+    }
     s->note = note;
     s->note_hz = 440.0f * powf(2.0f, (note - 69) / 12.0f);
     set_pitches(s);
@@ -184,6 +198,10 @@ static void set_param(void *inst, const char *key, const char *val) {
 static int get_param(void *inst, const char *key, char *buf, int n) {
     one_t *s = inst;
     if (!strcmp(key, "state")) return get_state(s, buf, n);
+    if (!strcmp(key, "flt_cut_display")) {   /* the knob's text on screen: Hz, not its 0..100 position */
+        float hz = cut_hz(s->val[P_FLT_CUT]);
+        return hz < 1000.0f ? snprintf(buf, n, "%.0f Hz", hz) : snprintf(buf, n, "%.2f kHz", hz * 0.001f);
+    }
     int k = slot(key);
     return k < 0 ? 0 : snprintf(buf, n, "%g", s->val[k]);
 }
@@ -212,7 +230,13 @@ static void render(void *inst, int16_t *out, int frames) {
     float l1 = v[P_O1_LEVEL] * 0.01f, l2 = v[P_O2_LEVEL] * 0.01f, l3 = v[P_O3_LEVEL] * 0.01f;
     float ln = v[P_NOISE_LEVEL] * 0.01f;
     float target = s->velocity * v[P_VOLUME] * 0.01f * HEADROOM;
-    if (s->amp.stage == ENV_IDLE) s->gain = target;   /* silent: nothing to smooth */
+    if (s->amp.stage == ENV_IDLE) {   /* silent: nothing to smooth */
+        s->gain = target;
+        s->cut = v[P_FLT_CUT];
+    }
+    s->cut += (v[P_FLT_CUT] - s->cut) * CUT_GLIDE;
+    ladder_set(&s->flt, cut_hz(s->cut), v[P_FLT_RES] * 0.01f, v[P_FLT_DRIVE] * 0.01f, (int)v[P_FLT_MODE],
+               (int)v[P_FLT_SLOPE], SR);
     for (int i = 0; i < frames; i++) {
         float y = 0.0f;
         if (s->amp.stage != ENV_IDLE) {
@@ -220,9 +244,11 @@ static void render(void *inst, int16_t *out, int frames) {
             float a = osc_next(&s->osc[0], w1, -1.0f), wrap = s->osc[0].wrap_d;
             float b = osc_next(&s->osc[1], w2, sync2 ? wrap : -1.0f);
             float c = osc_next(&s->osc[2], w3, sync3 ? wrap : -1.0f);
-            float mix = a * l1 + b * l2 + c * l3 + white(&s->noise) * ln;
+            float n = white(&s->noise);
+            float mix = a * l1 + b * l2 + c * l3 + n * ln;
+            float f = ladder_next(&s->flt, mix + n * NOISE_FLOOR);
             s->gain += (target - s->gain) * s->gain_coef;
-            y = soft_limit(mix * env_next(&s->amp) * s->gain);
+            y = soft_limit(f * env_next(&s->amp) * s->gain);
         }
         int16_t q = (int16_t)(y * 32767.0f);
         out[2 * i] = q;

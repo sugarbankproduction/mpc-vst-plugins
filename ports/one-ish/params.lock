@@ -21,3 +21,8 @@ o3_fine
 o3_level
 o3_sync
 noise_level
+flt_cut
+flt_res
+flt_drive
+flt_mode
+flt_slope

@@ -63,7 +63,7 @@ Each phase ends with something you can hear and a passing offline test. Don't st
    - [x] No aliasing whistle on high notes (2026-10-27, offline: `ports/one-ish/test/run.sh` measures aliasing 26-34 dB below the notes, 15-18 dB less than a plain oscillator; the faint remainder on the very top notes is PolyBLEP's limit; revisit with oversampling when the ladder filter (Phase 4) needs it)
 3. **Three oscillators.** Per-oscillator wave, octave, fine tune, level; hard sync; noise source; a mixer.
 4. **Ladder filter.** A 4-pole Moog-style ladder with resonance and drive, based on an openly published model.
-   - [ ] Self-oscillates cleanly at full resonance; stays stable at all cutoffs
+   - [x] Self-oscillates cleanly at full resonance; stays stable at all cutoffs (2026-10-27, offline: a sine within 1 cent of the cutoff from 110 Hz to 8 kHz, everything else 57-62 dB down, no level drift; no blow-up in any mode or slope at full resonance and drive. Added from the manual: LP/HP mode and 24/18/12/6 dB slopes)
 5. **Second filter.** A state-variable filter (low/band/high/notch), with series or parallel routing to the ladder.
 6. **Envelopes and LFOs.** 3 envelopes (filter, amp, mod) and 2 to 4 LFOs with tempo sync from MPC's transport.
 7. **Mod matrix.** 8 to 16 slots of source → destination → amount.
