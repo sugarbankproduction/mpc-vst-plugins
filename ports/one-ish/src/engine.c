@@ -278,6 +278,7 @@ typedef struct {
 
 typedef struct {
     float val[P_COUNT];      /* each value in its own units: option index, semitones, cents, % or a 0..100 knob */
+    float def[P_COUNT];      /* the defaults, so a saved state lists only what differs from them */
     float ratio[NOSC];       /* each oscillator's pitch against the played note (octave and frequency) */
     voice_t voice[MAX_VOICES];
     unsigned age;            /* counts note starts */
@@ -578,6 +579,7 @@ static void *create(const char *data_dir) {
     if (!s) return NULL;
     fx_init(&s->fx);   /* the effect buffers' pages, mapped now rather than in the audio thread */
     load_defaults(s);
+    memcpy(s->def, s->val, sizeof s->def);
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
@@ -916,10 +918,12 @@ static void set_state(one_t *s, const char *str) {
     }
 }
 
+/* only the values that differ from their defaults (set_state starts from the defaults), so a state of hundreds of
+ * params fits the wrapper's 8 KB chunk; "v=1" first keeps it non-empty (an empty state would be no chunk at all) */
 static int get_state(const one_t *s, char *buf, int n) {
-    int used = 0;
+    int used = snprintf(buf, n, "v=1");
     for (int i = 0; i < P_COUNT && used < n; i++)
-        if (KEYS[i][0]) used += snprintf(buf + used, n - used, "%s%s=%g", used ? ";" : "", KEYS[i], s->val[i]);
+        if (KEYS[i][0] && s->val[i] != s->def[i]) used += snprintf(buf + used, n - used, ";%s=%g", KEYS[i], s->val[i]);
     return used < n ? used : 0;
 }
 
