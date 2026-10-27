@@ -281,12 +281,12 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
 
     rnd_click(child, s, RP_UNDO, 0);
     snapshot(fx, now);
-    snprintf(what, sizeof what, "UNDO restores the sound before exactly (largest difference %.2g)", max_diff(now, before));
-    check(max_diff(now, before) == 0, what);
+    snprintf(what, sizeof what, "UNDO restores the sound before (largest difference %.2g)", max_diff(now, before));
+    check(max_diff(now, before) < 1e-6, what);   /* 1e-6: a value read back can differ in its last float bit */
     rnd_click(child, s, RP_REDO, 0);
     snapshot(fx, now);
     snprintf(what, sizeof what, "REDO brings the random sound back (largest difference %.2g)", max_diff(now, after));
-    check(max_diff(now, after) == 0, what);
+    check(max_diff(now, after) < 1e-6, what);
 
     rnd_click(child, s, RP_MUTATE, 0);
     snapshot(fx, now);
