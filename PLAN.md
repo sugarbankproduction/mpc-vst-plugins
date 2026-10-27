@@ -164,6 +164,13 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      (granular), Rings (resonator), Elements (modal), Warps (cross-modulation), Marbles (random generator, for the
      generative features); Airwindows (consoles, tape, saturation, reverbs). Check each file's licence header and the
      CPU on the device first.
+     Done 2026-10-27 (offline and the desktop build), all MIT: Rings as the "Modal Resonator" and Clouds as the
+     "Granular" synth effect types (`src/fx/mi_effects.{h,cc}`, sources in `ports/one-ish/third_party/`), Airwindows
+     ToTape6, Density and Console7 as "Tape Color", "Density", "Console" and Galactic as the "Space" reverb
+     (`src/fx/airwindows.h`, matched against the original plugins' output); 14 params, 9 matrix destinations, presets
+     "Modal Bells", "Grain Cloud", "Tape Bass". No added memory (they use the slot's own buffers). PC cost per block:
+     Rings up to 42 us (modal), Clouds 12-73 us by mode (spectral in bursts). Left: their CPU on the device, a place
+     for the 14 params on the desktop window and the MPC page; Beads, Elements, Warps, Marbles.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
 - **Then, the MPC port (in order):**
   1. MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, from a copy outside Dropbox (CLAUDE.md).

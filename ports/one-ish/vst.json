@@ -47,12 +47,28 @@
       "ports/one-ish/third_party/plaits/dsp/speech/sam_speech_synth.cc",
       "ports/one-ish/third_party/plaits/resources.cc",
       "ports/one-ish/third_party/stmlib/dsp/units.cc",
+      "ports/one-ish/src/fx/mi_effects.cc",
+      "ports/one-ish/third_party/rings/dsp/part.cc",
+      "ports/one-ish/third_party/rings/dsp/string.cc",
+      "ports/one-ish/third_party/rings/dsp/resonator.cc",
+      "ports/one-ish/third_party/rings/dsp/fm_voice.cc",
+      "ports/one-ish/third_party/rings/resources.cc",
+      "ports/one-ish/third_party/clouds/dsp/granular_processor.cc",
+      "ports/one-ish/third_party/patched/clouds/dsp/correlator.cc",
+      "ports/one-ish/third_party/clouds/dsp/mu_law.cc",
+      "ports/one-ish/third_party/clouds/dsp/pvoc/phase_vocoder.cc",
+      "ports/one-ish/third_party/clouds/dsp/pvoc/stft.cc",
+      "ports/one-ish/third_party/clouds/dsp/pvoc/frame_transformation.cc",
+      "ports/one-ish/third_party/clouds/resources.cc",
+      "ports/one-ish/third_party/stmlib/dsp/atan.cc",
       "ports/one-ish/third_party/stmlib/utils/random.cc"
     ],
     "cflags": [
       "-DTEST",
-      "-Iports/one-ish/third_party/patched",
-      "-Iports/one-ish/third_party"
+      "-isystem",
+      "ports/one-ish/third_party/patched",
+      "-isystem",
+      "ports/one-ish/third_party"
     ],
     "libs": [
       "-lm"

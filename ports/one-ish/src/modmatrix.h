@@ -37,14 +37,17 @@ enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };  
  * whole knob. The effect destinations (MDF_* below, from MD_FX_FIRST) move each effect control by +-100% of its range;
  * the effects run once for all voices, so the engine evaluates the slots that reach them in a pass of their own. The
  * MACRO destinations come after the effects (MD_MAC_*) but are per voice. */
-/* the effect destinations, in their params.json order: the synth effect, the master sends, delay, reverb */
+/* the effect destinations, in their params.json order: the synth effect, the master sends, delay, reverb, then the
+ * open-source types' controls. At most 64 (the engine keeps them as bits of a 64-bit word). */
 enum {
     MDF_MIX, MDF_GAIN, MDF_CTRL1, MDF_CTRL2, MDF_RATE, MDF_RATE_R, MDF_DEPTH, MDF_FB, MDF_FB_R, MDF_TIME, MDF_TIME_R,
     MDF_DTIME, MDF_DFB, MDF_TONE, MDF_SPREAD, MDF_SWEEP, MDF_NOISE, MDF_VRATE, MDF_VDEPTH, MDF_FLUTTER, MDF_WOW,
     MDF_BIAS, MDF_ROOM, MDF_DECAY, MDF_BITS, MDF_SRATE, MDF_RESO, MDF_CUT1, MDF_CUT2, MDF_CUT3, MDF_LVL1, MDF_LVL2,
     MDF_LVL3, MDF_SEND1, MDF_SEND2, MDF_SERIES, MDF_WIDTH, MDF_DLY_TIME, MDF_DLY_TIME_R, MDF_DLY_FB, MDF_DLY_TONE,
     MDF_DLY_OFFSET, MDF_REV_DECAY, MDF_REV_SIZE, MDF_REV_PRE, MDF_REV_DAMP, MDF_REV_LOWDAMP, MDF_REV_DIFF,
-    MDF_REV_TONE, MDF_REV_MOD, MDF_REV_EARLY, MDF_COUNT
+    MDF_REV_TONE, MDF_REV_MOD, MDF_REV_EARLY,
+    /* the open-source synth effect types' controls (Rings, Clouds, Airwindows) */
+    MDF_PITCH, MDF_STRUCT, MDF_POS, MDF_SIZE, MDF_DENSITY, MDF_TEXTURE, MDF_DRIVE, MDF_BUMP, MDF_LOWCUT, MDF_COUNT
 };
 enum {
     MD_OFF, MD_PITCH, MD_O1_PITCH, MD_O2_PITCH, MD_O3_PITCH, MD_O1_LEVEL, MD_O2_LEVEL, MD_O3_LEVEL, MD_NOISE_LEVEL,

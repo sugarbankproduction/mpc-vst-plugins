@@ -12,25 +12,33 @@
 
 /* synth effect types: "modfx_type" options */
 enum { SFX_DELAY, SFX_BBD, SFX_TAPE, SFX_ECHO, SFX_FLANGER, SFX_SFLANGER, SFX_CHORUS, SFX_DCHORUS, SFX_ENSEMBLE,
-       SFX_SCHORUS, SFX_PHASER6, SFX_PHASER12, SFX_TPHASER, SFX_CRUSH, SFX_RESON, SFX_NTYPES };
+       SFX_SCHORUS, SFX_PHASER6, SFX_PHASER12, SFX_TPHASER, SFX_CRUSH, SFX_RESON,
+       /* the open-source ones: Mutable Instruments Rings and Clouds (mi_effects.h), Airwindows ToTape6, Density and
+        * Console7 (airwindows.h) */
+       SFX_RINGS, SFX_CLOUDS, SFX_AWTAPE, SFX_DENSITY, SFX_CONSOLE, SFX_NTYPES };
 
 /* what CTRL 1 and CTRL 2 can move: "modfx_c1_dst" / "modfx_c2_dst" options (FXD_AUTO: the type's own pick) */
 enum { FXD_AUTO, FXD_MIX, FXD_FB, FXD_FB_R, FXD_TIME, FXD_TIME_R, FXD_DTIME, FXD_DFB, FXD_RATE, FXD_RATE_R, FXD_DEPTH,
        FXD_TONE, FXD_SPREAD, FXD_GAIN, FXD_SWEEP, FXD_NOISE, FXD_VRATE, FXD_VDEPTH, FXD_FLUTTER, FXD_WOW, FXD_BIAS,
-       FXD_ROOM, FXD_DECAY, FXD_BITS, FXD_SRATE, FXD_RESO, FXD_CUT1, FXD_CUT2, FXD_CUT3, FXD_COUNT };
+       FXD_ROOM, FXD_DECAY, FXD_BITS, FXD_SRATE, FXD_RESO, FXD_CUT1, FXD_CUT2, FXD_CUT3,
+       FXD_PITCH, FXD_STRUCT, FXD_POS, FXD_SIZE, FXD_DENSITY, FXD_TEXTURE, FXD_DRIVE, FXD_BUMP, FXD_LOWCUT, FXD_COUNT };
 static const char *const FXD_NAME[FXD_COUNT] = {
     "Auto", "Mix", "Feedback", "Feedback R", "Time", "Time R", "Delay Time", "Delay FB", "Rate", "Rate R", "Depth",
     "Tone", "Spread", "Gain", "Sweep", "Noise", "Vib Rate", "Vib Depth", "Flutter", "Wow", "Bias", "Room", "Decay",
-    "Bits", "Sample Rate", "Resonance", "Cutoff Low", "Cutoff Mid", "Cutoff High"};
+    "Bits", "Sample Rate", "Resonance", "Cutoff Low", "Cutoff Mid", "Cutoff High",
+    "Pitch", "Structure", "Position", "Size", "Density", "Texture", "Drive", "Head Bump", "Low Cut"};
 /* each type's CTRL 1 and CTRL 2 when set to Auto (the manual's pre-assignments, p103-108) */
 static const unsigned char FX_AUTO_CTRL[SFX_NTYPES][2] = {
     [SFX_DELAY] = {FXD_MIX, FXD_DTIME},   [SFX_BBD] = {FXD_MIX, FXD_FB},        [SFX_TAPE] = {FXD_MIX, FXD_FB},
     [SFX_ECHO] = {FXD_MIX, FXD_TONE},     [SFX_FLANGER] = {FXD_TIME, FXD_RATE}, [SFX_SFLANGER] = {FXD_TIME, FXD_TIME_R},
     [SFX_CHORUS] = {FXD_RATE, FXD_DEPTH}, [SFX_DCHORUS] = {FXD_MIX, FXD_FB},    [SFX_ENSEMBLE] = {FXD_MIX, FXD_FB},
     [SFX_SCHORUS] = {FXD_MIX, FXD_FB},    [SFX_PHASER6] = {FXD_MIX, FXD_FB},    [SFX_PHASER12] = {FXD_MIX, FXD_FB},
-    [SFX_TPHASER] = {FXD_MIX, FXD_FB},    [SFX_CRUSH] = {FXD_MIX, FXD_BITS},    [SFX_RESON] = {FXD_MIX, FXD_RESO}};
+    [SFX_TPHASER] = {FXD_MIX, FXD_FB},    [SFX_CRUSH] = {FXD_MIX, FXD_BITS},    [SFX_RESON] = {FXD_MIX, FXD_RESO},
+    /* (not in the manual: the controls each is played by) */
+    [SFX_RINGS] = {FXD_STRUCT, FXD_POS},  [SFX_CLOUDS] = {FXD_POS, FXD_DENSITY}, [SFX_AWTAPE] = {FXD_DRIVE, FXD_FLUTTER},
+    [SFX_DENSITY] = {FXD_DRIVE, FXD_MIX}, [SFX_CONSOLE] = {FXD_DRIVE, FXD_MIX}};
 
-enum { REV_PLATE, REV_ROOM, REV_HALL };   /* "rev_type" options */
+enum { REV_PLATE, REV_ROOM, REV_HALL, REV_SPACE };   /* "rev_type" options (SPACE: Airwindows Galactic) */
 enum { RES_LP, RES_BP, RES_HP };          /* "modfx_ftype" options */
 
 typedef struct {   /* what the effects read; worked out by the engine (fx_params() in engine.c) from the knobs */
@@ -47,6 +55,13 @@ typedef struct {   /* what the effects read; worked out by the engine (fx_params
     float bits, srate_hz;                 /* bit crusher */
     float reso, cut_hz[3], lvl[3];        /* resonator: 0..1, Hz, 0..1 */
     int ftype;
+    /* the open-source types: Rings (resonator), Clouds (granular), Airwindows tape, Density and Console */
+    float pitch_st;                       /* Rings: semitones from the note it follows; Clouds: its pitch, -48..48 */
+    float structure, position, size, density, texture;   /* 0..1, their knobs (Rings: structure, position) */
+    float drive, bump, lowcut;            /* 0..1: Airwindows input/density/fader, head bump, high-pass */
+    int model, follow, gmode, quality, freeze;   /* Rings model, key follow; Clouds mode, quality, freeze */
+    float note;                           /* Rings: the note it rings at (follow: the newest voice's, plus pitch_st) */
+    int strum;                            /* Rings: a new note started since the last block */
     /* the master effects: delay (send 1) and reverb (send 2), their returns added to the dry signal */
     int mfx_on;
     float send1, send2, series, width;    /* 0..1, 0..1, 0..1 (delay into reverb), 0..2 */
@@ -55,6 +70,7 @@ typedef struct {   /* what the effects read; worked out by the engine (fx_params
     int rev_type, rev_freeze;
     float rev_rt60, rev_size;             /* decay time (s) and size (0.5..2) */
     float rev_damp, rev_lowdamp, rev_pre_ms, rev_diff, rev_tone, rev_mod, rev_early;   /* 0..1 except pre and mod (0..2) */
+    float rev_decay_k, rev_size_k;        /* the decay and size knobs, 0..1 (SPACE uses them as they are) */
     float wet_pan;                        /* the synth pan, -1..1: where the synth effect's wet signal sits */
     int ramp;                             /* samples to the settings' next change (0: the block): the gains' ramp length */
 } fx_params_t;

@@ -6,9 +6,14 @@
  *   HALL:  longer early reflections, four input diffusers and an eight-line network with four slowly modulated lines.
  * Decay is set as a time (RT60, -60 dB) and each loop's gain worked out from its length, so SIZE stretches the space and,
  * like a bigger room, the tail (the time scales with size). Damping: one-pole high cut and a low cut in every loop.
- * FREEZE: the loops at unity gain, undamped, the input shut: the tail holds. Returns the wet signal. */
+ * FREEZE: the loops at unity gain, undamped, the input shut: the tail holds. Returns the wet signal.
+ *   SPACE: Airwindows Galactic (airwindows.h), stereo in: DECAY sets how little of the new sound replaces the space
+ *          (full decay or FREEZE: it holds), TONE its brightness, MOD LEVEL its detune, SIZE its bigness (moving SIZE
+ *          makes the crashing noises the plugin is known for). Pre-delay, damping, diffusion and early/late don't
+ *          apply to it. */
 #pragma once
 #include "common.h"
+#include "airwindows.h"
 
 #define RV_PRE_SIZE 131072   /* 2.97 s: pre-delay up to 1.5 s plus the early taps */
 #define RV(n) ((n) * (FX_SR / 29761.0f))   /* Dattorro's lengths at 29761 Hz, scaled */
@@ -40,12 +45,13 @@ typedef struct {
     DL(pre, RV_PRE_SIZE);   /* mono pre-delay (and the early reflections' taps) */
     float bw;               /* input tone low-pass */
     int type;               /* the design the state below belongs to */
-    union { plate_t plate; room_t room; hall_t hall; } u;
+    union { plate_t plate; room_t room; hall_t hall; aw_galactic_t space; } u;
 } rev_t;
 
 static void rv_reset(rev_t *r, const fx_params_t *p) {
     memset(r, 0, sizeof *r);
     r->type = p->rev_type;
+    if (r->type == REV_SPACE) aw_galactic_init(&r->u.space);
 }
 
 /* the loop settings this block: gain per loop of `len` samples, damping coefficients (frozen: lossless) */
@@ -217,6 +223,12 @@ static void rv_hall(rev_t *r, const fx_params_t *p, const float *inL, const floa
 /* in: what SEND 2 (and the delay, in series) feeds it; out: the reverb */
 static void rv_process(rev_t *r, const fx_params_t *p, const float *inL, const float *inR, float *outL, float *outR,
                        int n) {
+    if (p->rev_type == REV_SPACE) {
+        float replace = p->rev_freeze ? 0.0f : 1.0f - fx_clamp(p->rev_decay_k, 0.0f, 1.0f);
+        aw_galactic(&r->u.space, replace, fx_clamp(p->rev_tone, 0.0f, 1.0f), fx_clamp(0.5f * p->rev_mod, 0.0f, 1.0f),
+                    fx_clamp(p->rev_size_k, 0.0f, 1.0f), 1.0f, inL, inR, outL, outR, n);
+        return;
+    }
     int pre = (int)fx_clamp(p->rev_pre_ms * 0.001f * FX_SR, 0.0f, 66200.0f);
     float tone_c = fx_tone_coef(p->rev_tone);
     float b = fx_clamp(p->rev_early, 0.0f, 1.0f), eg = fminf(1.0f, 2.0f * (1.0f - b)), lg = fminf(1.0f, 2.0f * b);

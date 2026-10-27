@@ -34,8 +34,9 @@
  * resonance, envelope times, level and oscillator tuning, scaled by a knob each; and a non-linear ladder (src/ladder.h).
  * Each voice is placed in stereo (equal power) at the pan, spread around it note by note (or across a unison stack).
  * After the voices, in stereo (src/fx.h): a synth effect of a chosen type (delays, chorus, flanger, phaser, bit
- * crusher, resonator...) with CTRL 1/2, taking the panned voices, then the master effects on two sends: a stereo
- * or ping-pong delay and a plate, room or hall reverb.
+ * crusher, resonator...; and open-source ones: Mutable Instruments Rings and Clouds, Airwindows tape, Density and
+ * console) with CTRL 1/2, taking the panned voices, then the master effects on two sends: a stereo or ping-pong delay
+ * and a plate, room, hall or space (Airwindows Galactic) reverb.
  * Before the voices, a performance section (all off by default: then keys reach the voices exactly as before): an
  * arpeggiator after the Moog One's (Up, Down, Order, Random; 1-4 octaves up/down; octave order; pendulum; synced
  * divisions 1/1-1/128 straight, dotted or triplet, or a free rate; gate, swing, latch, note reset), chord memory (a
@@ -181,6 +182,10 @@ enum {
     /* the MACRO channel (Plaits): model, its three knobs, footage and frequency, main/aux blend, level, filter buttons */
     P_MAC_MODEL, P_MAC_HARM, P_MAC_TIMBRE, P_MAC_MORPH, P_MAC_OCT, P_MAC_FREQ, P_MAC_AUX, P_MAC_LEVEL, P_MAC_SVF,
     P_MAC_LAD,
+    /* the open-source synth effect types (src/fx/mi_effects.h, src/fx/airwindows.h): Rings and Clouds, then the
+     * Airwindows ones */
+    P_MODFX_PITCH, P_MODFX_FOLLOW, P_MODFX_STRUCT, P_MODFX_POS, P_MODFX_MODEL, P_MODFX_SIZE, P_MODFX_DENSITY,
+    P_MODFX_TEXTURE, P_MODFX_FREEZE, P_MODFX_GMODE, P_MODFX_QUALITY, P_MODFX_DRIVE, P_MODFX_BUMP, P_MODFX_LOWCUT,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -281,6 +286,8 @@ static const char *const KEYS[P_COUNT] = {
     "gen_tm_len", "gen_tm_change", "gen_scale", "gen_range",
     "mac_model", "mac_harm", "mac_timbre", "mac_morph", "mac_oct", "mac_freq", "mac_aux", "mac_level", "mac_svf",
     "mac_lad",
+    "modfx_pitch", "modfx_follow", "modfx_struct", "modfx_pos", "modfx_model", "modfx_size", "modfx_density",
+    "modfx_texture", "modfx_freeze", "modfx_gmode", "modfx_quality", "modfx_drive", "modfx_bump", "modfx_lowcut",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -293,7 +300,10 @@ static const short FXMD_SLOT[MDF_COUNT] = {
     P_MODFX_LVL2, P_MODFX_LVL3, P_MFX_SEND1, P_MFX_SEND2, P_MFX_SERIES, P_MFX_WIDTH, P_DLY_TIME, P_DLY_TIME_R, P_DLY_FB,
     P_DLY_TONE, P_DLY_OFFSET, P_REV_DECAY, P_REV_SIZE, P_REV_PRE, P_REV_DAMP, P_REV_LOWDAMP, P_REV_DIFF, P_REV_TONE,
     P_REV_MOD, P_REV_EARLY,
+    P_MODFX_PITCH, P_MODFX_STRUCT, P_MODFX_POS, P_MODFX_SIZE, P_MODFX_DENSITY, P_MODFX_TEXTURE, P_MODFX_DRIVE,
+    P_MODFX_BUMP, P_MODFX_LOWCUT,
 };
+_Static_assert(MDF_COUNT <= 64, "the effect destinations are kept as the bits of a 64-bit word (fx_dst, fx_was)");
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
 
@@ -413,6 +423,8 @@ typedef struct {
     uint64_t fx_dst;         /* bit k: a slot in use or the ribbon reaches effect destination k */
     fx_params_t fxp;         /* the effect settings as fx.h reads them, kept between renders */
     int fx_stale;            /* a setting changed since fxp was worked out */
+    float fx_key;            /* the Rings effect's key: the newest sounding voice's, kept while nothing sounds */
+    unsigned fx_age;         /* that voice's note start (0: none yet), so a new note strums it */
     float rib, rib_to;       /* the ribbon's position (0..127, smoothed) and where it is heading */
     int rib_touch, rib_back; /* a finger is on it; SPRING is taking it back to its origin */
     float rib_coef, fx_coef; /* per control step: the spring's return; the effect modulation's smoothing */
@@ -1781,6 +1793,14 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
     if (k == P_REV_DECAY)   /* the decay time at this size */
         return snprintf(buf, n, "%.2f s", fx_rev_rt60(s->val[k]) * fx_rev_size(s->val[P_REV_SIZE]));
     if (k == P_REV_SIZE) return snprintf(buf, n, "%.0f%%", fx_rev_size(s->val[k]) * 100.0f);
+    if (k == P_MODFX_DRIVE) {   /* in each Airwindows type's own terms */
+        float d = s->val[k] * 0.01f;
+        switch ((int)s->val[P_MODFX_TYPE]) {
+        case SFX_AWTAPE: return snprintf(buf, n, "%+.1f dB", (d - 0.5f) * 24.0f);   /* input gain */
+        case SFX_DENSITY: return snprintf(buf, n, "%.2f", d * 5.0f - 1.0f);        /* density, -1 .. 4 */
+        default: return snprintf(buf, n, "%.0f%%", s->val[k]);
+        }
+    }
     for (int l = 0; l < NLFO; l++) {
         if (k == lfo_base(l)) {   /* the rate */
             if (s->val[k + 2] > 0.5f)
@@ -2259,6 +2279,10 @@ static const struct { short slot; float lo, hi; } FXD_SLOT[FXD_COUNT] = {
     [FXD_BIAS] = {P_MODFX_BIAS, 0, 100}, [FXD_ROOM] = {P_MODFX_ROOM, 0, 100}, [FXD_DECAY] = {P_MODFX_DECAY, 0, 100},
     [FXD_BITS] = {P_MODFX_BITS, 2, 24}, [FXD_SRATE] = {P_MODFX_SRATE, 0, 100}, [FXD_RESO] = {P_MODFX_RESO, 0, 100},
     [FXD_CUT1] = {P_MODFX_CUT1, 0, 100}, [FXD_CUT2] = {P_MODFX_CUT2, 0, 100}, [FXD_CUT3] = {P_MODFX_CUT3, 0, 100},
+    [FXD_PITCH] = {P_MODFX_PITCH, -48, 48}, [FXD_STRUCT] = {P_MODFX_STRUCT, 0, 100}, [FXD_POS] = {P_MODFX_POS, 0, 100},
+    [FXD_SIZE] = {P_MODFX_SIZE, 0, 100}, [FXD_DENSITY] = {P_MODFX_DENSITY, 0, 100},
+    [FXD_TEXTURE] = {P_MODFX_TEXTURE, 0, 100}, [FXD_DRIVE] = {P_MODFX_DRIVE, 0, 100}, [FXD_BUMP] = {P_MODFX_BUMP, 0, 100},
+    [FXD_LOWCUT] = {P_MODFX_LOWCUT, 0, 100},
 };
 
 /* THE EFFECT PASS, once per control step while a matrix slot or the ribbon reaches an effect (else skipped, once its
@@ -2381,6 +2405,8 @@ static void fx_field(const one_t *s, int j, const int *ctrl, fx_params_t *f) {
     case P_REV_DECAY: case P_REV_SIZE:   /* a bigger space rings longer: decay and size make the decay time together */
         f->rev_size = fx_rev_size(fx_eff(s, P_REV_SIZE, ctrl));
         f->rev_rt60 = fx_rev_rt60(fx_eff(s, P_REV_DECAY, ctrl)) * f->rev_size;
+        f->rev_decay_k = fx_eff(s, P_REV_DECAY, ctrl) * 0.01f;
+        f->rev_size_k = fx_eff(s, P_REV_SIZE, ctrl) * 0.01f;
         break;
     case P_REV_DAMP: f->rev_damp = v * 0.009f; break;
     case P_REV_LOWDAMP: f->rev_lowdamp = v * 0.01f; break;
@@ -2389,6 +2415,15 @@ static void fx_field(const one_t *s, int j, const int *ctrl, fx_params_t *f) {
     case P_REV_TONE: f->rev_tone = v * 0.01f; break;
     case P_REV_MOD: f->rev_mod = v * 0.02f; break;
     case P_REV_EARLY: f->rev_early = v * 0.01f; break;
+    case P_MODFX_PITCH: f->pitch_st = v; break;
+    case P_MODFX_STRUCT: f->structure = v * 0.01f; break;
+    case P_MODFX_POS: f->position = v * 0.01f; break;
+    case P_MODFX_SIZE: f->size = v * 0.01f; break;
+    case P_MODFX_DENSITY: f->density = v * 0.01f; break;
+    case P_MODFX_TEXTURE: f->texture = v * 0.01f; break;
+    case P_MODFX_DRIVE: f->drive = v * 0.01f; break;
+    case P_MODFX_BUMP: f->bump = v * 0.01f; break;
+    case P_MODFX_LOWCUT: f->lowcut = v * 0.01f; break;
     default: break;   /* CTRL 1/2: only through their targets */
     }
 }
@@ -2404,6 +2439,11 @@ static void fx_params(const one_t *s, fx_params_t *f) {
     f->rev_type = (int)p[P_REV_TYPE];
     f->rev_freeze = p[P_REV_FREEZE] > 0.5f;
     f->wet_pan = p[P_PAN] * 0.01f;
+    f->model = (int)p[P_MODFX_MODEL];
+    f->follow = p[P_MODFX_FOLLOW] > 0.5f;
+    f->gmode = (int)p[P_MODFX_GMODE];
+    f->quality = (int)p[P_MODFX_QUALITY];
+    f->freeze = p[P_MODFX_FREEZE] > 0.5f;
     int ctrl[2];
     fx_ctrl_slots(s, ctrl);
     for (int k = 0; k < MDF_COUNT; k++) fx_field(s, FXMD_SLOT[k], ctrl, f);
@@ -2415,6 +2455,23 @@ static void fx_params_mod(const one_t *s, fx_params_t *f, uint64_t dirty) {
     fx_ctrl_slots(s, ctrl);
     for (int k = 0; k < MDF_COUNT; k++)
         if (dirty >> k & 1) fx_field(s, FXMD_SLOT[k], ctrl, f);
+}
+
+/* the Rings effect's note, each control step: the newest sounding voice's key (its glide, transpose and master tune;
+ * not pitch bend or pitch modulation) or, with KEY FOLLOW off, middle C; plus PITCH. A new note strums it (it jumps
+ * there instead of gliding); with nothing sounding it keeps the last key, so the tail rings on at its pitch. */
+static void fx_note_step(one_t *s, fx_params_t *f) {
+    if (f->sfx_type != SFX_RINGS) return;
+    const voice_t *nv = NULL;
+    for (int i = 0; i < MAX_VOICES; i++) {
+        const voice_t *v = &s->voice[i];
+        if (v->env[ENV_AMP].stage != ENV_IDLE && (!nv || v->age > nv->age)) nv = v;
+    }
+    if (nv) {
+        s->fx_key = voice_key(s, nv) + 12.0f * log2f(s->tune_hz / 440.0f);
+        if (nv->age != s->fx_age) { f->strum = 1; s->fx_age = nv->age; }
+    }
+    f->note = (f->follow ? (s->fx_age ? s->fx_key : 60.0f) : 60.0f) + f->pitch_st;
 }
 
 static void render(void *inst, int16_t *out, int frames) {
@@ -2454,9 +2511,11 @@ static void render(void *inst, int16_t *out, int frames) {
         if (first) {   /* the effect pass, after the voices' sources: only the settings it moves */
             uint64_t dirty = fx_mod_step(s);
             if (dirty) fx_params_mod(s, fxp, dirty);
+            fx_note_step(s, fxp);
         }
         fxp->ramp = CR - s->phase;   /* the effect gains ramp across the whole control step, however the host splits it */
         fx_process(&s->fx, fxp, acc, side ? xl : acc, side ? xr : acc, l, r, n);   /* synth effect: mono in */
+        fxp->strum = 0;
         for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host */
             float yl = isfinite(l[i]) ? soft_limit(l[i]) : 0.0f, yr = isfinite(r[i]) ? soft_limit(r[i]) : 0.0f;
             out[2 * (done + i)] = (int16_t)(yl * 32767.0f);

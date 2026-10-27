@@ -4,6 +4,8 @@
  *   (src/fx/reverb.h); their returns are added to the synth effect's output. EFFECT 1>2 SERIES moves the delay's return
  *   from the output into the reverb's input; STEREO WIDTH widens or narrows the returns; master ON bypasses both.
  * Sends at 0 (or master off) leave the signal exactly dry; a synth effect that is off or at mix 0 too.
+ * The open-source types (Mutable Instruments Rings and Clouds, Airwindows ToTape6, Density, Console7; the Galactic
+ * reverb as SPACE) run in the memory of the slot they take: no buffers of their own (third_party/THIRD_PARTY.md).
  * All buffers live inside fx_t (allocated with the instance, about 3.1 MB); fx_process() never allocates. An effect
  * switched on (or the synth effect or reverb switched to another type) starts from silence. A send turned to 0 lets
  * its effect's tail ring out; the effect stops once its return has been silent for 3 s. */

@@ -264,6 +264,26 @@ PATCHES = [
                        "mac_level": 85, "mac_harm": 10, "mac_timbre": 55, "mac_morph": 40, "flt_cut": hz(9000),
                        "voices": "8", "mod2_src": "Velocity", "mod2_dst": "Macro Timbre", "mod2_amt": 30,
                        **chorus(0.4, 7, 25, 25), **reverb(20, 1.8)}),
+    # the open-source effects: Rings' modal resonator rung by a short pluck (tuned to the newest note), Clouds'
+    # granular cloud over a pad, ToTape6-style tape saturation on a bass; the SPACE reverb is Airwindows Galactic
+    ("Modal Bells", {**amp(1, 250, 0, 200), **fenv(1, 120, 0, 100),
+                     "o1_mix": 100, "o2_level": 0, "flt_cut": hz(3000), "flt_res": 10, "lad_env": 30, "voices": "6",
+                     "modfx_on": "On", "modfx_type": "Modal Resonator", "modfx_model": "Modal", "modfx_struct": 30,
+                     "modfx_tone": 55, "modfx_decay": 58, "modfx_pos": 30, "modfx_mix": 70, "modfx_gain": 60,
+                     **reverb(25, rev_type="Space", rev_decay=60, rev_size=55, rev_tone=60)}),
+    ("Grain Cloud", {**amp(900, 2000, 85, 2500), **fenv(1500, 3000, 50, 2500),
+                     "o2_level": 80, "o2_freq": 0.08, "o3_level": 60, "o3_oct": "4'", "flt_cut": hz(1800), "flt_res": 15,
+                     "lad_env": 20, "voices": "8", "spread": 50,
+                     "modfx_on": "On", "modfx_type": "Granular", "modfx_pos": 45, "modfx_size": 60,
+                     "modfx_density": 78, "modfx_texture": 65, "modfx_pitch": 12, "modfx_spread": 80, "modfx_fb": 20,
+                     "modfx_room": 40, "modfx_mix": 55, "modfx_c2_dst": "Texture",
+                     "mod6_src": "Mod Wheel", "mod6_dst": "Synth FX Position", "mod6_amt": 40,
+                     **reverb(35, rev_type="Space", rev_decay=75, rev_size=80, rev_tone=45)}),
+    ("Tape Bass", {**amp(2, 500, 75, 150), **fenv(1, 300, 25, 200),
+                   "o2_level": 80, "o2_oct": "16'", "o2_freq": 0.05, "flt_cut": hz(450), "flt_res": 30, "lad_env": 40,
+                   "lad_kbd": 40, "voices": "Mono",
+                   "modfx_on": "On", "modfx_type": "Tape Color", "modfx_drive": 72, "modfx_bump": 65,
+                   "modfx_flutter": 12, "modfx_tone": 60, "modfx_mix": 100}),
 ]
 
 
