@@ -20,7 +20,7 @@ CXXFLAGS=(-O2 -std=gnu++11 -fno-exceptions -fno-rtti -Wall -Wno-unused-parameter
 OBJS=()
 LINK=$CC   # g++ links once any source is C++ (it brings libstdc++, static like the rest)
 for f in $SOURCES; do
-  o="$OUT/$(basename "${f%.*}").o"
+  o="$OUT/obj_$(echo "${f%.*}" | tr '/' '_').o"   # by full path: third-party files share names
   case "$f" in
     *.cc|*.cpp|*.cxx) $CXX "${CXXFLAGS[@]}" -c "$f" -o "$o"; LINK=$CXX ;;
     *) $CC "${FLAGS[@]}" -c "$f" -o "$o" ;;
