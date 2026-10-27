@@ -26,3 +26,12 @@ Ground rules:
   it touches in the same PR (map in the skill's "Docs sync"; the PR template asks). Date new facts and say offline vs device. If
   none apply, write "no docs needed" in the PR. Before merging or finishing, list the recent PRs and check their docs for stale claims.
 - Commit trailers per the session's instructions; one commit per concern.
+
+## ONE-ish (this fork)
+- Read `PLAN.md` first; work one phase at a time and stop at each phase's tests.
+- Explain changes in plain language; the owner is not from a developer background.
+- Never allocate memory, lock or touch files in the audio render path.
+- Benchmark every new feature's CPU cost before moving on.
+- Keep Moog names, code and presets out of the project.
+- This checkout lives on Windows: run the repo's bash tools through `win/run.sh` (Git Bash + Docker Desktop), e.g.
+  `win/run.sh tools/test_port.sh ports/one-ish/vst.json`. It runs them in a Linux workbench container (`win/Dockerfile`).
