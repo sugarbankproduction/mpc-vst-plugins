@@ -14,6 +14,8 @@
  *             to a level; pitch bend
  *   voices    chords; with 4 voices six held keys keep the newest four; a repeated key doesn't double up; the
  *             sustain pedal holds and lets go; mono plays only the newest key
+ *   effects   delay echoes on time (free and synced), ping-pong alternates, reverb tail grows with decay, chorus is
+ *             stereo; every effect stays bounded at its maximum feedback or decay
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
  *   state     save/restore round trip; damaged or oversized states don't break the instance
@@ -35,6 +37,7 @@
 #include "lfo.h"
 #include "env.h"
 #include "modmatrix.h"
+#include "fx.h"
 
 #define SR 44100
 #define N 16384   /* FFT length: 2.7 Hz per bin */
@@ -648,6 +651,92 @@ static void voices(void) {
     check(env.stage == ENV_IDLE, "a pluck envelope (sustain 0) is idle once its decay ends, with the key still down");
 }
 
+static fx_t fxs;   /* 1.3 MB: static, not on the stack */
+
+static fx_params_t fx_none(void) {
+    fx_params_t p;
+    memset(&p, 0, sizeof p);
+    p.dly_tone = 1;
+    return p;
+}
+
+/* run the effects on `n` samples of `in` (NULL: an impulse at 0), into l, r */
+static void fx_run(const fx_params_t *p, const float *in, float *l, float *r, int n) {
+    static float x[SR * 4];
+    memset(&fxs, 0, sizeof fxs);
+    for (int i = 0; i < n; i++) x[i] = in ? in[i] : (i == 0);
+    for (int at = 0; at < n; at += 128) fx_process(&fxs, p, x + at, l + at, r + at, n - at < 128 ? n - at : 128);
+}
+
+static int loudest(const float *x, int from, int to) {
+    int best = from;
+    for (int i = from; i < to; i++)
+        if (fabsf(x[i]) > fabsf(x[best])) best = i;
+    return best;
+}
+
+static void effects(void) {
+    static float l[SR * 4], r[SR * 4], saw[SR * 4];
+    char what[200];
+    fx_params_t p = fx_none();
+    p.dly_ms = 250; p.dly_mix = 1;   /* one echo, 250 ms after an impulse */
+    fx_run(&p, NULL, l, r, SR);
+    int at = loudest(l, 100, SR);
+    snprintf(what, sizeof what, "delay 250 ms: echo at %.1f ms (level %.2f)", at / 44.1, l[at]);
+    check(abs(at - 11025) <= 2 && l[at] > 0.8f, what);
+
+    p.dly_fb = 0.5f; p.dly_pingpong = 1;   /* ping-pong: first repeat left, second right */
+    fx_run(&p, NULL, l, r, SR);
+    int l1 = loudest(l, 100, 16000), r2 = loudest(r, 16000, 27000);
+    snprintf(what, sizeof what, "ping-pong: first echo left at %.0f ms (%.2f, right %.2f), second right at %.0f ms (%.2f)",
+             l1 / 44.1, l[l1], r[l1], r2 / 44.1, r[r2]);
+    check(abs(l1 - 11025) <= 2 && fabsf(r[l1]) < 0.01f && abs(r2 - 22050) <= 4 && r[r2] > 0.2f, what);
+
+    for (int i = 0; i < SR * 4; i++) saw[i] = 2.0f * (float)fmod(i * 110.0 / SR, 1.0) - 1.0f;
+    float worst = 0;
+    int bad = 0;
+    fx_params_t hot[4] = {fx_none(), fx_none(), fx_none(), fx_none()};
+    hot[0].dly_ms = 80; hot[0].dly_fb = 0.95f; hot[0].dly_mix = 1; hot[0].dly_tone = 1;
+    hot[1].mod_type = MODFX_FLANGER; hot[1].mod_rate_hz = 0.3f; hot[1].mod_depth = 1; hot[1].mod_fb = 0.95f; hot[1].mod_mix = 1;
+    hot[2].mod_type = MODFX_PHASER; hot[2].mod_rate_hz = 0.3f; hot[2].mod_depth = 1; hot[2].mod_fb = 0.95f; hot[2].mod_mix = 1;
+    hot[3].rev_decay = 0.97f; hot[3].rev_damp = 0; hot[3].rev_mix = 1;
+    for (int k = 0; k < 4; k++) {
+        fx_run(&hot[k], saw, l, r, SR * 4);
+        for (int i = 0; i < SR * 4; i++) {
+            if (!isfinite(l[i]) || !isfinite(r[i])) bad++;
+            worst = fmaxf(worst, fmaxf(fabsf(l[i]), fabsf(r[i])));
+        }
+    }
+    snprintf(what, sizeof what, "delay, flanger, phaser at 95%% feedback and reverb at full decay stay bounded (largest %.1f)", worst);
+    check(!bad && worst < 25, what);
+
+    double tail[2];   /* reverb: energy 1.0-1.5 s after an impulse, short and long decay */
+    for (int k = 0; k < 2; k++) {
+        p = fx_none(); p.rev_mix = 1; p.rev_decay = k ? 0.9f : 0.4f; p.rev_damp = 0.3f;
+        fx_run(&p, NULL, l, r, SR * 2);
+        double e = 0;
+        for (int i = SR; i < SR + SR / 2; i++) e += l[i] * l[i] + r[i] * r[i];
+        tail[k] = 10 * log10(e + 1e-30);
+    }
+    snprintf(what, sizeof what, "reverb tail 1-1.5 s after an impulse: %.0f dB at short decay, %.0f dB at long", tail[0], tail[1]);
+    check(tail[1] > tail[0] + 20 && tail[1] > -60, what);
+
+    p = fx_none(); p.mod_type = MODFX_CHORUS; p.mod_rate_hz = 0.8f; p.mod_depth = 0.7f; p.mod_mix = 0.5f;
+    fx_run(&p, saw, l, r, SR);
+    double diff = 0, sum = 0;
+    for (int i = SR / 2; i < SR; i++) { diff += (l[i] - r[i]) * (l[i] - r[i]); sum += l[i] * l[i]; }
+    snprintf(what, sizeof what, "chorus spreads to stereo: left-right difference %.0f dB below the left", 10 * log10(sum / diff));
+    check(diff > sum * 0.01, what);
+
+    void *e = patch(WAVE_SAW, 0, 1, 100, 10);   /* synced delay time reads as the division */
+    char txt[32];
+    E->set_param(e, "lfo_bpm", "120"); set(e, "dly_sync", 1); set(e, "dly_time", 60);
+    E->get_param(e, "dly_time_display", txt, sizeof txt);
+    snprintf(what, sizeof what, "delay synced at 120 BPM reads \"%s\" (want 1/8)", txt);
+    check(!strcmp(txt, "1/8"), what);
+    E->destroy(e);
+}
+
 static void cutoff_text(void) {
     void *e = E->create(NULL);
     char a[32], b[32], c[32];
@@ -878,6 +967,16 @@ static void bench(void) {
                " device numbers need tools/bench.sh)\n", counts[c], counts[c] > 1 ? "s" : " ", us, us / counts[c]);
         E->destroy(e);
     }
+    void *e = patch(WAVE_SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
+    set(e, "voices", 4); set(e, "modfx_type", 1); set(e, "modfx_mix", 50); set(e, "dly_mix", 30); set(e, "rev_mix", 30);
+    for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
+    struct timespec t0, t1;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+    printf("bench: 4 voices + chorus, delay, reverb %6.2f us per 128-frame block on this PC\n", us);
+    E->destroy(e);
 }
 
 int main(int argc, char **argv) {
@@ -896,6 +995,7 @@ int main(int argc, char **argv) {
     modulation();
     matrix();
     voices();
+    effects();
     envelope();
     keys();
     state();

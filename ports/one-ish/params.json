@@ -93,7 +93,22 @@
   {"key": "mod8_dst", "name": "Mod 8 Dest", "options": ["Off", "Pitch", "Osc 1 Pitch", "Osc 2 Pitch", "Osc 3 Pitch", "Osc 1 Level", "Osc 2 Level", "Osc 3 Level", "Noise Level", "Ladder Cutoff", "Ladder Res", "Ladder Drive", "SVF Cutoff", "SVF Res", "Filter Mix", "Amp Level"], "default": "Off"},
   {"key": "mod8_amt", "name": "Mod 8 Amount", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "mod8_via", "name": "Mod 8 Via", "options": ["None", "Filter Env", "Amp Env", "Mod Env", "LFO 1", "LFO 2", "Velocity", "Mod Wheel", "Aftertouch", "Keyboard", "Random"], "default": "None"},
-  {"key": "voices", "name": "Voices", "options": ["Mono", "2", "4", "6", "8"], "default": "4"}
+  {"key": "voices", "name": "Voices", "options": ["Mono", "2", "4", "6", "8"], "default": "4"},
+  {"key": "modfx_type", "name": "Mod FX Type", "options": ["Off", "Chorus", "Flanger", "Phaser"], "default": "Off"},
+  {"key": "modfx_rate", "name": "Mod FX Rate", "min": 0, "max": 100, "default": 50.0, "dynamic_display": true},
+  {"key": "modfx_depth", "name": "Mod FX Depth", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
+  {"key": "modfx_fb", "name": "Mod FX Feedback", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "modfx_mix", "name": "Mod FX Mix", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
+  {"key": "dly_time", "name": "Delay Time", "min": 0, "max": 100, "default": 70.0, "dynamic_display": true},
+  {"key": "dly_sync", "name": "Delay Sync", "options": ["Off", "On"], "default": "Off", "refresh_display": true},
+  {"key": "dly_fb", "name": "Delay Feedback", "min": 0, "max": 100, "unit": "%", "default": 35, "display": "int"},
+  {"key": "dly_tone", "name": "Delay Tone", "min": 0, "max": 100, "unit": "%", "default": 60, "display": "int"},
+  {"key": "dly_pp", "name": "Delay Ping-Pong", "options": ["Off", "On"], "default": "Off"},
+  {"key": "dly_mix", "name": "Delay Mix", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "rev_decay", "name": "Reverb Decay", "min": 0, "max": 100, "unit": "%", "default": 60, "display": "int"},
+  {"key": "rev_damp", "name": "Reverb Damping", "min": 0, "max": 100, "unit": "%", "default": 40, "display": "int"},
+  {"key": "rev_pre", "name": "Reverb Pre-delay", "min": 0, "max": 200, "unit": "ms", "default": 10, "display": "int"},
+  {"key": "rev_mix", "name": "Reverb Mix", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_wave", "o1_oct", "o1_semi", "o1_fine"]},
@@ -121,6 +136,9 @@
   {"label": "MOD 7", "keys": ["mod7_src", "mod7_dst", "mod7_amt", "mod7_via"]},
   {"label": "MOD 8", "keys": ["mod8_src", "mod8_dst", "mod8_amt", "mod8_via"]},
   {"label": "VOICES", "keys": ["voices"]},
+  {"label": "MOD FX", "keys": ["modfx_type", "modfx_rate", "modfx_depth", "modfx_fb", "modfx_mix"]},
+  {"label": "DELAY", "keys": ["dly_time", "dly_sync", "dly_fb", "dly_tone", "dly_pp", "dly_mix"]},
+  {"label": "REVERB", "keys": ["rev_decay", "rev_damp", "rev_pre", "rev_mix"]},
   {"label": "OUT", "keys": ["volume"]}
  ]
 }

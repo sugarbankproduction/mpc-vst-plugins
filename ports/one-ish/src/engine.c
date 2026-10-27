@@ -6,7 +6,8 @@
  * LFO 1 and the mod envelope to pitch. An 8-slot modulation matrix (source x amount, scaled by a via source) over
  * pitch, levels, both filters and amp; mod wheel, aftertouch, pitch bend and sustain pedal. Up to 8 voices: a new
  * note takes an idle voice, else the quietest releasing one, else the oldest held one; the same key replays its own
- * voice. Mono (1 voice) plays legato with last-note priority.
+ * voice. Mono (1 voice) plays legato with last-note priority. After the voices: a modulation effect (chorus,
+ * flanger or phaser), a delay (free or tempo-synced, ping-pong) and a plate reverb, in stereo (src/fx.h).
  *
  * Audio runs per sample; modulation (envelopes 1 and 3, LFOs, pitch, cutoffs) every CR samples, with levels and the
  * filter mix ramped across each step so no knob or mod move steps audibly.
@@ -24,6 +25,7 @@
 #include "svf.h"
 #include "lfo.h"
 #include "modmatrix.h"
+#include "fx.h"
 
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
@@ -47,6 +49,10 @@
 #define GLIDE_MS 10.0f     /* cutoff knob moves are smoothed over about this long */
 #define MOD_PITCH_ST 24.0f /* the matrix's pitch destinations at +-100%: +-24 semitones */
 #define MOD_CUT_OCT 5.0f   /* its cutoff destinations at +-100%: +-5 octaves */
+#define MODFX_MIN_HZ 0.05f /* mod effect rate knob: 0.05 .. 10 Hz on a log scale */
+#define MODFX_RANGE 200.0f
+#define DLY_MIN_MS 10.0f   /* delay time knob: 10 ms .. 2 s on a log scale */
+#define DLY_RANGE 200.0f
 
 /* engine-side slots, matched to params.json by key (so the VST order there can grow freely). Per oscillator the
  * slots run WAVE, OCT, SEMI, FINE, LEVEL, SYNC from P_O1_WAVE + OSC_STRIDE * n (osc 1's SYNC slot is unused);
@@ -64,7 +70,10 @@ enum {
     P_LAD_ENV, P_LAD_LFO, P_LAD_KBD, P_SVF_ENV, P_SVF_LFO, P_SVF_KBD, P_PITCH_LFO, P_PITCH_ENV,
     P_LFO1_RATE, P_LFO1_WAVE, P_LFO1_SYNC, P_LFO2_RATE, P_LFO2_WAVE, P_LFO2_SYNC,
     P_BEND_RANGE, P_VOICES, P_MOD_BASE,                           /* then MOD_SLOTS x (source, destination, amount, via) */
-    P_VOLUME = P_MOD_BASE + MOD_SLOTS * MOD_SLOT_PARAMS, P_COUNT
+    P_VOLUME = P_MOD_BASE + MOD_SLOTS * MOD_SLOT_PARAMS,
+    P_MODFX_TYPE, P_MODFX_RATE, P_MODFX_DEPTH, P_MODFX_FB, P_MODFX_MIX,
+    P_DLY_TIME, P_DLY_SYNC, P_DLY_FB, P_DLY_TONE, P_DLY_PP, P_DLY_MIX,
+    P_REV_DECAY, P_REV_DAMP, P_REV_PRE, P_REV_MIX, P_COUNT
 };
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_SEMI, O_FINE, O_LEVEL, O_SYNC };
 enum { ENV_FILTER, ENV_AMP, ENV_MOD, NENV, ENV_STRIDE = P_AMP_A - P_ENV_A };
@@ -85,7 +94,10 @@ static const char *const KEYS[P_COUNT] = {
                      [P_MOD_BASE + 4 * ((n) - 1) + 2] = "mod" #n "_amt", [P_MOD_BASE + 4 * ((n) - 1) + 3] = "mod" #n "_via"
     SLOT_KEYS(1), SLOT_KEYS(2), SLOT_KEYS(3), SLOT_KEYS(4), SLOT_KEYS(5), SLOT_KEYS(6), SLOT_KEYS(7), SLOT_KEYS(8),
 #undef SLOT_KEYS
-    [P_VOLUME] = "volume"
+    [P_VOLUME] = "volume",
+    "modfx_type", "modfx_rate", "modfx_depth", "modfx_fb", "modfx_mix",
+    "dly_time", "dly_sync", "dly_fb", "dly_tone", "dly_pp", "dly_mix",
+    "rev_decay", "rev_damp", "rev_pre", "rev_mix"
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { ROUTE_LADDER, ROUTE_SVF, ROUTE_BOTH };   /* a source's filter buttons (option order in params.json) */
@@ -123,6 +135,7 @@ typedef struct {
     voice_t voice[MAX_VOICES];
     unsigned age;            /* counts note starts */
     int voices;              /* the voice count last applied (a change lets go of voices past it) */
+    fx_t fx;                 /* effect buffers (about 1.3 MB) */
     int sustain;             /* the pedal (CC 64) is down */
     lfo_t lfo[NLFO];
     float lfo_val[NLFO];     /* this control step's LFO outputs */
@@ -167,6 +180,13 @@ static void store(one_t *s, const char *key, const char *text) {
 static float cut_hz(float knob) { return CUT_MIN_HZ * powf(CUT_RANGE, knob * 0.01f); }
 static float env_ms(float knob) { return powf(ENV_RANGE, knob * 0.01f); }
 static int sync_div(float knob) { return (int)clampf(roundf(knob * 0.01f * (NDIV - 1)), 0, NDIV - 1); }
+
+static float modfx_hz(float knob) { return MODFX_MIN_HZ * powf(MODFX_RANGE, knob * 0.01f); }
+
+static float dly_ms(const one_t *s) {
+    if (s->val[P_DLY_SYNC] > 0.5f) return 60000.0f / s->bpm * SYNC_DIV[sync_div(s->val[P_DLY_TIME])].beats;
+    return DLY_MIN_MS * powf(DLY_RANGE, s->val[P_DLY_TIME] * 0.01f);
+}
 
 static float lfo_hz(const one_t *s, int n) {
     const float *l = &s->val[P_LFO1_RATE + LFO_STRIDE * n];
@@ -435,6 +455,14 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
     }
     if (k >= P_ENV_A && k < P_ENV_A + NENV * ENV_STRIDE && (k - P_ENV_A) % ENV_STRIDE != 2)   /* A, D, R: not S */
         return time_text(buf, n, env_ms(s->val[k]));
+    if (k == P_MODFX_RATE) {
+        float hz = modfx_hz(s->val[k]);
+        return snprintf(buf, n, hz < 1.0f ? "%.2f Hz" : "%.1f Hz", hz);
+    }
+    if (k == P_DLY_TIME) {
+        if (s->val[P_DLY_SYNC] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[sync_div(s->val[k])].name);
+        return time_text(buf, n, dly_ms(s));
+    }
     if (k == P_LFO1_RATE || k == P_LFO2_RATE) {
         int lfo = k == P_LFO2_RATE;
         if (s->val[k + 2] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[sync_div(s->val[k])].name);
@@ -561,9 +589,30 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
     }
 }
 
+/* the effect settings in the units fx.h reads */
+static void fx_params(const one_t *s, fx_params_t *f) {
+    const float *p = s->val;
+    f->mod_type = (int)p[P_MODFX_TYPE];
+    f->mod_rate_hz = modfx_hz(p[P_MODFX_RATE]);
+    f->mod_depth = p[P_MODFX_DEPTH] * 0.01f;
+    f->mod_fb = p[P_MODFX_FB] * 0.0095f;   /* +-95% */
+    f->mod_mix = p[P_MODFX_MIX] * 0.01f;
+    f->dly_ms = dly_ms(s);
+    f->dly_fb = p[P_DLY_FB] * 0.0095f;
+    f->dly_tone = p[P_DLY_TONE] * 0.01f;
+    f->dly_pingpong = p[P_DLY_PP] > 0.5f;
+    f->dly_mix = p[P_DLY_MIX] * 0.01f;
+    f->rev_decay = 0.2f + 0.77f * p[P_REV_DECAY] * 0.01f;   /* tank gain: 0.2 .. 0.97 */
+    f->rev_damp = p[P_REV_DAMP] * 0.009f;
+    f->rev_predelay_ms = p[P_REV_PRE];
+    f->rev_mix = p[P_REV_MIX] * 0.01f;
+}
+
 static void render(void *inst, int16_t *out, int frames) {
     one_t *s = inst;
-    float acc[128];
+    float acc[128], l[128], r[128];
+    fx_params_t fxp;
+    fx_params(s, &fxp);
     int done = 0;
     while (done < frames) {
         int first = s->phase == 0;
@@ -578,11 +627,11 @@ static void render(void *inst, int16_t *out, int frames) {
             if (first) control_voice(s, v);
             render_voice(s, v, acc, n, first);
         }
-        for (int i = 0; i < n; i++) {
-            float y = isfinite(acc[i]) ? soft_limit(acc[i]) : 0.0f;   /* a last guard: never NaN to the host */
-            int16_t q = (int16_t)(y * 32767.0f);
-            out[2 * (done + i)] = q;
-            out[2 * (done + i) + 1] = q;
+        fx_process(&s->fx, &fxp, acc, l, r, n);
+        for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host */
+            float yl = isfinite(l[i]) ? soft_limit(l[i]) : 0.0f, yr = isfinite(r[i]) ? soft_limit(r[i]) : 0.0f;
+            out[2 * (done + i)] = (int16_t)(yl * 32767.0f);
+            out[2 * (done + i) + 1] = (int16_t)(yr * 32767.0f);
         }
         done += n;
         s->phase = (s->phase + n) % CR;
