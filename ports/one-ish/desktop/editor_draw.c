@@ -1,11 +1,16 @@
 /* Drawing for the desktop editor (see editor.c): the panels and their MORE triangles, knobs, LED lists, buttons, the
- * oscillators' wave screens, the centre console's screen (mod matrix, MORE pages), the left-hand controller, the
- * ribbon and the keyboard. All drawn from scratch: GDI for text, GDI+ (gfx.h) for anti-aliased shapes. UI thread only. */
+ * oscillators' wave screens, the GENERATIVE section's Euclidean ring, the centre console's screen (mod matrix, MORE
+ * pages), the left-hand controller, the ribbon and the keyboard. All drawn from scratch: GDI for text, GDI+ (gfx.h) for anti-aliased shapes. UI thread only. */
 #include <stdio.h>
 #include <string.h>
 #include "editor.h"
 #include "gfx.h"
 #include "../src/randomize.h"
+#pragma GCC diagnostic push   /* only euclid() is used here; its neighbours' tables would warn as unused */
+#pragma GCC diagnostic ignored "-Wunused-const-variable"
+#pragma GCC diagnostic ignored "-Wunused-function"
+#include "../src/seq.h"
+#pragma GCC diagnostic pop
 
 /* ---- help text: what the control under the mouse does (a key, or "_suffix" for every key ending in it) ---- */
 static const char *help_for(int i) {
@@ -92,6 +97,55 @@ static const char *help_for(int i) {
         {"ribbon_mode", "Spring: lets go back to the origin when released. Hold: stays where you left it."},
         {"ribbon_origin", "Where the ribbon rests (its zero point)."},
         {"pitch_lfo", "LFO 1 to the pitch of all three oscillators (vibrato). The mod wheel also adds vibrato through matrix row 1."},
+        /* the arpeggiator */
+        {"arp_on", "Arpeggiator: plays the keys you hold one after another, in time with the host (or at its own FREE RATE)."},
+        {"arp_latch", "Latch: the arpeggio keeps playing after you let go. Keys played while others are held add to it; a new chord replaces it."},
+        {"arp_pattern", "Pattern: Up plays the held keys lowest first, Down highest first, Order in the order you pressed them, Random shuffled."},
+        {"arp_oct", "Octaves: how many octaves the arpeggio climbs through (1 = only the keys you hold)."},
+        {"arp_dir", "Octave direction: where the extra octaves go. Up, Down, or Up/Down and Down/Up, which go there and back."},
+        {"arp_oct_order", "Octave order: off, every note in one octave before the next (C E G C' E' G'); on, each note through the octaves first (C C' E E' G G')."},
+        {"arp_pendulum", "Pendulum: the pattern plays forwards, then backwards (1 2 3 2 1 ...)."},
+        {"arp_pend_mode", "Pendulum ends: Once plays the top and bottom notes once (1 2 3 2), Twice repeats them (1 2 3 3 2 1)."},
+        {"arp_rnd_mode", "Random mode (Random pattern): Non-Repeating plays each held key once per pass in a new order; Repeating may pick the same key again."},
+        {"arp_sync", "Tempo sync: on, the arpeggio and the generative steps follow the host's tempo and song position; off, they run at FREE RATE."},
+        {"arp_div", "Rate: the note value of each step, 1/1 (a whole note) to 1/128, at the host's tempo (or FREE RATE with SYNC off). TIMING (MORE page): dotted or triplet."},
+        {"arp_timing", "Timing: each step straight, dotted (half as long again) or triplet (two thirds as long)."},
+        {"arp_rate", "Free rate: the tempo in BPM while SYNC is off (RATE still sets the note value of each step)."},
+        {"arp_gate", "Gate: how long each arpeggio or generative note sounds, as a part of its step (short = staccato)."},
+        {"arp_swing", "Swing: moves every second step; 50% is straight, more delays it for a shuffle, less pulls it earlier."},
+        {"arp_reset", "Note reset: on, the first key you play (with the host stopped) starts the pattern at once; off, it waits for the next step."},
+        /* chord memory */
+        {"chord_on", "Chord: every key you play sounds a whole chord, with that key as its root (the SHAPE, or the chord you learned)."},
+        {"chord_learn", "Learn (lit while learning): play a chord, lowest note first as the root, then switch LEARN off to keep it as the Custom shape."},
+        {"chord_shape", "Shape: the chord each key plays. Custom is the one you learned; the rest are built in (major, minor, sevenths, power ...)."},
+        {"chord_iv1", "Chord note: how far above (or below) the root this note of the Custom chord is, in semitones. LEARN fills these in."},
+        {"chord_iv2", "Chord note: how far above (or below) the root this note of the Custom chord is, in semitones. LEARN fills these in."},
+        {"chord_iv3", "Chord note: how far above (or below) the root this note of the Custom chord is, in semitones. LEARN fills these in."},
+        {"chord_iv4", "Chord note: how far above (or below) the root this note of the Custom chord is, in semitones. LEARN fills these in."},
+        {"chord_iv5", "Chord note: how far above (or below) the root this note of the Custom chord is, in semitones. LEARN fills these in."},
+        /* the generative section */
+        {"gen_euclid_on", "Euclid: a rhythm that spreads HITS notes as evenly as it can over STEPS steps (the ring shows it). Plays the held keys, or the arpeggio."},
+        {"gen_steps", "Steps: how long the Euclidean pattern is, 1 to 32 steps (the dots around the ring)."},
+        {"gen_hits", "Hits: how many of the steps play (the lit dots). 3 of 8 or 5 of 16 give classic grooves."},
+        {"gen_rot", "Rotate: turns the Euclidean pattern round by this many steps, so it starts in another place."},
+        {"gen_prob", "Chance: the probability that each step plays at all (100% = always). Lower it for patterns that breathe."},
+        {"gen_vel_rand", "Velocity random: each generated note's loudness varies at random by up to this much."},
+        {"gen_tm_on", "Turing: a looping random melody over the held keys or a SCALE. CHANGE sets how often it alters a note (MORE page)."},
+        {"gen_tm_len", "Turing length: how many steps the Turing machine's melody loops over."},
+        {"gen_tm_change", "Turing change: how likely each step's note is replaced by a new random one. 0% locks the loop, 100% is new every time."},
+        {"gen_scale", "Turing scale: Held Notes picks from the keys you hold; a scale picks degrees from the lowest held key."},
+        {"gen_range", "Turing octaves: how many octaves up the Turing melody may wander."},
+        /* the macro oscillator */
+        {"mac_model", "Macro oscillator model: the kind of sound it makes (virtual analog, FM, wavetables, chords, speech, percussion and more)."},
+        {"mac_harm", "Harmonics: the model's main tone control (what it does depends on the model)."},
+        {"mac_timbre", "Timbre: the model's second tone control, often brightness or shape."},
+        {"mac_morph", "Morph: the model's third control, often a blend or a variation."},
+        {"mac_oct", "Octave: the macro oscillator's footage, down or up in whole octaves."},
+        {"mac_freq", "Frequency: tunes the macro oscillator up or down, in semitones."},
+        {"mac_aux", "Aux mix: blends in the model's second output (a variation of its sound)."},
+        {"mac_decay", "Decay: how fast the macro oscillator's own internal envelope dies away (for the percussive models)."},
+        {"mac_lpg", "Low-pass gate: how much the macro oscillator's own envelope closes its tone as well as its level (a plucky, woody sound)."},
+        {"mac_level", "Macro oscillator level in the mixer. Its SVF and LADDER buttons pick the filters it goes through."},
     };
     const char *key = PARAMS[i].key;
     size_t kl = strlen(key);
@@ -135,6 +189,8 @@ static const char *zone_help(int z) {
     case Z_RND_UNDO: return "UNDO: back to the sound before (the last 32 are kept, your own edits in between too).";
     case Z_RND_REDO: return "REDO: forward again after UNDO.";
     case Z_SUB_PREV: case Z_SUB_NEXT: return "The previous / next part of this page.";
+    case Z_EUCLID: return "The Euclidean pattern (STEPS, HITS, ROTATE): one dot per step, step 1 at the top, lit = the step "
+                          "plays. The middle shows hits / steps. Click for the GENERATIVE page.";
     }
     if (z >= Z_RND_LOCK && z < Z_RND_LOCK + RS_COUNT) {
         static const char *const LOCK_HELP[RS_COUNT] = {
@@ -368,6 +424,48 @@ static void draw_octave(HDC dc, ed_t *e, int i) {   /* a rotary switch with its 
     }
     knob((float)cx, cy, r, (a + 135.0f) / 270.0f, 0);
     text_c(dc, cx, (int)(cy + r + sc(8)), sc(76), sc(14), L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
+}
+
+/* the GENERATIVE section's Euclidean pattern as a ring of dots, step 1 at the top and on clockwise: lit = a hit. It is
+ * worked out here from STEPS / HITS / ROTATION with the engine's own function (src/seq.h), so it is the very pattern
+ * that plays (the engine doesn't tell the window which step it is on, so no step is marked). Dim while EUCLID is off. */
+static void draw_euclid(HDC dc, ed_t *e) {
+    if (EUCLID_P[1] < 0 || rw(&L.euclid) <= 0) return;
+    int n = (int)lroundf(real_of(e, EUCLID_P[1])), hits = (int)lroundf(real_of(e, EUCLID_P[2]));
+    n = n < 1 ? 1 : n > EU_MAX ? EU_MAX : n;
+    hits = hits < 0 ? 0 : hits > n ? n : hits;
+    int rot = (int)lroundf(real_of(e, EUCLID_P[3])) % n, on = EUCLID_P[0] < 0 || option_of(e, EUCLID_P[0]) == 1;
+    uint8_t pat[EU_MAX];
+    euclid(n, hits, pat);
+    const RECT *b = &L.euclid;
+    float R = sc(22), lh = (float)sc(12), top = b->top + (rh(b) - (2 * R + sc(10) + lh)) / 2.0f;
+    float cx = (b->left + b->right) / 2.0f, cy = top + R + sc(2);
+    float dot = 3.14159265f * R / n * 0.62f;
+    if (dot > 3.0f * L.s + 0.4f) dot = 3.0f * L.s + 0.4f;
+    if (dot < 1.2f) dot = 1.2f;
+    gfx_circle(cx, cy, R, 1.0f, 0xFF3A3A3E);
+    gpt_t t0 = gfx_polar(cx, cy, R + dot + 2.0f * L.s, 0), t1 = gfx_polar(cx, cy, R + dot + 5.0f * L.s, 0);
+    gfx_line(t0.x, t0.y, t1.x, t1.y, 1.2f, 0xFF9A9A9E);   /* where the cycle starts */
+    for (int k = 0; k < n; k++) {
+        gpt_t p = gfx_polar(cx, cy, R, 360.0f * k / n);
+        if (pat[(k - rot + n) % n]) {   /* rotated as the engine does it (engine.c apply_perf) */
+            if (on) {
+                gfx_disc(p.x, p.y, dot * 2.2f, 0x30FFE6B0);
+                gfx_disc(p.x, p.y, dot, 0xFFFFF8E8);
+            } else {
+                gfx_disc(p.x, p.y, dot, 0xFF8A8A8E);
+            }
+        } else {
+            gfx_disc(p.x, p.y, dot, 0xFF1A1A1C);
+            gfx_circle(p.x, p.y, dot, 0.8f, 0xFF4E4E52);
+        }
+    }
+    char t[16];
+    snprintf(t, sizeof t, "%d/%d", hits, n);
+    RECT c = {(int)(cx - R), (int)(cy - sc(7)), (int)(cx + R), (int)(cy + sc(7))};
+    text(dc, &c, t, font_tiny, on ? T_LABEL : T_VALUE, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    text_c(dc, (int)cx, (int)(cy + R + sc(8)), sc(76), (int)lh + 2, "PATTERN", font_label,
+           e->hover == Z_EUCLID ? T_HOT : T_LABEL);
 }
 
 static void draw_wave(ed_t *e, const lay_wave_t *w) {   /* the oscillator's wave, from its wave/angle/pw/mix */
@@ -746,6 +844,7 @@ void paint(ed_t *e, HDC out) {
     draw_panels(dc);
     draw_mores(e);
     for (int w = 0; w < NWAVES; w++) draw_wave(e, &WAVES[w]);
+    draw_euclid(dc, e);
     for (int c = 0; c < NCTLS; c++) {
         int i = CTLS[c].param;
         switch (L.kind[i]) {

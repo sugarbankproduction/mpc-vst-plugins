@@ -49,7 +49,7 @@ enum { SCR_MATRIX = -1, SCR_INDEX = -2, SCR_RANDOM = -3 };
 enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 keys, C2..C7 at octave 0 */
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
        Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
-       Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
+       Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100 };   /* Z_PAGE + p */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 enum { VENDOR_SPECIFIC = 50 };                   /* effVendorSpecific */
@@ -65,7 +65,7 @@ typedef struct {
     const char *const *leds[NPARAMS];
     RECT screen, name, prev, next, tabline, head, row[ROWS], help, sub_prev, sub_next;
     RECT tab_matrix, tab_more, tab_analog, tab_random, encoder, bprev, bnext, brand;
-    RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon;
+    RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon, euclid;   /* euclid: GENERATIVE's ring */
     RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
 } layout_t;
 extern layout_t L;

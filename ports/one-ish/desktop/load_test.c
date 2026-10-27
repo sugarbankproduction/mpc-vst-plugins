@@ -664,6 +664,23 @@ static void editor(AEffect *fx, const char *bmp) {
         shot(child, w, h, bmp, "_more_index");
         click_zone(child, s, ZONE_TAB_ANALOG);
         shot(child, w, h, bmp, "_analog");
+        /* the arpeggiator's and the generative section's pages, switched on (and the ring rotated) for the pictures */
+        static const char *const keys[] = {"arp_on", "gen_euclid_on", "gen_rot"};
+        static const float set[] = {1.0f, 1.0f, 2.0f / 31.0f};
+        float was[3];
+        for (int k = 0; k < 3; k++) {
+            int i = rnd_key(keys[k]);
+            was[k] = i < NPARAMS ? fx->getParameter(fx, i) : 0.0f;
+            if (i < NPARAMS) fx->setParameter(fx, i, set[k]);
+        }
+        if (click_more(child, s, PG_ARP)) shot(child, w, h, bmp, "_more_arp");
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        if (EUCLID_P[1] >= 0) click_zone(child, s, ZONE_EUCLID);   /* the ring opens the generative page too */
+        else click_more(child, s, PG_GEN);
+        if (PG_GEN >= 0) shot(child, w, h, bmp, "_more_gen");
+        for (int k = 0; k < 3; k++)
+            if (rnd_key(keys[k]) < NPARAMS) fx->setParameter(fx, rnd_key(keys[k]), was[k]);
+        if (click_more(child, s, PG_MACRO)) shot(child, w, h, bmp, "_more_macro");
     }
     if (child) {
         RECT cr;

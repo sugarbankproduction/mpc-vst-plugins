@@ -157,6 +157,7 @@ static void layout(void) {
     L.pad = zone(ZONE_PAD);
     L.keys = zone(ZONE_KEYS);
     L.ribbon = zone(ZONE_RIBBON);
+    L.euclid = zone(ZONE_EUCLID);
     for (int k = 0; k < NMORES; k++) {
         const short z[4] = {MORES[k].x, MORES[k].y, MORES[k].w, MORES[k].h};
         L.more[k] = zone(z);
@@ -405,7 +406,8 @@ static int hit(ed_t *e, int x, int y) {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
         {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
-        {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}};
+        {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM},
+        {&L.euclid, Z_EUCLID}};   /* (an empty rect when there is no GENERATIVE section) */
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++)
         if (PtInRect(Z[k].r, pt)) return Z[k].z;
     return -1;
@@ -505,6 +507,8 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         show(e, PG_ANALOG, 0);
     } else if (z == Z_TAB_RANDOM) {
         show(e, SCR_RANDOM, 0);
+    } else if (z == Z_EUCLID && PG_GEN >= 0) {   /* the ring of dots: the GENERATIVE section's page */
+        show(e, PG_GEN, 0);
     } else if (z == Z_RND_GO || z == Z_RND_MUTATE) {
         rnd_action(e, z == Z_RND_MUTATE);
     } else if (z == Z_RND_UNDO || z == Z_RND_REDO) {

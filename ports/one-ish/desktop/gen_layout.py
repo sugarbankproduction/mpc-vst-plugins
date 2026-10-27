@@ -3,7 +3,9 @@
 and what each module's MORE page on the centre screen holds.
 
 The panel follows the instrument's layout (left to right: LFOs, oscillators with pitch/ring/waveform/FM modulation
-under them, the noise column, polyphony; the centre console with the screen; mixer, the two filters and their cutoff
+under them, the noise column, and a bottom row of arpeggiator, chord, generative (with the Euclidean pattern as a ring of
+dots) and polyphony; the centre console with the screen; mixer (with the macro oscillator's channel once it exists), the
+two filters and their cutoff
 modulation, the three envelopes, the synth effect, master effects, delay, reverb and output; along the bottom the
 left-hand controller, the ribbon and the keyboard). Original artwork: editor_draw.c draws everything.
 
@@ -31,12 +33,16 @@ ABBREV = {"Triangle": "TRI", "Sine": "SINE", "Square": "SQR", "Saw": "SAW", "Ram
           "Parallel": "PAR", "Series": "SER", "Notch": "NOTCH", "Chorus": "CHOR", "Flanger": "FLNG",
           "Phaser": "PHAS", "Mono": "MONO", "Tri": "TRI", "24 dB": "24dB", "18 dB": "18dB", "12 dB": "12dB",
           "6 dB": "6dB", "Red+White": "R+W", "Red+Purple": "R+P", "White+Purple": "W+P", "Plate": "PLATE",
-          "Room": "ROOM", "Hall": "HALL"}
+          "Room": "ROOM", "Hall": "HALL", "Random": "RAND", "Up/Down": "UP-DN", "Down/Up": "DN-UP"}
 
-# the synth effect's types (params.json modfx_type, in order) and which of its controls each type uses
-SFX = {n: i for i, n in enumerate(["Delay", "BBD Delay", "Tape Delay", "Echo", "Flanger", "Stereo Flanger", "Chorus",
-                                   "Dual Chorus", "Ensemble", "Stereo Chorus", "6-Stage Phaser", "12-Stage Phaser",
-                                   "Time Phaser", "Bit Crusher", "Resonator"])}
+# the synth effect's types this layout knows (params.json modfx_type when it was written), and which of its controls
+# each type uses (SFX_USES: indexes into SFX_NAMES; matched to the real list by name). Types added later, and modfx_*
+# keys not listed here, still get a page: see sfx_page().
+SFX_NAMES = ["Delay", "BBD Delay", "Tape Delay", "Echo", "Flanger", "Stereo Flanger", "Chorus", "Dual Chorus",
+             "Ensemble", "Stereo Chorus", "6-Stage Phaser", "12-Stage Phaser", "Time Phaser", "Bit Crusher", "Resonator"]
+SFX_COMMON = [("modfx_sync", "Tempo Sync"), ("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
+              ("modfx_c2_dst", "CTRL 2 Target"), ("modfx_on", "On"), ("modfx_mix", "Mix"), ("modfx_ctrl1", "CTRL 1"),
+              ("modfx_ctrl2", "CTRL 2")]
 DELAYS, LINES = range(0, 4), range(4, 10)
 PHASERS = range(10, 13)
 SFX_USES = [   # key, label, types
@@ -78,6 +84,7 @@ class Layout:
         self.params = params
         self.index = {p["key"]: i for i, p in enumerate(params)}
         self.panels, self.ctls, self.waves = [], [], []
+        self.euclid_at = None   # (x, y, w, h): the Euclidean pattern's ring of dots
         self.placed, self.planned = set(), []
         self.pages = []   # (id, title, note, [(key, label, cond_key, types)])
 
@@ -144,6 +151,27 @@ class Layout:
         self.pages.append((pid, title, note, [it if len(it) == 4 else (it[0], it[1], None, None) for it in items]))
 
 
+def sfx_page(lay):
+    """the synth effect's MORE page items: TYPE, then each control for the types that use it, then the common ones.
+    A type this layout doesn't know (added to modfx_type later) shows every control, and a modfx_* key it doesn't know
+    shows for those new types (or for every type while there are none), so nothing new lands on the OTHER page."""
+    opts = lay.params[lay.index["modfx_type"]].get("options", []) if "modfx_type" in lay.index else SFX_NAMES
+    real = [opts.index(n) if n in opts else -1 for n in SFX_NAMES]
+    new = [t for t, n in enumerate(opts) if n not in SFX_NAMES]
+    mask = lambda ts: [t for t in ts if 0 <= t < 32]   # the screen's option mask is 32 bits
+    items = [("modfx_type", "Type")]
+    items += [(k, lab, "modfx_type", mask([real[t] for t in types] + new)) for k, lab, types in SFX_USES]
+    known = {"modfx_type"} | {k for k, _, _ in SFX_USES} | {k for k, _ in SFX_COMMON}
+    for p in lay.params:
+        k = p["key"]
+        if k.startswith("modfx_") and k not in known:
+            name = p.get("name", k)
+            for pre in ("Synth FX ", "Synth Fx ", "Mod FX "):
+                name = name[len(pre):] if name.startswith(pre) else name
+            items.append((k, name, "modfx_type", mask(new or range(len(opts)))))
+    return items + SFX_COMMON
+
+
 def build(lay):
     L = lay
     # ---- the three panel blocks, the controller box and the keyboard ----
@@ -187,32 +215,68 @@ def build(lay):
             (o + "bend_dn_off", "Bend Down Offset")] +
                ([(o + "sync", "Hard Sync"), (o + "sync_src", "Sync Source")] if n > 1 else []))
 
-    # ---- modulation row under the oscillators ----
-    L.panel(176, 314, 142, 102, "PITCH MODULATION")
-    L.ctl("pitch_lfo", "knob", 180, 332, 68, 76, "LFO 1 AMT")
-    L.ctl("pitch_env", "knob", 248, 332, 68, 76, "MOD EG AMT")
-    L.panel(322, 314, 76, 102, "RING MOD")
-    L.ctl("ring_src", "leds", 326, 330, 68, 84, "SOURCES")
-    L.panel(402, 314, 142, 102, "WAVEFORM MOD", keys=["angle_lfo3", "pw_lfo3"])
-    L.ctl("angle_lfo3", "knob", 406, 332, 68, 76, "LFO3>ANGLE")
-    L.ctl("pw_lfo3", "knob", 474, 332, 68, 76, "LFO3>PW")
-    L.panel(548, 314, 92, 102, "FREQ MOD")
-    L.ctl("fm_amt", "knob", 550, 332, 48, 76, "FM AMT", 26)
-    L.ctl("fm_route", "leds", 596, 330, 42, 84, "ROUTE")
+    # ---- modulation row under the oscillators (a little lower than it was, to make room for the bottom row) ----
+    L.panel(176, 314, 142, 88, "PITCH MODULATION")
+    L.ctl("pitch_lfo", "knob", 180, 328, 68, 72, "LFO 1 AMT")
+    L.ctl("pitch_env", "knob", 248, 328, 68, 72, "MOD EG AMT")
+    L.panel(322, 314, 76, 88, "RING MOD")
+    L.ctl("ring_src", "leds", 326, 328, 68, 72, "SOURCES")
+    L.panel(402, 314, 142, 88, "WAVEFORM MOD", keys=["angle_lfo3", "pw_lfo3"])
+    L.ctl("angle_lfo3", "knob", 406, 328, 68, 72, "LFO3>ANGLE")
+    L.ctl("pw_lfo3", "knob", 474, 328, 68, 72, "LFO3>PW")
+    L.panel(548, 314, 92, 88, "FREQ MOD")
+    L.ctl("fm_amt", "knob", 550, 328, 48, 72, "FM AMT", 26)
+    L.ctl("fm_route", "leds", 596, 328, 42, 72, "ROUTE")
 
     # ---- noise: a column right of the oscillators ----
-    L.panel(646, 18, 96, 398, "NOISE")
+    L.panel(646, 18, 96, 384, "NOISE")
     L.ctl("noise_a", "knob", 650, 34, 88, 68, "ATTACK")
     L.ctl("noise_r", "knob", 650, 104, 88, 68, "RELEASE")
     L.ctl("noise_sus", "toggle", 650, 176, 44, 42, "SUSTAIN")
     L.ctl("noise_env", "toggle", 694, 176, 44, 42, "ENV")
     L.ctl("noise_color_mix", "knob", 650, 222, 88, 70, "COLOR MIX")
-    L.ctl("noise_color_pair", "leds", 650, 300, 88, 110, "COLOR")
+    L.ctl("noise_color_pair", "leds", 650, 296, 88, 102, "COLOR")
 
-    # ---- polyphony ----
-    L.panel(176, 422, 566, 118, "POLYPHONY", more="POLY")
-    L.row([("voices", "VOICES", "leds"), ("unison", "UNISON", "toggle"), ("uni_count", "UNI VOICES", "oct"),
-           ("uni_detune", "DETUNE"), ("pitch_var", "PITCH VAR"), ("hold", "HOLD", "toggle")], 190, 438, 90, 100)
+    # ---- the bottom row, as on the instrument: arpeggiator, chord, generative, polyphony. Each module: a line of
+    # buttons (labels beside them) under its title, left of its MORE triangle, then its knobs and LED lists ----
+    YB, HB = 408, 132          # the row
+    YA, YL, HL = 424, 442, 96  # the line of buttons; the line of controls under it and its height
+    L.panel(176, YB, 232, HB, "ARPEGGIATOR", more="ARP", keys=["arp_on"])
+    L.row([("arp_on", "ON"), ("arp_latch", "LATCH"), ("arp_sync", "SYNC")], 180, YA, 64, 14, "toggle", SIDE)
+    L.cells([("arp_pattern", "PATTERN", 54, "leds"), ("arp_oct", "OCT", 42, "leds"),
+             ("arp_dir", "DIRECTION", 54, "leds"), ("arp_div", "RATE", 44, "button")], 178, YL, HL)
+    L.column([("arp_gate", "GATE"), ("arp_swing", "SWING")], 372, YL, 36, HL // 2, "small")
+    L.page("ARP", "ARPEGGIATOR", "Plays the held keys in turn; RATE is each step's note value.", [
+        ("arp_on", "On"), ("arp_latch", "Latch"), ("arp_pattern", "Pattern"), ("arp_oct", "Octaves"),
+        ("arp_dir", "Octave Direction"), ("arp_oct_order", "Octave Order"), ("arp_pendulum", "Pendulum"),
+        ("arp_pend_mode", "Pendulum Ends"), ("arp_rnd_mode", "Random Mode"), ("arp_sync", "Tempo Sync"),
+        ("arp_div", "Rate (Synced)"), ("arp_timing", "Timing"), ("arp_rate", "Free Rate"), ("arp_gate", "Gate Length"),
+        ("arp_swing", "Swing"), ("arp_reset", "Note Reset")])
+
+    L.panel(412, YB, 58, HB, "CHORD", more="CHORD", keys=["chord_on"])
+    L.ctl("chord_on", "toggle", 416, YA, 36, 14, "ON", SIDE)
+    L.ctl("chord_learn", "toggle", 413, YL, 56, 36, "LEARN")
+    L.ctl("chord_shape", "button", 413, YL + 36, 56, HL - 36, "SHAPE")
+    L.page("CHORD", "CHORD MEMORY", "Each key plays a chord. LEARN on, play a chord, LEARN off: it is kept.", [
+        ("chord_on", "On"), ("chord_learn", "Learn"), ("chord_shape", "Shape"), ("chord_iv1", "Note 2"),
+        ("chord_iv2", "Note 3"), ("chord_iv3", "Note 4"), ("chord_iv4", "Note 5"), ("chord_iv5", "Note 6")])
+
+    L.panel(474, YB, 144, HB, "GENERATIVE", more="GEN", keys=["gen_euclid_on", "gen_tm_on"])
+    L.row([("gen_euclid_on", "EUCLID"), ("gen_tm_on", "TURING")], 478, YA, 60, 14, "toggle", SIDE)
+    if "gen_steps" in L.index:
+        L.euclid_at = (476, YL, 58, HL)
+    L.column([("gen_steps", "STEPS"), ("gen_hits", "HITS")], 534, YL, 41, HL // 2, "small")
+    L.column([("gen_rot", "ROTATE"), ("gen_prob", "CHANCE")], 575, YL, 41, HL // 2, "small")
+    L.page("GEN", "GENERATIVE", "Euclidean rhythm and Turing machine melodies from the held keys.", [
+        ("gen_euclid_on", "Euclid On"), ("gen_steps", "Euclid Steps"), ("gen_hits", "Euclid Hits"),
+        ("gen_rot", "Euclid Rotation"), ("gen_prob", "Step Probability"), ("gen_vel_rand", "Velocity Random"),
+        ("gen_tm_on", "Turing On"), ("gen_tm_len", "Turing Length"), ("gen_tm_change", "Turing Change"),
+        ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves")])
+
+    L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
+    L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
+    L.cells([("voices", "VOICES", 40, "button"), ("uni_detune", "DETUNE", 40, "knob"), ("hold", "HOLD", 40, "toggle")],
+            622, YL, HL, size=24)
     L.page("POLY", "POLYPHONY", "How notes share the voices.", [
         ("voices", "Voices"), ("note_priority", "Mono Priority"), ("steal_mode", "Voice Stealing"), ("hold", "Hold"),
         ("unison", "Unison"), ("uni_count", "Unison Voices"), ("uni_detune", "Unison Detune"),
@@ -226,12 +290,17 @@ def build(lay):
     # ---- mixer ----
     X = DX
     L.panel(X + 1086, 18, 138, 522, "MIXER")
-    for k, (src, label) in enumerate([("o1", "OSC 1"), ("o2", "OSC 2"), ("o3", "OSC 3"), ("ring", "RING MOD"),
-                                      ("noise", "NOISE")]):
-        y = 38 + 100 * k
+    chans = [("o1", "OSC 1"), ("o2", "OSC 2"), ("o3", "OSC 3"), ("mac", "MACRO"), ("ring", "RING MOD"), ("noise", "NOISE")]
+    L.planned += [c + s for c, _ in chans if c + "_level" not in L.index for s in ("_level", "_svf", "_lad")]
+    chans = [c for c in chans if c[0] + "_level" in L.index]
+    step = 100 if len(chans) <= 5 else 84   # the macro oscillator's channel makes six
+    for k, (src, label) in enumerate(chans):
+        y = 38 + step * k
         L.ctl(src + "_level", "knob", X + 1088, y, 62, 70, label, 30)
         L.ctl(src + "_svf", "toggle", X + 1150, y + 10, 32, 50, "SVF")
         L.ctl(src + "_lad", "toggle", X + 1184, y + 10, 38, 50, "LADDER")
+        if src == "mac":   # its MORE triangle: the macro oscillator's own page
+            L.panel(X + 1088, y - 8, 134, 14, "", style="caption", more="MACRO")
 
     # ---- filters: SVF and ladder side by side, link / mix / route between them ----
     L.panel(X + 1230, 18, 306, 290, "STATE VARIABLE FILTER|LADDER FILTER")
@@ -282,11 +351,14 @@ def build(lay):
     L.panel(X + 1874, 440, 146, 100, "OUTPUT")
     L.ctl("volume", "knob", X + 1876, 456, 54, 78, "VOLUME", 34)
     L.cells([("pan", "PAN", 46), ("spread", "SPREAD", 44)], X + 1930, 456, 78)
-    L.page("SFX", "SYNTH EFFECT", "The controls of the selected type (TYPE changes the list).", [
-        ("modfx_type", "Type"), *[(k, lab, "modfx_type", types) for k, lab, types in SFX_USES],
-        ("modfx_sync", "Tempo Sync"), ("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
-        ("modfx_c2_dst", "CTRL 2 Target"), ("modfx_on", "On"), ("modfx_mix", "Mix"), ("modfx_ctrl1", "CTRL 1"),
-        ("modfx_ctrl2", "CTRL 2")])
+    L.page("SFX", "SYNTH EFFECT", "The controls of the selected type (TYPE changes the list).", sfx_page(L))
+    mac = [("mac_model", "Model"), ("mac_harm", "Harmonics"), ("mac_timbre", "Timbre"), ("mac_morph", "Morph"),
+           ("mac_oct", "Octave"), ("mac_freq", "Frequency"), ("mac_aux", "Aux Mix"), ("mac_decay", "Decay"),
+           ("mac_lpg", "Low-Pass Gate"), ("mac_level", "Level"), ("mac_svf", "To SVF"), ("mac_lad", "To Ladder")]
+    mac += [(p["key"], p.get("name", p["key"])) for p in L.params   # any other macro key: here, not on OTHER
+            if p["key"].startswith("mac_") and p["key"] not in dict(mac)]
+    L.page("MACRO", "MACRO OSCILLATOR", "A fourth sound source with many models (level: the mixer).",
+           mac)
     L.page("MFX", "MASTER EFFECTS", "Delay and reverb on two sends after the synth effect.", [
         ("mfx_on", "On"), ("mfx_send1", "Send 1 (Delay)"), ("mfx_send2", "Send 2 (Reverb)"),
         ("mfx_series", "Delay > Reverb"), ("mfx_width", "Width")])
@@ -381,6 +453,12 @@ def emit(lay, zones, out):
     lines.append("typedef struct { short x, y, w, h; short param[4]; } lay_wave_t;   /* wave, angle, pw, mix */")
     lines.append("LAY lay_wave_t WAVES[] = {%s};" % ", ".join(rows))
     lines.append("#define NWAVES %d" % len(rows))
+    # the Euclidean pattern's ring (GENERATIVE): where, and its params on, steps, hits, rotation (-1: absent)
+    eu = [lay.index.get(k, -1) for k in ("gen_euclid_on", "gen_steps", "gen_hits", "gen_rot")]
+    if lay.euclid_at is None or min(eu[1:]) < 0:
+        eu = [-1] * 4
+    zones["EUCLID"] = lay.euclid_at or (0, 0, 0, 0)
+    lines.append("LAY short EUCLID_P[4] = {%s};   /* on, steps, hits, rotation */" % ", ".join(map(str, eu)))
 
     # the mod matrix: per row source, destination, amount, via, via amount, transform, transform amount (-1: absent)
     lines.append("enum { MX_SRC, MX_DST, MX_AMT, MX_VIA, MX_VIA_AMT, MX_XF, MX_XF_AMT, MX_COLS };")
@@ -400,8 +478,8 @@ def emit(lay, zones, out):
     lines.append("LAY lay_item_t ITEMS[] = {%s};" % ",\n    ".join(items or ['{-1, -1, 0, ""}']))
     lines.append("LAY lay_page_t PAGES[] = {%s};" % ",\n    ".join(prow or ['{"", "", 0, 0}']))
     lines.append("#define NPAGES %d" % len(pages))
-    for pid in ("LFO1", "LFO2", "LFO3", "LFO4", "OSC1", "OSC2", "OSC3", "POLY", "SFX", "MFX", "DELAY", "REVERB",
-                "CTRL", "RIBBON", "ANALOG", "OTHER"):
+    for pid in ("LFO1", "LFO2", "LFO3", "LFO4", "OSC1", "OSC2", "OSC3", "POLY", "ARP", "CHORD", "GEN", "SFX", "MFX",
+                "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "OTHER"):
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
     # the triangles that open a module's page: the panel's top-right corner under its title strip; the ribbon's end
     tris = []
