@@ -62,6 +62,7 @@
 #include "modmatrix.h"
 #include "fx.h"
 #include "seq.h"
+#include "stepseq.h"
 #include "macro.h"
 
 #define SR 44100.0f
@@ -186,6 +187,10 @@ enum {
      * Airwindows ones */
     P_MODFX_PITCH, P_MODFX_FOLLOW, P_MODFX_STRUCT, P_MODFX_POS, P_MODFX_MODEL, P_MODFX_SIZE, P_MODFX_DENSITY,
     P_MODFX_TEXTURE, P_MODFX_FREEZE, P_MODFX_GMODE, P_MODFX_QUALITY, P_MODFX_DRIVE, P_MODFX_BUMP, P_MODFX_LOWCUT,
+    /* the step sequencer (src/stepseq.h, src/stepseq_run.h): its switches and settings; the steps are engine state */
+    P_SEQ_ON, P_SEQ_PLAY, P_SEQ_REC, P_SEQ_STEP_MOD, P_SEQ_SYNC, P_SEQ_RATE, P_SEQ_DIV, P_SEQ_TIMING, P_SEQ_LENGTH,
+    P_SEQ_FOLLOW_SWING, P_CLOCK_SWING, P_SEQ_NOTE_TRIG, P_SEQ_NOTE_RESET, P_SEQ_RESTART_HOLD, P_SEQ_RESTART_TRIG,
+    P_SEQ_TRANSPOSE, P_SEQ_TR_MODE, P_SEQ_ONE_SHOT, P_SEQ_REC_MODE, P_SEQ_PATTERN,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -288,6 +293,9 @@ static const char *const KEYS[P_COUNT] = {
     "mac_lad",
     "modfx_pitch", "modfx_follow", "modfx_struct", "modfx_pos", "modfx_model", "modfx_size", "modfx_density",
     "modfx_texture", "modfx_freeze", "modfx_gmode", "modfx_quality", "modfx_drive", "modfx_bump", "modfx_lowcut",
+    "seq_on", "seq_play", "seq_rec", "seq_step_mod", "seq_sync", "seq_rate", "seq_div", "seq_timing", "seq_length",
+    "seq_follow_swing", "clock_swing", "seq_note_trig", "seq_note_reset", "seq_restart_hold", "seq_restart_trig",
+    "seq_transpose", "seq_tr_mode", "seq_one_shot", "seq_rec_mode", "seq_pattern",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -481,7 +489,13 @@ typedef struct {
     unsigned changed;        /* params the engine set itself (bit i: CHANGED_KEY[i]), for mpc_engine_changed() */
     struct { int64_t t; uint8_t note, vel; } glog[128];   /* the last generated notes (get_param "gen_log", for tests) */
     int glog_head, glog_n;
+    /* THE STEP SEQUENCER (src/stepseq_run.h): the sequence and its playback; STEP MOD's knob-to-destination map */
+    sq_run_t sq;
+    short sq_md[P_COUNT];    /* the matrix destination a knob's move records into (-1: none) ... */
+    float sq_sc[P_COUNT];    /* ... and how far one unit of the knob moves it (1 = the destination's whole +-100%) */
+    char sq_text[SQ_TEXT_MAX];   /* get_state's encoding of the sequence */
 } one_t;
+static void sq_init(one_t *s);   /* src/stepseq_run.h */
 
 static int slot(const char *key) {
     for (int i = 0; i < P_COUNT; i++)
@@ -623,6 +637,9 @@ static void apply_matrix(one_t *s) {
         s->mod_env |= d >= MD_FENV_DELAY && d <= MD_ENV_END;
         s->mod_lfo |= d >= MD_LFO1_RATE && d <= MD_LFO_END;
     }
+    s->mod_env |= s->sq.env_lanes;   /* the step sequencer's modulation lanes reach them like slots */
+    s->mod_lfo |= s->sq.lfo_lanes;
+    s->fx_dst |= s->sq.fx_mask;
     s->fx_mod = s->fx_dst != 0;
 }
 
@@ -946,6 +963,7 @@ static void *create(const char *data_dir) {
         for (int i = 0; i < NPARAMS; i++)
             if (!strcmp(PARAMS[i].key, KEYS[FXMD_SLOT[k]])) { s->fx_lo[k] = PARAMS[i].min; s->fx_hi[k] = PARAMS[i].max; }
     }
+    sq_init(s);   /* the step sequencer: an empty sequence; STEP MOD's map (after the effect ranges) */
     s->grng = 0x1b873593u;   /* fixed: the same generative choices in every instance, from the same start */
     for (int i = 0; i < TM_MAX; i++) s->tm_reg[i] = (uint8_t)(seq_rand(&s->grng) >> 24);
     s->bps = 120.0 / 60.0 / SR;
@@ -1286,9 +1304,11 @@ enum { RND_NONREPEAT, RND_REPEAT };                          /* "arp_rnd_mode" *
 #define JUMP_BEATS 1.0     /* the song position moving more than this from where the clock is: a locate or loop */
 #define PEND_MAX ((int)(sizeof ((one_t *)0)->pend / sizeof ((one_t *)0)->pend[0]))
 #define GLOG_MAX ((int)(sizeof ((one_t *)0)->glog / sizeof ((one_t *)0)->glog[0]))
-/* the params the engine sets itself (CHORD LEARN), as mpc_engine_changed() reports them */
-static const int CHANGED_SLOT[CHORD_MAX] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CHORD_IV1 + 1, P_CHORD_IV1 + 2, P_CHORD_IV1 + 3,
-                                            P_CHORD_IV1 + 4};
+/* the params the engine sets itself (CHORD LEARN; the sequencer's PLAY at a one shot's end or NOTE TRIG's exclusion,
+ * its NOTE TRIG, its LENGTH after DUPLICATE or a factory sequence), as mpc_engine_changed() reports them */
+static const int CHANGED_SLOT[CHORD_MAX + 3] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CHORD_IV1 + 1, P_CHORD_IV1 + 2,
+                                                P_CHORD_IV1 + 3, P_CHORD_IV1 + 4, P_SEQ_PLAY, P_SEQ_NOTE_TRIG,
+                                                P_SEQ_LENGTH};
 
 static int route_of(const one_t *s) {
     if (s->val[P_CHORD_LEARN] > 0.5f) return ROUTE_LEARN;
@@ -1336,13 +1356,17 @@ static int chord_notes(const one_t *s, int root, int *out) {
     return n;
 }
 
-/* stop everything this section started and forget its keys (a change of way, All Notes Off) */
+static void sq_forget(one_t *s);   /* src/stepseq_run.h */
+
+/* stop everything this section started and forget its keys (a change of way, All Notes Off); the step sequencer's
+ * notes are generated notes too */
 static void gen_stop(one_t *s) {
     s->gen_bypass = 1;
     for (int n = 0; n < 128; n++)
         if (s->ocnt[n]) { s->ocnt[n] = 0; note_off(s, n); }
     s->gen_bypass = 0;
     s->npend = 0;
+    sq_forget(s);
     memset(s->cmem_n, 0, sizeof s->cmem_n);
     s->keys.n = s->phys = s->running = s->start_pending = 0;
 }
@@ -1371,7 +1395,7 @@ static void learn_commit(one_t *s) {   /* learn off: the chord, as intervals fro
     for (int i = 1; i < CHORD_MAX; i++)
         s->val[P_CHORD_IV1 + i - 1] = i < s->learn_n ? clampf((float)(s->learn[i] - s->learn[0]), -24.0f, 24.0f) : 0.0f;
     s->val[P_CHORD_SHAPE] = 0.0f;
-    s->changed = (1u << CHORD_MAX) - 1;   /* the host's controls follow (mpc_engine_changed) */
+    s->changed |= (1u << CHORD_MAX) - 1;   /* the host's controls follow (mpc_engine_changed) */
 }
 
 /* ---- the step clock ---- */
@@ -1574,7 +1598,10 @@ static void seq_unlatch(one_t *s) {   /* latch or the pedal let go: the keys no 
     if (s->keys.n == 0) s->running = 0;
 }
 
+#include "stepseq_run.h"   /* THE STEP SEQUENCER: part of this file */
+
 static void key_on(one_t *s, int note, int vel) {
+    if (sq_key_on(s, note, vel)) return;   /* NOTE TRIG / TRANSPOSE keys move the sequencer instead of sounding */
     switch (s->route) {
     case ROUTE_SEQ: seq_key_on(s, note, vel); return;
     case ROUTE_CHORD: chord_key_on(s, note, vel); return;
@@ -1583,6 +1610,7 @@ static void key_on(one_t *s, int note, int vel) {
     }
 }
 static void key_off(one_t *s, int note) {
+    if (sq_key_off(s, note)) return;
     switch (s->route) {
     case ROUTE_SEQ: seq_key_off(s, note); return;
     case ROUTE_CHORD: chord_key_off(s, note); return;
@@ -1616,6 +1644,7 @@ static void song_pos(void *inst, double ppq, double bpm, int playing, int frames
     s->sp_bpm = bpm;
     s->sp_playing = playing;
     s->sp_new = 1;
+    s->sq.sp_new = 1;
 }
 
 /* engine.h: the params CHORD LEARN set, one key per call, so the host's controls follow */
@@ -1654,7 +1683,8 @@ static void midi(void *inst, const uint8_t *m, int len) {
         ribbon_rest(s);
     }
     else if (st == 0xb0 && (d1 == 120 || d1 == 123)) {
-        if (s->route != ROUTE_PLAIN) gen_stop(s);   /* the arp's keys and its notes too */
+        if (s->route != ROUTE_PLAIN) gen_stop(s);   /* the arp's keys and its notes too (and the sequencer's) */
+        else sq_silence(s);   /* the sequencer's notes (it plays on at its next step) */
         all_off(s, d1 == 120);
     }
 }
@@ -1665,22 +1695,39 @@ static void set_state(one_t *s, const char *str) {
     if (strlen(str) >= sizeof s->state_buf) return;   /* never restore half a state */
     strcpy(buf, str);
     load_defaults(s);   /* a state saved before a param existed leaves that param at its default */
+    sq_clear(&s->sq.q);   /* and one saved without a sequence has none */
     char *save = NULL;
     for (char *kv = strtok_r(buf, ";", &save); kv; kv = strtok_r(NULL, ";", &save)) {
         char *eq = strchr(kv, '=');
         if (!eq) continue;
         *eq = 0;
-        store(s, kv, eq + 1);
+        if (!strcmp(kv, "seq")) sq_decode(eq + 1, &s->sq.q, MD_COUNT, MS_COUNT);   /* the steps (damaged: none) */
+        else store(s, kv, eq + 1);
     }
+    s->sq.lost = 0;
+    sq_lanes_changed(s);
 }
 
 /* only the values that differ from their defaults (set_state starts from the defaults), so a state of hundreds of
- * params fits the wrapper's 8 KB chunk; "v=1" first keeps it non-empty (an empty state would be no chunk at all) */
-static int get_state(const one_t *s, char *buf, int n) {
+ * params fits the wrapper's 8 KB chunk; "v=1" first keeps it non-empty (an empty state would be no chunk at all). The
+ * sequencer's PLAY, REC and STEP MOD are not kept (a project opens stopped); its steps follow as "seq=<text>"
+ * (src/stepseq.h) when there are any. Should the whole not fit, the sound is saved without the steps (the readout
+ * says so; the window can save them as a .oneseq file). */
+static int get_state(one_t *s, char *buf, int n) {
     int used = snprintf(buf, n, "v=1");
     for (int i = 0; i < P_COUNT && used < n; i++)
-        if (KEYS[i][0] && s->val[i] != s->def[i]) used += snprintf(buf + used, n - used, ";%s=%g", KEYS[i], s->val[i]);
-    return used < n ? used : 0;
+        if (KEYS[i][0] && s->val[i] != s->def[i] && i != P_SEQ_PLAY && i != P_SEQ_REC && i != P_SEQ_STEP_MOD)
+            used += snprintf(buf + used, n - used, ";%s=%g", KEYS[i], s->val[i]);
+    if (used >= n) return 0;
+    s->sq.lost = 0;
+    int lanes = 0;
+    for (int l = 0; l < SQ_ML; l++) lanes |= s->sq.q.m[l].dest;
+    if (sq_used_steps(&s->sq.q) || lanes) {
+        int len = sq_encode(&s->sq.q, s->sq_text, sizeof s->sq_text);
+        if (used + 5 + len < n) used += snprintf(buf + used, n - used, ";seq=%s", s->sq_text);
+        else s->sq.lost = 1;
+    }
+    return used;
 }
 
 /* LINK CUTOFF, after param k was set (-1: a whole state): with link on, a cutoff knob's move takes the other knob
@@ -1704,9 +1751,15 @@ static void set_param(void *inst, const char *key, const char *val) {
         }
         return;
     }
+    if (!strcmp(key, "state") && !strncmp(val, "seqcmd\n", 7)) {   /* an edit from the window (src/stepseq_run.h) */
+        sq_command(s, val + 7);
+        return;
+    }
+    int k = slot(key);
+    if (sq_step_mod(s, k, val)) return;   /* STEP MOD: the knob's move goes into the sequence, the knob stays */
     if (!strcmp(key, "state")) set_state(s, val);
     else store(s, key, val);
-    int k = slot(key);
+    if (k == P_SEQ_PATTERN) sq_load_factory(s, (int)s->val[k]);   /* (a state restores its own steps instead) */
     link_cutoffs(s, k);
     apply(s);
     /* a new origin or SPRING with no finger on the ribbon: it goes back to its (new) origin */
@@ -1726,6 +1779,7 @@ static void set_param(void *inst, const char *key, const char *val) {
         for (int n = 0; n < NENV; n++)
             if (!s->ecfg[n].latch && s->voice[i].env[n].held && !s->voice[i].gate) env_release(&s->voice[i].env[n]);
     perf_after_set(s, k);
+    sq_sync_params(s);
 }
 
 static int hz_text(char *buf, int n, float hz) {
@@ -1819,6 +1873,7 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
 static int get_param(void *inst, const char *key, char *buf, int n) {
     one_t *s = inst;
     if (!strcmp(key, "state")) return get_state(s, buf, n);
+    if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);   /* the sequencer's readout (a "display": "string" param) */
     if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
         int used = 0;
         buf[0] = 0;
@@ -2024,6 +2079,7 @@ static void control_voice(one_t *s, voice_t *v) {
     int rd = (int)p[P_RIBBON_DST];   /* the ribbon's quick assignment, to a voice destination */
     if (rd > MD_OFF && (rd < MD_FX_FIRST || (rd > MD_FX_END && rd < MD_COUNT)))
         dm[rd] += src[MS_RIBBON] * p[P_RIBBON_AMT] * 0.01f;
+    if (s->sq.mod_live) sq_mod_voice(s, src, dm);   /* the sequencer's modulation lanes */
     memcpy(v->lfo_dm, &dm[MD_LFO1_RATE], sizeof v->lfo_dm);   /* the LFOs read these next step */
     voice_envs(s, v, dm);
     float fenv = src[MS_FENV], key_oct = kc / 12.0f;
@@ -2321,6 +2377,7 @@ static uint64_t fx_mod_step(one_t *s) {
         mod_eval_list(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->fx_list, s->fx_n, src, s->bipolar, dm, 0);
         int rd = (int)s->val[P_RIBBON_DST];
         if (rd >= MD_FX_FIRST && rd <= MD_FX_END) dm[rd] += src[MS_RIBBON] * s->val[P_RIBBON_AMT] * 0.01f;
+        if (s->sq.mod_live) sq_mod_fx(s, src, dm);   /* the sequencer's lanes to an effect (in fx_dst like a slot) */
     }
     uint64_t now = 0;
     for (uint64_t m = s->fx_dst | s->fx_was; m; m &= m - 1) {   /* the destinations reached now or still settling */
@@ -2485,15 +2542,22 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         fx_params(s, fxp);
     }
     if (s->seq_on) clock_block(s);
+    if (sq_live(s) || s->sq.start_pending) sq_block(s);   /* the step sequencer's clock */
     int done = 0;
     while (done < frames) {
         int live = s->seq_on || s->npend > 0;   /* the step clock plays, or its last notes are still to end */
+        int sql = sq_live(s);   /* the step sequencer runs, or has notes to start or end */
         if (live) seq_due(s);   /* steps and note ends at this sample, before the voices' control step */
+        if (sql) sq_due(s);
         int first = s->phase == 0;
         int n = CR - s->phase;
         if (n > frames - done) n = frames - done;
         if (live) {   /* stop this piece at the next step or note end: they fall on their exact sample */
             int64_t d = seq_next(s);
+            if (d < n) n = (int)d;
+        }
+        if (sql) {
+            int64_t d = sq_next(s);
             if (d < n) n = (int)d;
         }
         if (first) { control_lfos(s); ribbon_step(s); }
@@ -2532,6 +2596,7 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         s->phase = (s->phase + n) % CR;
         s->now += n;
         s->clk += n;
+        s->sq.clk += n;
     }
 }
 

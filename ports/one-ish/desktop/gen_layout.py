@@ -282,10 +282,31 @@ def build(lay):
         ("unison", "Unison"), ("uni_count", "Unison Voices"), ("uni_detune", "Unison Detune"),
         ("pitch_var", "Pitch Variance")])
 
-    # ---- centre console: the screen (presets, mod matrix, MORE pages, help) and its buttons ----
-    zones = {"SCREEN": (770, 22, 400, 362), "TAB_MATRIX": (771, 408, 46, 46), "TAB_MORE": (817, 408, 46, 46),
-             "TAB_ANALOG": (865, 408, 46, 46), "TAB_RANDOM": (917, 408, 46, 46), "ENCODER": (963, 398, 64, 104),
-             "PREV": (1040, 408, 50, 46), "NEXT": (1100, 408, 50, 46), "BRAND": (770, 506, 400, 26)}
+    # ---- centre console: the screen (presets, mod matrix, MORE pages, the step editor, help), its buttons, and under
+    # them the SEQUENCER module ----
+    zones = {"SCREEN": (770, 22, 400, 362), "TAB_MATRIX": (769, 390, 48, 40), "TAB_MORE": (817, 390, 48, 40),
+             "TAB_ANALOG": (865, 390, 48, 40), "TAB_RANDOM": (913, 390, 48, 40), "TAB_SEQ": (961, 390, 44, 40),
+             "ENCODER": (1008, 384, 64, 92), "PREV": (1078, 390, 44, 40), "NEXT": (1124, 390, 44, 40),
+             "BRAND": (1076, 438, 94, 28)}
+    # the step sequencer: ON, PLAY, REC, NOTE TRIG, TRANSPOSE, STEP MOD; the page LEDs (the step editor's pages, the
+    # playing one lit); LENGTH and RATE. Its MORE triangle: the settings; the SEQ button: the step editor
+    L.panel(764, 476, 412, 62, "SEQUENCER", more="SEQ", keys=["seq_on"])
+    L.column([("seq_on", "ON"), ("seq_note_trig", "TRIG")], 768, 492, 66, 22, "toggle", SIDE)
+    L.column([("seq_play", "PLAY"), ("seq_transpose", "TRANSP")], 834, 492, 74, 22, "toggle", SIDE)
+    L.column([("seq_rec", "REC"), ("seq_step_mod", "STEP MOD")], 908, 492, 70, 22, "toggle", SIDE)
+    if "seq_on" in L.index:
+        zones["SEQ_LEDS"] = (976, 490, 82, 46)
+    L.ctl("seq_length", "small", 1058, 488, 52, 50, "LENGTH")
+    L.ctl("seq_div", "button", 1108, 491, 50, 46, "RATE")
+    L.placed.add("seq_pos")   # the readout: the step editor and the page LEDs show it
+    L.page("SEQ", "SEQUENCER", "Settings; the steps: the SEQ button. Synced: RATE is each step's note value.", [
+        ("seq_on", "On"), ("seq_play", "Play"), ("seq_rec", "Record"), ("seq_rec_mode", "Record Mode"),
+        ("seq_step_mod", "Step Mod"), ("seq_length", "Length"), ("seq_sync", "Sync"), ("seq_div", "Rate (Synced)"),
+        ("seq_timing", "Timing"), ("seq_rate", "Free Rate"), ("seq_follow_swing", "Follow Swing"),
+        ("clock_swing", "Master Swing"), ("seq_note_trig", "Note Trig"), ("seq_note_reset", "Note Reset"),
+        ("seq_restart_trig", "Restart On Trig"), ("seq_restart_hold", "Restart On Hold"),
+        ("seq_transpose", "Transpose"), ("seq_tr_mode", "Transpose Mode"), ("seq_one_shot", "One Shot"),
+        ("seq_pattern", "Factory Sequence")])
 
     # ---- mixer ----
     X = DX
@@ -458,6 +479,11 @@ def emit(lay, zones, out):
     if lay.euclid_at is None or min(eu[1:]) < 0:
         eu = [-1] * 4
     zones["EUCLID"] = lay.euclid_at or (0, 0, 0, 0)
+    zones.setdefault("SEQ_LEDS", (0, 0, 0, 0))   # (an empty zone without a sequencer)
+    sp = [lay.index.get(k, -1) for k in ("seq_on", "seq_play", "seq_rec", "seq_length", "seq_pos", "seq_step_mod",
+                                         "seq_div", "seq_timing")]
+    lines.append("LAY short SEQ_P[8] = {%s};   /* on, play, rec, length, readout, step mod, div, timing (-1: absent) */"
+                 % ", ".join(map(str, sp)))
     lines.append("LAY short EUCLID_P[4] = {%s};   /* on, steps, hits, rotation */" % ", ".join(map(str, eu)))
 
     # the mod matrix: per row source, destination, amount, via, via amount, transform, transform amount (-1: absent)
@@ -479,7 +505,7 @@ def emit(lay, zones, out):
     lines.append("LAY lay_page_t PAGES[] = {%s};" % ",\n    ".join(prow or ['{"", "", 0, 0}']))
     lines.append("#define NPAGES %d" % len(pages))
     for pid in ("LFO1", "LFO2", "LFO3", "LFO4", "OSC1", "OSC2", "OSC3", "POLY", "ARP", "CHORD", "GEN", "SFX", "MFX",
-                "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "OTHER"):
+                "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "SEQ", "OTHER"):
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
     # the triangles that open a module's page: the panel's top-right corner under its title strip; the ribbon's end
     tris = []

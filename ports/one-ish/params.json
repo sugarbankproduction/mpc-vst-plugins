@@ -461,7 +461,28 @@
   {"key": "modfx_quality", "name": "Synth FX Granular Quality", "options": ["16-bit Stereo", "16-bit Mono", "8-bit Stereo", "8-bit Mono"], "default": "16-bit Stereo"},
   {"key": "modfx_drive", "name": "Synth FX Drive", "min": 0, "max": 100, "default": 50, "dynamic_display": true},
   {"key": "modfx_bump", "name": "Synth FX Head Bump", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
-  {"key": "modfx_lowcut", "name": "Synth FX Low Cut", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
+  {"key": "modfx_lowcut", "name": "Synth FX Low Cut", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "seq_on", "name": "Seq On", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_play", "name": "Seq Play", "options": ["Stopped", "Running"], "default": "Stopped"},
+  {"key": "seq_rec", "name": "Seq Record", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_step_mod", "name": "Seq Step Mod", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_sync", "name": "Seq Sync", "options": ["Off", "On"], "default": "On"},
+  {"key": "seq_rate", "name": "Seq Free Rate", "min": 10, "max": 280, "unit": "BPM", "default": 120, "display": "int"},
+  {"key": "seq_div", "name": "Seq Division", "options": ["1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128"], "default": "1/16"},
+  {"key": "seq_timing", "name": "Seq Timing", "options": ["Straight", "Dotted", "Triplet"], "default": "Straight"},
+  {"key": "seq_length", "name": "Seq Length", "min": 1, "max": 64, "default": 16, "display": "int"},
+  {"key": "seq_follow_swing", "name": "Seq Follow Swing", "options": ["Off", "On"], "default": "On"},
+  {"key": "clock_swing", "name": "Master Swing", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
+  {"key": "seq_note_trig", "name": "Seq Note Trig", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_note_reset", "name": "Seq Note Reset", "options": ["Off", "On"], "default": "On"},
+  {"key": "seq_restart_hold", "name": "Seq Restart On Hold", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_restart_trig", "name": "Seq Restart On Trig", "options": ["Off", "On"], "default": "On"},
+  {"key": "seq_transpose", "name": "Seq Transpose", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_tr_mode", "name": "Seq Transpose Mode", "options": ["Start Key", "Interval"], "default": "Start Key"},
+  {"key": "seq_one_shot", "name": "Seq One Shot", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_rec_mode", "name": "Seq Record Mode", "options": ["Replace", "Overdub", "Focused"], "default": "Replace"},
+  {"key": "seq_pattern", "name": "Seq Factory Sequence", "options": ["User", "Bass Line", "Chord Stabs", "Ratchet Run"], "default": "User"},
+  {"key": "seq_pos", "name": "Seq Step", "display": "string"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -537,6 +558,7 @@
   {"label": "MACRO OSC", "keys": ["mac_model", "mac_harm", "mac_timbre", "mac_morph", "mac_oct", "mac_freq", "mac_aux", "mac_level", "mac_svf", "mac_lad"]},
   {"label": "SYNTH FX RESONATOR II", "keys": ["modfx_model", "modfx_pitch", "modfx_follow", "modfx_struct", "modfx_pos"]},
   {"label": "SYNTH FX GRANULAR", "keys": ["modfx_gmode", "modfx_quality", "modfx_size", "modfx_density", "modfx_texture", "modfx_freeze"]},
-  {"label": "SYNTH FX DRIVE", "keys": ["modfx_drive", "modfx_bump", "modfx_lowcut"]}
+  {"label": "SYNTH FX DRIVE", "keys": ["modfx_drive", "modfx_bump", "modfx_lowcut"]},
+  {"label": "SEQUENCER", "keys": ["seq_on", "seq_play", "seq_rec", "seq_step_mod", "seq_sync", "seq_rate", "seq_div", "seq_timing", "seq_length", "seq_follow_swing", "clock_swing", "seq_note_trig", "seq_note_reset", "seq_restart_hold", "seq_restart_trig", "seq_transpose", "seq_tr_mode", "seq_one_shot", "seq_rec_mode", "seq_pattern", "seq_pos"]}
  ]
 }

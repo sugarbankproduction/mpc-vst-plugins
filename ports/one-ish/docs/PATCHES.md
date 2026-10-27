@@ -55,7 +55,10 @@ o2_wave=0
 - Unknown keys (a parameter a later version adds, or one renamed) are skipped quietly. Lines that make no sense (no
   `=`, a value that isn't a number or an option) are skipped and counted; the screen says how many. `;` also separates
   entries, so a pasted engine state (`v=1;flt_cut=42.5;...`) loads. Files over 64 KB are refused.
-- The engine's 8 KB state limit applies (today's worst case is about 6.2 KB).
+- The engine's 8 KB state limit applies (today's worst case is about 7.7 KB of parameters, every one off its default).
+- The step sequencer's steps, when there are any, are one more line, `seq=<text>` (the engine's own form, see
+  `docs/SEQUENCER.md`): a patch keeps its sequence, and loading a patch without the line empties the sequencer
+  (2026-10-27, offline). A typical sequence adds a few hundred characters.
 
 ## How it works
 

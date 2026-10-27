@@ -151,6 +151,8 @@ static void layout(void) {
     L.tab_more = zone(ZONE_TAB_MORE);
     L.tab_analog = zone(ZONE_TAB_ANALOG);
     L.tab_random = zone(ZONE_TAB_RANDOM);
+    L.tab_seq = zone(ZONE_TAB_SEQ);
+    L.seq_leds = zone(ZONE_SEQ_LEDS);
     L.encoder = zone(ZONE_ENCODER);
     L.bprev = zone(ZONE_PREV);
     L.bnext = zone(ZONE_NEXT);
@@ -381,6 +383,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
             }
     } else if (e->screen == SCR_PATCHES) {
         return patches_hit(e, pt);
+    } else if (e->screen == SCR_SEQ) {
+        return seq_hit(e, pt);
     } else if (e->screen == SCR_INDEX) {
         for (int p = e->sub * SLOTS; p < NPAGES && p < (e->sub + 1) * SLOTS; p++) {
             RECT nm, c;
@@ -408,11 +412,12 @@ static int hit(ed_t *e, int x, int y) {
         if (PtInRect(&L.ctl[CTLS[c].param], pt)) { e->hit_rect = L.ctl[CTLS[c].param]; return CTLS[c].param; }
     int s = hit_on_screen(e, pt);
     if (s >= 0) return s;
+    if ((s = seq_hit_panel(e, pt)) >= 0) return s;   /* the SEQUENCER module's page LEDs */
     static const struct { RECT *r; int z; } Z[] = {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
         {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
-        {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM},
+        {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
         {&L.euclid, Z_EUCLID}};   /* (an empty rect when there is no GENERATIVE section) */
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++)
         if (PtInRect(Z[k].r, pt)) return Z[k].z;
@@ -513,6 +518,9 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         show(e, PG_ANALOG, 0);
     } else if (z == Z_TAB_RANDOM) {
         show(e, SCR_RANDOM, 0);
+    } else if (z == Z_TAB_SEQ) {   /* the step editor; again: its other view (NOTES / MODS) */
+        if (e->screen == SCR_SEQ) e->sq.view = !e->sq.view;
+        seq_open(e, -1);
     } else if (z == Z_EUCLID && PG_GEN >= 0) {   /* the ring of dots: the GENERATIVE section's page */
         show(e, PG_GEN, 0);
     } else if (z == Z_RND_GO || z == Z_RND_MUTATE) {
@@ -531,6 +539,10 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
 
 static void press(ed_t *e, int x, int y) {
     int i = hit(e, x, y);
+    if (seq_zone(i)) {   /* the step editor and the page LEDs (seq_page.c); a drag on a note or a value follows */
+        if (seq_press(e, i, x, y, GetKeyState(VK_SHIFT) < 0)) { e->mode = M_SEQ; SetCapture(e->wnd); }
+        return;
+    }
     switch (i) {
     case -1: return;
     case Z_PREV: patches_step(e, -1); return;   /* factory presets, then user patches */
@@ -609,6 +621,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (prog != e->shown_prog) { e->shown_prog = prog; changed = 1; }
         if (patches_tick(e)) changed = 1;   /* the edited mark, a message that ran out */
+        if (seq_tick(e, changed)) changed = 1;   /* the playing step; the sequence while it is edited */
         if (changed) InvalidateRect(w, NULL, FALSE);
         return 0;
     }
@@ -622,6 +635,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             set_value(e, i, v);
             return 0;
         }
+        if (e->mode == M_SEQ) { seq_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode != M_NONE) { controller_move(e, x, y); return 0; }
         int h = hit(e, x, y);
         if (h != e->hover) { e->hover = h; InvalidateRect(w, NULL, FALSE); }
@@ -629,6 +643,9 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         TrackMouseEvent(&tme);
         return 0;
     }
+    case WM_KEYDOWN:   /* the step editor: arrow keys move the selection, Delete deletes */
+        if (e && e->screen == SCR_SEQ && seq_key(e, (int)wp, GetKeyState(VK_SHIFT) < 0)) return 0;
+        break;
     case WM_MOUSELEAVE:
         if (e && e->mode == M_NONE) { e->hover = -1; InvalidateRect(w, NULL, FALSE); }
         return 0;
@@ -640,13 +657,17 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_RBUTTONDOWN: {   /* a list of options for any option control */
         if (!e) return 0;
         int i = hit(e, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
-        if (i >= 0 && i < NPARAMS && PARAMS[i].nopts > 1) pick_option(e, i, e->hit_rect);
+        if (seq_zone(i)) seq_right(e, i);   /* the step editor: delete, a step's rest */
+        else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts > 1) pick_option(e, i, e->hit_rect);
         return 0;
     }
     case WM_LBUTTONUP:
     case WM_CAPTURECHANGED:
         if (!e) return 0;
-        if (e->mode == M_PARAM) {
+        if (e->mode == M_SEQ) {
+            seq_release(e);
+            e->mode = M_NONE;
+        } else if (e->mode == M_PARAM) {
             if (e->host && e->drag >= 0) e->host(e->fx, audioMasterEndEdit, e->drag, 0, NULL, 0);
             e->drag = -1;
             e->mode = M_NONE;
@@ -658,7 +679,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_LBUTTONDBLCLK: {   /* back to the default */
         if (!e) return 0;
         int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp), i = hit(e, x, y);
-        if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);
+        if (seq_zone(i) && i < Z_SEQ_BASE + 200) seq_double(e, i);   /* an empty step cell: a new note */
+        else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);
         else if (i >= 0) press(e, x, y);   /* a second click on a button or a key counts as a click */
         return 0;
     }
@@ -668,6 +690,9 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         ScreenToClient(w, &pt);
         int i = hit(e, pt.x, pt.y), dir = GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 1 : -1;
         if (i == Z_ENCODER) { patches_step(e, -dir); return 0; }
+        if ((seq_zone(i) || (e->screen == SCR_SEQ && PtInRect(&L.screen, pt) && (i < 0 || i >= NPARAMS)))
+            && seq_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0))
+            return 0;
         if (i == Z_RND_AMOUNT) {
             float v = e->rnd_amount + dir * 0.01f;
             e->rnd_amount = roundf((v < 0 ? 0 : v > 1 ? 1 : v) * 100.0f) / 100.0f;
@@ -765,6 +790,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             return (intptr_t)n;
         }
         if (idx == TEST_PATCH && e && ptr) return patches_test(e, v, ptr, opt);   /* load_test: user patches */
+        if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
             hr_set_legacy(e->hr, (int)v);
             fx->initialDelay = hr_latency(e->hr);
@@ -838,6 +864,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         fx->process = hooked_process;
         fx->flags |= effFlagsHasEditor;
         patches_init(e);
+        seq_init(e);
         break;
     }
     return fx;   /* no free slot: the plugin still works, without its window, at 44.1 kHz in 16 bits (the old path) */
