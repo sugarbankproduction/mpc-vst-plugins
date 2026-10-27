@@ -9,9 +9,11 @@
  * Hard-wired modulation as on the Moog One panel: filter envelope, LFO 2, keyboard tracking (-200..+200%) and
  * audio-rate FM from a chosen oscillator to each cutoff, LFO 1 and the mod envelope to pitch. An 8-slot modulation
  * matrix (source x amount, scaled by a via source) over pitch, levels, both filters and amp; mod wheel, aftertouch,
- * pitch bend and sustain pedal. Up to 8 voices: a new
- * note takes an idle voice, else the quietest releasing one, else the oldest held one; the same key replays its own
- * voice. Mono (1 voice) plays legato with last-note priority. Glide (portamento): each voice slides from its own
+ * pitch bend (separate up and down amounts, plus per-oscillator offsets), sustain and sostenuto pedals, HOLD. Up to 8
+ * voices: a new note takes an idle voice, else one by the stealing mode (default: the quietest releasing one, else the
+ * oldest held one); the same key replays its own voice. Mono (1 voice) plays legato with low, high or last-note
+ * priority. Velocity curves, transpose, octave shift, key-track centre, master tune; per oscillator pitch tracking,
+ * note-on phase reset and a choice of hard sync source. Glide (portamento): each voice slides from its own
  * last pitch at a constant rate (LCR), in a constant time (LCT) or exponentially (EXP); optionally only on legato
  * notes, paused while the key is up (gated), or in semitone steps (glissando). Unison stacks 2-8 voices on each note
  * (a stack is allocated and stolen as one), detuned unevenly around the centre; pitch variance gives each new note a
@@ -97,8 +99,21 @@ enum {
     P_AMP_MULTI, P_AMP_RESET, P_AMP_SCALE, P_AMP_VEL,
     P_MENV_DELAY, P_MENV_HOLD, P_MENV_ACURVE, P_MENV_DCURVE, P_MENV_RCURVE, P_MENV_LOOP, P_MENV_LATCH, P_MENV_SYNC,
     P_MENV_MULTI, P_MENV_RESET, P_MENV_SCALE, P_MENV_VEL,
+    /* voice and keyboard options (the polyphony and left-hand MORE pages, tuning) */
+    P_NOTE_PRIORITY, P_STEAL_MODE, P_HOLD, P_BEND_UP, P_BEND_DOWN, P_VEL_CURVE, P_TRANSPOSE, P_OCT_SHIFT,
+    P_KEY_CENTER, P_MASTER_TUNE, P_FINE_TUNE,
+    /* each oscillator's MORE page, XO_STRIDE apart (XO_* below); then the sync sources of oscillators 2 and 3 */
+    P_O1_TRACK, P_O1_RESET, P_O1_BEND_UP_OFF, P_O1_BEND_DN_OFF,
+    P_O2_TRACK, P_O2_RESET, P_O2_BEND_UP_OFF, P_O2_BEND_DN_OFF,
+    P_O3_TRACK, P_O3_RESET, P_O3_BEND_UP_OFF, P_O3_BEND_DN_OFF,
+    P_O2_SYNC_SRC, P_O3_SYNC_SRC,
     P_COUNT
 };
+enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
+enum { PRIO_LOW, PRIO_HIGH, PRIO_LAST };                        /* "note_priority" options */
+enum { STEAL_NONE, STEAL_OLDEST, STEAL_QUIETEST, STEAL_NEWEST }; /* "steal_mode" options */
+enum { VEL_SOFT, VEL_MEDIUM, VEL_HARD, VEL_COMPRESS, VEL_EXPAND }; /* "vel_curve" options */
+#define OCT_SHIFT_CENTRE 2   /* option index of 0 in the "octave_shift" list */
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
 /* each mixer channel's level and filter buttons, in channel order (osc 1-3, noise, ring mod: the matrix's order) */
@@ -126,7 +141,7 @@ static const char *const KEYS[P_COUNT] = {
     "menv_a", "menv_d", "menv_s", "menv_r",
     "lad_env", "lad_lfo", "lad_kbd", "svf_env", "svf_lfo", "svf_kbd", "pitch_lfo", "pitch_env",
     "lfo1_rate", "lfo1_wave", "lfo1_sync", "lfo2_rate", "lfo2_wave", "lfo2_sync",
-    "bend_range", "voices",
+    "" /* the retired "bend_range": store() maps it onto bend_up / bend_down */, "voices",
 #define SLOT_KEYS(n) [P_MOD_BASE + 4 * ((n) - 1)] = "mod" #n "_src", [P_MOD_BASE + 4 * ((n) - 1) + 1] = "mod" #n "_dst", \
                      [P_MOD_BASE + 4 * ((n) - 1) + 2] = "mod" #n "_amt", [P_MOD_BASE + 4 * ((n) - 1) + 3] = "mod" #n "_via"
     SLOT_KEYS(1), SLOT_KEYS(2), SLOT_KEYS(3), SLOT_KEYS(4), SLOT_KEYS(5), SLOT_KEYS(6), SLOT_KEYS(7), SLOT_KEYS(8),
@@ -140,8 +155,17 @@ static const char *const KEYS[P_COUNT] = {
     "svf_space", "svf_pair", "flt_link", "lad_fm", "svf_fm", "lad_fm_src", "svf_fm_src",
 #define ENV_EXTRA_KEYS(e) e "_delay", e "_hold", e "_acurve", e "_dcurve", e "_rcurve", e "_loop", e "_latch", e "_sync", \
                           e "_multi", e "_reset", e "_scale", e "_vel"
-    ENV_EXTRA_KEYS("fenv"), ENV_EXTRA_KEYS("amp"), ENV_EXTRA_KEYS("menv")
+    ENV_EXTRA_KEYS("fenv"), ENV_EXTRA_KEYS("amp"), ENV_EXTRA_KEYS("menv"),
 #undef ENV_EXTRA_KEYS
+    [P_NOTE_PRIORITY] = "note_priority", [P_STEAL_MODE] = "steal_mode", [P_HOLD] = "hold", [P_BEND_UP] = "bend_up",
+    [P_BEND_DOWN] = "bend_down", [P_VEL_CURVE] = "vel_curve", [P_TRANSPOSE] = "transpose",
+    [P_OCT_SHIFT] = "octave_shift", [P_KEY_CENTER] = "key_center", [P_MASTER_TUNE] = "master_tune",
+    [P_FINE_TUNE] = "fine_tune",
+#define OSC_MORE_KEYS(n) [P_O##n##_TRACK] = "o" #n "_track", [P_O##n##_RESET] = "o" #n "_reset", \
+                         [P_O##n##_BEND_UP_OFF] = "o" #n "_bend_up_off", [P_O##n##_BEND_DN_OFF] = "o" #n "_bend_dn_off"
+    OSC_MORE_KEYS(1), OSC_MORE_KEYS(2), OSC_MORE_KEYS(3),
+#undef OSC_MORE_KEYS
+    [P_O2_SYNC_SRC] = "o2_sync_src", [P_O3_SYNC_SRC] = "o3_sync_src",
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
@@ -179,8 +203,10 @@ typedef struct {
     float tgt_lad[NSRC], tgt_svf[NSRC], tgt_mix; /* this control step's (ramp end), modulation included */
     float amp_mod;           /* the matrix's amp level factor (0..2) */
     int gate;                /* key down, or released while the sustain pedal is down */
-    int sustained;           /* released while the pedal is down: let go when it comes up */
+    int sustained;           /* released while the pedal (or HOLD, or sostenuto) is down: let go when it comes up */
     unsigned age;            /* when its note started, for stealing the oldest */
+    int sost;                /* sounding when the sostenuto pedal went down: its key's release waits for the pedal */
+    int reset_pend;          /* NOTE-ON RESET: a bit per oscillator to restart at phase 0 on the next sample */
 } voice_t;
 
 typedef struct {
@@ -203,6 +229,13 @@ typedef struct {
     float link_off;          /* LINK CUTOFF: the SVF cutoff knob minus the ladder's when link went on */
     int held[MAX_HELD];      /* keys down, oldest first (mono: releasing the newest falls back to the one before) */
     int nheld;
+    int sostenuto;           /* the sostenuto pedal (CC 66) is down */
+    int hold;                /* HOLD as last applied (turning it off lets go of the notes it latched) */
+    float expression;        /* expression pedal (CC 11), 0..1: stored for the matrix, not yet routed */
+    float tune_hz;           /* A above middle C: master tune with fine tune */
+    float shift, center;     /* transpose + octave shift, and the key track centre, in whole semitones */
+    float track[NOSC];       /* each oscillator's pitch tracking - 1 (0 at 100%) */
+    float bend_off[NOSC][2]; /* each oscillator's bend up / down offset, whole semitones */
     char state_buf[STATE_MAX];   /* set_state's working copy (allocated with the instance, not per call) */
 } one_t;
 
@@ -225,6 +258,11 @@ static inline float white(uint32_t *x) {   /* xorshift32: -1..1 */
 static void store(one_t *s, const char *key, const char *text) {
     int k = slot(key);
     float v = (float)atof(text);
+    if (!strcmp(key, "bend_range") && isfinite(v)) {   /* retired: an older project's one range, both ways */
+        s->val[P_BEND_UP] = clampf(v, 0.0f, 24.0f);
+        s->val[P_BEND_DOWN] = -s->val[P_BEND_UP];
+        return;
+    }
     if (k < 0 || !isfinite(v)) return;
     for (int i = 0; i < NPARAMS; i++) {
         const param_t *p = &PARAMS[i];
@@ -296,10 +334,19 @@ static void apply(one_t *s) {
     float t = glide_ms(s->val[P_GLIDE_TIME]) * 0.001f;
     s->glide_frac = t > 0.0f ? (float)CR / (SR * t) : 2.0f;
     s->glide_exp = 1.0f - expf(-GLIDE_EXP_K * fminf(s->glide_frac, 1.0f));
+    s->tune_hz = s->val[P_MASTER_TUNE] * exp2f(s->val[P_FINE_TUNE] / 1200.0f);
+    s->shift = roundf(s->val[P_TRANSPOSE]) + 12.0f * (s->val[P_OCT_SHIFT] - OCT_SHIFT_CENTRE);
+    s->center = roundf(s->val[P_KEY_CENTER]);
+    for (int n = 0; n < NOSC; n++) {
+        const float *x = &s->val[P_O1_TRACK + XO_STRIDE * n];
+        s->track[n] = (x[XO_TRACK] - 100.0f) * 0.01f;   /* exactly 0 at 100% */
+        s->bend_off[n][0] = roundf(x[XO_BEND_UP]);
+        s->bend_off[n][1] = roundf(x[XO_BEND_DN]);
+    }
 }
 
-static const int VOICE_COUNTS[] = {1, 2, 4, 6, 8};   /* the "voices" options */
-static int voice_count(const one_t *s) { return VOICE_COUNTS[(int)clampf(s->val[P_VOICES], 0, 4)]; }
+static const int VOICE_COUNTS[] = {1, 2, 3, 4, 5, 6, 7, 8};   /* the "voices" options */
+static int voice_count(const one_t *s) { return VOICE_COUNTS[(int)clampf(s->val[P_VOICES], 0, 7)]; }
 static int is_mono(const one_t *s) { return voice_count(s) == 1; }
 
 /* voices stacked on each note: 1 without unison; the unison count, at most the voice count except in mono (mono +
@@ -320,15 +367,17 @@ static float gain_target(const one_t *s, const voice_t *v) {
     return env_vel(s, ENV_AMP, v->velocity) * s->val[P_VOLUME] * 0.01f * HEADROOM * v->amp_mod * v->uni_gain;
 }
 
-/* the pitch the voice plays (semitones): the glided pitch, in whole semitones with glissando */
+/* the pitch the voice plays (semitones): the glided pitch, in whole semitones with glissando, shifted by semitone
+ * transpose and octave shift (they follow live, and keyboard tracking and the Keyboard source follow them too) */
 static float voice_key(const one_t *s, const voice_t *v) {
-    return s->val[P_GLISSANDO] > 0.5f ? roundf(v->pitch) : v->pitch;
+    return (s->val[P_GLISSANDO] > 0.5f ? roundf(v->pitch) : v->pitch) + s->shift;
 }
 
-/* the voice's base frequency: its key, pitch variance and place in the unison stack (detune follows the knob live) */
+/* the voice's base frequency: its key, pitch variance and place in the unison stack (detune follows the knob live),
+ * tuned to the master tune */
 static void update_note_hz(const one_t *s, voice_t *v) {
     float st = voice_key(s, v) + v->pvar + v->uni_pos * s->val[P_UNI_DETUNE] * 0.01f * UNI_DETUNE_ST;
-    v->note_hz = 440.0f * exp2f((st - 69.0f) / 12.0f);
+    v->note_hz = s->tune_hz * exp2f((st - 69.0f) / 12.0f);
 }
 
 /* one control step of glide towards the voice's note: constant rate (LCR, the glide time per octave), constant time
@@ -372,11 +421,22 @@ static void set_targets(const one_t *s, voice_t *v, const float *dm) {
     v->amp_mod = clampf(1.0f + dm[MD_AMP], 0.0f, 2.0f);
 }
 
+/* the pitch wheel in semitones: PITCH BEND UP / DOWN for all oscillators (osc -1), or oscillator osc's BEND UP / DOWN
+ * OFFSET, added to that. Each end of the wheel has its own amount; either may go up or down. */
+static float bend_semis(const one_t *s, int osc) {
+    const float *p = s->val;
+    if (s->bend >= 0.0f) return s->bend * (osc < 0 ? p[P_BEND_UP] : s->bend_off[osc][0]);
+    return -s->bend * (osc < 0 ? p[P_BEND_DOWN] : s->bend_off[osc][1]);
+}
+
 /* each oscillator's frequency: the note times its octave and frequency settings and the pitch modulation (semitones,
- * shared and per oscillator), plus its beat frequency in Hz */
+ * shared and per oscillator), plus its beat frequency in Hz. PITCH TRACKING scales the key's distance from the key
+ * track centre (100%: as played, 0%: the centre note whatever the key) */
 static void set_pitch(const one_t *s, voice_t *v, float semis, const float *osc_semis) {
+    float from_centre = voice_key(s, v) - s->center;
     for (int n = 0; n < NOSC; n++) {
-        float hz = v->note_hz * s->ratio[n] * exp2f((semis + osc_semis[n]) / 12.0f) + s->val[P_O1_BEAT + OSC_STRIDE * n];
+        float track = from_centre * s->track[n];
+        float hz = v->note_hz * s->ratio[n] * exp2f((semis + osc_semis[n] + track) / 12.0f) + s->val[P_O1_BEAT + OSC_STRIDE * n];
         osc_set_freq(&v->osc[n], hz, SR);
         v->inc0[n] = v->osc[n].inc;
     }
@@ -469,50 +529,83 @@ static void gate_on(voice_t *v) {
         if (!legato || v->env[n].cfg->multi) env_gate_on(&v->env[n]);
     v->gate = 1;
     v->sustained = 0;
+    v->sost = 0;   /* a note played now: the sostenuto pedal, if down, doesn't hold it */
 }
 
 static void gate_off(voice_t *v) {
     for (int n = 0; n < NENV; n++) env_gate_off(&v->env[n]);
     v->gate = 0;
     v->sustained = 0;
+    v->sost = 0;
 }
 
-static void key_up(one_t *s, voice_t *v) {   /* a released key: held on by the sustain pedal, or let go */
-    if (s->sustain) v->sustained = 1;
+static int hold_on(const one_t *s) { return s->val[P_HOLD] > 0.5f; }
+
+/* a released key: held on by the sustain pedal, HOLD or (a note sounding when it went down) the sostenuto pedal, or
+ * let go */
+static void key_up(one_t *s, voice_t *v) {
+    if (s->sustain || hold_on(s) || (s->sostenuto && v->sost)) v->sustained = 1;
     else gate_off(v);
 }
 
+/* let go of the notes held only after their keys came up, except those the sustain pedal, HOLD or the sostenuto pedal
+ * (`keep_latched` 0: not HOLD; a non-legato note under HOLD clears what HOLD latched) still holds */
+static void release_held(one_t *s, int keep_latched) {
+    for (int i = 0; i < MAX_VOICES; i++) {
+        voice_t *v = &s->voice[i];
+        if (v->sustained && !s->sustain && !(keep_latched && hold_on(s)) && !(s->sostenuto && v->sost)) gate_off(v);
+    }
+}
+
 /* a stack of voices (voices first .. first + stack - 1) taken as one: idle when all are, held when any is */
-typedef struct { int idle, gated, sustained; float level; unsigned age; } stack_info_t;
+typedef struct { int idle, gated, sustained; float level, loud; unsigned age; } stack_info_t;
 static stack_info_t stack_state(const one_t *s, int first, int stack) {
-    stack_info_t st = {1, 0, 0, 0.0f, 0};
+    stack_info_t st = {1, 0, 0, 0.0f, 0.0f, 0};
     for (int i = first; i < first + stack; i++) {
         const voice_t *v = &s->voice[i];
         st.idle &= v->env[ENV_AMP].stage == ENV_IDLE;
         st.gated |= v->gate;
         st.sustained |= v->sustained;
         st.level = fmaxf(st.level, v->env[ENV_AMP].level);
+        st.loud = fmaxf(st.loud, v->env[ENV_AMP].level * v->gain);   /* what it adds to the sound */
         if (v->age > st.age) st.age = v->age;
     }
     return st;
 }
 
 /* the first voice of the stack for a new note, among the voices in use (whole stacks; one voice each without
- * unison): the stack already playing this key, else an idle one, else the quietest releasing one, else the oldest one
- * held only by the sustain pedal, else the oldest held one (stolen whole: it restarts from its current level, no
- * click) */
+ * unison), or -1 to drop the note: the stack already playing this key, else an idle one, else by VOICE STEALING MODE
+ * (a stolen stack restarts from its current level, no click):
+ *   Oldest    the quietest releasing one, else the oldest one held only by a pedal or HOLD, else the oldest held one
+ *   Quietest  the one quietest in the sound now (level times velocity and volume), held or not
+ *   Newest    the quietest releasing one, else the newest held one (a line over a held chord keeps taking one voice)
+ *   No Stealing  the quietest releasing one, else none: the note waits for a free voice (it is dropped) */
 static int pick_stack(one_t *s, int note) {
-    int stack = stack_size(s), used = voices_used(s), best = -1;
+    int stack = stack_size(s), used = voices_used(s), best = -1, mode = (int)s->val[P_STEAL_MODE];
     stack_info_t b = {0};
     for (int i = 0; i < used; i += stack)
         if (s->voice[i].note == note && !stack_state(s, i, stack).idle) return i;
     for (int i = 0; i < used; i += stack)
         if (stack_state(s, i, stack).idle) return i;
+    if (mode == STEAL_QUIETEST) {
+        for (int i = 0; i < used; i += stack) {
+            stack_info_t st = stack_state(s, i, stack);
+            if (best < 0 || st.loud < b.loud) { best = i; b = st; }
+        }
+        return best;
+    }
     for (int i = 0; i < used; i += stack) {
         stack_info_t st = stack_state(s, i, stack);
         if (!st.gated && (best < 0 || st.level < b.level)) { best = i; b = st; }
     }
-    if (best >= 0) return best;
+    if (best >= 0 || mode == STEAL_NONE) return best;
+    if (mode == STEAL_NEWEST) {
+        for (int i = 0; i < used; i += stack) {
+            stack_info_t st = stack_state(s, i, stack);
+            if (best < 0 || st.age > b.age) { best = i; b = st; }
+        }
+        return best;
+    }
     for (int i = 0; i < used; i += stack) {   /* next: the oldest stack held only by the sustain pedal */
         stack_info_t st = stack_state(s, i, stack);
         if (st.sustained && (best < 0 || st.age < b.age)) { best = i; b = st; }
@@ -533,39 +626,73 @@ static void stack_voice(voice_t *v, int k, int n) {
     v->uni_gain = 1.0f / sqrtf((float)n);
 }
 
+/* VELOCITY CURVE, on velocity 0..1: Medium as played; Soft louder for less effort, Hard the reverse; Compress pulls
+ * the levels towards the middle (a steadier level), Expand pushes them apart (soft softer, loud louder). Every curve
+ * keeps the two ends. */
+static float vel_curve(const one_t *s, float v) {
+    float u = 2.0f * v - 1.0f;
+    switch ((int)s->val[P_VEL_CURVE]) {
+    case VEL_SOFT: return sqrtf(v);
+    case VEL_HARD: return v * v;
+    case VEL_COMPRESS: return 0.5f + 0.5f * u * fabsf(u);
+    case VEL_EXPAND: return 0.5f + 0.5f * copysignf(sqrtf(fabsf(u)), u);
+    default: return v;
+    }
+}
+
+/* the held key mono plays, by MONOPHONIC NOTE PRIORITY: the lowest, the highest or the newest (nheld > 0) */
+static int mono_key(const one_t *s) {
+    int prio = (int)s->val[P_NOTE_PRIORITY], key = s->held[s->nheld - 1];
+    if (prio == PRIO_LAST) return key;
+    for (int i = 0; i < s->nheld; i++)
+        if (prio == PRIO_LOW ? s->held[i] < key : s->held[i] > key) key = s->held[i];
+    return key;
+}
+
 static void note_on(one_t *s, int note, int vel) {
+    if (s->nheld == 0) release_held(s, 0);   /* a non-legato note under HOLD (no pedal down) replaces what it latched */
     forget(s, note);              /* a repeated key moves to the top instead of being held twice */
     if (s->nheld == MAX_HELD) forget(s, s->held[0]);   /* drop the oldest key */
     s->held[s->nheld++] = note;
-    int stack = stack_size(s), first = is_mono(s) ? 0 : pick_stack(s, note);
+    int legato = s->nheld > 1, first = 0;
+    if (is_mono(s)) {   /* the priority key: a new key that loses to a held one changes nothing */
+        int key = mono_key(s);
+        if (key != note && s->voice[0].gate && s->voice[0].note == key) return;
+        note = key;
+    } else if ((first = pick_stack(s, note)) < 0) {
+        return;   /* No Stealing and every voice held */
+    }
+    int stack = stack_size(s);
     unsigned age = ++s->age;
     float var = s->val[P_PITCH_VAR] * 0.01f;   /* cents to semitones */
     for (int k = 0; k < stack; k++) {
         voice_t *v = &s->voice[first + k];
-        v->velocity = vel / 127.0f;
+        if (v->env[ENV_AMP].stage != ENV_IDLE)   /* NOTE-ON RESET (a voice from silence starts at phase 0 anyway) */
+            for (int n = 0; n < NOSC; n++)
+                if (s->val[P_O1_RESET + XO_STRIDE * n] > 0.5f) v->reset_pend |= 1 << n;
+        v->velocity = vel_curve(s, vel / 127.0f);
         v->rand = white(&v->noise);
         v->pvar = var > 0.0f ? white(&v->noise) * var : 0.0f;   /* each voice its own, within +-the variance */
         v->age = age;
         stack_voice(v, k, stack);
-        start_note(s, v, note, s->nheld > 1);
+        start_note(s, v, note, legato);
         gate_on(v);
     }
 }
 
 static void note_off(one_t *s, int note) {
-    int was_top = s->nheld > 0 && s->held[s->nheld - 1] == note;
     forget(s, note);
-    if (is_mono(s)) {   /* mono: back to the key still held, without a retrigger; else let go */
+    if (is_mono(s)) {   /* mono: on to the priority key still held, without a retrigger; else let go */
         if (s->nheld == 0) {
             for (int i = 0; i < MAX_VOICES; i++)   /* the stack, and any left from before a switch to mono */
                 if (s->voice[i].gate && !s->voice[i].sustained) key_up(s, &s->voice[i]);
-        } else if (was_top) {
-            int stack = stack_size(s);
+        } else if (mono_key(s) != s->voice[0].note) {
+            int stack = stack_size(s), key = mono_key(s);
             for (int k = 0; k < stack; k++) {
                 voice_t *v = &s->voice[k];
                 int start = !v->gate;   /* this voice wasn't playing (a switch from poly or to unison): start it */
                 if (start) stack_voice(v, k, stack);
-                start_note(s, v, s->held[s->nheld - 1], 1);
+                start_note(s, v, key, 1);
                 if (start) gate_on(v);
             }
         }
@@ -577,9 +704,20 @@ static void note_off(one_t *s, int note) {
 
 static void sustain_pedal(one_t *s, int down) {
     s->sustain = down;
-    if (down) return;
-    for (int i = 0; i < MAX_VOICES; i++)
-        if (s->voice[i].sustained) gate_off(&s->voice[i]);
+    if (!down) release_held(s, 1);   /* HOLD and the sostenuto pedal keep theirs */
+}
+
+/* the sostenuto pedal (CC 66): the notes sounding as it goes down (keys held or sustained) hold on after their keys
+ * come up, until it comes up; notes played while it is down don't */
+static void sostenuto_pedal(one_t *s, int down) {
+    if (down == s->sostenuto) return;
+    s->sostenuto = down;
+    if (down) {
+        for (int i = 0; i < MAX_VOICES; i++) s->voice[i].sost = s->voice[i].gate;
+        return;
+    }
+    release_held(s, 1);
+    for (int i = 0; i < MAX_VOICES; i++) s->voice[i].sost = 0;
 }
 
 static void all_off(one_t *s, int hard) {
@@ -592,6 +730,7 @@ static void all_off(one_t *s, int hard) {
             for (int n = 0; n < NENV; n++) env_release(&v->env[n]);
         v->gate = 0;
         v->sustained = 0;
+        v->sost = 0;
     }
 }
 
@@ -606,9 +745,12 @@ static void midi(void *inst, const uint8_t *m, int len) {
     else if (st == 0xe0) s->bend = (((d2 << 7) | d1) - 8192) / 8192.0f;
     else if (st == 0xb0 && d1 == 1) s->wheel = d2 / 127.0f;
     else if (st == 0xb0 && d1 == 64) sustain_pedal(s, d2 >= 64);
+    else if (st == 0xb0 && d1 == 66) sostenuto_pedal(s, d2 >= 64);
+    else if (st == 0xb0 && d1 == 11) s->expression = d2 / 127.0f;
     else if (st == 0xb0 && d1 == 121) {   /* reset all controllers */
-        s->wheel = s->aftertouch = s->bend = 0.0f;
+        s->wheel = s->aftertouch = s->bend = s->expression = 0.0f;
         sustain_pedal(s, 0);
+        sostenuto_pedal(s, 0);
     }
     else if (st == 0xb0 && (d1 == 120 || d1 == 123)) all_off(s, d1 == 120);
 }
@@ -665,6 +807,8 @@ static void set_param(void *inst, const char *key, const char *val) {
             for (int n = 0; n < NENV; n++) env_release(&s->voice[i].env[n]);   /* latched ones too */
         }
     s->voices = count;
+    if (s->hold && !hold_on(s)) release_held(s, 1);   /* HOLD off: the notes it latched let go (pedals keep theirs) */
+    s->hold = hold_on(s);
     for (int i = 0; i < MAX_VOICES; i++)   /* LATCH off: envelopes it held open after key up now release */
         for (int n = 0; n < NENV; n++)
             if (!s->ecfg[n].latch && s->voice[i].env[n].held && !s->voice[i].gate) env_release(&s->voice[i].env[n]);
@@ -694,6 +838,11 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
         if (s->val[k] <= 0.0f) return snprintf(buf, n, "0 ms");
         if (s->val[P_FENV_SYNC + EX_STRIDE * e] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[env_div(s->val[k])].name);
         return time_text(buf, n, env_ms(s->val[k]));
+    }
+    if (k == P_KEY_CENTER) {   /* a note name, middle C (60) as C4, and the MIDI note number */
+        static const char *const NAMES[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+        int note = (int)s->center;
+        return snprintf(buf, n, "%s%d (%d)", NAMES[note % 12], note / 12 - 1, note);
     }
     if (k == P_GLIDE_TIME) return s->val[k] > 0.0f ? time_text(buf, n, glide_ms(s->val[k])) : snprintf(buf, n, "0 ms");
     if (k == P_MODFX_RATE) {
@@ -760,14 +909,17 @@ static void control_voice(one_t *s, voice_t *v) {
     src[MS_VEL] = v->velocity;
     src[MS_WHEEL] = s->wheel;
     src[MS_AT] = s->aftertouch;
-    src[MS_KEY] = (key - 60.0f) / 60.0f;
+    float kc = key - s->center;   /* KEY TRACK CENTER: tracking pivots on it (default middle C) */
+    src[MS_KEY] = kc / 60.0f;
     src[MS_RAND] = v->rand;
     mod_eval(&p[P_MOD_BASE], src, dm);
-    float fenv = src[MS_FENV], key_oct = (key - 60.0f) / 12.0f;   /* tracking pivots on middle C, as on the Moog One */
+    float fenv = src[MS_FENV], key_oct = kc / 12.0f;
 
     float semis = s->lfo_val[0] * p[P_PITCH_LFO] * 0.01f * LFO_PITCH_ST + src[MS_MENV] * p[P_PITCH_ENV] * 0.01f * ENV_PITCH_ST
-                  + s->bend * p[P_BEND_RANGE] + dm[MD_PITCH] * MOD_PITCH_ST;
-    const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST, dm[MD_O2_PITCH] * MOD_PITCH_ST, dm[MD_O3_PITCH] * MOD_PITCH_ST};
+                  + bend_semis(s, -1) + dm[MD_PITCH] * MOD_PITCH_ST;
+    const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0),
+                                   dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1),
+                                   dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2)};
     set_pitch(s, v, semis, osc_semis);
 
     v->cut += (p[P_FLT_CUT] - v->cut) * s->glide;
@@ -803,6 +955,7 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
     const float *p = s->val;
     float lad[NSRC], svf[NSRC], dlad[NSRC], dsvf[NSRC];
     int sync2 = p[P_O2_SYNC] > 0.5f, sync3 = p[P_O3_SYNC] > 0.5f;
+    int sync2_3 = sync2 && p[P_O2_SYNC_SRC] > 0.5f, sync3_2 = sync3 && p[P_O3_SYNC_SRC] > 0.5f;   /* else from osc 1 */
     int series = (int)p[P_FLT_ROUTE] == FLT_SERIES, any_svf = 0;
     int ring23 = (int)p[P_RING_SRC] == RING_2X3, route = (int)p[P_FM_ROUTE];
     float inv = 1.0f / (float)n;
@@ -844,6 +997,17 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
     int run2 = heard[1] || heard[RING] || (lad_fm > 0.0f && lad_src == 1) || (svf_fm > 0.0f && svf_src == 1);
     int run3 = heard[2] || (heard[RING] && ring23) || (fm_on && route == FM_3TO1) || (lad_fm > 0.0f && lad_src == 2)
                || (svf_fm > 0.0f && svf_src == 2);
+    run2 |= run3 && sync3_2;   /* a sync source runs while its slave does */
+    run3 |= run2 && sync2_3;
+    if (v->reset_pend) {   /* NOTE-ON RESET: restart at phase 0 now; an oscillator synced to a restarted one follows */
+        int r = v->reset_pend;
+        v->reset_pend = 0;
+        if (r & 1) r |= (sync2 && !sync2_3) << 1 | (sync3 && !sync3_2) << 2;
+        if (r & 2 && sync3_2) r |= 4;
+        if (r & 4 && sync2_3) r |= 2;
+        for (int k = 0; k < NOSC; k++)
+            if (r >> k & 1) osc_restart(&v->osc[k], &sh[k]);
+    }
     if (!any_svf) svf2_reset(&v->svf);   /* bypassed: start clean when something is routed to it again */
     if (!run_lad) ladder_reset(&v->lad);
     float target = gain_target(s, v);
@@ -854,8 +1018,12 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
         float a = osc_next(o1, &sh[0], -1.0f), wrap = o1->wrap_d;
         if (fm_on && route == FM_1TO2) o2->inc = clampf(v->inc0[1] * (1.0f + fm * a), 0.0f, 0.49f);
         if (fm_on && route == FM_1TO3) o3->inc = clampf(v->inc0[2] * (1.0f + fm * a), 0.0f, 0.49f);
-        float b = run2 ? osc_next(o2, &sh[1], sync2 ? wrap : -1.0f) : 0.0f;
-        float c = run3 ? osc_next(o3, &sh[2], sync3 ? wrap : -1.0f) : 0.0f;
+        /* hard sync: osc 2 from osc 3 looks ahead to osc 3's wrap; osc 3 from osc 2 takes osc 2's wrap this sample
+         * (its last one when the two sync to each other) */
+        float m3 = sync3_2 ? o2->wrap_d : wrap;
+        float b = run2 ? osc_next(o2, &sh[1], sync2 ? (sync2_3 ? osc_wrap_ahead(o3, sync3 ? m3 : -1.0f) : wrap) : -1.0f)
+                       : 0.0f;
+        float c = run3 ? osc_next(o3, &sh[2], sync3 ? (sync3_2 && !sync2_3 ? o2->wrap_d : m3) : -1.0f) : 0.0f;
         v->fm_prev = c;
         float rm = heard[RING] ? o2->tri_out * (ring23 ? o3->tri_out : o1->tri_out) : 0.0f;
         float nz = white(&v->noise);
