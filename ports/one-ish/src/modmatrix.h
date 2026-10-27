@@ -10,11 +10,12 @@
  * middle C, a per-note random value -1..1. Option order in params.json ("Off"/"None" first). */
 enum { MS_OFF, MS_FENV, MS_AENV, MS_MENV, MS_LFO1, MS_LFO2, MS_VEL, MS_WHEEL, MS_AT, MS_KEY, MS_RAND, MS_COUNT };
 
-/* destinations, option order in params.json. At +-100%: pitch +-24 semitones, levels / resonance / drive / filter mix
- * +-100% of their range, cutoffs +-5 octaves, amp level x0..x2. */
+/* destinations, option order in params.json. At +-100%: pitch +-24 semitones, levels / wave shapes / FM amount /
+ * resonance / drive / filter mix +-100% of their range, cutoffs +-5 octaves, amp level x0..x2. */
 enum {
     MD_OFF, MD_PITCH, MD_O1_PITCH, MD_O2_PITCH, MD_O3_PITCH, MD_O1_LEVEL, MD_O2_LEVEL, MD_O3_LEVEL, MD_NOISE_LEVEL,
-    MD_LAD_CUT, MD_LAD_RES, MD_LAD_DRIVE, MD_SVF_CUT, MD_SVF_RES, MD_FLT_MIX, MD_AMP, MD_COUNT
+    MD_RING_LEVEL, MD_O1_ANGLE, MD_O2_ANGLE, MD_O3_ANGLE, MD_O1_PW, MD_O2_PW, MD_O3_PW, MD_O1_MIX, MD_O2_MIX, MD_O3_MIX,
+    MD_FM_AMT, MD_LAD_CUT, MD_LAD_RES, MD_LAD_DRIVE, MD_SVF_CUT, MD_SVF_RES, MD_FLT_MIX, MD_AMP, MD_COUNT
 };
 
 /* slots: MOD_SLOTS x (source, destination, amount, via) as the param values; src[MS_COUNT] with src[MS_OFF] unused.

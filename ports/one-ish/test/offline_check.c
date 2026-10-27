@@ -1,8 +1,10 @@
 /* ONE-ish offline checks beyond tools/test_port.sh, run through the engine API (mpc_engine()) on x86:
- *   aliasing  high saw and square notes: power that is not a harmonic of the note (aliasing folds back as
- *             inharmonic tones, the "whistle"), against a naive oscillator at the same pitch
+ *   aliasing  high saw, square, triangle, narrow pulse and blended notes: power that is not a harmonic of the note
+ *             (aliasing folds back as inharmonic tones, the "whistle"), against a naive oscillator at the same pitch
  *   sync      the same for oscillator 2 hard-synced to oscillator 1, against a naive hard sync
- *   tuning    octave, semitone and fine move each oscillator's pitch by that much
+ *   shapes    wave angle makes a triangle, pulse width adds even harmonics, ring mod gives sum and difference
+ *             tones without the inputs, linear FM adds sidebands, every FM route stays bounded
+ *   tuning    octave, frequency and beat frequency move each oscillator's pitch by that much
  *   noise/mix noise level; all sources at full level are limited, not clipped
  *   filter    self-oscillation is a clean, steady sine near the cutoff; the ladder alone stays stable in every mode
  *             and slope at full resonance and drive; LP/HP slopes measure 24/18/12/6 dB; the cutoff knob reads in Hz
@@ -129,21 +131,43 @@ static double peak_hz(const float *x) {
     return (best + 0.5 * (a - c) / (a - 2 * b + c)) * SR / N;
 }
 
-static void naive(float *x, int n, double f0, int wave) {
+/* an oscillator setting: Tri/Saw, wave angle, pulse width and wave mix (%) */
+typedef struct { const char *name; int wave; double angle, pw, mix; } shape_t;
+static const shape_t SAW = {"saw", WAVE_SAW, 0, 50, 0}, SQUARE = {"square", WAVE_SAW, 0, 50, 100};
+
+static void set_shape(void *e, const char *osc, shape_t sh) {
+    char k[16];
+    snprintf(k, sizeof k, "%s_wave", osc); set(e, k, sh.wave);
+    snprintf(k, sizeof k, "%s_angle", osc); set(e, k, sh.angle);
+    snprintf(k, sizeof k, "%s_pw", osc); set(e, k, sh.pw);
+    snprintf(k, sizeof k, "%s_mix", osc); set(e, k, sh.mix);
+}
+
+/* the same shape without band-limiting (osc.h's wave functions sampled directly) */
+static void naive(float *x, int n, double f0, shape_t sh) {
     double t = 0, dt = f0 / SR;
+    osc_shape_t s = osc_shape(sh.wave, sh.angle / 100, sh.pw / 100, sh.mix / 100, dt);
     for (int i = 0; i < n; i++) {
-        x[i] = (float)(wave == WAVE_SAW ? 2 * t - 1 : t < 0.5 ? 1 : -1) * 0.35f;
+        x[i] = ((1 - s.mix) * osc_tri(&s, (float)t) + s.mix * osc_pulse(&s, (float)t)) * 0.35f;
         t += dt;
         if (t >= 1) t -= 1;
     }
 }
 
+/* power within 6 bins of f, in dB (relative units) */
+static double band_db(const float *x, double f) {
+    const double *pw = spectrum(x);
+    double sum = 0, bin = (double)SR / N;
+    for (int k = (int)(f / bin) - 6; k <= (int)(f / bin) + 6; k++) sum += pw[k];
+    return 10 * log10(sum + 1e-30);
+}
+
 static double knob_ms(double ms) { return ms <= 1 ? 0 : 25 * log10(ms); }   /* envelope knobs: 1 ms .. 10 s */
 
 /* amp envelope in ms (attack, decay, release) and % (sustain) */
-static void *patch(int wave, double a, double d, double s, double r) {
+static void *patch(shape_t wave, double a, double d, double s, double r) {
     void *e = E->create(NULL);
-    set(e, "o1_wave", wave); set(e, "amp_a", knob_ms(a)); set(e, "amp_d", knob_ms(d)); set(e, "amp_s", s);
+    set_shape(e, "o1", wave); set(e, "amp_a", knob_ms(a)); set(e, "amp_d", knob_ms(d)); set(e, "amp_s", s);
     set(e, "amp_r", knob_ms(r));
     set(e, "volume", 100);
     return e;
@@ -152,22 +176,26 @@ static void *patch(int wave, double a, double d, double s, double r) {
 static void aliasing(void) {
     static float x[N + 4096];
     static const int notes[] = {84, 96, 103, 108};
-    static const char *const names[] = {"saw", "square"};
-    for (int w = 0; w < WAVE_COUNT; w++)
+    static const shape_t shapes[] = {
+        {"saw", WAVE_SAW, 0, 50, 0}, {"square", WAVE_SAW, 0, 50, 100}, {"tri", WAVE_TRI, 50, 50, 0},
+        {"ramp", WAVE_TRI, 85, 50, 0}, {"pls 15%", WAVE_SAW, 0, 15, 100}, {"saw+pls", WAVE_SAW, 0, 30, 50},
+    };
+    for (unsigned w = 0; w < sizeof shapes / sizeof shapes[0]; w++)
         for (unsigned n = 0; n < sizeof notes / sizeof notes[0]; n++) {
             double f0 = 440 * pow(2, (notes[n] - 69) / 12.0);
-            void *e = patch(w, 0, 1, 100, 10);
+            void *e = patch(shapes[w], 0, 1, 100, 10);
             note(e, 1, notes[n], 127);
             render_f(e, x, N + 4096);   /* the first 4096 frames are the attack: skipped */
             double ours = alias_db(x + 4096, f0);
             E->destroy(e);
-            naive(x, N, f0, w);
+            naive(x, N, f0, shapes[w]);
             double ref = alias_db(x, f0);
             char what[160];
-            snprintf(what, sizeof what, "%-6s note %3d (%5.0f Hz): aliasing %6.1f dB, naive oscillator %6.1f dB",
-                     names[w], notes[n], f0, ours, ref);
-            /* regression guard. First measured 2026-10-27: -25.8 dB (saw, note 108) to -34.4 dB, 15-18 dB below naive */
-            check(ours < ref - 12 && ours < -24, what);
+            snprintf(what, sizeof what, "%-7s note %3d (%5.0f Hz): aliasing %6.1f dB, naive oscillator %6.1f dB",
+                     shapes[w].name, notes[n], f0, ours, ref);
+            /* regression guard. First measured 2026-10-27: -25.8 dB (saw, note 108) to -34.4 dB, 15-18 dB below naive.
+             * A triangle aliases little even naive (its corners fall at 12 dB per octave), so it only has to stay low */
+            check(shapes[w].wave == WAVE_TRI ? ours < -40 : ours < ref - 12 && ours < -24, what);
         }
 }
 
@@ -190,8 +218,8 @@ static void sync_aliasing(void) {
     double ratio = pow(2, 7.0 / 12);
     for (unsigned n = 0; n < sizeof notes / sizeof notes[0]; n++) {
         double f0 = 440 * pow(2, (notes[n] - 69) / 12.0);
-        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
-        set(e, "o1_level", 0); set(e, "o2_level", 100); set(e, "o2_sync", 1); set(e, "o2_semi", 7);
+        void *e = patch(SAW, 0, 1, 100, 10);
+        set(e, "o1_level", 0); set(e, "o2_level", 100); set(e, "o2_sync", 1); set(e, "o2_freq", 7);
         note(e, 1, notes[n], 127);
         render_f(e, x, N + 4096);
         double ours = alias_db(x + 4096, f0);
@@ -206,24 +234,97 @@ static void sync_aliasing(void) {
     }
 }
 
+/* the oscillator's shapes and the ring modulator and FM, by their spectra at A3 (220 Hz, harmonics well clear) */
+static void shapes(void) {
+    static float x[N + 4096];
+    const shape_t tri = {"tri", WAVE_TRI, 50, 50, 0};
+    char what[160];
+
+    void *e = patch(tri, 0, 1, 100, 10);   /* a triangle's third harmonic is 1/9 of its first: -19.1 dB */
+    note(e, 1, 57, 127);
+    render_f(e, x, N + 4096);
+    double h3 = band_db(x + 4096, 660) - band_db(x + 4096, 220), h2 = band_db(x + 4096, 440) - band_db(x + 4096, 220);
+    snprintf(what, sizeof what, "Tri at 50%% angle is a triangle: 3rd harmonic %.1f dB (want -19.1), 2nd %.1f dB", h3, h2);
+    check(fabs(h3 + 19.1) < 1 && h2 < -50, what);
+    E->destroy(e);
+
+    double h2_sq = 0;
+    for (int w = 0; w < 2; w++) {   /* a square has no even harmonics; a 25% pulse's 2nd is 1/sqrt(2) of its 1st */
+        e = patch((shape_t){"pulse", WAVE_SAW, 0, w ? 25 : 50, 100}, 0, 1, 100, 10);
+        note(e, 1, 57, 127);
+        render_f(e, x, N + 4096);
+        double h = band_db(x + 4096, 440) - band_db(x + 4096, 220);
+        if (!w) h2_sq = h;
+        else {
+            snprintf(what, sizeof what, "pulse width: 2nd harmonic %.1f dB at 50%%, %.1f dB at 25%% (want -3.0)", h2_sq, h);
+            check(h2_sq < -50 && fabs(h + 3.0) < 1, what);
+        }
+        E->destroy(e);
+    }
+
+    e = patch(tri, 0, 1, 100, 10);   /* ring mod of 220 and 299 Hz triangles: 79 and 519 Hz, not 220 or 299 */
+    set_shape(e, "o2", tri); set(e, "o2_freq", 5.3);
+    set(e, "o1_level", 0); set(e, "ring_level", 100);
+    note(e, 1, 57, 127);
+    render_f(e, x, N + 4096);
+    double tones = fmax(band_db(x + 4096, 78.8), band_db(x + 4096, 518.8));
+    double inputs = fmax(band_db(x + 4096, 220), band_db(x + 4096, 298.8));
+    snprintf(what, sizeof what, "ring mod 1 x 2: sum and difference tones %.1f dB above the inputs", tones - inputs);
+    check(tones - inputs > 25, what);
+    set(e, "ring_src", 1);   /* 2 x 3: osc 3 at 220 Hz, so the same tones */
+    set_shape(e, "o3", tri);
+    note(e, 0, 57, 0); note(e, 1, 57, 127);
+    render_f(e, x, N + 4096);
+    tones = fmax(band_db(x + 4096, 78.8), band_db(x + 4096, 518.8));
+    inputs = fmax(band_db(x + 4096, 220), band_db(x + 4096, 298.8));
+    snprintf(what, sizeof what, "ring mod 2 x 3: sum and difference tones %.1f dB above the inputs", tones - inputs);
+    check(tones - inputs > 25, what);
+    E->destroy(e);
+
+    for (int amt = 0; amt <= 50; amt += 50) {   /* FM 1 > 2, both triangles at 220 Hz: sidebands at 440 Hz appear */
+        e = patch(tri, 0, 1, 100, 10);
+        set_shape(e, "o2", tri); set(e, "o1_level", 0); set(e, "o2_level", 100); set(e, "fm_amt", amt);
+        note(e, 1, 57, 127);
+        render_f(e, x, N + 4096);
+        double side = band_db(x + 4096, 440) - band_db(x + 4096, 220), al = alias_db(x + 4096, 220);
+        snprintf(what, sizeof what, "FM 1 > 2 at %d%%: 440 Hz sideband %.1f dB, inharmonic power %.1f dB", amt, side, al);
+        check(amt ? side > -15 && al < -40 : side < -50, what);
+        E->destroy(e);
+    }
+    for (int r = 0; r < 3; r++) {   /* every route at full depth, with sync and a high note, stays bounded */
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "o2_level", 100); set(e, "o3_level", 100); set(e, "o2_sync", 1); set(e, "o3_sync", 1);
+        set(e, "fm_amt", 100); set(e, "fm_route", r); set(e, "o3_freq", 7);
+        note(e, 1, 100, 127); note(e, 1, 30, 127);
+        render_f(e, x, N + 4096);
+        float peak = 0;
+        int finite = 1;
+        for (int i = 0; i < N + 4096; i++) { peak = fmaxf(peak, fabsf(x[i])); finite &= isfinite(x[i]); }
+        snprintf(what, sizeof what, "FM route %d at 100%% with sync: peak %.2f, finite", r, peak);
+        check(finite && peak > 0.05f && peak < 1.0f, what);
+        E->destroy(e);
+    }
+}
+
 static double cents(double hz, double want) { return 1200 * log2(hz / want); }
 
-/* each oscillator's octave, semitone and fine settings move its pitch by exactly that much */
+/* each oscillator's octave, frequency and beat frequency settings move its pitch by exactly that much */
 static void tuning(void) {
     static float x[N + 4096];
-    static const struct { const char *osc, *key; double val, ratio; } t[] = {
-        {"o1", "o1_oct", 1, 0.5}, {"o1", "o1_oct", 4, 4.0}, {"o1", "o1_semi", 7, 1.4983070768766815},
-        {"o1", "o1_semi", -12, 0.5}, {"o1", "o1_fine", 50, 1.0293022366434921}, {"o2", "o2_oct", 3, 2.0},
-        {"o3", "o3_fine", -25, 0.98566319864018},
+    static const struct { const char *osc, *key; double val, ratio, plus_hz; } t[] = {
+        {"o1", "o1_oct", 1, 0.5, 0}, {"o1", "o1_oct", 4, 4.0, 0}, {"o1", "o1_freq", 7, 1.4983070768766815, 0},
+        {"o1", "o1_freq", -7, 0.6674199270850172, 0}, {"o1", "o1_freq", 0.5, 1.0293022366434921, 0},
+        {"o2", "o2_oct", 3, 2.0, 0}, {"o3", "o3_freq", -0.25, 0.98566319864018, 0}, {"o2", "o2_beat", 3, 1, 3},
+        {"o3", "o3_beat", -7, 1, -7},
     };
     for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
-        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        void *e = patch(SAW, 0, 1, 100, 10);
         char lvl[16];
         snprintf(lvl, sizeof lvl, "%s_level", t[i].osc);
         set(e, "o1_level", 0); set(e, lvl, 100); set(e, t[i].key, t[i].val);
         note(e, 1, 69, 127);
         render_f(e, x, N + 4096);
-        double want = 440 * t[i].ratio, got = peak_hz(x + 4096), off = cents(got, want);
+        double want = 440 * t[i].ratio + t[i].plus_hz, got = peak_hz(x + 4096), off = cents(got, want);
         char what[128];
         snprintf(what, sizeof what, "%s = %g plays %.1f Hz (want %.1f, %+.2f cents)", t[i].key, t[i].val, got, want, off);
         check(fabs(off) < 2, what);
@@ -238,7 +339,7 @@ static void self_oscillation(void) {
     static float x[SR * 2];
     static const double hz[] = {110, 440, 1000, 3000, 8000};
     for (unsigned i = 0; i < sizeof hz / sizeof hz[0]; i++) {
-        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        void *e = patch(SAW, 0, 1, 100, 10);
         set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(hz[i]));
         note(e, 1, 60, 127);
         render_f(e, x, SR * 2);
@@ -385,9 +486,17 @@ static double rms_of(void *e, int n) {
     return sqrt(sq / (n - n / 2));
 }
 
+/* a mixer channel's two filter buttons: 0 ladder, 1 SVF, 2 both, 3 neither */
+static void route(void *e, const char *ch, int r) {
+    char k[16];
+    snprintf(k, sizeof k, "%s_lad", ch); set(e, k, r == 0 || r == 2);
+    snprintf(k, sizeof k, "%s_svf", ch); set(e, k, r == 1 || r == 2);
+}
+
 /* where a source's sound goes: parallel keeps the two filters apart, series feeds the SVF into the ladder */
 static void routing(void) {
     static const struct { const char *what; int route, series, mix; int sounds; } t[] = {
+        {"osc 1 to neither filter: silent", 3, 0, 50, 0},
         {"osc 1 to the SVF, parallel, mix all ladder: silent", 1, 0, 100, 0},
         {"osc 1 to the SVF, parallel, mix all SVF: sounds", 1, 0, 0, 1},
         {"osc 1 to the SVF, series, mix all ladder: sounds (SVF feeds the ladder)", 1, 1, 100, 1},
@@ -395,8 +504,8 @@ static void routing(void) {
         {"osc 1 to both, parallel, mix half and half: sounds", 2, 0, 50, 1},
     };
     for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
-        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
-        set(e, "o1_route", t[i].route); set(e, "flt_route", t[i].series); set(e, "flt_mix", t[i].mix);
+        void *e = patch(SAW, 0, 1, 100, 10);
+        route(e, "o1", t[i].route); set(e, "flt_route", t[i].series); set(e, "flt_mix", t[i].mix);
         note(e, 1, 48, 127);
         double r = rms_of(e, SR / 2);
         char what[160];
@@ -439,7 +548,7 @@ static double brightness(const float *x, int n) {
 static void modulation(void) {
     static float x[SR * 3];
     char what[200], txt[32];
-    void *e = patch(WAVE_SAW, 100, 1000, 100, 100);
+    void *e = patch(SAW, 100, 1000, 100, 100);
     E->get_param(e, "amp_a_display", txt, sizeof txt);
     note(e, 1, 69, 127);
     render_f(e, x, SR / 2);
@@ -448,7 +557,7 @@ static void modulation(void) {
     check(!strcmp(txt, "100 ms") && ms > 85 && ms < 105, what);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 0, 1000, 100, 100);   /* filter envelope: a pluck that opens the ladder and closes it */
+    e = patch(SAW, 0, 1000, 100, 100);   /* filter envelope: a pluck that opens the ladder and closes it */
     set(e, "flt_cut", 20); set(e, "lad_env", 100); set(e, "fenv_d", knob_ms(500)); set(e, "fenv_s", 0);
     note(e, 1, 48, 127);
     render_f(e, x, SR);
@@ -460,7 +569,7 @@ static void modulation(void) {
 
     double f[2];   /* keyboard tracking: a self-oscillating ladder at 100% tracking plays the keys in tune */
     for (int k = 0; k < 2; k++) {
-        e = patch(WAVE_SAW, 0, 1, 100, 10);
+        e = patch(SAW, 0, 1, 100, 10);
         set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(440)); set(e, "lad_kbd", 100);
         note(e, 1, 60 + 12 * k, 127);
         render_f(e, x, SR * 2);
@@ -471,7 +580,7 @@ static void modulation(void) {
     check(fabs(f[1] / f[0] - 2) < 0.02, what);
 
     for (int synced = 0; synced < 2; synced++) {   /* vibrato: a square LFO 1 at 1 Hz, +-12 semitones */
-        e = patch(WAVE_SAW, 0, 1, 100, 10);
+        e = patch(SAW, 0, 1, 100, 10);
         set(e, "lfo1_wave", LFO_SQUARE); set(e, "pitch_lfo", 100);
         if (synced) { E->set_param(e, "lfo_bpm", "120"); set(e, "lfo1_sync", 1); set(e, "lfo1_rate", 30); }
         else set(e, "lfo1_rate", 100 * log(1 / 0.05) / log(1000));
@@ -485,7 +594,7 @@ static void modulation(void) {
         E->destroy(e);
     }
 
-    e = patch(WAVE_SAW, 0, 1, 100, 10);   /* pitch envelope: a 2 s rise of two octaves */
+    e = patch(SAW, 0, 1, 100, 10);   /* pitch envelope: a 2 s rise of two octaves */
     set(e, "menv_a", knob_ms(2000)); set(e, "menv_s", 100); set(e, "pitch_env", 100);
     note(e, 1, 45, 127);
     render_f(e, x, SR * 3);
@@ -494,7 +603,7 @@ static void modulation(void) {
     check(start < 200 && fabs(cents(end, 440)) < 30, what);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 0, 1000, 100, 20);   /* a soft note after a loud one starts at its own level */
+    e = patch(SAW, 0, 1000, 100, 20);   /* a soft note after a loud one starts at its own level */
     note(e, 1, 60, 127);
     render_f(e, x, SR / 4);
     note(e, 0, 60, 0);
@@ -527,7 +636,7 @@ static void matrix(void) {
     check(fabsf(dst[MD_PITCH] - 0.75f) < 1e-6f && fabsf(dst[MD_AMP] + 0.25f) < 1e-6f, what);
 
     for (int wheel = 0; wheel < 2; wheel++) {   /* the default slot 1 (LFO 1 -> pitch via mod wheel), at full amount */
-        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        void *e = patch(SAW, 0, 1, 100, 10);
         set(e, "mod1_amt", 100); set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log(1 / 0.05) / log(1000));
         midi3(e, 0xb0, 1, wheel ? 127 : 0);
         note(e, 1, 57, 127);
@@ -541,7 +650,7 @@ static void matrix(void) {
 
     double br[2];   /* velocity -> ladder cutoff */
     for (int k = 0; k < 2; k++) {
-        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        void *e = patch(SAW, 0, 1, 100, 10);
         set(e, "flt_cut", 30); set(e, "mod2_src", MS_VEL); set(e, "mod2_dst", MD_LAD_CUT); set(e, "mod2_amt", 60);
         note(e, 1, 48, k ? 127 : 20);
         render_f(e, x, SR / 4);
@@ -552,7 +661,7 @@ static void matrix(void) {
     /* cutoff about 220 Hz vs 1.3 kHz here; this measure reads 0.0029 for a fixed 1.28 kHz ladder on this saw */
     check(br[1] > 2 * br[0], what);
 
-    void *e = patch(WAVE_SAW, 0, 1, 100, 10);   /* aftertouch -> osc 1 level, from a level of 0 */
+    void *e = patch(SAW, 0, 1, 100, 10);   /* aftertouch -> osc 1 level, from a level of 0 */
     set(e, "o1_level", 0); set(e, "mod3_src", MS_AT); set(e, "mod3_dst", MD_O1_LEVEL); set(e, "mod3_amt", 100);
     note(e, 1, 48, 127);
     double before = rms_of(e, SR / 4);
@@ -563,7 +672,7 @@ static void matrix(void) {
     check(before < 0.001 && after > 0.05, what);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 0, 1, 100, 10);   /* pitch bend, default range 2 semitones */
+    e = patch(SAW, 0, 1, 100, 10);   /* pitch bend, default range 2 semitones */
     midi3(e, 0xe0, 0x7f, 0x7f);
     note(e, 1, 57, 127);
     render_f(e, x, N + 4096);
@@ -597,7 +706,7 @@ static void voices(void) {
     /* six held keys, 4 voices: the oldest two are stolen. A 600 Hz ladder keeps each note close to its fundamental. */
     static const int keys[] = {48, 50, 52, 53, 55, 57};
     double hz[6], db[6];
-    void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+    void *e = patch(SAW, 0, 1, 100, 10);
     set(e, "flt_cut", knob_for_hz(600));
     for (int i = 0; i < 6; i++) { note(e, 1, keys[i], 100); hz[i] = note_hz(keys[i]); }
     render_f(e, x, N + 8192);
@@ -608,7 +717,7 @@ static void voices(void) {
     check(db[0] < -25 && db[1] < -25 && db[2] > -12 && db[3] > -12 && db[4] > -12 && db[5] > -12, what);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 0, 1, 100, 10);   /* mono: a chord plays only its newest key */
+    e = patch(SAW, 0, 1, 100, 10);   /* mono: a chord plays only its newest key */
     set(e, "voices", 0); set(e, "flt_cut", knob_for_hz(600));
     note(e, 1, 48, 100); note(e, 1, 52, 100);
     render_f(e, x, N + 8192);
@@ -617,7 +726,7 @@ static void voices(void) {
     check(db[0] < -40 && db[2] > -1, what);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 0, 1, 100, 10);   /* the same key twice replays its voice, not a second one */
+    e = patch(SAW, 0, 1, 100, 10);   /* the same key twice replays its voice, not a second one */
     note(e, 1, 60, 100);
     double one = rms_of(e, SR / 4);
     note(e, 1, 60, 100);
@@ -626,7 +735,7 @@ static void voices(void) {
     check(two < 1.2 * one, what);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 0, 1, 100, 100);   /* sustain pedal */
+    e = patch(SAW, 0, 1, 100, 100);   /* sustain pedal */
     midi3(e, 0xb0, 64, 127);
     note(e, 1, 60, 100); note(e, 0, 60, 0);
     double held = rms_of(e, SR / 2);
@@ -635,7 +744,7 @@ static void voices(void) {
     snprintf(what, sizeof what, "sustain pedal: a released key holds (rms %.3f) until the pedal lifts, then stops", held);
     check(held > 0.05 && quiet, what);
     E->destroy(e);
-    e = patch(WAVE_SAW, 0, 1, 100, 100);   /* a chord held while switching to mono, then released, must stop */
+    e = patch(SAW, 0, 1, 100, 100);   /* a chord held while switching to mono, then released, must stop */
     note(e, 1, 48, 100); note(e, 1, 52, 100);
     render_f(e, x, SR / 10);
     set(e, "voices", 0);
@@ -728,7 +837,7 @@ static void effects(void) {
     snprintf(what, sizeof what, "chorus spreads to stereo: left-right difference %.0f dB below the left", 10 * log10(sum / diff));
     check(diff > sum * 0.01, what);
 
-    void *e = patch(WAVE_SAW, 0, 1, 100, 10);   /* synced delay time reads as the division */
+    void *e = patch(SAW, 0, 1, 100, 10);   /* synced delay time reads as the division */
     char txt[32];
     E->set_param(e, "lfo_bpm", "120"); set(e, "dly_sync", 1); set(e, "dly_time", 60);
     E->get_param(e, "dly_time_display", txt, sizeof txt);
@@ -751,7 +860,7 @@ static void cutoff_text(void) {
 
 static void noise_and_mix(void) {
     static float x[SR];
-    void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+    void *e = patch(SAW, 0, 1, 100, 10);
     set(e, "o1_level", 0); set(e, "noise_level", 100);
     note(e, 1, 60, 127);
     render_f(e, x, SR);
@@ -764,7 +873,7 @@ static void noise_and_mix(void) {
     check(rms > 0.21 && rms < 0.28 && fabs(mean) < 0.01, what);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 0, 1, 100, 10);
+    e = patch(SAW, 0, 1, 100, 10);
     set(e, "o2_level", 100); set(e, "o3_level", 100); set(e, "noise_level", 100);
     note(e, 1, 36, 127);
     render_f(e, x, SR);
@@ -777,7 +886,7 @@ static void noise_and_mix(void) {
 
 static void envelope(void) {
     static float x[SR * 2];
-    void *e = patch(WAVE_SQUARE, 0, 100, 100, 200);
+    void *e = patch(SQUARE, 0, 100, 100, 200);
     note(e, 1, 36, 127);
     render_f(e, x, SR / 2);
     float peak = 0;
@@ -804,7 +913,7 @@ static int silent_after(void *e, int ms) {
 }
 
 static void keys(void) {
-    void *e = patch(WAVE_SAW, 0, 100, 100, 50);
+    void *e = patch(SAW, 0, 100, 100, 50);
     note(e, 1, 60, 100); note(e, 1, 60, 100); note(e, 0, 60, 0);
     check(silent_after(e, 500), "a key pressed twice and released once does not hang");
     note(e, 1, 48, 100); note(e, 1, 60, 100); note(e, 0, 60, 0);
@@ -829,7 +938,7 @@ static double get(void *e, const char *k) {
 
 static void state(void) {
     static char st[9000];
-    void *a = patch(WAVE_SQUARE, 123, 456, 78, 901), *b = E->create(NULL);
+    void *a = patch(SQUARE, 123, 456, 78, 901), *b = E->create(NULL);
     set(a, "volume", 42);
     int n = E->get_param(a, "state", st, sizeof st);
     E->set_param(b, "state", st);
@@ -873,27 +982,41 @@ static int16_t *rest(void *e, int16_t *o, int blocks) {
 static void demo_wav(const char *path) {
     enum { STEP = 86, RUN = 43, TAIL = 172 };   /* in 128-frame blocks: 0.25 s, 0.125 s, 0.5 s */
     static const int riff[] = {36, 48, 43, 46, 36, 48, 51, 50};
-    static int16_t pcm[(11 * 8 * STEP + 13 * RUN + 7 * TAIL) * 256];
+    static int16_t pcm[(12 * 8 * STEP + 13 * RUN + 7 * TAIL) * 256];
     int16_t *o = pcm;
-    void *e = patch(WAVE_SAW, 5, 400, 40, 150);
+    void *e = patch(SAW, 5, 400, 40, 150);
     for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
-    set(e, "o2_level", 80); set(e, "o2_fine", 8);
-    set(e, "o3_level", 60); set(e, "o3_wave", WAVE_SQUARE); set(e, "o3_oct", 1);
+    set(e, "o2_level", 80); set(e, "o2_freq", 0.08);
+    set(e, "o3_level", 60); set_shape(e, "o3", SQUARE); set(e, "o3_oct", 1);
     for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
     o = rest(e, o, TAIL);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 5, 600, 60, 200);
+    e = patch(SAW, 5, 600, 60, 200);
     set(e, "o1_level", 0); set(e, "o2_level", 100); set(e, "o2_sync", 1);
     for (int k = 0; k < 8; k++) {
-        set(e, "o2_semi", k + 3);
+        set(e, "o2_freq", k < 4 ? k + 3 : 7 - k * 0.5);
         o = play(e, o, riff[k] + 24, STEP);
     }
     o = rest(e, o, TAIL);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 3, 300, 70, 120);   /* ladder: a resonant sweep up the riff twice, the second time driven */
-    set(e, "o2_level", 80); set(e, "o2_fine", 7); set(e, "flt_res", 75);
+    /* the new oscillator: a triangle sweeping its wave angle, PWM, ring mod, then FM bells */
+    e = patch((shape_t){"tri", WAVE_TRI, 50, 50, 0}, 3, 400, 70, 150);
+    for (int k = 0; k < 2; k++) { set(e, "o1_angle", 50 + 45 * k); o = play(e, o, riff[k] + 12, STEP); }
+    set_shape(e, "o1", SQUARE);
+    for (int k = 2; k < 4; k++) { set(e, "o1_pw", 50 - 18 * (k - 1)); o = play(e, o, riff[k] + 12, STEP); }
+    set_shape(e, "o1", SAW); set(e, "o1_level", 0); set(e, "ring_level", 100); set(e, "o2_freq", 6.5);
+    for (int k = 4; k < 6; k++) o = play(e, o, riff[k] + 24, STEP);
+    set(e, "ring_level", 0); set(e, "o2_level", 100); set(e, "o2_freq", 0); set(e, "fm_amt", 40);
+    set_shape(e, "o1", (shape_t){"tri", WAVE_TRI, 50, 50, 0}); set_shape(e, "o2", (shape_t){"tri", WAVE_TRI, 50, 50, 0});
+    set(e, "o1_oct", 3); set(e, "o1_freq", 2);
+    for (int k = 6; k < 8; k++) o = play(e, o, riff[k] + 24, STEP);
+    o = rest(e, o, TAIL);
+    E->destroy(e);
+
+    e = patch(SAW, 3, 300, 70, 120);   /* ladder: a resonant sweep up the riff twice, the second time driven */
+    set(e, "o2_level", 80); set(e, "o2_freq", 0.07); set(e, "flt_res", 75);
     for (int k = 0; k < 16; k++) {
         if (k == 8) set(e, "flt_drive", 80);
         set(e, "flt_cut", 15 + 60 * (k % 8) / 7.0);
@@ -902,8 +1025,8 @@ static void demo_wav(const char *path) {
     o = rest(e, o, TAIL);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 3, 300, 70, 120);   /* SVF: band-pass sweep in parallel, then SVF high-pass into the ladder */
-    set(e, "o1_route", 1); set(e, "o2_level", 80); set(e, "o2_fine", 7); set(e, "o2_route", 1);
+    e = patch(SAW, 3, 300, 70, 120);   /* SVF: band-pass sweep in parallel, then SVF high-pass into the ladder */
+    route(e, "o1", 1); set(e, "o2_level", 80); set(e, "o2_freq", 0.07); route(e, "o2", 1);
     set(e, "svf_mode", SVF_BP); set(e, "svf_res", 70); set(e, "flt_mix", 0);
     for (int k = 0; k < 16; k++) {
         if (k == 8) { set(e, "svf_mode", SVF_HP); set(e, "flt_route", 1); set(e, "flt_mix", 100);
@@ -914,25 +1037,25 @@ static void demo_wav(const char *path) {
     o = rest(e, o, TAIL);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 1, 600, 0, 150);   /* modulation: an envelope pluck, a synced LFO wobble, a vibrato lead */
+    e = patch(SAW, 1, 600, 0, 150);   /* modulation: an envelope pluck, a synced LFO wobble, a vibrato lead */
     set(e, "o2_level", 70); set(e, "o2_oct", 1); set(e, "flt_cut", 25); set(e, "flt_res", 55);
     set(e, "lad_env", 70); set(e, "fenv_d", knob_ms(250)); set(e, "fenv_s", 0);
     for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
     set(e, "amp_s", 100); set(e, "lad_env", 0); set(e, "flt_cut", 35); set(e, "lad_lfo", 60);
     set(e, "lfo2_wave", LFO_SINE); set(e, "lfo2_sync", 1); set(e, "lfo2_rate", 60);   /* 1/8 at 120 BPM */
     for (int k = 0; k < 4; k++) o = play(e, o, riff[2 * k], 2 * STEP);
-    set(e, "lad_lfo", 0); set(e, "flt_cut", 80); set(e, "o2_oct", 2); set(e, "o2_fine", 6);
+    set(e, "lad_lfo", 0); set(e, "flt_cut", 80); set(e, "o2_oct", 2); set(e, "o2_freq", 0.06);
     set(e, "pitch_lfo", 3); set(e, "lfo1_wave", LFO_SINE);
     for (int k = 0; k < 4; k++) o = play(e, o, riff[k] + 24, 2 * STEP);
     o = rest(e, o, TAIL);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 0, 120, 0, 120);
+    e = patch(SAW, 0, 120, 0, 120);
     set(e, "o1_level", 0); set(e, "noise_level", 100);
     for (int k = 0; k < 8; k++) o = play(e, o, 60, STEP);
     E->destroy(e);
 
-    e = patch(WAVE_SAW, 2, 200, 80, 60);
+    e = patch(SAW, 2, 200, 80, 60);
     for (int n = 72; n <= 108; n += 3) o = play(e, o, n, RUN);   /* 13 notes */
     o = rest(e, o, TAIL);
     E->destroy(e);
@@ -953,9 +1076,9 @@ static void bench(void) {
     int16_t buf[256];
     static const int counts[] = {1, 4, 8}, opt[] = {0, 2, 4};
     for (int c = 0; c < 3; c++) {
-        void *e = patch(WAVE_SAW, 5, 300, 70, 250);
+        void *e = patch(SAW, 5, 300, 70, 250);
         set(e, "voices", opt[c]); set(e, "o2_level", 80); set(e, "o3_level", 60);
-        set(e, "o1_route", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
+        route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
         set(e, "mod2_src", 6); set(e, "mod2_dst", 9); set(e, "mod2_amt", 30);
         for (int k = 0; k < counts[c]; k++) note(e, 1, 48 + 3 * k, 100);
         struct timespec t0, t1;
@@ -967,7 +1090,7 @@ static void bench(void) {
                " device numbers need tools/bench.sh)\n", counts[c], counts[c] > 1 ? "s" : " ", us, us / counts[c]);
         E->destroy(e);
     }
-    void *e = patch(WAVE_SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
+    void *e = patch(SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
     set(e, "voices", 4); set(e, "modfx_type", 1); set(e, "modfx_mix", 50); set(e, "dly_mix", 30); set(e, "rev_mix", 30);
     for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
     struct timespec t0, t1;
@@ -984,6 +1107,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); return 0; }
     aliasing();
     sync_aliasing();
+    shapes();
     tuning();
     noise_and_mix();
     self_oscillation();

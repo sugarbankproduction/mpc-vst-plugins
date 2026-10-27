@@ -85,16 +85,16 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | Three VCOs per voice | p22 | Have | `osc[3]` per voice | - | - |
-| Two generators per VCO running at once: tri/saw plus pulse | p22 | Missing | One waveform per oscillator | M | low-medium (about doubles oscillator cost) |
+| Two generators per VCO running at once: tri/saw plus pulse | p22 | Have | `src/osc.h`: both waves from one phase, blended by `oN_mix` (2026-10-27) | - | - |
 | OCTAVE | 32', 16', 8', 4', 2' (p22) | Have | `o1_oct`..`o3_oct` | - | none |
-| FREQUENCY, continuous | -7 to +7 semitones (p22) | Have | `oN_semi` (+-12 st, whole steps) + `oN_fine` (+-50 ct); matrix "Osc n Pitch" | - | none |
-| BEAT FREQ: constant offset in Hz, same beat rate across the keyboard | -7 to +7 (Hz, p23, p140) | Missing | Only cents (beat rate rises with pitch) | S | none |
-| WAVE button / VCO MODE | TRI, SAW (p23, p26) | Partial | `oN_wave` Saw / Square; no triangle | S | low |
-| WAVE ANGLE, TRI mode: saw to triangle to ramp, rise and fall both scale with pitch | knob, centre = triangle (p23) | Missing | - | M (variable-slope triangle with PolyBLAMP corners) | low |
-| WAVE ANGLE, SAW mode: reset time of the saw, darker as it lengthens [ANALOG] | 6 us to 1 ms (p24) | Missing | Instant reset only | M (finite-slope reset, PolyBLAMP) | low |
-| PULSE WIDTH: narrow, square at centre, wide | knob (p24) | Partial | Square fixed at 50% | S (PolyBLEP at both edges) | low |
-| MIX: tri/saw only, equal blend, pulse only | knob (p24) | Missing | - | S (once both generators run) | low |
-| Wave angle and pulse width modulatable (PWM etc.) | p22 | Missing | - | S | low (control rate) |
+| FREQUENCY, continuous | -7 to +7 semitones (p22) | Have | `oN_freq` -7..+7 st, continuous; matrix "Osc n Pitch" | - | - |
+| BEAT FREQ: constant offset in Hz, same beat rate across the keyboard | -7 to +7 (Hz, p23, p140) | Have | `oN_beat` -7..+7 Hz, added after the pitch | - | - |
+| WAVE button / VCO MODE | TRI, SAW (p23, p26) | Have | `oN_wave` Tri / Saw | - | - |
+| WAVE ANGLE, TRI mode: saw to triangle to ramp, rise and fall both scale with pitch | knob, centre = triangle (p23) | Have | `oN_angle` in Tri mode: variable-slope triangle, PolyBLAMP corners | - | - |
+| WAVE ANGLE, SAW mode: reset time of the saw, darker as it lengthens [ANALOG] | 6 us to 1 ms (p24) | Have | `oN_angle` in Saw mode: reset 6 us .. 1 ms (log), PolyBLAMP | - | - |
+| PULSE WIDTH: narrow, square at centre, wide | knob (p24) | Have | `oN_pw` 5..95%, PolyBLEP at both edges, DC removed | - | - |
+| MIX: tri/saw only, equal blend, pulse only | knob (p24) | Have | `oN_mix` 0..100% | - | - |
+| Wave angle and pulse width modulatable (PWM etc.) | p22 | Have | Matrix destinations "Osc n Angle", "Osc n PW", "Osc n Wave Mix", ramped per sample | - | - |
 | HARD SYNC on OSC 2 and OSC 3 to OSC 1 | on/off (p24-25) | Have | `o2_sync`, `o3_sync`, band-limited reset | - | - |
 | HARD SYNC SRC (MORE) | OSC 2: VCO 1 or VCO 3; OSC 3: VCO 1 or VCO 2 (p26) | Missing | Always oscillator 1 | S (render order must follow the source) | none |
 | PITCH TRACKING (MORE) | 0% to 200% (p26) | Missing | Always 100% | S | none |
@@ -111,12 +111,12 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 |---|---|---|---|---|---|
 | PITCH MOD: LFO 1 AMT to all three oscillators | 0 to 10 (p27) | Have | `pitch_lfo` (+-100% = +-12 st) | - | - |
 | PITCH MOD: MOD EG AMT to all three oscillators | -10 to +10 (p27) | Have | `pitch_env` (+-100% = +-24 st) | - | - |
-| RING MOD as its own mixer channel | p27, p31 | Missing | - | M | low (one multiply; the product can alias) |
-| RING MOD SOURCES, tapped from the tri/saw generators only | 1x2, 2x3 (p27) | Missing | - | S (with ring mod) | none |
+| RING MOD as its own mixer channel | p27, p31 | Have | `ring_level`, with its own SVF/Ladder buttons | - | - |
+| RING MOD SOURCES, tapped from the tri/saw generators only | 1x2, 2x3 (p27) | Have | `ring_src` 1 x 2 / 2 x 3, from the tri/saw waves only | - | - |
 | WAVE ANGLE / LFO 3 AMT | 0 to 10 (p28) | Missing | Needs LFO 3 and wave angle | S (after both) | low |
 | PULSE WIDTH / LFO 3 AMT | 0 to 10 (p28) | Missing | Needs LFO 3 and PWM | S (after both) | low |
-| FM AMT, linear FM | 0 to 10 (p28) | Missing | - | M | medium (per-sample phase modulation; oversampling would be high) |
-| FM ROUTE | 1 to 2, 1 to 3, 3 to 1 (p28) | Missing | - | S (with FM) | none |
+| FM AMT, linear FM | 0 to 10 (p28) | Have | `fm_amt`: the carrier's frequency x (1 + 2 x amount x modulator), per sample, not through-zero; matrix "FM Amount" | - | - |
+| FM ROUTE | 1 to 2, 1 to 3, 3 to 1 (p28) | Have | `fm_route` 1 > 2, 1 > 3, 3 > 1 (3 > 1 uses osc 3's previous sample) | - | - |
 
 ## 5. Noise (p29-30)
 
@@ -136,10 +136,10 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| Six input channels: OSC 1-3, RING MOD, NOISE, EXT | p31 | Partial | Four: oscillators 1-3 and noise | - | - |
+| Six input channels: OSC 1-3, RING MOD, NOISE, EXT | p31 | Partial | Five: oscillators 1-3, ring mod, noise (EXT is hardware-only) | - | - |
 | Level knob per channel (oscillators, noise) | 0 to max (p31-32) | Have | `o1_level`..`o3_level`, `noise_level` | - | - |
-| RING MOD level | p31 | Missing | Needs ring mod | S | low |
-| SVF and LADDER bus buttons per channel (either, both, neither) | p31-32 | Have | `oN_route`, `noise_route`: Ladder / SVF / Both ("neither" = level 0) | - | - |
+| RING MOD level | p31 | Have | `ring_level`; matrix "Ring Level" | - | - |
+| SVF and LADDER bus buttons per channel (either, both, neither) | p31-32 | Have | `oN_svf`/`oN_lad`, `noise_*`, `ring_*`: two buttons per channel | - | - |
 | EXT INPUT LEVEL [HW] | 0% to 100% (p32) | Missing | No audio input on an MPC instrument plugin | - | none |
 | EXT INPUT ROUTE [HW] | None, SVF, Ladder, Both (p32) | Missing | - | - | none |
 | EXT INPUT SOURCE [HW] | None, Mic/Line, Line, Mic/Line+Line (p32) | Missing | - | - | none |
@@ -362,14 +362,14 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | All oscillators: PITCH EG MOD | Missing | - | S | none |
 | All oscillators: TRIANGLE LFO 3 MOD | Missing | Needs LFO 3 + wave angle | S | none |
 | All oscillators: PULSE LFO 3 MOD | Missing | Needs LFO 3 + PWM | S | none |
-| All oscillators: FM MOD | Missing | Needs FM | S | none |
+| All oscillators: FM MOD | Have | "FM Amount" | - | - |
 | All oscillators: PITCH OFFSET | Have | "Pitch" (+-24 st) | - | - |
 | Oscillator 1-3: FREQUENCY | Have | "Osc 1/2/3 Pitch" | - | - |
-| Oscillator 1-3: BEAT | Missing | Needs beat frequency | S | none |
-| Oscillator 1-3: SAW (reset-time angle) | Missing | Needs wave angle | S | low |
-| Oscillator 1-3: TRIANGLE (angle) | Missing | Needs wave angle | S | low |
-| Oscillator 1-3: PULSE (width) | Missing | Needs PWM | S | low |
-| Oscillator 1-3: MIX | Missing | Needs two generators | S | none |
+| Oscillator 1-3: BEAT | Partial | Not a matrix destination yet; the knob is | - | none |
+| Oscillator 1-3: SAW (reset-time angle) | Have | "Osc n Angle" | - | - |
+| Oscillator 1-3: TRIANGLE (angle) | Have | "Osc n Angle" | - | - |
+| Oscillator 1-3: PULSE (width) | Have | "Osc n PW" | - | - |
+| Oscillator 1-3: MIX | Have | "Osc n Wave Mix" | - | - |
 | Oscillator 1-3: OCTAVE (step-mod list, p91) | Missing | - | S | none |
 | Noise: COLOR MIX | Missing | Needs colours | S | none |
 | Noise: ATTACK, SUSTAIN, RELEASE (noise EG) | Missing | Needs noise EG | S | none |

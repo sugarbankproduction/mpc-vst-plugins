@@ -211,7 +211,20 @@ static const char *help_for(int i) {
         {"_dst", "Mod destination: what the source moves. Pitch in semitones, cutoffs in octaves, levels and mix in % of their range."},
         {"_amt", "Mod amount: how far and which way (drag left/right; minus turns the source upside down). Double-click resets to 0."},
         {"_via", "Mod via: scales this row by a second source. LFO 1 -> Pitch via Mod Wheel = vibrato that the wheel brings in."},
-        {"_route", "Which filter this source goes to: the ladder, the state-variable filter, or both."},
+        {"_svf", "Sends this mixer channel to the state-variable filter. With the Ladder button too it feeds both; with neither it is silent."},
+        {"_lad", "Sends this mixer channel to the ladder filter. With the SVF button too it feeds both; with neither it is silent."},
+#define OSC_HELP(n) \
+        {"o" #n "_wave", "Tri: Wave Angle shapes a triangle (left: saw-like, centre: triangle, right: ramp). Saw: Wave Angle slows the saw's drop for a darker tone."}, \
+        {"o" #n "_mix", "Blends this oscillator's two waves: 0% the triangle/saw only, 100% the pulse only."}
+        OSC_HELP(1), OSC_HELP(2), OSC_HELP(3),
+#undef OSC_HELP
+        {"_angle", "Wave Angle: the shape of the triangle/saw wave (see the Wave button)."},
+        {"_pw", "Pulse width: 50% is a square (hollow); narrower or wider sounds thinner and nasal."},
+        {"_freq", "Tunes this oscillator up or down by up to 7 semitones, smoothly (7 = a fifth)."},
+        {"_beat", "Detunes by a fixed number of Hz, so the beating stays at the same speed up and down the keyboard."},
+        {"ring_src", "Which two oscillators the ring modulator multiplies (their triangle/saw waves): metallic, bell-like tones."},
+        {"fm_amt", "Linear FM: one oscillator wobbles another's frequency at audio rate, for bells, brass and clangs."},
+        {"fm_route", "Which oscillator modulates which: 1 > 2, 1 > 3 or 3 > 1. The modulator can be silent in the mixer."},
         {"flt_route", "Parallel: the two filters side by side. Series: the SVF feeds the ladder (send sources to the SVF, mix to Ladder)."},
         {"flt_mix", "Balance between the two filters' outputs: 0% all SVF, 100% all ladder."},
         {"_kbd", "Keyboard tracking: how much the cutoff follows the keys (100% = an octave per octave, around middle C)."},

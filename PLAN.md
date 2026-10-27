@@ -110,7 +110,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
   committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (79 have,
   84 partial, 301 missing, 78 of those hardware-only) and the build order, worked through in this order:
-  1. Tier 1, the sound: dual-wave oscillators (wave angle, pulse width, mix, beat freq) with linear FM and ring mod;
+  1. Tier 1, the sound: ~~dual-wave oscillators (wave angle, pulse width, mix, beat freq) with linear FM and ring
+     mod~~ (done 2026-10-27, offline: 127 params, 17 presets; about 7.7 us per voice per block on the PC, up from 5.9);
      glide; envelope extras (delay, hold, loop, latch, sync, curves, velocity); the SVF pair (spacing, link cutoff,
      key tracking to 200%) and the panel's cutoff-modulation section; unison and detune.
   2. The front-panel window, laid out from the photos, with the keyboard, wheels and X/Y pad.
@@ -126,7 +127,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   3. Phase 10: decide with the owner whether multitimbral parts make sense on MPC (each track can host its own ONE-ish).
   4. Phase 11: package with `tools/release.py` locally; publishing and the final name are the owner's decisions.
 - **Needs a real MPC (owner):** `tools/bench.sh` at 4 and 8 voices to set the default voice count; loading on the
-  device. Offline estimate: about 5.3 us per voice per block on the PC (8 voices: 42 us of the 2902 us budget there).
+  device. Offline estimate: about 7.7 us per voice per block on the PC (8 voices: about 62 us of the 2902 us budget
+  there; measured 2026-10-27 after the dual-wave oscillators).
 - **Quick check after a restart:** start Docker Desktop, then `win/run.sh bash ports/one-ish/test/run.sh` must print
   PASSED; `Play ONE-ish.bat` in `%USERPROFILE%\Tools` opens Carla with ONE-ish.
 
