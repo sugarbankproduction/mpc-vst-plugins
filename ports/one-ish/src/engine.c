@@ -1,6 +1,7 @@
-/* ONE-ish engine, Phase 4: three band-limited oscillators (saw or square; octave, semitone, fine, level; 2 and 3 can
- * hard-sync to 1), white noise, a mixer, a ladder filter (cutoff, resonance, drive, LP/HP, 24-6 dB), an amp envelope,
- * one voice.
+/* ONE-ish engine, Phase 5: three band-limited oscillators (saw or square; octave, semitone, fine, level; 2 and 3 can
+ * hard-sync to 1), white noise, a mixer that sends each source to the SVF, the ladder or both, a state-variable filter
+ * (LP/BP/HP/notch) and a ladder filter (cutoff, resonance, drive, LP/HP, 24-6 dB) in parallel or in series (SVF into
+ * ladder) with a mix between their outputs, an amp envelope, one voice.
  * Implements mpc_engine() (wrapper/engine.h): 44.1 kHz, interleaved int16 stereo, up to 128 frames per render().
  * Everything is allocated in create(); render() and midi() never allocate, lock or touch files. */
 #include <math.h>
@@ -12,6 +13,7 @@
 #include "osc.h"
 #include "env.h"
 #include "ladder.h"
+#include "svf.h"
 
 #define SR 44100.0f
 #define MAX_HELD 16
@@ -30,6 +32,7 @@ enum {
     P_O2_WAVE, P_O2_OCT, P_O2_SEMI, P_O2_FINE, P_O2_LEVEL, P_O2_SYNC,
     P_O3_WAVE, P_O3_OCT, P_O3_SEMI, P_O3_FINE, P_O3_LEVEL, P_O3_SYNC,
     P_NOISE_LEVEL, P_FLT_CUT, P_FLT_RES, P_FLT_DRIVE, P_FLT_MODE, P_FLT_SLOPE,
+    P_SVF_CUT, P_SVF_RES, P_SVF_MODE, P_FLT_ROUTE, P_FLT_MIX, P_O1_ROUTE, P_O2_ROUTE, P_O3_ROUTE, P_NOISE_ROUTE,
     P_AMP_A, P_AMP_D, P_AMP_S, P_AMP_R, P_VOLUME, P_COUNT
 };
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_SEMI, O_FINE, O_LEVEL, O_SYNC };
@@ -38,9 +41,12 @@ static const char *const KEYS[P_COUNT] = {
     "o2_wave", "o2_oct", "o2_semi", "o2_fine", "o2_level", "o2_sync",
     "o3_wave", "o3_oct", "o3_semi", "o3_fine", "o3_level", "o3_sync",
     "noise_level", "flt_cut", "flt_res", "flt_drive", "flt_mode", "flt_slope",
+    "svf_cut", "svf_res", "svf_mode", "flt_route", "flt_mix", "o1_route", "o2_route", "o3_route", "noise_route",
     "amp_a", "amp_d", "amp_s", "amp_r", "volume"
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
+enum { ROUTE_LADDER, ROUTE_SVF, ROUTE_BOTH };   /* a source's filter buttons (option order in params.json) */
+enum { FLT_PARALLEL, FLT_SERIES };
 
 typedef struct {
     float val[P_COUNT];   /* each value in its own units: option index, semitones, cents, ms or % */
@@ -48,7 +54,8 @@ typedef struct {
     float ratio[NOSC];    /* each oscillator's pitch against the played note */
     env_t amp;
     ladder_t flt;
-    float cut;            /* the cutoff knob (0..100) as the filter follows it, smoothed per block */
+    svf_t svf;
+    float cut, svf_cut;   /* the cutoff knobs (0..100) as the filters follow them, smoothed per block */
     uint32_t noise;       /* xorshift state */
     float note_hz;
     float velocity;
@@ -121,6 +128,7 @@ static void start_note(one_t *s, int note) {
     if (s->amp.stage == ENV_IDLE) {   /* from silence every note starts the same way */
         for (int n = 0; n < NOSC; n++) osc_reset(&s->osc[n]);
         ladder_reset(&s->flt);
+        svf_reset(&s->svf);
     }
     s->note = note;
     s->note_hz = 440.0f * powf(2.0f, (note - 69) / 12.0f);
@@ -198,8 +206,9 @@ static void set_param(void *inst, const char *key, const char *val) {
 static int get_param(void *inst, const char *key, char *buf, int n) {
     one_t *s = inst;
     if (!strcmp(key, "state")) return get_state(s, buf, n);
-    if (!strcmp(key, "flt_cut_display")) {   /* the knob's text on screen: Hz, not its 0..100 position */
-        float hz = cut_hz(s->val[P_FLT_CUT]);
+    int ladder_cut = !strcmp(key, "flt_cut_display");
+    if (ladder_cut || !strcmp(key, "svf_cut_display")) {   /* the knob's text on screen: Hz, not its 0..100 position */
+        float hz = cut_hz(s->val[ladder_cut ? P_FLT_CUT : P_SVF_CUT]);
         return hz < 1000.0f ? snprintf(buf, n, "%.0f Hz", hz) : snprintf(buf, n, "%.2f kHz", hz * 0.001f);
     }
     int k = slot(key);
@@ -233,10 +242,24 @@ static void render(void *inst, int16_t *out, int frames) {
     if (s->amp.stage == ENV_IDLE) {   /* silent: nothing to smooth */
         s->gain = target;
         s->cut = v[P_FLT_CUT];
+        s->svf_cut = v[P_SVF_CUT];
     }
     s->cut += (v[P_FLT_CUT] - s->cut) * CUT_GLIDE;
+    s->svf_cut += (v[P_SVF_CUT] - s->svf_cut) * CUT_GLIDE;
     ladder_set(&s->flt, cut_hz(s->cut), v[P_FLT_RES] * 0.01f, v[P_FLT_DRIVE] * 0.01f, (int)v[P_FLT_MODE],
                (int)v[P_FLT_SLOPE], SR);
+    svf_set(&s->svf, cut_hz(s->svf_cut), v[P_SVF_RES] * 0.01f, (int)v[P_SVF_MODE], SR);
+    /* each source's level into each filter's bus, from its routing buttons */
+    float lv[4] = {l1, l2, l3, ln}, to_lad[4], to_svf[4];
+    int any_svf = 0;
+    for (int n = 0; n < 4; n++) {
+        int r = (int)v[P_O1_ROUTE + n];
+        to_lad[n] = r != ROUTE_SVF ? lv[n] : 0.0f;
+        to_svf[n] = r != ROUTE_LADDER ? lv[n] : 0.0f;
+        any_svf |= r != ROUTE_LADDER;
+    }
+    int series = (int)v[P_FLT_ROUTE] == FLT_SERIES;
+    float mix_lad = v[P_FLT_MIX] * 0.01f, mix_svf = 1.0f - mix_lad;   /* 0 = all SVF, 100 = all ladder */
     for (int i = 0; i < frames; i++) {
         float y = 0.0f;
         if (s->amp.stage != ENV_IDLE) {
@@ -245,8 +268,13 @@ static void render(void *inst, int16_t *out, int frames) {
             float b = osc_next(&s->osc[1], w2, sync2 ? wrap : -1.0f);
             float c = osc_next(&s->osc[2], w3, sync3 ? wrap : -1.0f);
             float n = white(&s->noise);
-            float mix = a * l1 + b * l2 + c * l3 + n * ln;
-            float f = ladder_next(&s->flt, mix + n * NOISE_FLOOR);
+            float lad_in = a * to_lad[0] + b * to_lad[1] + c * to_lad[2] + n * to_lad[3];
+            float svf_out = 0.0f;
+            if (any_svf) {   /* nothing routed to the SVF: skip it */
+                svf_out = svf_next(&s->svf, a * to_svf[0] + b * to_svf[1] + c * to_svf[2] + n * to_svf[3]);
+                if (series) lad_in += svf_out;
+            }
+            float f = ladder_next(&s->flt, lad_in + n * NOISE_FLOOR) * mix_lad + svf_out * mix_svf;
             s->gain += (target - s->gain) * s->gain_coef;
             y = soft_limit(f * env_next(&s->amp) * s->gain);
         }

@@ -6,6 +6,8 @@
  *   noise/mix noise level; all sources at full level are limited, not clipped
  *   filter    self-oscillation is a clean, steady sine near the cutoff; the ladder alone stays stable in every mode
  *             and slope at full resonance and drive; LP/HP slopes measure 24/18/12/6 dB; the cutoff knob reads in Hz
+ *   svf       LP/BP/HP/notch shapes, the resonance peak, stability at full resonance
+ *   routing   parallel/series, the filter mix and each source's SVF/ladder buttons send the sound where they say
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
  *   state     save/restore round trip; damaged or oversized states don't break the instance
@@ -22,6 +24,7 @@
 #include "engine.h"
 #include "osc.h"
 #include "ladder.h"
+#include "svf.h"
 
 #define SR 44100
 #define N 16384   /* FFT length: 2.7 Hz per bin */
@@ -301,6 +304,98 @@ static void filter_slopes(void) {
         }
 }
 
+/* gain of the SVF alone for a quiet sine, in dB */
+static double svf_gain_db(int mode, double reso, double fc, double f) {
+    svf_t sv;
+    memset(&sv, 0, sizeof sv);
+    svf_set(&sv, (float)fc, (float)reso, mode, SR);
+    double in = 0, out = 0;
+    for (int i = 0; i < SR; i++) {
+        float x = 0.1f * sinf((float)(2 * M_PI * f * i / SR));
+        float y = svf_next(&sv, x);
+        if (i >= SR / 2) { in += x * x; out += y * y; }
+    }
+    return 10 * log10(out / in + 1e-30);
+}
+
+static void svf_shapes(void) {
+    char what[200];
+    double lp_pass = svf_gain_db(SVF_LP, 0, 1000, 250), lp_stop = svf_gain_db(SVF_LP, 0, 1000, 4000);
+    snprintf(what, sizeof what, "SVF LP: %.1f dB at a quarter of the cutoff, %.1f dB two octaves above (12 dB/oct)", lp_pass, lp_stop);
+    check(lp_pass > -1 && fabs(lp_stop - lp_pass + 24.1) < 2, what);
+    double hp_pass = svf_gain_db(SVF_HP, 0, 1000, 4000), hp_stop = svf_gain_db(SVF_HP, 0, 1000, 250);
+    snprintf(what, sizeof what, "SVF HP: %.1f dB two octaves above the cutoff, %.1f dB two below", hp_pass, hp_stop);
+    check(hp_pass > -1 && fabs(hp_stop - hp_pass + 24.1) < 2, what);
+    double bp_mid = svf_gain_db(SVF_BP, 0, 1000, 1000), bp_lo = svf_gain_db(SVF_BP, 0, 1000, 125),
+           bp_hi = svf_gain_db(SVF_BP, 0, 1000, 8000);
+    snprintf(what, sizeof what, "SVF BP: %.1f dB at the cutoff, %.1f / %.1f dB three octaves below / above", bp_mid, bp_lo, bp_hi);
+    check(fabs(bp_mid) < 1 && bp_lo < bp_mid - 10 && bp_hi < bp_mid - 10, what);
+    double n_mid = svf_gain_db(SVF_NOTCH, 0.5, 1000, 1000), n_lo = svf_gain_db(SVF_NOTCH, 0.5, 1000, 125),
+           n_hi = svf_gain_db(SVF_NOTCH, 0.5, 1000, 8000);
+    snprintf(what, sizeof what, "SVF notch: %.1f dB at the cutoff, %.1f / %.1f dB three octaves below / above", n_mid, n_lo, n_hi);
+    check(n_mid < -30 && n_lo > -1 && n_hi > -1, what);
+    double peak = svf_gain_db(SVF_LP, 1, 1000, 1000);
+    snprintf(what, sizeof what, "SVF LP at full resonance: %+.1f dB at the cutoff (want about +20)", peak);
+    check(peak > 17 && peak < 22, what);
+
+    float worst = 0;
+    int bad = 0;
+    for (int mode = 0; mode < 4; mode++) {
+        svf_t sv;
+        memset(&sv, 0, sizeof sv);
+        double t = 0;
+        for (int b = 0; b < 1400; b++) {
+            double pos = b < 700 ? b / 700.0 : (1400 - b) / 700.0;
+            svf_set(&sv, (float)(20 * pow(1000, pos)), 1.0f, mode, SR);
+            for (int i = 0; i < 128; i++) {
+                float y = svf_next(&sv, (float)(2 * t - 1));
+                t += 55.0 / SR;
+                if (t >= 1) t -= 1;
+                if (!isfinite(y)) bad++;
+                else if (fabsf(y) > worst) worst = fabsf(y);
+            }
+        }
+    }
+    snprintf(what, sizeof what, "SVF stable in every mode at full resonance through a full sweep (largest output %.1f)", worst);
+    check(!bad && worst < 40, what);
+}
+
+static double rms_of(void *e, int n) {
+    static float x[SR];
+    render_f(e, x, n);
+    double sq = 0;
+    for (int i = n / 2; i < n; i++) sq += x[i] * x[i];
+    return sqrt(sq / (n - n / 2));
+}
+
+/* where a source's sound goes: parallel keeps the two filters apart, series feeds the SVF into the ladder */
+static void routing(void) {
+    static const struct { const char *what; int route, series, mix; int sounds; } t[] = {
+        {"osc 1 to the SVF, parallel, mix all ladder: silent", 1, 0, 100, 0},
+        {"osc 1 to the SVF, parallel, mix all SVF: sounds", 1, 0, 0, 1},
+        {"osc 1 to the SVF, series, mix all ladder: sounds (SVF feeds the ladder)", 1, 1, 100, 1},
+        {"osc 1 to the ladder, series, mix all SVF: silent (the SVF gets nothing)", 0, 1, 0, 0},
+        {"osc 1 to both, parallel, mix half and half: sounds", 2, 0, 50, 1},
+    };
+    for (unsigned i = 0; i < sizeof t / sizeof t[0]; i++) {
+        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        set(e, "o1_route", t[i].route); set(e, "flt_route", t[i].series); set(e, "flt_mix", t[i].mix);
+        note(e, 1, 48, 127);
+        double r = rms_of(e, SR / 2);
+        char what[160];
+        snprintf(what, sizeof what, "%s (rms %.3f)", t[i].what, r);
+        check(t[i].sounds ? r > 0.05 : r < 0.001, what);
+        E->destroy(e);
+    }
+    void *e = E->create(NULL);
+    char a[32];
+    set(e, "svf_cut", 50); E->get_param(e, "svf_cut_display", a, sizeof a);
+    char what[96];
+    snprintf(what, sizeof what, "SVF cutoff knob reads \"%s\" at 50", a);
+    check(!strcmp(a, "632 Hz"), what);
+    E->destroy(e);
+}
+
 static void cutoff_text(void) {
     void *e = E->create(NULL);
     char a[32], b[32], c[32];
@@ -430,12 +525,12 @@ static int16_t *rest(void *e, int16_t *o, int blocks) {
 }
 
 /* 1: one saw (the Phase 2 sound); 2: three oscillators, osc 2 detuned and osc 3 a square an octave down; then a
- * resonant ladder sweep, plain and driven;
+ * resonant ladder sweep, plain and driven; an SVF band-pass sweep, then SVF high-pass into the ladder;
  * 3: a sync lead, osc 2 synced to 1 and rising a semitone per note; 4: noise hits; 5: a run to the top of the keyboard */
 static void demo_wav(const char *path) {
     enum { STEP = 86, RUN = 43, TAIL = 172 };   /* in 128-frame blocks: 0.25 s, 0.125 s, 0.5 s */
     static const int riff[] = {36, 48, 43, 46, 36, 48, 51, 50};
-    static int16_t pcm[(6 * 8 * STEP + 13 * RUN + 5 * TAIL) * 256];
+    static int16_t pcm[(8 * 8 * STEP + 13 * RUN + 6 * TAIL) * 256];
     int16_t *o = pcm;
     void *e = patch(WAVE_SAW, 5, 400, 40, 150);
     for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
@@ -459,6 +554,18 @@ static void demo_wav(const char *path) {
     for (int k = 0; k < 16; k++) {
         if (k == 8) set(e, "flt_drive", 80);
         set(e, "flt_cut", 15 + 60 * (k % 8) / 7.0);
+        o = play(e, o, riff[k % 8], STEP);
+    }
+    o = rest(e, o, TAIL);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 3, 300, 70, 120);   /* SVF: band-pass sweep in parallel, then SVF high-pass into the ladder */
+    set(e, "o1_route", 1); set(e, "o2_level", 80); set(e, "o2_fine", 7); set(e, "o2_route", 1);
+    set(e, "svf_mode", SVF_BP); set(e, "svf_res", 70); set(e, "flt_mix", 0);
+    for (int k = 0; k < 16; k++) {
+        if (k == 8) { set(e, "svf_mode", SVF_HP); set(e, "flt_route", 1); set(e, "flt_mix", 100);
+                      set(e, "flt_cut", 70); set(e, "flt_res", 40); }
+        set(e, "svf_cut", 25 + 50 * (k % 8) / 7.0);
         o = play(e, o, riff[k % 8], STEP);
     }
     o = rest(e, o, TAIL);
@@ -509,6 +616,8 @@ int main(int argc, char **argv) {
     filter_stability();
     filter_slopes();
     cutoff_text();
+    svf_shapes();
+    routing();
     envelope();
     keys();
     state();

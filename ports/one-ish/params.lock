@@ -26,3 +26,12 @@ flt_res
 flt_drive
 flt_mode
 flt_slope
+svf_cut
+svf_res
+svf_mode
+flt_route
+flt_mix
+o1_route
+o2_route
+o3_route
+noise_route

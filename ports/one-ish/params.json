@@ -28,14 +28,26 @@
   {"key": "flt_res", "name": "Ladder Resonance", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "flt_drive", "name": "Ladder Drive", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "flt_mode", "name": "Ladder Mode", "options": ["LP", "HP"], "default": "LP"},
-  {"key": "flt_slope", "name": "Ladder Slope", "options": ["24 dB", "18 dB", "12 dB", "6 dB"], "default": "24 dB"}
+  {"key": "flt_slope", "name": "Ladder Slope", "options": ["24 dB", "18 dB", "12 dB", "6 dB"], "default": "24 dB"},
+  {"key": "svf_cut", "name": "SVF Cutoff", "min": 0, "max": 100, "default": 100, "dynamic_display": true},
+  {"key": "svf_res", "name": "SVF Resonance", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "svf_mode", "name": "SVF Mode", "options": ["LP", "BP", "HP", "Notch"], "default": "LP"},
+  {"key": "flt_route", "name": "Filter Route", "options": ["Parallel", "Series"], "default": "Parallel"},
+  {"key": "flt_mix", "name": "Filter Mix", "min": 0, "max": 100, "unit": "%", "default": 100, "display": "int"},
+  {"key": "o1_route", "name": "Osc 1 Filter", "options": ["Ladder", "SVF", "Both"], "default": "Ladder"},
+  {"key": "o2_route", "name": "Osc 2 Filter", "options": ["Ladder", "SVF", "Both"], "default": "Ladder"},
+  {"key": "o3_route", "name": "Osc 3 Filter", "options": ["Ladder", "SVF", "Both"], "default": "Ladder"},
+  {"key": "noise_route", "name": "Noise Filter", "options": ["Ladder", "SVF", "Both"], "default": "Ladder"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_wave", "o1_oct", "o1_semi", "o1_fine"]},
   {"label": "OSC 2", "keys": ["o2_wave", "o2_oct", "o2_semi", "o2_fine", "o2_sync"]},
   {"label": "OSC 3", "keys": ["o3_wave", "o3_oct", "o3_semi", "o3_fine", "o3_sync"]},
   {"label": "MIXER", "keys": ["o1_level", "o2_level", "o3_level", "noise_level"]},
+  {"label": "ROUTING", "keys": ["o1_route", "o2_route", "o3_route", "noise_route"]},
+  {"label": "SVF", "keys": ["svf_cut", "svf_res", "svf_mode"]},
   {"label": "LADDER", "keys": ["flt_cut", "flt_res", "flt_drive", "flt_mode", "flt_slope"]},
+  {"label": "FILTERS", "keys": ["flt_route", "flt_mix"]},
   {"label": "AMP ENV", "keys": ["amp_a", "amp_d", "amp_s", "amp_r"]},
   {"label": "OUT", "keys": ["volume"]}
  ]
