@@ -13,7 +13,7 @@ PARAMS = json.load(open(os.path.join(HERE, "..", "params.json"), encoding="utf-8
 DIVS = ["4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"]   # engine.c SYNC_DIV
 
 
-def ms(t):        # envelope knobs: 1 ms .. 10 s, log
+def ms(t):        # envelope knobs: 1 ms .. 10 s, log (delay and hold: 0 is off)
     return round(max(0.0, 25 * math.log10(max(t, 1))), 1)
 
 
@@ -27,6 +27,10 @@ def lfo(f):       # LFO rate knobs: 0.05 .. 50 Hz, log
 
 def div(name):    # a synced LFO's rate knob picks a division
     return round(100 * DIVS.index(name) / (len(DIVS) - 1), 1)
+
+
+def env_div(name):   # a synced envelope time knob picks a division, longest on the right (engine.c env_div)
+    return round(100 * (len(DIVS) - 1 - DIVS.index(name)) / (len(DIVS) - 1), 1)
 
 
 def amp(a, d, s, r):
@@ -43,7 +47,7 @@ def menv(a, d, s, r):
 
 PATCHES = [
     ("Init", {}),
-    ("Fat Bass", {**amp(2, 400, 80, 120), **fenv(1, 350, 20, 200),
+    ("Fat Bass", {**amp(2, 400, 80, 120), **fenv(1, 350, 20, 200), "amp_hold": ms(30),
                   "o2_level": 85, "o2_freq": -0.07, "o3_level": 70, "o3_oct": "16'", "o3_mix": 100,
                   "flt_cut": hz(220), "flt_res": 25, "flt_drive": 35, "lad_env": 45, "lad_kbd": 30, "voices": "Mono"}),
     ("Pluck Bass", {**amp(1, 300, 0, 80), **fenv(1, 180, 0, 80),
@@ -121,6 +125,12 @@ PATCHES = [
                      "voices": "Mono", "unison": "On", "uni_count": "6", "uni_detune": 35, "pitch_var": 6,
                      "glide": "On", "glide_type": "EXP", "glide_time": ms(150), "glide_legato": "On",
                      "mod1_amt": 3, "dly_sync": "On", "dly_time": div("1/8"), "dly_fb": 30, "dly_mix": 20, "rev_mix": 20}),
+    ("Pulse Pad", {"amp_sync": "On", "amp_loop": "On", "amp_a": env_div("1/32"), "amp_d": env_div("1/32"), "amp_s": 60,
+                   "amp_r": env_div("1/16"), **fenv(600, 2000, 40, 1500),
+                   "o2_level": 85, "o2_freq": 0.08, "o3_level": 60, "o3_oct": "16'", "o3_freq": -0.06,
+                   "flt_cut": hz(900), "flt_res": 25, "lad_env": 30, "voices": "8",
+                   "modfx_type": "Chorus", "modfx_rate": 30, "modfx_depth": 50, "modfx_mix": 40,
+                   "dly_sync": "On", "dly_time": div("1/8T"), "dly_fb": 30, "dly_mix": 20, "rev_mix": 30, "rev_decay": 70}),
 ]
 
 
