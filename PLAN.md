@@ -137,6 +137,11 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base.
+  9. Later (owner, 2026-10-27): open-source effects to port, MIT-licensed only unless the owner decides otherwise
+     (GPL code such as Surge XT, Vital or Dragonfly would make ONE-ish GPL): Mutable Instruments Clouds/Beads
+     (granular), Rings (resonator), Elements (modal), Warps (cross-modulation), Marbles (random generator, for the
+     generative features); Airwindows (consoles, tape, saturation, reverbs). Check each file's licence header and the
+     CPU on the device first.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
 - **Then, the MPC port (in order):**
   1. MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, from a copy outside Dropbox (CLAUDE.md).
