@@ -2474,7 +2474,9 @@ static void fx_note_step(one_t *s, fx_params_t *f) {
     f->note = (f->follow ? (s->fx_age ? s->fx_key : 60.0f) : 60.0f) + f->pitch_st;
 }
 
-static void render(void *inst, int16_t *out, int frames) {
+/* one block into out (int16, the MPC's format) or, when out is NULL, into fout (float, the same samples before the
+ * int16 step: one_ish_render_float) */
+static void render_to(void *inst, int16_t *out, float *fout, int frames) {
     one_t *s = inst;
     float acc[128], xl[128], xr[128], l[128], r[128];   /* the voices: mono sum, panned voices' offsets; the output */
     fx_params_t *fxp = &s->fxp;
@@ -2518,8 +2520,13 @@ static void render(void *inst, int16_t *out, int frames) {
         fxp->strum = 0;
         for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host */
             float yl = isfinite(l[i]) ? soft_limit(l[i]) : 0.0f, yr = isfinite(r[i]) ? soft_limit(r[i]) : 0.0f;
-            out[2 * (done + i)] = (int16_t)(yl * 32767.0f);
-            out[2 * (done + i) + 1] = (int16_t)(yr * 32767.0f);
+            if (out) {
+                out[2 * (done + i)] = (int16_t)(yl * 32767.0f);
+                out[2 * (done + i) + 1] = (int16_t)(yr * 32767.0f);
+            } else {
+                fout[2 * (done + i)] = yl;
+                fout[2 * (done + i) + 1] = yr;
+            }
         }
         done += n;
         s->phase = (s->phase + n) % CR;
@@ -2527,6 +2534,13 @@ static void render(void *inst, int16_t *out, int frames) {
         s->clk += n;
     }
 }
+
+static void render(void *inst, int16_t *out, int frames) { render_to(inst, out, NULL, frames); }
+
+/* Not in the engine contract (wrapper/engine.h): the desktop build's float output (desktop/hostrate.c). The same as
+ * render() before its int16 step: interleaved L R in -1..1, where render() writes (int16_t)(x * 32767). Called under
+ * the wrapper's engine lock, in render()'s place; the MPC build never calls it. */
+void one_ish_render_float(void *inst, float *out_lr, int frames) { render_to(inst, NULL, out_lr, frames); }
 
 static const mpc_engine_t ENGINE = {create, destroy, midi, set_param, get_param, render, NULL, song_pos};
 const mpc_engine_t *mpc_engine(void) { return &ENGINE; }

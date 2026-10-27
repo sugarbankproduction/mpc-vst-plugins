@@ -3,7 +3,8 @@
  * page: RANDOMISE, UNDO, REDO, MUTATE, locks, and clicks while another thread renders). Proves the DLL's export, MIDI
  * path, audio path and presets on Windows itself; with a second path, writes all the presets to one WAV to listen
  * to; with a third, pictures of the editor. User patches (save, load, rename, delete, import, export) are tested in
- * a temporary folder:
+ * a temporary folder. Then the host sample rate checks (rate_test.c): other rates and block sizes, float output; with
+ * ONEISH_BASELINE_DLL set to an older build, its 44.1 kHz output must match this one's to the 16-bit sample.
  *   load_test.exe path\to\ONE-ish.dll [presets.wav] [editor.bmp] */
 #include <math.h>
 #include <stdint.h>
@@ -53,6 +54,8 @@ static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, flo
     if (op == 44) { ends++; ended++; }
     return op == 1 ? 2400 : 0;   /* audioMasterVersion */
 }
+
+int rate_tests(void *entry, void *old_entry);   /* rate_test.c: returns its failures */
 
 static int failures;
 static void check(int ok, const char *what) {
@@ -738,6 +741,11 @@ int main(int argc, char **argv) {
     audition(fx, argc > 2 && argv[2][0] ? argv[2] : NULL);
     patch_tests(fx);
     editor(fx, argc > 3 ? argv[3] : NULL);
+    const char *base = getenv("ONEISH_BASELINE_DLL");   /* an older build to compare 44.1 kHz output with */
+    HMODULE old = base && base[0] ? LoadLibraryA(base) : NULL;
+    if (base && base[0] && !old) check(0, "ONEISH_BASELINE_DLL loads");
+    failures += rate_tests((void *)entry, old ? (void *)GetProcAddress(old, "VSTPluginMain") : NULL);
+    if (old) FreeLibrary(old);
 
     fx->dispatcher(fx, 12, 0, 0, NULL, 0);
     fx->dispatcher(fx, 1 /* effClose */, 0, 0, NULL, 0);

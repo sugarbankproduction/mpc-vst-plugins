@@ -36,6 +36,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "editor.h"
+#include "hostrate.h"
 #include "../src/randomize.h"
 
 layout_t L;
@@ -70,8 +71,7 @@ static void ui_midi(ed_t *e, int status, int d1, int d2) {
     __atomic_store_n(&e->mq_w, w + 1, __ATOMIC_RELEASE);
 }
 
-static void drain_ui_midi(AEffect *fx) {   /* audio thread, before each block */
-    ed_t *e = ed_of(fx);
+static void drain_ui_midi(ed_t *e, AEffect *fx) {   /* audio thread, before each block */
     if (!e) return;
     unsigned r = e->mq_r, w = __atomic_load_n(&e->mq_w, __ATOMIC_ACQUIRE);
     if (r == w) return;
@@ -92,13 +92,19 @@ static void drain_ui_midi(AEffect *fx) {   /* audio thread, before each block */
     wrapped_dispatch(fx, effProcessEvents, 0, 0, &list, 0);
 }
 
+/* the host's rate and float output (hostrate.c): the wrapper renders whole engine blocks, converted to the host's
+ * rate; the old path only for load_test's comparison (TEST_LEGACY) */
 static void hooked_replacing(AEffect *fx, float **in, float **out, int32_t n) {
-    drain_ui_midi(fx);
-    wrapped_replacing(fx, in, out, n);
+    ed_t *e = ed_of(fx);
+    drain_ui_midi(e, fx);
+    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, out, n, 0);
+    else wrapped_replacing(fx, in, out, n);
 }
 static void hooked_process(AEffect *fx, float **in, float **out, int32_t n) {
-    drain_ui_midi(fx);
-    wrapped_process(fx, in, out, n);
+    ed_t *e = ed_of(fx);
+    drain_ui_midi(e, fx);
+    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, out, n, 1);
+    else wrapped_process(fx, in, out, n);
 }
 
 /* ---- layout ---- */
@@ -759,6 +765,20 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             return (intptr_t)n;
         }
         if (idx == TEST_PATCH && e && ptr) return patches_test(e, v, ptr, opt);   /* load_test: user patches */
+        if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
+            hr_set_legacy(e->hr, (int)v);
+            fx->initialDelay = hr_latency(e->hr);
+            return 1;
+        }
+        break;
+    case effSetSampleRate:   /* the converter follows the host's rate; its latency goes to the host */
+        if (e && e->hr) fx->initialDelay = hr_set_rate(e->hr, opt);
+        break;
+    case effMainsChanged:    /* resume: the converter starts clean */
+        if (e && e->hr && v) hr_restart(e->hr);
+        break;
+    case effProcessEvents:   /* host MIDI waits for the engine block nearest its time (hostrate.c) */
+        if (e && e->hr && ptr && hr_events(e->hr, fx, ptr)) return 1;
         break;
     case effSetProgram:   /* the host's or the browser's: the patch shown follows (patches.c) */
         if (e) {
@@ -783,7 +803,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
         for (int i = 0; i < MAX_INSTANCES; i++)
             if (eds[i] == e) eds[i] = NULL;   /* the slot stays allocated: see pool */
-        if (e) patches_free(e);
+        if (e) { patches_free(e); e->hr = NULL; }   /* (the wrapper freed it with the engine) */
         return r;
     }
     }
@@ -792,6 +812,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
 
 __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
     AEffect *fx = one_ish_wrapped_main(host);
+    hostrate_t *hr = hr_last_created();   /* the engine instance the wrapper just made (hostrate.c) */
     if (!fx) return NULL;
     for (int i = 0; i < MAX_INSTANCES; i++) {
         if (eds[i]) continue;
@@ -807,6 +828,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->ribbon = 0.5f;
         e->ribbon_cc = -1;
         e->rnd_amount = 0.2f;
+        e->hr = hr;
         eds[i] = e;
         wrapped_dispatch = fx->dispatcher;
         wrapped_replacing = fx->processReplacing;
@@ -818,5 +840,5 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         patches_init(e);
         break;
     }
-    return fx;   /* no free slot: the plugin still works, just without its window */
+    return fx;   /* no free slot: the plugin still works, without its window, at 44.1 kHz in 16 bits (the old path) */
 }
