@@ -43,22 +43,27 @@ enum { audioMasterAutomate = 0, audioMasterUpdateDisplay = 42, audioMasterBeginE
 AEffect *one_ish_wrapped_main(audioMasterCallback host);   /* wrapper/vst2_wrap.c's VSTPluginMain, renamed */
 
 /* ---- the panel, scaled to fit the screen (layout.h is in base units) ---- */
-enum { W_NONE, W_PANEL, W_MATRIX, W_MORE };
-enum { ROWS = 8, MORE_PER_PAGE = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 keys, C2..C7 at octave 0 */
-#define MORE_PAGES (NOTHER > 0 ? (NOTHER + MORE_PER_PAGE - 1) / MORE_PER_PAGE : 1)
+/* what the centre screen shows: the mod matrix, the list of MORE pages, or one MORE page (0..NPAGES-1) */
+enum { SCR_MATRIX = -1, SCR_INDEX = -2 };
+enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 keys, C2..C7 at octave 0 */
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
-       Z_TAB_MATRIX, Z_TAB_MORE };
+       Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_PAGE = 100100 };   /* Z_PAGE + p */
+enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
+enum { VENDOR_SPECIFIC = 50 };                   /* effVendorSpecific */
+#define TEST_MIDI_LOG 0x4F314D4C   /* VENDOR_SPECIFIC index: copy the MIDI the window passed to the engine (tests) */
+extern const short MXC[MX_COLS + 2];   /* the matrix columns: #, then each MX_ column, in base units from the left */
 
 typedef struct {
     int ready, w, h;
     float s;                                  /* scale: base units to pixels */
     RECT ctl[NPARAMS];
-    int kind[NPARAMS], size[NPARAMS], where[NPARAMS];
+    int kind[NPARAMS], size[NPARAMS];
     const char *label[NPARAMS];
     const char *const *leds[NPARAMS];
-    RECT screen, name, prev, next, tabline, head, row[ROWS], help;
-    RECT tab_matrix, tab_more, encoder, bprev, bnext, brand;
-    RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys;
+    RECT screen, name, prev, next, tabline, head, row[ROWS], help, sub_prev, sub_next;
+    RECT tab_matrix, tab_more, tab_analog, encoder, bprev, bnext, brand;
+    RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon;
+    RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
 } layout_t;
 extern layout_t L;
 
@@ -69,30 +74,38 @@ static inline int rh(const RECT *r) { return r->bottom - r->top; }
 
 /* ---- per instance ---- */
 #define MQ 256   /* UI MIDI queue: a power of two */
+enum { MLOG = 64 };
 typedef struct {
     AEffect *fx;
     audioMasterCallback host;
     HWND wnd;
-    int hover, drag, drag_y, drag_x, mode, page, more_page;
+    int hover, drag, drag_y, drag_x, drag_horiz, mode, screen, sub;
+    int hit_screen;                            /* the last hit() found its param on the screen, at hit_rect */
+    RECT hit_rect;
     float drag_from;
     float shown[NPARAMS];
     int shown_prog;
     int oct, key, enc_y, enc_moved;            /* octave shift -2..2; the key held with the mouse (-1: none) */
-    float bend, wheel, pad_x, pad_y;           /* -1..1, 0..1, 0..1, 0..1 */
-    int pad_on;
+    float bend, wheel, pad_x, pad_y, ribbon;   /* -1..1, 0..1, 0..1, 0..1, 0..1 */
+    int pad_on, ribbon_on, ribbon_cc;          /* ribbon_cc: the position last sent (-1: none since the touch) */
     unsigned char mq[MQ][3];                   /* UI -> audio MIDI, single producer / single consumer */
     unsigned mq_w, mq_r;
+    unsigned char mlog[MLOG][3];               /* the last MIDI the audio thread passed on, for load_test */
+    unsigned mlog_n;
 } ed_t;
-enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC };
+enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON };
 
 #define MAX_INSTANCES 32
-extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_big, font_brand;
+extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
 
 /* editor.c */
 void param_text(ed_t *e, int i, char *out, int n);
 int option_of(ed_t *e, int i);
 float real_of(ed_t *e, int i);
-void more_rects(int slot, RECT *name, RECT *ctl);
+int page_items(ed_t *e, int p, int *items);   /* the items of page p shown now (ITEMS indexes); how many */
+int screen_subs(ed_t *e);                     /* how many sub-pages the screen has now (1 or more) */
+void slot_rects(int slot, RECT *name, RECT *ctl);   /* a page's slot 0..SLOTS-1: its name and its control */
+RECT matrix_cell(int r, int col);             /* the matrix on the screen: row r, column 0 (#) .. MX_COLS */
 static inline int note_of_white(int j, int base) {   /* white key j of the keyboard, from note `base` (a C) */
     static const int s[] = {0, 2, 4, 5, 7, 9, 11};
     return base + 12 * (j / 7) + s[j % 7];
