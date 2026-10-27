@@ -122,6 +122,11 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      colours and noise envelope, voice/keyboard options, stereo voices and pan, analog drift.
   4. Tier 3: the full effect list (original designs; the Eventide reverbs are licensed, so original reverbs in their
      spirit). Tier 4: arpeggiator, chord, then a decision with the owner on the sequencer and multitimbral parts.
+  5. After Tier 2/3 (owner, 2026-10-27): an Analog Character section, all 0 by default: per-voice component
+     differences (cutoff, envelope times, level, slight detune), drift, and a non-linear ladder if the CPU allows.
+  6. Later (owner, 2026-10-27): the open-source Plaits macro-oscillator models (Mutable Instruments, MIT licence:
+     keep its copyright notice) as an extra oscillator mode. To check first: C++ in the MPC build, its 48 kHz
+     tuning at 44.1 kHz, and the CPU per voice of each model on the device.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
 - **Then, the MPC port (in order):**
   1. MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, from a copy outside Dropbox (CLAUDE.md).
