@@ -4,6 +4,6 @@
 # an API version the daemon now refuses).
 FROM gcc:12
 RUN apt-get update \
- && apt-get install -y --no-install-recommends python3 python3-pil gcc-mingw-w64-x86-64 \
+ && apt-get install -y --no-install-recommends python3 python3-pil gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
  && rm -rf /var/lib/apt/lists/*
 COPY --from=docker:29-cli /usr/local/bin/docker /usr/local/bin/docker
