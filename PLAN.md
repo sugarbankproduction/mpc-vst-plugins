@@ -60,7 +60,7 @@ Each phase ends with something you can hear and a passing offline test. Don't st
 1. **Hello synth.** Build and load the repo's `poc/synth.c` example unchanged, to prove the toolchain works.
    - [x] Docker build runs; `tools/test_port.sh` passes (2026-10-27, offline: `synth.c` built for armv7 and aarch64 and rendered to a WAV; `test_port.sh` and `build_port.sh` run on `poc/inputprobe`, because `synth.c` is a hand-written plugin the test can't load)
 2. **One oscillator, one voice.** A band-limited saw and square (PolyBLEP), pitch from MIDI notes, an amp envelope.
-   - [ ] No aliasing whistle on high notes
+   - [x] No aliasing whistle on high notes (2026-10-27, offline: `ports/one-ish/test/run.sh` measures aliasing 26-34 dB below the notes, 15-18 dB less than a plain oscillator; the faint remainder on the very top notes is PolyBLEP's limit; revisit with oversampling when the ladder filter (Phase 4) needs it)
 3. **Three oscillators.** Per-oscillator wave, octave, fine tune, level; hard sync; noise source; a mixer.
 4. **Ladder filter.** A 4-pole Moog-style ladder with resonance and drive, based on an openly published model.
    - [ ] Self-oscillates cleanly at full resonance; stays stable at all cutoffs

@@ -1,0 +1,16 @@
+{
+ "name": "ONE-ish",
+ "params": [
+  {"key": "o1_wave", "name": "Osc 1 Wave", "options": ["Saw", "Square"], "default": "Saw"},
+  {"key": "amp_a", "name": "Amp Attack", "min": 0, "max": 2000, "unit": "ms", "default": 5},
+  {"key": "amp_d", "name": "Amp Decay", "min": 1, "max": 5000, "unit": "ms", "default": 300},
+  {"key": "amp_s", "name": "Amp Sustain", "min": 0, "max": 100, "unit": "%", "default": 70, "display": "int"},
+  {"key": "amp_r", "name": "Amp Release", "min": 1, "max": 5000, "unit": "ms", "default": 250},
+  {"key": "volume", "name": "Volume", "min": 0, "max": 100, "unit": "%", "default": 70, "display": "int"}
+ ],
+ "sections": [
+  {"label": "OSC 1", "keys": ["o1_wave"]},
+  {"label": "AMP ENV", "keys": ["amp_a", "amp_d", "amp_s", "amp_r"]},
+  {"label": "OUT", "keys": ["volume"]}
+ ]
+}

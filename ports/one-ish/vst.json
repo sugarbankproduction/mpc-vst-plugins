@@ -1,0 +1,10 @@
+{
+  "name": "ONE-ish",
+  "vendor": "sugarbank",
+  "uid": "OnIs",
+  "version": 1000,
+  "so": "one_ish.so",
+  "params": "params.json",
+  "build": {"root": "../..", "sources": ["ports/one-ish/src/engine.c"], "cflags": [], "libs": ["-lm"]},
+  "targets": ["armv7", "aarch64"]
+}
