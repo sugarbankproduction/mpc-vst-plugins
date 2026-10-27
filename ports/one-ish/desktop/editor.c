@@ -12,6 +12,9 @@
  * character page). A page can show some items only for one option of another control (the synth effect's page lists
  * the controls of the selected effect type); a page with more than 16 items has sub-pages (< > on its title line).
  *
+ * Patches (patches.c): the name line, < >, PREV/NEXT and the PRESET knob browse the factory presets then the owner's
+ * own patch files; a click on the name opens the PATCHES page (save, save as, rename, delete, import, export).
+ *
  * It sits in front of the shared wrapper: wrapper/vst2_wrap.c is compiled with -DVSTPluginMain=one_ish_wrapped_main,
  * and this file's VSTPluginMain adds the editor opcodes and passes everything else on. Where each control sits comes
  * from desktop/gen_layout.py (build/desktop/layout.h), by parameter key. The editor talks to the plugin through the
@@ -40,6 +43,10 @@ static dispatcher_t wrapped_dispatch;
 static process_t wrapped_replacing, wrapped_process;
 static HINSTANCE dll;
 static const char *CLASS_NAME = "ONEishEditor";
+
+intptr_t wrapped_call(AEffect *fx, int32_t op, int32_t idx, intptr_t v, void *ptr, float opt) {
+    return wrapped_dispatch(fx, op, idx, v, ptr, opt);
+}
 
 static ed_t *ed_of(AEffect *fx) {
     for (int i = 0; i < MAX_INSTANCES; i++)
@@ -207,6 +214,7 @@ int page_items(ed_t *e, int p, int *items) {
 }
 
 int screen_subs(ed_t *e) {
+    if (e->screen == SCR_PATCHES) return patches_subs(e);
     int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
     int per = e->screen == SCR_MATRIX ? ROWS : SLOTS;
     return n > per ? (n + per - 1) / per : 1;
@@ -251,6 +259,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
                 int i = MATRIX[e->sub * ROWS + r][k];
                 if (i >= 0 && PtInRect(&c, pt)) { e->hit_screen = 1; e->hit_rect = c; return i; }
             }
+    } else if (e->screen == SCR_PATCHES) {
+        return patches_hit(e, pt);
     } else if (e->screen == SCR_INDEX) {
         for (int p = e->sub * SLOTS; p < NPAGES && p < (e->sub + 1) * SLOTS; p++) {
             RECT nm, c;
@@ -301,30 +311,6 @@ static void pick_option(ed_t *e, int i, RECT r) {   /* a popup menu of the param
     if (choice > 0) edit_value(e, i, option_norm(i, choice - 1));
 }
 
-static void set_program(ed_t *e, int p) {
-    if (p < 0 || p >= e->fx->numPrograms) return;
-    e->fx->dispatcher(e->fx, effSetProgram, 0, p, NULL, 0);
-    if (e->host) e->host(e->fx, audioMasterUpdateDisplay, 0, 0, NULL, 0);
-    InvalidateRect(e->wnd, NULL, FALSE);
-}
-
-static void pick_program(ed_t *e) {
-    HMENU m = CreatePopupMenu();
-    int cur = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0);
-    for (int p = 0; p < e->fx->numPrograms; p++) {
-        char name[64] = "", item[80];
-        e->fx->dispatcher(e->fx, effGetProgramNameIndexed, p, 0, name, 0);
-        snprintf(item, sizeof item, "%03d  %s", p + 1, name);
-        AppendMenuA(m, MF_STRING | (p == cur ? MF_CHECKED : 0) | (p && p % 30 == 0 ? MF_MENUBARBREAK : 0),
-                    (UINT_PTR)(p + 1), item);
-    }
-    POINT pt = {L.name.left, L.name.bottom};
-    ClientToScreen(e->wnd, &pt);
-    int choice = TrackPopupMenu(m, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0, e->wnd, NULL);
-    DestroyMenu(m);
-    if (choice > 0) set_program(e, choice - 1);
-}
-
 static void key_off(ed_t *e) {
     if (e->key >= 0) ui_midi(e, 0x80, e->key, 0);
     e->key = -1;
@@ -366,8 +352,7 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
         if (steps) {
             e->enc_moved = 1;
             e->enc_y -= steps * sc(18);
-            set_program(e, e->shown_prog + steps);
-            e->shown_prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0);
+            patches_step(e, steps);
         }
     }
     InvalidateRect(e->wnd, NULL, FALSE);
@@ -380,7 +365,7 @@ static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes
     if (m == M_PITCH) { e->bend = 0; ui_midi(e, 0xE0, 0, 64); }
     if (m == M_PAD) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); }
     if (m == M_RIBBON) { e->ribbon_on = 0; e->ribbon_cc = -1; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
-    if (m == M_ENC && !e->enc_moved) pick_program(e);
+    if (m == M_ENC && !e->enc_moved) patches_open(e);   /* a click on the preset knob: the patch list */
     InvalidateRect(e->wnd, NULL, FALSE);
 }
 
@@ -392,6 +377,7 @@ static void set_octave(ed_t *e, int oct) {
 }
 
 static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangles, page entries, sub-page arrows */
+    if (patches_press(e, z)) return;   /* the PATCHES page's buttons and entries */
     int subs = screen_subs(e);
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) {   /* again on an open page: its next sub-page */
         int p = z - Z_PAGE;
@@ -413,9 +399,9 @@ static void press(ed_t *e, int x, int y) {
     int i = hit(e, x, y);
     switch (i) {
     case -1: return;
-    case Z_PREV: set_program(e, e->shown_prog - 1); return;
-    case Z_NEXT: set_program(e, e->shown_prog + 1); return;
-    case Z_NAME: pick_program(e); return;
+    case Z_PREV: patches_step(e, -1); return;   /* factory presets, then user patches */
+    case Z_NEXT: patches_step(e, 1); return;
+    case Z_NAME: patches_toggle(e); return;
     case Z_OCT_DOWN: set_octave(e, e->oct - 1); return;
     case Z_OCT_UP: set_octave(e, e->oct + 1); return;
     case Z_KEYS: e->mode = M_KEY; break;
@@ -487,6 +473,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             if (v != e->shown[i]) { e->shown[i] = v; changed = 1; }
         }
         if (prog != e->shown_prog) { e->shown_prog = prog; changed = 1; }
+        if (patches_tick(e)) changed = 1;   /* the edited mark, a message that ran out */
         if (changed) InvalidateRect(w, NULL, FALSE);
         return 0;
     }
@@ -545,7 +532,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         ScreenToClient(w, &pt);
         int i = hit(e, pt.x, pt.y), dir = GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 1 : -1;
-        if (i == Z_ENCODER) { set_program(e, e->shown_prog - dir); return 0; }
+        if (i == Z_ENCODER) { patches_step(e, -dir); return 0; }
         if (i < 0 || i >= NPARAMS) {   /* over the screen: its sub-pages */
             int subs = screen_subs(e);
             if (PtInRect(&L.screen, pt) && subs > 1) show(e, e->screen, (e->sub + subs - dir) % subs);
@@ -620,6 +607,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         if (e->wnd) DestroyWindow(e->wnd);
         e->hover = e->drag = e->key = -1;
         e->mode = M_NONE;
+        patches_rescan(e);
         e->wnd = CreateWindowExA(0, CLASS_NAME, "ONE-ish", WS_CHILD | WS_VISIBLE, 0, 0, L.w, L.h, (HWND)ptr, NULL, dll, e);
         return e->wnd != NULL;
     }
@@ -635,12 +623,32 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             e->mlog_n = 0;
             return (intptr_t)n;
         }
+        if (idx == TEST_PATCH && e && ptr) return patches_test(e, v, ptr, opt);   /* load_test: user patches */
+        break;
+    case effSetProgram:   /* the host's or the browser's: the patch shown follows (patches.c) */
+        if (e) {
+            int before = (int)wrapped_dispatch(fx, effGetProgram, 0, 0, NULL, 0);
+            intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
+            patches_program_set(e, before);
+            return r;
+        }
+        break;
+    case effGetChunk:   /* the project: the engine's state plus which patch it is */
+        if (e && ptr) return patches_get_chunk(e, ptr);
+        break;
+    case effSetChunk:
+        if (e) {
+            intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
+            if (r) patches_chunk_set(e, ptr, v);
+            return r;
+        }
         break;
     case 1: {   /* effClose: the instance goes away; forget it after the wrapper is done */
         if (e && e->wnd) { DestroyWindow(e->wnd); e->wnd = NULL; }
         intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
         for (int i = 0; i < MAX_INSTANCES; i++)
             if (eds[i] == e) eds[i] = NULL;   /* the slot stays allocated: see pool */
+        if (e) patches_free(e);
         return r;
     }
     }
@@ -671,6 +679,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         fx->processReplacing = hooked_replacing;
         fx->process = hooked_process;
         fx->flags |= effFlagsHasEditor;
+        patches_init(e);
         break;
     }
     return fx;   /* no free slot: the plugin still works, just without its window */

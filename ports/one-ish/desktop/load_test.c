@@ -1,7 +1,8 @@
 /* Load the desktop ONE-ish.dll the way a DAW does (LoadLibrary + VSTPluginMain), play a note, save/restore its
  * state, then play every preset in its program list. Proves the DLL's export, MIDI path, audio path and presets on
- * Windows itself; with a second path, writes all the presets to one WAV to listen to:
- *   load_test.exe path\to\ONE-ish.dll [presets.wav] */
+ * Windows itself; with a second path, writes all the presets to one WAV to listen to; with a third, pictures of the
+ * editor. User patches (save, load, rename, delete, import, export) are tested in a temporary folder:
+ *   load_test.exe path\to\ONE-ish.dll [presets.wav] [editor.bmp] */
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -11,6 +12,7 @@
 #include <windows.h>
 #include "layout.h"   /* build/desktop/layout.h: where the editor's ribbon, buttons and MORE triangles are */
 #define TEST_MIDI_LOG 0x4F314D4C   /* as editor.h: effVendorSpecific index for the MIDI the window passed on */
+#include "patches.h"   /* TEST_PATCH and its operations, for the user patch tests */
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*audioMasterCallback)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -37,8 +39,12 @@ typedef struct {
 } VstMidiEvent;
 typedef struct { int32_t numEvents; intptr_t reserved; void *events[2]; } VstEvents;
 
+static int automated, begun, ended;   /* audioMasterAutomate / BeginEdit / EndEdit calls the plugin made */
 static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, float o) {
     (void)e; (void)i; (void)v; (void)p; (void)o;
+    if (op == 0) automated++;
+    if (op == 43) begun++;
+    if (op == 44) ended++;
     return op == 1 ? 2400 : 0;   /* audioMasterVersion */
 }
 
@@ -196,6 +202,269 @@ static void ribbon_test(AEffect *fx, HWND child, float s) {
     check(on >= 0 && off > on && pos >= 5 && rising && abs(first - 13) <= 2 && abs(last - 102) <= 2, what);
 }
 
+/* ---- user patches (desktop/patches.c), in a temporary folder (ONEISH_PATCH_DIR) ---- */
+static char patch_dir[MAX_PATH];
+
+static intptr_t pt(AEffect *fx, int op, const char *in, char *out, float opt) {   /* a TEST_PATCH operation */
+    static char buf[1024];
+    snprintf(buf, sizeof buf, "%s", in ? in : "");
+    intptr_t r = fx->dispatcher(fx, 50, TEST_PATCH, op, buf, opt);
+    if (out) snprintf(out, 1024, "%s", buf);
+    return r;
+}
+
+static void snap(AEffect *fx, float *v) {
+    for (int i = 0; i < fx->numParams; i++) v[i] = fx->getParameter(fx, i);
+}
+static int differs(AEffect *fx, const float *v) {   /* the first param not exactly as in v, or -1 */
+    for (int i = 0; i < fx->numParams; i++)
+        if (fx->getParameter(fx, i) != v[i]) return i;
+    return -1;
+}
+
+static int exists(const char *name) {   /* a patch file in the folder */
+    char p[MAX_PATH + 64];
+    snprintf(p, sizeof p, "%s\\%s.oneish", patch_dir, name);
+    return GetFileAttributesA(p) != INVALID_FILE_ATTRIBUTES;
+}
+
+static void write_file(const char *path, const char *text) {
+    FILE *f = fopen(path, "wb");
+    if (f) { fwrite(text, 1, strlen(text), f); fclose(f); }
+}
+
+static int title_is(AEffect *fx, const char *want, int exact) {   /* the browser's title starts with (or is) want */
+    char t[1024];
+    pt(fx, PT_TITLE, NULL, t, 0);
+    int ok = exact ? !strcmp(t, want) : !strncmp(t, want, strlen(want));
+    if (!ok) printf("     title is \"%s\", expected \"%s\"\n", t, want);
+    return ok;
+}
+
+static void empty_dir(const char *dir) {   /* the test folder's files (and its "out" folder) */
+    char pat[MAX_PATH + 8], p[2 * MAX_PATH];
+    WIN32_FIND_DATAA f;
+    snprintf(pat, sizeof pat, "%s\\*", dir);
+    HANDLE h = FindFirstFileA(pat, &f);
+    if (h == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!strcmp(f.cFileName, ".") || !strcmp(f.cFileName, "..")) continue;
+        snprintf(p, sizeof p, "%s\\%s", dir, f.cFileName);
+        if (f.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) { empty_dir(p); RemoveDirectoryA(p); }
+        else DeleteFileA(p);
+    } while (FindNextFileA(h, &f));
+    FindClose(h);
+}
+
+static void patch_tests(AEffect *fx) {
+    static float saved[4096], other[4096];
+    char what[400], buf[1024], path[MAX_PATH + 64];
+    int np = fx->numPrograms, d;
+    pt(fx, PT_DIR, NULL, buf, 0);
+    snprintf(what, sizeof what, "the patch folder follows ONEISH_PATCH_DIR (%s)", buf);
+    check(!_stricmp(buf, patch_dir), what);
+    check(pt(fx, PT_COUNT, NULL, NULL, 0) == 0, "no user patches in a new folder");
+
+    /* a sound: factory preset 4, edited */
+    fx->dispatcher(fx, 2 /* effSetProgram */, 0, 3, NULL, 0);
+    check(title_is(fx, "F 004", 0) && !pt(fx, PT_EDITED, NULL, NULL, 0), "factory preset 4 shows as F 004, not edited");
+    static const int idx[] = {0, 1, 5, 13, 37, 60, 120, 200, 300, 401};
+    static const float val[] = {0.0f, 0.37f, 0.81f, 0.0f, 0.42f, 0.66f, 0.123f, 0.9f, 0.25f, 0.7f};
+    for (unsigned k = 0; k < sizeof idx / sizeof idx[0]; k++)
+        if (idx[k] < fx->numParams) fx->setParameter(fx, idx[k], val[k]);
+    check(pt(fx, PT_EDITED, NULL, NULL, 0) == 1 && title_is(fx, "F 004", 0), "a knob moved: the sound shows as edited");
+    pt(fx, PT_TITLE, NULL, buf, 0);
+    check(strstr(buf, " *") != NULL, "the edited sound's title ends in *");
+    snap(fx, saved);
+
+    /* SAVE AS, then load it back over another sound: every value exactly as saved */
+    check(pt(fx, PT_SAVE_AS, "Test Pad", NULL, 0) == PE_OK && exists("Test Pad"), "SAVE AS writes Test Pad.oneish");
+    check(title_is(fx, "U  Test Pad", 1) && pt(fx, PT_COUNT, NULL, NULL, 0) == 1, "it is now the current user patch, not edited");
+    fx->dispatcher(fx, 2, 0, 0, NULL, 0);
+    fx->setParameter(fx, 1, 0.99f);
+    check(differs(fx, saved) >= 0, "another sound loaded");
+    automated = begun = ended = 0;
+    check(pt(fx, PT_LOAD, "Test Pad", NULL, 0) == PE_OK, "the saved patch loads");
+    d = differs(fx, saved);
+    snprintf(what, sizeof what, "every one of the %d params is restored exactly (first difference: %d)", fx->numParams, d);
+    check(d < 0, what);
+    snprintf(what, sizeof what, "the host hears each change, inside begin/end edit (%d automate, %d begin, %d end)",
+             automated, begun, ended);
+    check(automated > 0 && begun == automated && ended == automated, what);
+    check(!pt(fx, PT_EDITED, NULL, NULL, 0) && title_is(fx, "U  Test Pad", 1), "after loading: not edited");
+
+    /* duplicates and names */
+    check(pt(fx, PT_SAVE_AS, "Test Pad", NULL, 0) == PE_EXISTS, "SAVE AS an existing name asks first (exists)");
+    check(pt(fx, PT_SAVE_AS, "test pad", NULL, 0) == PE_EXISTS, "names are the same whatever the case");
+    check(pt(fx, PT_SAVE_AS, "Test Pad", NULL, 1) == PE_OK && pt(fx, PT_COUNT, NULL, NULL, 0) == 1, "... and replaces it when told to");
+    static const char *const bad[] = {"", "   ", "a/b", "a\\b", "x:y", "what?", "con", "LPT1", "semi;colon", "dot.",
+                                      "this name is far too long for a patch"};
+    int nbad = 0;
+    for (unsigned k = 0; k < sizeof bad / sizeof bad[0]; k++) nbad += pt(fx, PT_SAVE_AS, bad[k], NULL, 0) == PE_BADNAME;
+    snprintf(what, sizeof what, "bad names are refused (%d of %d)", nbad, (int)(sizeof bad / sizeof bad[0]));
+    check(nbad == (int)(sizeof bad / sizeof bad[0]) && pt(fx, PT_COUNT, NULL, NULL, 0) == 1, what);
+
+    /* SAVE over the current user patch */
+    fx->setParameter(fx, 37, 0.77f);
+    snap(fx, saved);
+    check(pt(fx, PT_SAVE, NULL, NULL, 0) == PE_OK && !pt(fx, PT_EDITED, NULL, NULL, 0), "SAVE stores the change in Test Pad");
+    fx->dispatcher(fx, 2, 0, 1, NULL, 0);
+    pt(fx, PT_LOAD, "Test Pad", NULL, 0);
+    check(differs(fx, saved) < 0, "Test Pad now holds the change");
+    fx->dispatcher(fx, 2, 0, 7, NULL, 0);   /* (a program other than the wrapper's current one: it skips a re-pick) */
+    check(pt(fx, PT_SAVE, NULL, NULL, 0) == PE_NOT_USER, "SAVE on a factory preset needs a name (it never changes factory presets)");
+
+    /* rename */
+    pt(fx, PT_LOAD, "Test Pad", NULL, 0);
+    check(pt(fx, PT_SAVE_AS, "Other", NULL, 0) == PE_OK, "a second patch, Other");
+    pt(fx, PT_LOAD, "Test Pad", NULL, 0);
+    check(pt(fx, PT_RENAME, "Other", NULL, 0) == PE_EXISTS, "RENAME onto an existing name asks first");
+    check(pt(fx, PT_RENAME, "Bright Pad", NULL, 0) == PE_OK && !exists("Test Pad") && exists("Bright Pad") &&
+          title_is(fx, "U  Bright Pad", 1), "RENAME Test Pad -> Bright Pad");
+    fx->dispatcher(fx, 2, 0, 8, NULL, 0);
+    pt(fx, PT_LOAD, "Bright Pad", NULL, 0);
+    check(differs(fx, saved) < 0, "the renamed patch holds the same sound");
+    snprintf(path, sizeof path, "%s\\Bright Pad.oneish", patch_dir);
+    FILE *f = fopen(path, "rb");
+    size_t n = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
+    if (f) fclose(f);
+    buf[n] = 0;
+    check(!strncmp(buf, "ONE-ish patch 1\nname=Bright Pad\n", 32), "the file starts with its header and its new name");
+
+    /* the PRESET knob / < >: factory presets, then user patches A to Z */
+    pt(fx, PT_LOAD_POS, NULL, NULL, (float)(np - 1));
+    check(pt(fx, PT_STEP, NULL, NULL, 1) == np && title_is(fx, "U  Bright Pad", 1), "after the last factory preset: the first user patch");
+    check(pt(fx, PT_STEP, NULL, NULL, 1) == np + 1 && title_is(fx, "U  Other", 1), "then the next one");
+    check(pt(fx, PT_STEP, NULL, NULL, -2) == np - 1, "and back to the last factory preset");
+
+    /* export / import */
+    pt(fx, PT_LOAD, "Bright Pad", NULL, 0);
+    snap(fx, other);
+    snprintf(path, sizeof path, "%s\\out", patch_dir);
+    CreateDirectoryA(path, NULL);
+    snprintf(path, sizeof path, "%s\\out\\Shared Sound.oneish", patch_dir);
+    check(pt(fx, PT_EXPORT, path, NULL, 0) == PE_OK && GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES, "EXPORT writes a file");
+    check(pt(fx, PT_IMPORT, path, NULL, 0) == PE_OK && exists("Shared Sound") && pt(fx, PT_COUNT, NULL, NULL, 0) == 3,
+          "IMPORT copies it into the patches");
+    check(pt(fx, PT_IMPORT, path, NULL, 0) == PE_EXISTS && pt(fx, PT_IMPORT, path, NULL, 1) == PE_OK,
+          "IMPORT of a name already there asks first, then replaces");
+    fx->dispatcher(fx, 2, 0, 5, NULL, 0);
+    check(pt(fx, PT_LOAD, "Shared Sound", NULL, 0) == PE_OK && differs(fx, other) < 0, "the imported patch is the exported sound");
+    snprintf(path, sizeof path, "%s\\out\\notes.oneish", patch_dir);
+    write_file(path, "hello, this is not a patch\n");
+    check(pt(fx, PT_IMPORT, path, NULL, 0) == PE_BADFILE && pt(fx, PT_COUNT, NULL, NULL, 0) == 3, "IMPORT refuses a file that isn't a patch");
+
+    /* a damaged file: the defaults plus the lines that make sense, no crash */
+    snprintf(path, sizeof path, "%s\\Broken.oneish", patch_dir);
+    write_file(path, "ONE-ish patch 1\r\nname=Broken\r\nnonsense line\r\n=5\r\nflt_res=abc\r\nno_such_param=3\r\n"
+                     "o2_level = 55 \r\no2_wave=tri\r\n\x01\x02junk=\r\nflt_res\r\n");
+    int r = (int)pt(fx, PT_LOAD, "Broken", NULL, 0);
+    pt(fx, PT_MESSAGE, NULL, buf, 0);
+    snprintf(what, sizeof what, "a damaged file loads what makes sense and says so (\"%.80s...\")", buf);
+    check(r == PE_BADFILE && strstr(buf, "made no sense") != NULL, what);
+    void *chunk = NULL;
+    intptr_t len = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+    char state[8192] = "";
+    if (len > 0 && chunk) snprintf(state, sizeof state, "%s", (const char *)chunk);
+    char *tag = strstr(state, ";ui_patch=");
+    if (tag) *tag = 0;
+    snprintf(what, sizeof what, "... the rest at the defaults: state \"%s\"", state);
+    check(!strcmp(state, "v=1;o2_wave=0;o2_level=55") || !strcmp(state, "v=1;o2_level=55;o2_wave=0"), what);
+
+    /* the * marker against the loaded values */
+    pt(fx, PT_LOAD, "Bright Pad", NULL, 0);
+    float was = fx->getParameter(fx, 1);
+    fx->setParameter(fx, 1, was > 0.5f ? 0.2f : 0.8f);
+    int on = (int)pt(fx, PT_EDITED, NULL, NULL, 0);
+    fx->setParameter(fx, 1, was);
+    check(on == 1 && pt(fx, PT_EDITED, NULL, NULL, 0) == 0, "the * comes and goes as a knob leaves and returns to the saved value");
+
+    /* a project keeps which patch it is */
+    len = fx->dispatcher(fx, 23, 0, 0, &chunk, 0);
+    static char proj[8192];
+    memcpy(proj, chunk, len > 0 && len <= 8192 ? len : 0);
+    check(len > 0 && strstr(proj, ";ui_patch=0,U,") != NULL, "the project state names the patch (ui_patch)");
+    fx->dispatcher(fx, 2, 0, 6, NULL, 0);
+    fx->dispatcher(fx, 24 /* effSetChunk */, 0, len, proj, 0);
+    check(title_is(fx, "U  Bright Pad", 1) && differs(fx, other) < 0, "reopening the project shows U Bright Pad again");
+
+    /* delete */
+    pt(fx, PT_LOAD, "Other", NULL, 0);
+    check(pt(fx, PT_DELETE, NULL, NULL, 0) == PE_OK && !exists("Other") && title_is(fx, "-  Other *", 1),
+          "DELETE removes Other; the sound stays, unsaved");
+    check(pt(fx, PT_DELETE, NULL, NULL, 0) == PE_NOT_USER, "DELETE needs a user patch");
+    pt(fx, PT_LOAD, "Broken", NULL, 0);
+    pt(fx, PT_DELETE, NULL, NULL, 0);
+    pt(fx, PT_LOAD, "Bright Pad", NULL, 0);
+}
+
+/* the PATCHES page through the window: dialogs answered by a helper thread, as a person would */
+typedef struct { const char *title, *text; int button; } answer_t;
+static const char *dialog_bmp;   /* where to put a picture of the name box (with the editor's pictures) */
+static void dialog_shot(HWND d) {
+    RECT r;
+    GetWindowRect(d, &r);
+    int w = r.right - r.left, h = r.bottom - r.top, stride = (w * 3 + 3) & ~3;
+    char path[512];
+    const char *dot = strrchr(dialog_bmp, '.');
+    snprintf(path, sizeof path, "%.*s_patches_name.bmp", dot ? (int)(dot - dialog_bmp) : (int)strlen(dialog_bmp), dialog_bmp);
+    HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+    HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+    HGDIOBJ old = SelectObject(dc, bm);
+    PrintWindow(d, dc, 0);
+    BITMAPINFOHEADER bi = {sizeof bi, w, h, 1, 24, BI_RGB, 0, 0, 0, 0, 0};
+    unsigned char *px = malloc((size_t)stride * h);
+    FILE *f = px ? fopen(path, "wb") : NULL;
+    if (f) {
+        GetDIBits(dc, bm, 0, h, px, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+        BITMAPFILEHEADER fh = {0x4d42, (DWORD)(sizeof fh + sizeof bi + stride * h), 0, 0, sizeof fh + sizeof bi};
+        fwrite(&fh, sizeof fh, 1, f); fwrite(&bi, sizeof bi, 1, f); fwrite(px, (size_t)stride * h, 1, f);
+        fclose(f);
+        printf("     wrote %s\n", path);
+    }
+    free(px);
+    SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
+}
+static DWORD WINAPI answer(void *arg) {
+    const answer_t *a = arg;
+    for (int t = 0; t < 500; t++, Sleep(10)) {
+        HWND d = FindWindowA("#32770", a->title);
+        if (!d) continue;
+        Sleep(50);
+        if (a->text) SetDlgItemTextA(d, 101 /* ID_EDIT */, a->text);
+        if (a->text && dialog_bmp) { Sleep(100); dialog_shot(d); }
+        PostMessageA(d, WM_COMMAND, MAKEWPARAM(a->button, BN_CLICKED), 0);
+        return 1;
+    }
+    return 0;
+}
+static void click_answered(HWND child, float s, float x, float y, const answer_t *a) {
+    HANDLE th = CreateThread(NULL, 0, answer, (void *)a, 0, NULL);
+    click(child, s, x, y);
+    WaitForSingleObject(th, 6000);
+    DWORD found = 0;
+    GetExitCodeThread(th, &found);
+    CloseHandle(th);
+    if (!found) printf("     (no \"%s\" window appeared)\n", a->title);
+}
+
+static void patch_page(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    float sx = ZONE_SCREEN[0], sy = ZONE_SCREEN[1];
+    dialog_bmp = bmp;
+    float act_y = sy + 6 + 36 + 20 + 9, act_w = (384 - 20) / 6.0f + 4;   /* the PATCHES page's button row (patches.c) */
+    click(child, s, sx + 200, sy + 23);   /* the patch name: the list */
+    static const answer_t save_as = {"Save as", "UI Lead", IDOK}, yes = {"ONE-ish", NULL, IDYES};
+    click_answered(child, s, sx + 8 + act_w * PA_SAVE_AS + act_w / 2 - 2, act_y, &save_as);
+    check(exists("UI Lead") && title_is(fx, "U  UI Lead", 1), "PATCHES page: SAVE AS asks for a name and saves");
+    click_answered(child, s, sx + 8 + act_w * PA_DELETE + act_w / 2 - 2, act_y, &yes);
+    check(!exists("UI Lead") && pt(fx, PT_COUNT, NULL, NULL, 0) == 2, "PATCHES page: DELETE asks, then removes it");
+    pt(fx, PT_LOAD, "Bright Pad", NULL, 0);
+    fx->setParameter(fx, 37, 0.3f);   /* edited: the * and the lit SAVE in the picture */
+    SendMessageA(child, WM_TIMER, 1, 0);
+    if (bmp) shot(child, w, h, bmp, "_patches");
+    click(child, s, sx + 200, sy + 23);   /* the name again: back to the matrix */
+}
+
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void editor(AEffect *fx, const char *bmp) {
@@ -253,13 +522,24 @@ static void editor(AEffect *fx, const char *bmp) {
         click_zone(child, s, ZONE_TAB_ANALOG);
         shot(child, w, h, bmp, "_analog");
     }
-    if (child) SendMessageA(child, WM_LBUTTONUP, 0, 0);
+    if (child) {
+        RECT cr;
+        GetClientRect(child, &cr);
+        SendMessageA(child, WM_LBUTTONUP, 0, 0);
+        patch_page(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+    }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
     DestroyWindow(parent);
 }
 
 int main(int argc, char **argv) {
+    char tmp[MAX_PATH];   /* user patches go to a fresh temporary folder, not the owner's Documents */
+    GetTempPathA(sizeof tmp, tmp);
+    snprintf(patch_dir, sizeof patch_dir, "%soneish_patch_test_%lu", tmp, (unsigned long)GetCurrentProcessId());
+    CreateDirectoryA(patch_dir, NULL);
+    empty_dir(patch_dir);
+    SetEnvironmentVariableA("ONEISH_PATCH_DIR", patch_dir);
     HMODULE dll = LoadLibraryA(argc > 1 ? argv[1] : "ONE-ish.dll");
     if (!dll) { printf("FAIL LoadLibrary (error %lu)\n", GetLastError()); return 1; }
     AEffect *(*entry)(audioMasterCallback) = (AEffect * (*)(audioMasterCallback))(void *)GetProcAddress(dll, "VSTPluginMain");
@@ -296,11 +576,14 @@ int main(int argc, char **argv) {
     check(fabsf(fx->getParameter(fx, 1) - before) < 1e-3f, "restores them");
 
     audition(fx, argc > 2 && argv[2][0] ? argv[2] : NULL);
+    patch_tests(fx);
     editor(fx, argc > 3 ? argv[3] : NULL);
 
     fx->dispatcher(fx, 12, 0, 0, NULL, 0);
     fx->dispatcher(fx, 1 /* effClose */, 0, 0, NULL, 0);
     FreeLibrary(dll);
+    empty_dir(patch_dir);
+    RemoveDirectoryA(patch_dir);
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }
