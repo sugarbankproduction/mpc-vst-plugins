@@ -2,11 +2,12 @@
  * blended with a pulse of any width; octave, frequency +-7 semitones, beat frequency +-7 Hz; 2 and 3 can hard-sync
  * to 1), linear FM (1 to 2, 1 to 3 or 3 to 1), a ring modulator (1 x 2 or 2 x 3, from the triangle/saw waves) and
  * white noise, each sent to the SVF, the ladder, both or neither by its own two buttons; a state-variable filter
- * (LP/BP/HP/notch) and a ladder filter (cutoff, resonance, drive, LP/HP, 24-6 dB) in parallel or in series (SVF into
- * ladder) with a mix between them; three envelopes (filter, amp, mod). Shared: two LFOs (free or tempo-synced).
- * Hard-wired modulation as on the Moog One panel: filter envelope, LFO 2 and keyboard tracking to each cutoff,
- * LFO 1 and the mod envelope to pitch. An 8-slot modulation matrix (source x amount, scaled by a via source) over
- * pitch, levels, both filters and amp; mod wheel, aftertouch, pitch bend and sustain pedal. Up to 8 voices: a new
+ * (LP/BP/HP/notch; a pair of elements with spacing, in series or parallel: src/svf.h) and a ladder filter (cutoff,
+ * resonance, drive, LP/HP, 24-6 dB) in parallel or in series (SVF into ladder) with a mix between them, their cutoff
+ * knobs optionally linked; three envelopes (filter, amp, mod). Shared: two LFOs (free or tempo-synced).
+ * Hard-wired modulation as on the Moog One panel: filter envelope, LFO 2, keyboard tracking (-200..+200%) and
+ * audio-rate FM from a chosen oscillator to each cutoff, LFO 1 and the mod envelope to pitch. An 8-slot modulation
+ * matrix (source x amount, scaled by a via source) over pitch, levels, both filters and amp; mod wheel, aftertouch, pitch bend and sustain pedal. Up to 8 voices: a new
  * note takes an idle voice, else the quietest releasing one, else the oldest held one; the same key replays its own
  * voice. Mono (1 voice) plays legato with last-note priority. Glide (portamento): each voice slides from its own
  * last pitch at a constant rate (LCR), in a constant time (LCT) or exponentially (EXP); optionally only on legato
@@ -56,6 +57,7 @@
 #define MOD_PITCH_ST 24.0f /* the matrix's pitch destinations at +-100%: +-24 semitones */
 #define MOD_CUT_OCT 5.0f   /* its cutoff destinations at +-100%: +-5 octaves */
 #define FM_DEPTH 2.0f      /* linear FM at 100%: the carrier's frequency swings by up to 2x its own, times the modulator */
+#define FILTER_FM_OCT 4.0f /* filter FM at 100%: the cutoff swings +-4 octaves with a full-scale oscillator */
 #define MODFX_MIN_HZ 0.05f /* mod effect rate knob: 0.05 .. 10 Hz on a log scale */
 #define MODFX_RANGE 200.0f
 #define DLY_MIN_MS 10.0f   /* delay time knob: 10 ms .. 2 s on a log scale */
@@ -84,7 +86,9 @@ enum {
     P_DLY_TIME, P_DLY_SYNC, P_DLY_FB, P_DLY_TONE, P_DLY_PP, P_DLY_MIX,
     P_REV_DECAY, P_REV_DAMP, P_REV_PRE, P_REV_MIX,
     P_GLIDE, P_GLIDE_TIME, P_GLIDE_TYPE, P_GLIDE_LEGATO, P_GLIDE_GATED, P_GLISSANDO,
-    P_UNISON, P_UNI_COUNT, P_UNI_DETUNE, P_PITCH_VAR, P_COUNT
+    P_UNISON, P_UNI_COUNT, P_UNI_DETUNE, P_PITCH_VAR,
+    P_SVF_SPACE, P_SVF_PAIR, P_FLT_LINK, P_LAD_FM, P_SVF_FM, P_LAD_FM_SRC, P_SVF_FM_SRC,   /* the filters' MORE page */
+    P_COUNT
 };
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
@@ -121,7 +125,8 @@ static const char *const KEYS[P_COUNT] = {
     "dly_time", "dly_sync", "dly_fb", "dly_tone", "dly_pp", "dly_mix",
     "rev_decay", "rev_damp", "rev_pre", "rev_mix",
     "glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando",
-    "unison", "uni_count", "uni_detune", "pitch_var"
+    "unison", "uni_count", "uni_detune", "pitch_var",
+    "svf_space", "svf_pair", "flt_link", "lad_fm", "svf_fm", "lad_fm_src", "svf_fm_src"
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
@@ -141,7 +146,7 @@ typedef struct {
     float fm, tgt_fm;        /* the FM depth (ramp start, end) */
     float fm_prev;           /* oscillator 3's last sample, for FM 3 > 1 */
     ladder_t lad;
-    svf_t svf;
+    svf2_t svf;              /* the SVF: a pair of elements acting as one filter */
     env_t env[NENV];
     uint32_t noise;          /* xorshift state */
     int note;                /* the sounding note (glide's target), -1 before the first */
@@ -179,6 +184,7 @@ typedef struct {
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
     float gain_coef, glide;  /* per sample / per control step */
     int phase;               /* samples into the current control step */
+    float link_off;          /* LINK CUTOFF: the SVF cutoff knob minus the ladder's when link went on */
     int held[MAX_HELD];      /* keys down, oldest first (mono: releasing the newest falls back to the one before) */
     int nheld;
     char state_buf[STATE_MAX];   /* set_state's working copy (allocated with the instance, not per call) */
@@ -358,6 +364,7 @@ static void *create(const char *data_dir) {
     for (int n = 0; n < NLFO; n++) lfo_init(&s->lfo[n], 0x2545f491u * (n + 1));
     s->bpm = 120.0f;
     s->voices = voices_used(s);
+    s->link_off = s->val[P_SVF_CUT] - s->val[P_FLT_CUT];
     s->gain_coef = env_coef(5.0f, SR);
     s->glide = 1.0f - expf(-(float)CR / (GLIDE_MS * 0.001f * SR));
     apply(s);
@@ -380,7 +387,7 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
     if (v->env[ENV_AMP].stage == ENV_IDLE) {   /* from silence every note starts the same way */
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
         ladder_reset(&v->lad);
-        svf_reset(&v->svf);
+        svf2_reset(&v->svf);
         set_targets(s, v, no_mod);   /* unmodulated, until the next control step adds the matrix */
         v->mix_lad = v->tgt_mix;
         memcpy(v->shape, v->tgt_shape, sizeof v->shape);
@@ -395,7 +402,8 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
         /* the filters' unmodulated settings, for the samples before the next control step works out the rest */
         ladder_set(&v->lad, cut_hz(v->cut), s->val[P_FLT_RES] * 0.01f, s->val[P_FLT_DRIVE] * 0.01f,
                    (int)s->val[P_FLT_MODE], (int)s->val[P_FLT_SLOPE], SR);
-        svf_set(&v->svf, cut_hz(v->svf_cut), s->val[P_SVF_RES] * 0.01f, (int)s->val[P_SVF_MODE], SR);
+        svf2_set(&v->svf, cut_hz(v->svf_cut), s->val[P_SVF_SPACE] * 0.01f, s->val[P_SVF_RES] * 0.01f,
+                 (int)s->val[P_SVF_MODE], (int)s->val[P_SVF_PAIR], SR);
     }
 }
 
@@ -578,6 +586,15 @@ static int get_state(const one_t *s, char *buf, int n) {
     return used < n ? used : 0;
 }
 
+/* LINK CUTOFF, after param k was set (-1: a whole state): with link on, a cutoff knob's move takes the other knob
+ * along at the offset they had when link went on. A knob pushed to its end stays there and the offset comes back
+ * once it leaves the end. A state restores both knobs as saved (store() never links). */
+static void link_cutoffs(one_t *s, int k) {
+    if (k == P_FLT_LINK || k < 0 || s->val[P_FLT_LINK] < 0.5f) s->link_off = s->val[P_SVF_CUT] - s->val[P_FLT_CUT];
+    else if (k == P_FLT_CUT) s->val[P_SVF_CUT] = clampf(s->val[P_FLT_CUT] + s->link_off, 0.0f, 100.0f);
+    else if (k == P_SVF_CUT) s->val[P_FLT_CUT] = clampf(s->val[P_SVF_CUT] - s->link_off, 0.0f, 100.0f);
+}
+
 static void set_param(void *inst, const char *key, const char *val) {
     one_t *s = inst;
     if (!strcmp(key, "lfo_bpm")) {   /* the host's tempo (HAS_LFO_BPM), not a param: nothing to apply */
@@ -587,6 +604,7 @@ static void set_param(void *inst, const char *key, const char *val) {
     }
     if (!strcmp(key, "state")) set_state(s, val);
     else store(s, key, val);
+    link_cutoffs(s, slot(key));
     apply(s);
     int count = voices_used(s);
     if (count < s->voices)   /* fewer voices: let go of the ones past the new count (they finish their release) */
@@ -691,9 +709,17 @@ static void control_voice(one_t *s, voice_t *v) {
                     + key_oct * p[P_SVF_KBD] * 0.01f + dm[MD_SVF_CUT] * MOD_CUT_OCT;
     ladder_set(&v->lad, cut_hz(v->cut) * exp2f(lad_oct), clampf(p[P_FLT_RES] * 0.01f + dm[MD_LAD_RES], 0.0f, 1.0f),
                clampf(p[P_FLT_DRIVE] * 0.01f + dm[MD_LAD_DRIVE], 0.0f, 1.0f), (int)p[P_FLT_MODE], (int)p[P_FLT_SLOPE], SR);
-    svf_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES], 0.0f, 1.0f),
-            (int)p[P_SVF_MODE], SR);
+    svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), p[P_SVF_SPACE] * 0.01f,
+             clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES], 0.0f, 1.0f), (int)p[P_SVF_MODE], (int)p[P_SVF_PAIR], SR);
     set_targets(s, v, dm);
+}
+
+/* 2^x for the filter FM's few octaves: a 5th-order polynomial on the fraction (within 0.0002, a third of a cent) and
+ * the whole part straight into the exponent; no library call */
+static inline float exp2_fast(float x) {
+    float xi = floorf(x), f = x - xi;
+    union { float f; int32_t i; } u = {.i = ((int32_t)xi + 127) << 23};
+    return u.f * (1.0f + f * (0.69314718f + f * (0.24022651f + f * (0.05550411f + f * (0.00961813f + f * 0.00133336f)))));
 }
 
 /* a value ramped across a control step: its start (the step's target when mid-step) and its step per sample */
@@ -739,12 +765,17 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
     int fm_on = fm != 0.0f || v->tgt_fm != 0.0f;
     v->mix_lad = v->tgt_mix;
     v->fm = v->tgt_fm;
-    /* oscillators 2 and 3 run only when heard or feeding the ring modulator or FM (osc 1 always runs: it is the sync
-     * master); osc 2 is in both ring pairs */
-    int run2 = heard[1] || heard[RING];
-    int run3 = heard[2] || (heard[RING] && ring23) || (fm_on && route == FM_3TO1);
     int run_lad = series || ml != 0.0f || v->mix_lad != 0.0f;
-    if (!any_svf) svf_reset(&v->svf);   /* bypassed: start clean when something is routed to it again */
+    /* filter FM (octaves at a full-scale sample) from oscillator lad_src / svf_src; off costs nothing per sample */
+    int lad_src = (int)p[P_LAD_FM_SRC], svf_src = (int)p[P_SVF_FM_SRC];
+    float lad_fm = run_lad ? p[P_LAD_FM] * 0.01f * FILTER_FM_OCT : 0.0f;
+    float svf_fm = any_svf ? p[P_SVF_FM] * 0.01f * FILTER_FM_OCT : 0.0f;
+    /* oscillators 2 and 3 run only when heard or feeding the ring modulator, FM or filter FM (osc 1 always runs: it is
+     * the sync master); osc 2 is in both ring pairs */
+    int run2 = heard[1] || heard[RING] || (lad_fm > 0.0f && lad_src == 1) || (svf_fm > 0.0f && svf_src == 1);
+    int run3 = heard[2] || (heard[RING] && ring23) || (fm_on && route == FM_3TO1) || (lad_fm > 0.0f && lad_src == 2)
+               || (svf_fm > 0.0f && svf_src == 2);
+    if (!any_svf) svf2_reset(&v->svf);   /* bypassed: start clean when something is routed to it again */
     if (!run_lad) ladder_reset(&v->lad);
     float target = gain_target(s, v);
     osc_t *o1 = &v->osc[0], *o2 = &v->osc[1], *o3 = &v->osc[2];
@@ -762,11 +793,15 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
         float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nz * lad[NOISE] + rm * lad[RING];
         float svf_out = 0.0f, lad_out = 0.0f;
         if (any_svf) {
-            svf_out = svf_next(&v->svf, a * svf[0] + b * svf[1] + c * svf[2] + nz * svf[NOISE] + rm * svf[RING]
-                                        + nz * NOISE_FLOOR);
+            float in = a * svf[0] + b * svf[1] + c * svf[2] + nz * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
+            svf_out = svf_fm > 0.0f ? svf2_next_fm(&v->svf, in, exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)))
+                                    : svf2_next(&v->svf, in);
             if (series) lad_in += svf_out;
         }
-        if (run_lad) lad_out = ladder_next(&v->lad, lad_in + nz * NOISE_FLOOR);
+        if (run_lad)
+            lad_out = lad_fm > 0.0f ? ladder_next_fm(&v->lad, lad_in + nz * NOISE_FLOOR,
+                                                     exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
+                                    : ladder_next(&v->lad, lad_in + nz * NOISE_FLOOR);
         float f = lad_out * ml + svf_out * (1.0f - ml);
         v->gain += (target - v->gain) * s->gain_coef;
         if (fabsf(v->gain - target) < 1e-7f) v->gain = target;   /* settle exactly: no denormal tail */

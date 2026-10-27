@@ -16,8 +16,12 @@
 enum { LADDER_LP, LADDER_HP };
 enum { LADDER_24DB, LADDER_18DB, LADDER_12DB, LADDER_6DB };   /* option order in params.json */
 
+#define LADDER_G_MAX 6.3137515f /* tan(pi * LADDER_FC_MAX) */
+#define LADDER_G_MIN 7.1e-5f    /* about 1 Hz at 44.1 kHz */
+
 typedef struct {
     float s[4];                 /* the four stages' integrator states */
+    float g;                    /* tan(pi fc / sr) at the last ladder_set (filter FM scales it per sample) */
     float G, k, gain_in, gain_out, bass;
     float mix[5];               /* output = mix . (u, y1, y2, y3, y4) for the mode and slope */
 } ladder_t;
@@ -40,6 +44,7 @@ static inline void ladder_set(ladder_t *l, float hz, float reso, float drive, in
     float g = tanf(3.14159265f * fc / sr);
     float dg = 1.0f + 15.0f * drive;   /* drive: up to +24 dB into the saturator */
     int n = slope < 0 ? 0 : slope > 3 ? 3 : slope;
+    l->g = g;
     l->G = g / (1.0f + g);
     l->k = LADDER_K_MAX * reso;
     l->gain_in = 0.25f * dg;           /* at no drive a full-scale oscillator stays near the saturator's linear part */
@@ -65,4 +70,14 @@ static inline float ladder_next(ladder_t *l, float x) {
     }
     const float *m = l->mix;
     return (m[0] * y[0] + m[1] * y[1] + m[2] * y[2] + m[3] * y[3] + m[4] * y[4]) * l->gain_out;
+}
+
+/* filter FM: the cutoff times e (2 to the power of this sample's modulation in octaves). Scaling g stands in for
+ * tan(pi fc / sr) of the scaled cutoff: exact octaves where tan is near linear, a little wide near the top cutoff,
+ * where g is clamped. One more division per sample, no tanf. */
+static inline float ladder_next_fm(ladder_t *l, float x, float e) {
+    float g = l->g * e;
+    g = g < LADDER_G_MIN ? LADDER_G_MIN : g > LADDER_G_MAX ? LADDER_G_MAX : g;
+    l->G = g / (1.0f + g);
+    return ladder_next(l, x);
 }

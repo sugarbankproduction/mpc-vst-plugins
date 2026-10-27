@@ -150,29 +150,29 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| Three analog filters: an SVF pair acting as one, plus a ladder | p33 | Partial | One TPT SVF (12 dB) + ladder | M | low |
+| Three analog filters: an SVF pair acting as one, plus a ladder | p33 | Have | Two TPT SVF elements as one (`src/svf.h` svf2_t) + ladder (2026-10-27, offline) | - | - |
 | SVF CUTOFF | 20 Hz to 20 kHz (p33) | Have | `svf_cut` (log 20 Hz-20 kHz) | - | - |
 | SVF RESONANCE | 0 to 10 (p33) | Have | `svf_res` (peak up to +20 dB; does not self-oscillate) | - | - |
 | SVF MODE | Notch, BP, HP, LP (p34) | Have | `svf_mode` LP/BP/HP/Notch | - | - |
-| SVF slope from the two elements | -12 dB or -24 dB (spec p140) | Missing | 12 dB only | S (with the second element) | low |
-| SVF SPACING: element B's cutoff above or below A | -100% to +100% (p38) | Missing | - | M | low (second SVF, ~10 multiplies a sample) |
-| SVF SERIES/PARALLEL (inside the SVF) | Series, Parallel (p38) | Missing | - | M (with the second element) | low |
+| SVF slope from the two elements | -12 dB or -24 dB (spec p140) | Have | 24 dB = `svf_pair` Series; 12 dB = Parallel at spacing 0 (exactly the old single SVF, the default) | - | - |
+| SVF SPACING: element B's cutoff above or below A | -100% to +100% (p38) | Have | `svf_space`, +-100% = +-4 octaves | - | low (second element, ~10 multiplies a sample; none at spacing 0 in parallel) |
+| SVF SERIES/PARALLEL (inside the SVF) | Series, Parallel (p38) | Have | `svf_pair`; series gives each element the square root of the damping so the peak matches one element's; parallel averages the two | - | low |
 | LADDER CUTOFF | 20 Hz to 20 kHz (p34) | Have | `flt_cut` | - | - |
 | LADDER RESONANCE, self-oscillates to a sine | 0 to 10 (p34) | Have | `flt_res` (feedback up to 4.4) | - | - |
 | LADDER MODE | HP, LP (p35) | Have | `flt_mode` | - | - |
 | LADDER SLOPE | 24, 18, 12, 6 dB (p35) | Have | `flt_slope` | - | - |
 | Transistor-ladder character: per-stage non-linearity, how resonance thins the bass [ANALOG] | p34 | Partial | Linear ZDF ladder, one input saturator, half bass compensation | L | medium-high (per-stage saturation needs an iterative solve or 2x oversampling) |
-| LINK CUTOFF: either knob moves both, offset kept, clamps recover | on/off (p35) | Missing | - | S | none |
+| LINK CUTOFF: either knob moves both, offset kept, clamps recover | on/off (p35) | Have | `flt_link` (in set_param; a state restores both knobs as saved; presets set it Off first, see make_presets.py) | - | none |
 | ROUTE: SVF and ladder side by side, or SVF into ladder | PAR, SER (p36) | Have | `flt_route` | - | - |
 | MIX between filter outputs | SVF to ladder (p36) | Have | `flt_mix` | - | - |
 | SVF MOD / LADDER MOD: which filter the three knobs edit [UI] | on/off each (p36-37) | Have | Separate amount knobs per filter do the same job | - | - |
 | EG AMT per filter (filter envelope to cutoff) | -10 to +10 (p37) | Have | `lad_env`, `svf_env` | - | - |
 | LFO 2 AMT per filter | 0 to 10 (p37) | Have | `lad_lfo`, `svf_lfo` (bipolar) | - | - |
-| FM AMT per filter: audio-rate cutoff FM from an oscillator | 0 to 10 (p37) | Missing | Cutoffs update every 16 samples | M | high (coefficients per sample; tanf needs an approximation) |
-| SVF FM SOURCE (MORE) | OSC 1, OSC 2, OSC 3 (p38) | Missing | - | S (with filter FM) | none |
-| LADDER FM SOURCE (MORE) | OSC 1, OSC 2, OSC 3 (p38) | Missing | - | S (with filter FM) | none |
-| SVF KEY TRACK | -200% to +200% (p39) | Partial | `svf_kbd` 0% to 100% | S | none |
-| LADDER KEY TRACK | -200% to +200% (p39) | Partial | `lad_kbd` 0% to 100% | S | none |
+| FM AMT per filter: audio-rate cutoff FM from an oscillator | 0 to 10 (p37) | Have | `lad_fm`, `svf_fm` (100% = +-4 octaves at a full-scale sample); per-sample g scaled by a fast 2^x, no tanf | - | medium when on (about +35% a voice with both on, PC 2026-10-27); none when off |
+| SVF FM SOURCE (MORE) | OSC 1, OSC 2, OSC 3 (p38) | Have | `svf_fm_src` (a silent oscillator runs when it is the source) | - | none |
+| LADDER FM SOURCE (MORE) | OSC 1, OSC 2, OSC 3 (p38) | Have | `lad_fm_src` | - | none |
+| SVF KEY TRACK | -200% to +200% (p39) | Have | `svf_kbd` -200% to +200% | - | - |
+| LADDER KEY TRACK | -200% to +200% (p39) | Have | `lad_kbd` -200% to +200% | - | - |
 | Filter MORE page diagram [UI] | p38 | Missing | - | - | none |
 
 ## 8. Envelopes (p40-45)

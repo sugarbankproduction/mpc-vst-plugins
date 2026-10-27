@@ -9,6 +9,10 @@
  *   filter    self-oscillation is a clean, steady sine near the cutoff; the ladder alone stays stable in every mode
  *             and slope at full resonance and drive; LP/HP slopes measure 24/18/12/6 dB; the cutoff knob reads in Hz
  *   svf       LP/BP/HP/notch shapes, the resonance peak, stability at full resonance
+ *   svf pair  series makes 24 dB slopes and keeps one element's peak; parallel at spacing 0 is the single filter
+ *             exactly; parallel with spacing has two peaks, series notch two notches; stable at full resonance in
+ *             every configuration and under filter FM; Link Cutoff keeps the offset; keyboard tracking at -100% and
+ *             +200%; filter FM adds sidebands only when its amount is up
  *   routing   parallel/series, the filter mix and each source's SVF/ladder buttons send the sound where they say
  *   mod       envelope timing and knob text, filter envelope, keyboard tracking, LFO vibrato free and tempo-synced,
  *             pitch envelope, a soft note after a loud one starts at its own level
@@ -484,6 +488,225 @@ static void svf_shapes(void) {
     }
     snprintf(what, sizeof what, "SVF stable in every mode at full resonance through a full sweep (largest output %.1f)", worst);
     check(!bad && worst < 40, what);
+}
+
+static void route(void *e, const char *ch, int r);
+static double get(void *e, const char *k);
+
+/* gain of the SVF pair alone for a quiet sine, in dB */
+static double svf2_gain_db(int mode, int pair, double space, double reso, double fc, double f) {
+    svf2_t sv;
+    memset(&sv, 0, sizeof sv);
+    svf2_set(&sv, (float)fc, (float)space, (float)reso, mode, pair, SR);
+    double in = 0, out = 0;
+    for (int i = 0; i < SR; i++) {
+        float x = 0.1f * sinf((float)(2 * M_PI * f * i / SR));
+        float y = svf2_next(&sv, x);
+        if (i >= SR / 2) { in += x * x; out += y * y; }
+    }
+    return 10 * log10(out / in + 1e-30);
+}
+
+/* the strongest 1/6-octave band of a sound (power summed over 6 FFT frames), on a 1/24-octave grid from 50 Hz up:
+ * where a resonant bandpass sits in filtered noise, which a single FFT bin finds only roughly */
+static double band_peak_hz(const float *x) {
+    static double sum[N / 2];
+    memset(sum, 0, sizeof sum);
+    for (int fr = 0; fr < 6; fr++) {
+        const double *pw = spectrum(x + fr * N);
+        for (int k = 0; k < N / 2; k++) sum[k] += pw[k];
+    }
+    double best = 0, best_hz = 0, bin = (double)SR / N;
+    for (double c = 50; c < 16000; c *= pow(2, 1 / 24.0)) {
+        double p = 0;
+        for (int k = (int)(c * pow(2, -1 / 12.0) / bin); k <= (int)(c * pow(2, 1 / 12.0) / bin) && k < N / 2; k++) p += sum[k];
+        if (p > best) { best = p; best_hz = c; }
+    }
+    return best_hz;
+}
+
+/* the SVF as a pair of elements (spacing, series/parallel), Link Cutoff, keyboard tracking to +-200%, filter FM */
+static void svf_pair(void) {
+    char what[220];
+    /* series: two 12 dB elements make 24 dB; at no resonance the cutoff still sits at -6 dB, as one element */
+    double pass = svf2_gain_db(SVF_LP, SVF_SERIES, 0, 0, 1000, 250), stop = svf2_gain_db(SVF_LP, SVF_SERIES, 0, 0, 1000, 4000);
+    snprintf(what, sizeof what, "SVF pair series LP: %.1f dB at a quarter of the cutoff, %.1f dB two octaves above "
+             "(want about -48: 24 dB/oct)", pass, stop);
+    check(pass > -1 && fabs(stop - pass + 48.2) < 3, what);
+    double hp_pass = svf2_gain_db(SVF_HP, SVF_SERIES, 0, 0, 1000, 4000), hp_stop = svf2_gain_db(SVF_HP, SVF_SERIES, 0, 0, 1000, 250);
+    snprintf(what, sizeof what, "SVF pair series HP: %.1f dB two octaves above the cutoff, %.1f dB two below", hp_pass, hp_stop);
+    check(hp_pass > -1 && fabs(hp_stop - hp_pass + 48.2) < 3, what);
+    double s_fc = svf2_gain_db(SVF_LP, SVF_SERIES, 0, 0, 1000, 1000), o_fc = svf_gain_db(SVF_LP, 0, 1000, 1000);
+    double s_pk = svf2_gain_db(SVF_LP, SVF_SERIES, 0, 1, 1000, 1000), o_pk = svf_gain_db(SVF_LP, 1, 1000, 1000);
+    snprintf(what, sizeof what, "SVF pair series vs one element at the cutoff: %.1f / %.1f dB at no resonance, "
+             "%+.1f / %+.1f dB at full", s_fc, o_fc, s_pk, o_pk);
+    check(fabs(s_fc - o_fc) < 1 && fabs(s_pk - o_pk) < 2, what);
+
+    /* parallel at spacing 0 is the old single element, sample for sample, while the cutoff sweeps */
+    {
+        svf_t one;
+        svf2_t two;
+        memset(&one, 0, sizeof one);
+        memset(&two, 0, sizeof two);
+        double t = 0, diff = 0;
+        for (int b = 0; b < 400; b++) {
+            float hz = (float)(20 * pow(1000, b / 400.0));
+            svf_set(&one, hz, 0.7f, b / 100 % 4, SR);
+            svf2_set(&two, hz, 0, 0.7f, b / 100 % 4, SVF_PARALLEL, SR);
+            for (int i = 0; i < 128; i++) {
+                float x = (float)(2 * t - 1);
+                diff = fmax(diff, fabs(svf_next(&one, x) - svf2_next(&two, x)));
+                t += 110.0 / SR;
+                if (t >= 1) t -= 1;
+            }
+        }
+        snprintf(what, sizeof what, "SVF pair parallel at spacing 0 is the single 12 dB filter of before (largest difference %g)", diff);
+        check(diff == 0, what);
+    }
+
+    /* parallel with spacing +50% (2 octaves): resonant BP peaks at the cutoff and two octaves above it */
+    double peaks[4];
+    int np = 0;
+    {
+        double g[200], f[200];
+        int n = 0;
+        for (double hz = 125; hz < 8000 && n < 200; hz *= pow(2, 1 / 24.0), n++) {
+            f[n] = hz;
+            g[n] = svf2_gain_db(SVF_BP, SVF_PARALLEL, 0.5, 0.9, 500, hz);
+        }
+        for (int i = 1; i < n - 1; i++)
+            if (g[i] > g[i - 1] && g[i] >= g[i + 1] && g[i] > -6 && np < 4) peaks[np++] = f[i];
+    }
+    snprintf(what, sizeof what, "SVF pair parallel BP, spacing +50%%, cutoff 500 Hz: %d peaks, at %.0f and %.0f Hz (want 500, 2000)",
+             np, np > 0 ? peaks[0] : 0, np > 1 ? peaks[1] : 0);
+    check(np == 2 && fabs(log2(peaks[0] / 500)) < 1 / 12.0 && fabs(log2(peaks[1] / 2000)) < 1 / 12.0, what);
+    double n1 = svf2_gain_db(SVF_NOTCH, SVF_SERIES, -0.25, 0.5, 2000, 2000), n2 = svf2_gain_db(SVF_NOTCH, SVF_SERIES, -0.25, 0.5, 2000, 1000),
+           mid = svf2_gain_db(SVF_NOTCH, SVF_SERIES, -0.25, 0.5, 2000, 1414), out = svf2_gain_db(SVF_NOTCH, SVF_SERIES, -0.25, 0.5, 2000, 100);
+    snprintf(what, sizeof what, "SVF pair series notch, spacing -25%% (1 octave down): %.1f dB at 2 kHz, %.1f at 1 kHz, "
+             "%.1f between, %.1f far below", n1, n2, mid, out);
+    check(n1 < -30 && n2 < -30 && mid > -15 && out > -1, what);
+
+    /* full resonance in every mode, pair and spacing, the cutoff sweeping and filter FM swinging it +-4 octaves */
+    float worst = 0;
+    int bad = 0;
+    for (int mode = 0; mode < 4; mode++)
+        for (int pair = 0; pair < 2; pair++)
+            for (int sp = -1; sp <= 1; sp++)
+                for (int fm = 0; fm < 2; fm++) {
+                    svf2_t sv;
+                    memset(&sv, 0, sizeof sv);
+                    double t = 0;
+                    for (int b = 0; b < 700; b++) {
+                        double pos = b < 350 ? b / 350.0 : (700 - b) / 350.0;
+                        svf2_set(&sv, (float)(20 * pow(1000, pos)), (float)sp, 1.0f, mode, pair, SR);
+                        for (int i = 0; i < 128; i++) {
+                            float x = (float)(2 * t - 1);
+                            float y = fm ? svf2_next_fm(&sv, x, exp2f(4 * sinf((float)(2 * M_PI * 333 * (b * 128 + i) / SR))))
+                                         : svf2_next(&sv, x);
+                            t += 55.0 / SR;
+                            if (t >= 1) t -= 1;
+                            if (!isfinite(y)) bad++;
+                            else if (fabsf(y) > worst) worst = fabsf(y);
+                        }
+                    }
+                }
+    snprintf(what, sizeof what, "SVF pair stable at full resonance in every mode, pair and spacing, with and without "
+             "filter FM (largest output %.1f)", worst);
+    check(!bad && worst < 40, what);
+    worst = 0;
+    for (int slope = 0; slope < 4; slope++) {
+        ladder_t l;
+        memset(&l, 0, sizeof l);
+        double t = 0;
+        for (int b = 0; b < 700; b++) {
+            double pos = b < 350 ? b / 350.0 : (700 - b) / 350.0;
+            ladder_set(&l, (float)(20 * pow(1000, pos)), 1.0f, 1.0f, LADDER_LP, slope, SR);
+            for (int i = 0; i < 128; i++) {
+                float y = ladder_next_fm(&l, (float)(2 * t - 1) * 3.0f, exp2f(4 * sinf((float)(2 * M_PI * 333 * (b * 128 + i) / SR))));
+                t += 55.0 / SR;
+                if (t >= 1) t -= 1;
+                if (!isfinite(y)) bad++;
+                else if (fabsf(y) > worst) worst = fabsf(y);
+            }
+        }
+    }
+    snprintf(what, sizeof what, "ladder stable with filter FM at full resonance and drive (largest output %.2f)", worst);
+    check(!bad && worst < 8, what);
+
+    /* Link Cutoff: either knob moves both, keeping the offset; an end holds and the offset comes back */
+    void *e = E->create(NULL);
+    set(e, "flt_cut", 40); set(e, "svf_cut", 60); set(e, "flt_link", 1);
+    set(e, "flt_cut", 50);
+    double a1 = get(e, "svf_cut");
+    set(e, "svf_cut", 80);
+    double a2 = get(e, "flt_cut");
+    set(e, "flt_cut", 95);
+    double a3 = get(e, "svf_cut");
+    set(e, "flt_cut", 70);
+    double a4 = get(e, "svf_cut");
+    set(e, "flt_link", 0); set(e, "flt_cut", 10);
+    double a5 = get(e, "svf_cut");
+    snprintf(what, sizeof what, "Link Cutoff (offset +20): ladder 50 -> SVF %.0f, SVF 80 -> ladder %.0f, ladder 95 -> SVF %.0f "
+             "(held at the end), ladder 70 -> SVF %.0f (offset back); unlinked, SVF stays %.0f", a1, a2, a3, a4, a5);
+    check(a1 == 70 && a2 == 60 && a3 == 100 && a4 == 90 && a5 == 90, what);
+    E->destroy(e);
+
+    /* keyboard tracking beyond 100%: a self-oscillating ladder an octave up at -100% and +200% */
+    static float x[SR * 3];
+    static const double track[] = {-100, 200};
+    for (int t = 0; t < 2; t++) {
+        double f[2];
+        for (int k = 0; k < 2; k++) {
+            e = patch(SAW, 0, 1, 100, 10);
+            set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(440)); set(e, "lad_kbd", track[t]);
+            note(e, 1, 60 + 12 * k, 127);
+            render_f(e, x, SR * 2);
+            f[k] = peak_hz(x + SR * 2 - N);
+            E->destroy(e);
+        }
+        double want = pow(2, track[t] / 100);
+        snprintf(what, sizeof what, "ladder keyboard tracking %+.0f%%: C4 rings at %.1f Hz, C5 at %.1f Hz (ratio %.3f, want %.3f)",
+                 track[t], f[0], f[1], f[1] / f[0], want);
+        check(fabs(f[1] / f[0] / want - 1) < 0.02, what);
+    }
+    for (int t = 0; t < 2; t++) {   /* the SVF can't ring by itself: find its resonant band in noise */
+        double f[2];
+        for (int k = 0; k < 2; k++) {
+            e = patch(SAW, 0, 1, 100, 10);
+            set(e, "o1_level", 0); set(e, "noise_level", 100); route(e, "noise", 1); set(e, "flt_mix", 0);
+            set(e, "svf_mode", SVF_BP); set(e, "svf_pair", SVF_SERIES); set(e, "svf_res", 100);
+            set(e, "svf_cut", knob_for_hz(500)); set(e, "svf_kbd", track[t]);
+            note(e, 1, 60 + 12 * k, 127);
+            render_f(e, x, SR / 4 + 6 * N);
+            f[k] = band_peak_hz(x + SR / 4);
+            E->destroy(e);
+        }
+        double want = pow(2, track[t] / 100);
+        snprintf(what, sizeof what, "SVF keyboard tracking %+.0f%%: band at %.0f Hz on C4, %.0f Hz on C5 (ratio %.2f, want %.2f)",
+                 track[t], f[0], f[1], f[1] / f[0], want);
+        check(fabs(log2(f[1] / f[0] / want)) < 1 / 12.0, what);
+    }
+
+    /* filter FM: osc 2 (not heard, 5 semitones up) swings the cutoff at audio rate, adding sidebands that are not
+     * harmonics of the note; at amount 0 there are none */
+    static const char *const fm_key[] = {"lad_fm", "svf_fm"};
+    for (int flt = 0; flt < 2; flt++) {
+        double inh[2];
+        for (int on = 0; on < 2; on++) {
+            e = patch(SAW, 0, 1, 100, 10);
+            set(e, "o2_freq", 5);
+            if (flt) { route(e, "o1", 1); set(e, "flt_mix", 0); set(e, "svf_cut", knob_for_hz(800)); set(e, "svf_res", 50); set(e, "svf_fm_src", 1); }
+            else { set(e, "flt_cut", knob_for_hz(800)); set(e, "flt_res", 50); set(e, "lad_fm_src", 1); }
+            set(e, fm_key[flt], on ? 50 : 0);
+            note(e, 1, 45, 127);
+            render_f(e, x, SR / 4 + N);
+            inh[on] = alias_db(x + SR / 4, 110);
+            E->destroy(e);
+        }
+        snprintf(what, sizeof what, "%s filter FM from osc 2: inharmonic power %.1f dB at amount 0, %.1f dB at 50%%",
+                 flt ? "SVF" : "ladder", inh[0], inh[1]);
+        check(inh[0] < -60 && inh[1] > -30, what);
+    }
 }
 
 static double rms_of(void *e, int n) {
@@ -1396,7 +1619,23 @@ static void bench(void) {
     printf("bench: 8 voices as 2 unison stacks + glide %6.2f us per 128-frame block on this PC (%.2f per voice)\n",
            uus, uus / 8);
     E->destroy(u);
-
+    for (int fm = 0; fm < 2; fm++) {   /* 8 voices of the busy patch with the SVF pair in series, filter FM off and on */
+        void *e = patch(SAW, 5, 300, 70, 250);
+        set(e, "voices", 4); set(e, "o2_level", 80); set(e, "o3_level", 60);
+        route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
+        set(e, "mod2_src", 6); set(e, "mod2_dst", 9); set(e, "mod2_amt", 30);
+        set(e, "svf_pair", SVF_SERIES); set(e, "svf_space", 25);
+        if (fm) { set(e, "lad_fm", 40); set(e, "svf_fm", 40); set(e, "svf_fm_src", 2); }
+        for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        printf("bench: 8 voices, SVF pair in series, filter FM %s: %6.2f us per 128-frame block (%.2f per voice)\n",
+               fm ? "on " : "off", us, us / 8);
+        E->destroy(e);
+    }
     void *e = patch(SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
     set(e, "voices", 4); set(e, "modfx_type", 1); set(e, "modfx_mix", 50); set(e, "dly_mix", 30); set(e, "rev_mix", 30);
     for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
@@ -1422,6 +1661,7 @@ int main(int argc, char **argv) {
     filter_slopes();
     cutoff_text();
     svf_shapes();
+    svf_pair();
     routing();
     modulation();
     matrix();
