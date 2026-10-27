@@ -102,7 +102,7 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 | BEND UP OFFSET per oscillator | -24 to +24 st (p26) | Have | `oN_bend_up_off`, whole semitones, added to `bend_up` (2026-10-27, offline) | - | none |
 | BEND DOWN OFFSET per oscillator | -24 to +24 st (p26) | Have | `oN_bend_dn_off`, added to `bend_down` (2026-10-27, offline) | - | none |
 | MORE page wave image and values [UI] | p25 | Missing | - | M | none |
-| Analog VCO character: slight drift and warm-up instability [ANALOG] | p7 (warm-up note) | Partial | `drift` 0-100%: each oscillator wanders at random within +-4 cents (and each voice's cutoffs within +-0.04 octave), a new target every 0.3-1.5 s, at control rate; 0 is exactly off (2026-10-27, offline). No warm-up | - | low |
+| Analog VCO character: slight drift and warm-up instability [ANALOG] | p7 (warm-up note) | Partial | `drift` 0-100%: each oscillator wanders at random within +-4 cents (and each voice's cutoffs within +-0.04 octave), a new target every 0.3-1.5 s, at control rate; 0 is exactly off (2026-10-27, offline). No warm-up. Fixed per-voice tuning, cutoff, resonance, envelope-time and level spreads and a non-linear ladder in the ANALOG section (`an_*`, 2026-10-27, offline) | - | low |
 | Clean top end under sync and FM | implied (analog) | Partial | PolyBLEP; no oversampling | M-L | medium-high (2x oversampling) |
 
 ## 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28)
@@ -845,6 +845,12 @@ Tier 1 total: roughly 12-16 days.
    low (a stereo voice bus; the effects still take a mono sum, as on the Moog One).
 12. **Analog character** (sections 3, 7): slow oscillator drift; later, per-stage ladder saturation. Effort: S for
    drift, L for the ladder. CPU: low for drift; medium-high for a non-linear ladder (only if the bench allows).
+   Done 2026-10-27 (offline), beyond the Moog One's own controls, all 0 by default (0 = the same samples as before):
+   per-voice "voice card" spreads `an_cut` (+-1/3 octave of both cutoffs), `an_res` (+-5% resonance), `an_env`
+   (+-25% of every free envelope stage time), `an_lvl` (+-1.5 dB), `an_tune` (+-8 cents per oscillator), each voice
+   slot's parts fixed (the same in every instance); `an_ladder` blends the ladder towards per-stage tanh saturation
+   (zero-delay, the "cheap" state-evaluated method). PC bench, 8 voices of the busy patch: 8.1 us per voice per block
+   with the linear ladder, 9.8 non-linear (+21%), 10.5 with every ANALOG knob and drift at 100%.
 
 Tier 2 total: roughly 10-14 days (plus L for the ladder model).
 

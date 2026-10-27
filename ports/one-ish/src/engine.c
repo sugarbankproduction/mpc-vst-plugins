@@ -24,7 +24,9 @@
  * last pitch at a constant rate (LCR), in a constant time (LCT) or exponentially (EXP); optionally only on legato
  * notes, paused while the key is up (gated), or in semitone steps (glissando). Unison stacks 2-8 voices on each note
  * (a stack is allocated and stolen as one), detuned unevenly around the centre; pitch variance gives each new note a
- * small random pitch offset. Analog drift: each oscillator's pitch (and each voice's cutoffs) wanders slowly at random.
+ * small random pitch offset. Analog character (all off at 0): drift, each oscillator's pitch (and each voice's
+ * cutoffs) wandering slowly at random; each voice slot a "voice card" with its own fixed tolerances in cutoff,
+ * resonance, envelope times, level and oscillator tuning, scaled by a knob each; and a non-linear ladder (src/ladder.h).
  * Each voice is placed in stereo (equal power) at the pan, spread around it note by note (or across a unison stack).
  * After the voices, in stereo (src/fx.h): a synth effect of a chosen type (delays, chorus, flanger, phaser, bit
  * crusher, resonator...) with CTRL 1/2, taking the panned voices, then the master effects on two sends: a stereo
@@ -87,6 +89,12 @@
 #define DRIFT_TAU_S 0.5f   /* the wander follows a new random target with this time constant ... */
 #define DRIFT_MIN_S 0.3f   /* ... picked every 0.3 .. 1.5 s, at random */
 #define DRIFT_VAR_S 1.2f
+/* ANALOG CHARACTER at 100%: how far apart the voice cards' parts sit (each card's spread is fixed, see create()) */
+#define AN_CUT_OCT (1.0f / 3)   /* each voice's cutoffs: +-1/3 octave */
+#define AN_ENV_FRAC 0.25f       /* its envelopes' stage times: +-25% */
+#define AN_LVL_DB 1.5f          /* its level: +-1.5 dB */
+#define AN_TUNE_ST 0.08f        /* each of its oscillators: +-8 cents */
+#define AN_RES 0.05f            /* its resonances: +-5% of the knob's range */
 
 /* engine-side slots, matched to params.json by key (so the VST order there can grow freely). Per oscillator the
  * slots run WAVE .. LAD from P_O1_WAVE + OSC_STRIDE * n (osc 1's SYNC slot is unused);
@@ -145,6 +153,7 @@ enum {
     P_REV_TYPE, P_REV_SIZE, P_REV_DIFF, P_REV_TONE, P_REV_LOWDAMP, P_REV_MOD, P_REV_EARLY, P_REV_FREEZE,
     P_NOISE_COLOR_PAIR, P_NOISE_COLOR_MIX, P_NOISE_ENV, P_NOISE_A, P_NOISE_R, P_NOISE_SUS,   /* noise colours and EG */
     P_PAN, P_SPREAD, P_DRIFT,
+    P_AN_CUT, P_AN_ENV, P_AN_LVL, P_AN_TUNE, P_AN_RES, P_AN_LADDER,   /* ANALOG CHARACTER (with drift) */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -156,6 +165,8 @@ enum { NC_RED, NC_WHITE, NC_PURPLE };           /* noise colours */
 /* the two colours of each "noise_color_pair" option: COLOR MIX at 0% is the first, at 100% the second */
 static const int NOISE_PAIR[3][2] = {{NC_RED, NC_WHITE}, {NC_RED, NC_PURPLE}, {NC_WHITE, NC_PURPLE}};
 #define NDRIFT (NOSC + 1)                       /* drift: one wander per oscillator, one for the voice's cutoffs */
+/* a voice card's parts that differ from card to card: each is a fixed number in -1..1 per voice */
+enum { AC_LAD_CUT, AC_SVF_CUT, AC_LAD_RES, AC_SVF_RES, AC_ENV, AC_LVL = AC_ENV + 3, AC_TUNE, AC_COUNT = AC_TUNE + NOSC };
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
 /* each mixer channel's level and filter buttons, in channel order (osc 1-3, noise, ring mod: the matrix's order) */
@@ -231,6 +242,7 @@ static const char *const KEYS[P_COUNT] = {
     "rev_type", "rev_size", "rev_diff", "rev_tone", "rev_lowdamp", "rev_mod", "rev_early", "rev_freeze",
     "noise_color_pair", "noise_color_mix", "noise_env", "noise_a", "noise_r", "noise_sus",
     "pan", "spread", "drift",
+    "an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder",
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
@@ -305,6 +317,14 @@ typedef struct {
     float drift[NDRIFT], drift_tgt[NDRIFT];   /* analog drift: each wander, -1..1, and the target it is heading for */
     int drift_left[NDRIFT];  /* control steps until a new target */
     uint32_t drift_rng;      /* drift's own random numbers (the noise's sequence stays as it was) */
+    /* ANALOG CHARACTER: this voice card's parts (AC_*, -1..1, fixed), and what they come to at the knobs (apply_analog):
+     * all exactly 0 (gain 1) with the knobs at 0, so the sound is then the same to the sample */
+    float card[AC_COUNT];
+    float an_cut[2], an_res[2];   /* ladder, SVF: octaves of cutoff, resonance (0..1 units) */
+    float an_env_dq[NENV];   /* each envelope's stage times, as log10 of the factor (env_q's units) */
+    float an_gain;           /* level factor */
+    float an_tune[NOSC];     /* semitones per oscillator */
+    int env_mod[NENV];       /* the envelope's settings had matrix modulation at the last control step */
 } voice_t;
 
 typedef struct {
@@ -477,6 +497,24 @@ static void apply_matrix(one_t *s) {
     }
 }
 
+/* ANALOG CHARACTER: each voice card's parts times the knobs, in the units the voice reads them in */
+static void apply_analog(one_t *s) {
+    const float *p = s->val;
+    float cut = p[P_AN_CUT] * 0.01f * AN_CUT_OCT, res = p[P_AN_RES] * 0.01f * AN_RES;
+    float env = p[P_AN_ENV] * 0.01f * AN_ENV_FRAC, lvl = p[P_AN_LVL] * 0.01f * AN_LVL_DB;
+    float tune = p[P_AN_TUNE] * 0.01f * AN_TUNE_ST;
+    for (int i = 0; i < MAX_VOICES; i++) {
+        voice_t *v = &s->voice[i];
+        for (int f = 0; f < 2; f++) {
+            v->an_cut[f] = v->card[AC_LAD_CUT + f] * cut;
+            v->an_res[f] = v->card[AC_LAD_RES + f] * res;
+        }
+        for (int n = 0; n < NENV; n++) v->an_env_dq[n] = log10f(1.0f + v->card[AC_ENV + n] * env);   /* 0 at 0 */
+        v->an_gain = lvl > 0.0f ? exp2f(v->card[AC_LVL] * lvl / 6.0206f) : 1.0f;
+        for (int n = 0; n < NOSC; n++) v->an_tune[n] = v->card[AC_TUNE + n] * tune;
+    }
+}
+
 /* recompute what the audio path reads from the parameter values */
 static void apply(one_t *s) {
     for (int n = 0; n < NOSC; n++) {
@@ -486,6 +524,7 @@ static void apply(one_t *s) {
     apply_envs(s);
     apply_lfos(s);
     apply_matrix(s);
+    apply_analog(s);
     float t = glide_ms(s->val[P_GLIDE_TIME]) * 0.001f;
     s->glide_frac = t > 0.0f ? (float)CR / (SR * t) : 2.0f;
     s->glide_exp = 1.0f - expf(-GLIDE_EXP_K * fminf(s->glide_frac, 1.0f));
@@ -519,7 +558,7 @@ static int voices_used(const one_t *s) {
 }
 
 static float gain_target(const one_t *s, const voice_t *v) {
-    return env_vel(s, ENV_AMP, v->velocity) * s->val[P_VOLUME] * 0.01f * HEADROOM * v->amp_mod * v->uni_gain;
+    return env_vel(s, ENV_AMP, v->velocity) * s->val[P_VOLUME] * 0.01f * HEADROOM * v->amp_mod * v->uni_gain * v->an_gain;
 }
 
 /* the pitch the voice plays (semitones): the glided pitch, in whole semitones with glissando, shifted by semitone
@@ -682,6 +721,21 @@ static void *create(const char *data_dir) {
         v->cut = s->val[P_FLT_CUT];
         v->svf_cut = s->val[P_SVF_CUT];
     }
+    /* the voice cards, as in an analog polysynth where no two voices match: for each part, the eight cards take the
+     * eight evenly spaced values -1 .. 1 in an order shuffled per part (so at 100% the whole range is in use, and a
+     * card's parts don't follow each other). A fixed seed: every instance, and every session, has the same cards. */
+    uint32_t rng = 0x3c6ef372u;
+    for (int c = 0; c < AC_COUNT; c++) {
+        int order[MAX_VOICES];
+        for (int i = 0; i < MAX_VOICES; i++) order[i] = i;
+        for (int i = MAX_VOICES - 1; i > 0; i--) {   /* Fisher-Yates */
+            white(&rng);
+            int j = (int)(rng % (uint32_t)(i + 1)), t = order[i];
+            order[i] = order[j];
+            order[j] = t;
+        }
+        for (int i = 0; i < MAX_VOICES; i++) s->voice[i].card[c] = 2.0f * order[i] / (MAX_VOICES - 1) - 1.0f;
+    }
     for (int n = 0; n < NLFO; n++) lfo_init(&s->lfo[n], 0x2545f491u * (n + 1));
     s->bpm = 120.0f;
     s->voices = voices_used(s);
@@ -698,14 +752,14 @@ static void destroy(void *inst) { free(inst); }
 /* legato: another key is held as this note starts. The voice glides from its own last pitch when glide is on, it has
  * played before, and (with legato glide) the note is legato; else it jumps straight to the note. */
 static void start_note(one_t *s, voice_t *v, int note, int legato) {
-    static const float no_mod[MD_COUNT], no_semis[NOSC];
+    static const float no_mod[MD_COUNT];
     int glide = s->val[P_GLIDE] > 0.5f && v->note >= 0 && (legato || s->val[P_GLIDE_LEGATO] < 0.5f);
     if (glide) v->glide_span = fabsf((float)note - v->pitch);
     else v->pitch = (float)note;
     v->gliding = glide && v->glide_span > 0.0f;
     v->note = note;
     update_note_hz(s, v);
-    set_pitch(s, v, 0.0f, no_semis);   /* pitch at once; the next control step adds the modulation */
+    set_pitch(s, v, 0.0f, v->an_tune);   /* pitch at once (the voice card's tuning); the next control step adds the modulation */
     if (v->env[ENV_AMP].stage == ENV_IDLE) {   /* from silence every note starts the same way */
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
         ladder_reset(&v->lad);
@@ -727,10 +781,13 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
         memset(v->to_lad, 0, sizeof v->to_lad);   /* the levels ramp up from 0 in the first control step */
         memset(v->to_svf, 0, sizeof v->to_svf);
         /* the filters' unmodulated settings, for the samples before the next control step works out the rest */
-        ladder_set(&v->lad, cut_hz(v->cut), s->val[P_FLT_RES] * 0.01f, s->val[P_FLT_DRIVE] * 0.01f,
+        ladder_set(&v->lad, cut_hz(v->cut) * exp2f(v->an_cut[0]),
+                   clampf(s->val[P_FLT_RES] * 0.01f + v->an_res[0], 0.0f, 1.0f), s->val[P_FLT_DRIVE] * 0.01f,
                    (int)s->val[P_FLT_MODE], (int)s->val[P_FLT_SLOPE], SR);
-        svf2_set(&v->svf, cut_hz(v->svf_cut), s->val[P_SVF_SPACE] * 0.01f, s->val[P_SVF_RES] * 0.01f,
-                 (int)s->val[P_SVF_MODE], (int)s->val[P_SVF_PAIR], SR);
+        v->lad.nl = s->val[P_AN_LADDER] * 0.01f;
+        svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(v->an_cut[1]), s->val[P_SVF_SPACE] * 0.01f,
+                 clampf(s->val[P_SVF_RES] * 0.01f + v->an_res[1], 0.0f, 1.0f), (int)s->val[P_SVF_MODE],
+                 (int)s->val[P_SVF_PAIR], SR);
     }
 }
 
@@ -1254,23 +1311,29 @@ static float env_q_ms(const one_t *s, float q) {
  * scale (+-100% = the whole knob, so tempo-synced times step through the divisions), the time scale on its knob,
  * the sustain level by +-100%. An envelope without any keeps the shared settings. A stage's coefficients are worked
  * out again only when its time moves by more than 1% (an inaudible difference), so a time swept by an LFO costs a
- * few recalculations per cycle, not one every control step. */
+ * few recalculations per cycle, not one every control step. The voice card's envelope times (ANALOG CHARACTER)
+ * scale every free stage time of its envelopes by a fixed factor: worked out once after each settings change, then
+ * nothing per control step unless the matrix moves the envelope too. */
 static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
     static const int stage[5] = {ENV_DELAY, ENV_ATTACK, ENV_HOLD, ENV_DECAY, ENV_RELEASE};
     static const int knob_md[5] = {MDE_DELAY, MDE_ATTACK, MDE_HOLD, MDE_DECAY, MDE_RELEASE};
-    if (!s->mod_env) {   /* no slot reaches an envelope: the shared settings */
+    if (!s->mod_env && s->val[P_AN_ENV] <= 0.0f) {   /* no slot reaches an envelope, no card differences: shared */
         for (int n = 0; n < NENV; n++) v->env[n].cfg = &s->ecfg[n];
         return;
     }
     for (int n = 0; n < NENV; n++) {
         const float *m = &dm[MD_FENV_DELAY + MDE_COUNT * n];
+        float dq = v->an_env_dq[n];
         int any = 0;
-        for (int k = 0; k < MDE_COUNT; k++) any |= m[k] != 0.0f;
-        if (!any) { v->env[n].cfg = &s->ecfg[n]; continue; }
+        for (int k = 0; k < MDE_COUNT && s->mod_env; k++) any |= m[k] != 0.0f;
+        if (!any && dq == 0.0f) { v->env[n].cfg = &s->ecfg[n]; continue; }
         const float *e = &s->val[P_ENV_A + ENV_STRIDE * n], *x = &s->val[P_FENV_DELAY + EX_STRIDE * n];
         const float knob[5] = {x[X_DELAY], e[0], x[X_HOLD], e[1], e[3]};
         env_cfg_t *c = &v->ecfg[n];
-        if (v->env[n].cfg != c || v->egen[n] != s->env_gen) {   /* start from the shared settings */
+        int fresh = v->env[n].cfg != c || v->egen[n] != s->env_gen;
+        if (!any && !fresh && !v->env_mod[n]) continue;   /* the card's times alone, already worked out */
+        v->env_mod[n] = any;
+        if (fresh) {   /* start from the shared settings */
             *c = s->ecfg[n];
             v->egen[n] = s->env_gen;
             for (int k = 0; k < 5; k++) v->eq[n][k] = env_q(s, n, knob[k], k == 0 || k == 2, x[X_SCALE]);
@@ -1279,6 +1342,7 @@ static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
         float scale = clampf(x[X_SCALE] + 100.0f * m[MDE_SCALE], 0.0f, 100.0f);
         for (int k = 0; k < 5; k++) {
             float q = env_q(s, n, clampf(knob[k] + 100.0f * m[knob_md[k]], 0.0f, 100.0f), k == 0 || k == 2, scale);
+            if (q > ENV_Q_OFF * 0.5f && q < 999.0f) q += dq;   /* a free time (not off, not tempo-synced) */
             if (fabsf(q - v->eq[n][k]) < 0.0043f) continue;   /* within 1% */
             v->eq[n][k] = q;
             c->seg[stage[k]] = env_seg(env_q_ms(s, q), bend[k], SR);
@@ -1331,9 +1395,9 @@ static void control_voice(one_t *s, voice_t *v) {
                   + bend_semis(s, -1) + dm[MD_PITCH] * MOD_PITCH_ST;
     float dr[NDRIFT] = {0};   /* analog drift, -1..1 x the amount per oscillator and for the cutoffs; off: none at all */
     if (p[P_DRIFT] > 0.0f) drift_step(s, v, dr);
-    const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST,
-                                   dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST,
-                                   dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2) + dr[2] * DRIFT_ST};
+    const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST + v->an_tune[0],
+                                   dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST + v->an_tune[1],
+                                   dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2) + dr[2] * DRIFT_ST + v->an_tune[2]};
     for (int n = 0; n < NOSC; n++) v->beat_mod[n] = dm[MD_O1_BEAT + n] * BEAT_HZ;
     set_pitch(s, v, semis, osc_semis);
 
@@ -1342,14 +1406,19 @@ static void control_voice(one_t *s, voice_t *v) {
     float lfo2 = v->lfo_out[1];
     float lad_oct = fenv * (p[P_LAD_ENV] * 0.01f + dm[MD_LAD_ENV]) * ENV_CUT_OCT
                     + lfo2 * (p[P_LAD_LFO] * 0.01f + dm[MD_LAD_LFO2]) * LFO_CUT_OCT
-                    + key_oct * p[P_LAD_KBD] * 0.01f + dm[MD_LAD_CUT] * MOD_CUT_OCT + dr[NOSC] * DRIFT_CUT_OCT;
+                    + key_oct * p[P_LAD_KBD] * 0.01f + dm[MD_LAD_CUT] * MOD_CUT_OCT + dr[NOSC] * DRIFT_CUT_OCT
+                    + v->an_cut[0];
     float svf_oct = fenv * (p[P_SVF_ENV] * 0.01f + dm[MD_SVF_ENV]) * ENV_CUT_OCT
                     + lfo2 * (p[P_SVF_LFO] * 0.01f + dm[MD_SVF_LFO2]) * LFO_CUT_OCT
-                    + key_oct * p[P_SVF_KBD] * 0.01f + dm[MD_SVF_CUT] * MOD_CUT_OCT + dr[NOSC] * DRIFT_CUT_OCT;
-    ladder_set(&v->lad, cut_hz(v->cut) * exp2f(lad_oct), clampf(p[P_FLT_RES] * 0.01f + dm[MD_LAD_RES], 0.0f, 1.0f),
+                    + key_oct * p[P_SVF_KBD] * 0.01f + dm[MD_SVF_CUT] * MOD_CUT_OCT + dr[NOSC] * DRIFT_CUT_OCT
+                    + v->an_cut[1];
+    ladder_set(&v->lad, cut_hz(v->cut) * exp2f(lad_oct),
+               clampf(p[P_FLT_RES] * 0.01f + dm[MD_LAD_RES] + v->an_res[0], 0.0f, 1.0f),
                clampf(p[P_FLT_DRIVE] * 0.01f + dm[MD_LAD_DRIVE], 0.0f, 1.0f), (int)p[P_FLT_MODE], (int)p[P_FLT_SLOPE], SR);
+    v->lad.nl = p[P_AN_LADDER] * 0.01f;
     svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), clampf(p[P_SVF_SPACE] * 0.01f + dm[MD_SVF_SPACE], -1.0f, 1.0f),
-             clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES], 0.0f, 1.0f), (int)p[P_SVF_MODE], (int)p[P_SVF_PAIR], SR);
+             clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES] + v->an_res[1], 0.0f, 1.0f), (int)p[P_SVF_MODE],
+             (int)p[P_SVF_PAIR], SR);
     set_targets(s, v, dm, v->lfo_out[2]);
     noise_targets(s, v, 0.0f);   /* colour mix modulation: for the matrix (later) */
     pan_targets(s, v, 0.0f, 0);  /* pan modulation: for the matrix (later) */
@@ -1457,6 +1526,7 @@ static int render_voice(one_t *s, voice_t *v, float *acc, float *xl, float *xr, 
     int lad_src = (int)p[P_LAD_FM_SRC], svf_src = (int)p[P_SVF_FM_SRC];
     float lad_fm = run_lad ? v->lad_fm * FILTER_FM_OCT : 0.0f;
     float svf_fm = any_svf ? v->svf_fm * FILTER_FM_OCT : 0.0f;
+    int lad_nl = v->lad.nl > 0.0f;
     /* oscillators 2 and 3 run only when heard or feeding the ring modulator, FM or filter FM (osc 1 always runs: it is
      * the sync master); osc 2 is in both ring pairs */
     int run2 = heard[1] || heard[RING] || (lad_fm > 0.0f && lad_src == 1) || (svf_fm > 0.0f && svf_src == 1);
@@ -1500,10 +1570,15 @@ static int render_voice(one_t *s, voice_t *v, float *acc, float *xl, float *xr, 
                                     : svf2_next(&v->svf, in);
             if (series) lad_in += svf_out;
         }
-        if (run_lad)
-            lad_out = lad_fm > 0.0f ? ladder_next_fm(&v->lad, lad_in + nz * NOISE_FLOOR,
-                                                     exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
-                                    : ladder_next(&v->lad, lad_in + nz * NOISE_FLOOR);
+        if (run_lad) {
+            float in = lad_in + nz * NOISE_FLOOR;
+            if (lad_nl)   /* NON-LINEAR LADDER (analog character) */
+                lad_out = lad_fm > 0.0f ? ladder_next_nl_fm(&v->lad, in, exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
+                                        : ladder_next_nl(&v->lad, in);
+            else
+                lad_out = lad_fm > 0.0f ? ladder_next_fm(&v->lad, in, exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
+                                        : ladder_next(&v->lad, in);
+        }
         float f = lad_out * ml + svf_out * (1.0f - ml);
         v->gain += (target - v->gain) * s->gain_coef;
         if (fabsf(v->gain - target) < 1e-7f) v->gain = target;   /* settle exactly: no denormal tail */

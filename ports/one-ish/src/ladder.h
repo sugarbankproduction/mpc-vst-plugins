@@ -6,7 +6,17 @@
  * loop, the usual cheap way to keep a nonlinearity out of the zero-delay equation. Resonance always comes from the
  * fourth stage. Slopes and highpass are mixes of the stage outputs (same chapter): n-pole lowpass = stage n,
  * n-pole highpass = (1 - lowpass)^n expanded over the stages. A few multiplies and one division per sample, no
- * allocation: safe in the audio path. */
+ * allocation: safe in the audio path.
+ *
+ * Non-linear variant (ladder_next_nl, the ANALOG section's NON-LINEAR LADDER): each stage is a transistor pair,
+ * y' = wc (f(x) - f(y)) with f(v) = tanh(h v) / h, so every stage compresses loud signals, loud input softens the
+ * resonance and self-oscillation saturates gently in every stage instead of one. It keeps the zero-delay structure by
+ * the usual "cheap" method: f(v) is replaced by v times its secant gain T = f(v)/v worked out at the stage's state
+ * (the last sample), so each stage stays a one-pole (gain g T) and the loop is solved exactly as the linear one.
+ * `nl` (0..1) blends T towards 1: at 0 the variant is the linear ladder (to rounding). Per sample: five T values and
+ * four stage divisions more than the linear ladder, none of them on the signal's own chain (they depend on the states
+ * only); about +21% per voice in the PC bench. Self-oscillation comes out about 8 dB quieter and up to 30 cents flat
+ * at low cutoffs (the saturated stages slow down), as a driven transistor ladder does. */
 #pragma once
 #include <math.h>
 
@@ -24,7 +34,11 @@ typedef struct {
     float g;                    /* tan(pi fc / sr) at the last ladder_set (filter FM scales it per sample) */
     float G, k, gain_in, gain_out, bass;
     float mix[5];               /* output = mix . (u, y1, y2, y3, y4) for the mode and slope */
+    float nl;                   /* the non-linear variant's amount, 0..1 (read by ladder_next_nl only) */
+    float u;                    /* its last input-stage output, for the first stage's gain */
 } ladder_t;
+
+#define LADDER_NL_HOT 2.5f   /* the stages' f(v) = tanh(h v) / h: they flatten towards +-1/h of the internal level */
 
 /* tanh-like soft clip (3rd-order Pade): within 2% of tanh, exactly +-1 from |x| = 3, no library call */
 static inline float ladder_sat(float x) {
@@ -33,7 +47,7 @@ static inline float ladder_sat(float x) {
     return x * (27.0f + x * x) / (27.0f + 9.0f * x * x);
 }
 
-static inline void ladder_reset(ladder_t *l) { l->s[0] = l->s[1] = l->s[2] = l->s[3] = 0.0f; }
+static inline void ladder_reset(ladder_t *l) { l->s[0] = l->s[1] = l->s[2] = l->s[3] = l->u = 0.0f; }
 
 /* cutoff in Hz, resonance and drive 0..1, mode LADDER_LP/HP, slope LADDER_24DB.. Call outside the per-sample loop. */
 static inline void ladder_set(ladder_t *l, float hz, float reso, float drive, int mode, int slope, float sr) {
@@ -80,4 +94,47 @@ static inline float ladder_next_fm(ladder_t *l, float x, float e) {
     g = g < LADDER_G_MIN ? LADDER_G_MIN : g > LADDER_G_MAX ? LADDER_G_MAX : g;
     l->G = g / (1.0f + g);
     return ladder_next(l, x);
+}
+
+/* tanh(x) / x from ladder_sat's Pade (exactly 1/|x| from |x| = 3, where that reaches 1): 1 at 0, falling smoothly */
+static inline float ladder_tanh_gain(float x) {
+    float x2 = x * x;
+    return x2 >= 9.0f ? 1.0f / fabsf(x) : (27.0f + x2) / (27.0f + 9.0f * x2);
+}
+
+/* one sample of the non-linear ladder at tan(pi fc / sr) = g (see the top of the file). Stage i, trapezoidal:
+ * y = (s + g ta x) / (1 + g tb) = a x + b, with tb the stage's own gain T at its state and ta its input's (the stage
+ * before, or the input stage's last output); the four stages compose to y4 = A y0 + B and the feedback is solved
+ * from that, as in the linear ladder. */
+static inline float ladder_tick_nl(ladder_t *l, float x, float g) {
+    float *s = l->s, n = l->nl, h = LADDER_NL_HOT;
+    float t[5], a[4], b[4];
+    t[0] = 1.0f + n * (ladder_tanh_gain(h * l->u) - 1.0f);
+    for (int i = 0; i < 4; i++) t[i + 1] = 1.0f + n * (ladder_tanh_gain(h * s[i]) - 1.0f);
+    float A = 1.0f, B = 0.0f;
+    for (int i = 0; i < 4; i++) {
+        float r = 1.0f / (1.0f + g * t[i + 1]);
+        a[i] = g * t[i] * r;
+        b[i] = s[i] * r;
+        A *= a[i];
+        B = B * a[i] + b[i];
+    }
+    float in = x * l->gain_in * l->bass;
+    float y[5];
+    y[0] = ladder_sat((in - l->k * B) / (1.0f + l->k * A));
+    l->u = y[0];
+    for (int i = 0; i < 4; i++) {
+        y[i + 1] = a[i] * y[i] + b[i];
+        s[i] = 2.0f * y[i + 1] - s[i];
+    }
+    const float *m = l->mix;
+    return (m[0] * y[0] + m[1] * y[1] + m[2] * y[2] + m[3] * y[3] + m[4] * y[4]) * l->gain_out;
+}
+
+static inline float ladder_next_nl(ladder_t *l, float x) { return ladder_tick_nl(l, x, l->g); }
+
+/* with filter FM: the cutoff times e, as ladder_next_fm */
+static inline float ladder_next_nl_fm(ladder_t *l, float x, float e) {
+    float g = l->g * e;
+    return ladder_tick_nl(l, x, g < LADDER_G_MIN ? LADDER_G_MIN : g > LADDER_G_MAX ? LADDER_G_MAX : g);
 }

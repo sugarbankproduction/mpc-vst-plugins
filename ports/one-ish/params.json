@@ -392,7 +392,13 @@
   {"key": "noise_sus", "name": "Noise Env Sustain", "options": ["Off", "On"], "default": "On"},
   {"key": "pan", "name": "Pan", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "spread", "name": "Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
-  {"key": "drift", "name": "Analog Drift", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
+  {"key": "drift", "name": "Analog Drift", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "an_cut", "name": "Voice Cutoff Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "an_env", "name": "Voice Env Time Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "an_lvl", "name": "Voice Level Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "an_tune", "name": "Voice Tuning Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "an_res", "name": "Voice Resonance Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "an_ladder", "name": "Non-Linear Ladder", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -460,6 +466,6 @@
   {"label": "REVERB", "keys": ["rev_type", "rev_decay", "rev_size", "rev_pre", "rev_damp", "rev_lowdamp", "rev_diff", "rev_tone", "rev_mod", "rev_early", "rev_freeze"]},
   {"label": "NOISE", "keys": ["noise_color_pair", "noise_color_mix", "noise_env", "noise_a", "noise_r", "noise_sus"]},
   {"label": "VCA", "keys": ["pan", "spread"]},
-  {"label": "ANALOG", "keys": ["drift"]}
+  {"label": "ANALOG", "keys": ["an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder", "drift"]}
  ]
 }
