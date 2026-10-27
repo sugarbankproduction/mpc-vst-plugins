@@ -122,6 +122,7 @@ typedef struct {
     float ratio[NOSC];       /* each oscillator's pitch against the played note */
     voice_t voice[MAX_VOICES];
     unsigned age;            /* counts note starts */
+    int voices;              /* the voice count last applied (a change lets go of voices past it) */
     int sustain;             /* the pedal (CC 64) is down */
     lfo_t lfo[NLFO];
     float lfo_val[NLFO];     /* this control step's LFO outputs */
@@ -208,16 +209,20 @@ static void set_targets(const one_t *s, voice_t *v, const float *dm) {
     v->amp_mod = clampf(1.0f + dm[MD_AMP], 0.0f, 2.0f);
 }
 
-static void *create(const char *data_dir) {
-    (void)data_dir;
-    one_t *s = calloc(1, sizeof *s);
-    if (!s) return NULL;
+static void load_defaults(one_t *s) {
     for (int i = 0; i < NPARAMS; i++) {
         const param_t *p = &PARAMS[i];
         int k = slot(p->key);
         if (k < 0) continue;
         s->val[k] = p->nopts ? roundf(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
     }
+}
+
+static void *create(const char *data_dir) {
+    (void)data_dir;
+    one_t *s = calloc(1, sizeof *s);
+    if (!s) return NULL;
+    load_defaults(s);
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
@@ -229,6 +234,7 @@ static void *create(const char *data_dir) {
     }
     for (int n = 0; n < NLFO; n++) lfo_init(&s->lfo[n], 0x2545f491u * (n + 1));
     s->bpm = 120.0f;
+    s->voices = voice_count(s);
     s->gain_coef = env_coef(5.0f, SR);
     s->glide = 1.0f - expf(-(float)CR / (GLIDE_MS * 0.001f * SR));
     apply(s);
@@ -244,6 +250,8 @@ static void start_note(one_t *s, voice_t *v, int note) {
         svf_reset(&v->svf);
         static const float no_mod[MD_COUNT];
         set_targets(s, v, no_mod);   /* unmodulated, until the next control step adds the matrix */
+        v->mix_lad = v->tgt_mix;
+        for (int n = 0; n < NENV; n++) { v->env[n].level = 0.0f; v->env[n].stage = ENV_IDLE; }
         v->gain = gain_target(s, v);
         v->cut = s->val[P_FLT_CUT];
         v->svf_cut = s->val[P_SVF_CUT];
@@ -286,7 +294,8 @@ static void key_up(one_t *s, voice_t *v) {   /* a released key: held on by the s
 }
 
 /* the voice for a new note among the first `voice_count` voices: the one already playing this key, else an idle one,
- * else the quietest releasing one, else the oldest held one (stolen: it restarts from its current level, no click) */
+ * else the quietest releasing one, else the oldest one held only by the sustain pedal, else the oldest held one (stolen:
+ * it restarts from its current level, no click) */
 static voice_t *pick_voice(one_t *s, int note) {
     int count = voice_count(s);
     voice_t *best = NULL;
@@ -296,6 +305,9 @@ static voice_t *pick_voice(one_t *s, int note) {
         if (s->voice[i].env[ENV_AMP].stage == ENV_IDLE) return &s->voice[i];
     for (int i = 0; i < count; i++)
         if (!s->voice[i].gate && (!best || s->voice[i].env[ENV_AMP].level < best->env[ENV_AMP].level)) best = &s->voice[i];
+    if (best) return best;
+    for (int i = 0; i < count; i++)   /* next: the oldest voice held only by the sustain pedal */
+        if (s->voice[i].sustained && (!best || s->voice[i].age < best->age)) best = &s->voice[i];
     if (best) return best;
     best = &s->voice[0];
     for (int i = 1; i < count; i++)
@@ -320,8 +332,13 @@ static void note_off(one_t *s, int note) {
     forget(s, note);
     if (voice_count(s) == 1) {   /* mono: back to the key still held, without a retrigger; else let go */
         voice_t *v = &s->voice[0];
-        if (s->nheld == 0) key_up(s, v);
-        else if (was_top) start_note(s, v, s->held[s->nheld - 1]);
+        if (s->nheld == 0) {
+            for (int i = 0; i < MAX_VOICES; i++)   /* voice 0, and any left from before a switch to mono */
+                if (s->voice[i].gate && !s->voice[i].sustained) key_up(s, &s->voice[i]);
+        } else if (was_top) {
+            start_note(s, v, s->held[s->nheld - 1]);
+            if (!v->gate) gate_on(v);   /* voice 0 wasn't playing (a switch from poly): start it */
+        }
         return;
     }
     for (int i = 0; i < MAX_VOICES; i++)
@@ -359,6 +376,10 @@ static void midi(void *inst, const uint8_t *m, int len) {
     else if (st == 0xe0) s->bend = (((d2 << 7) | d1) - 8192) / 8192.0f;
     else if (st == 0xb0 && d1 == 1) s->wheel = d2 / 127.0f;
     else if (st == 0xb0 && d1 == 64) sustain_pedal(s, d2 >= 64);
+    else if (st == 0xb0 && d1 == 121) {   /* reset all controllers */
+        s->wheel = s->aftertouch = s->bend = 0.0f;
+        sustain_pedal(s, 0);
+    }
     else if (st == 0xb0 && (d1 == 120 || d1 == 123)) all_off(s, d1 == 120);
 }
 
@@ -367,6 +388,7 @@ static void set_state(one_t *s, const char *str) {
     char *buf = s->state_buf;
     if (strlen(str) >= sizeof s->state_buf) return;   /* never restore half a state */
     strcpy(buf, str);
+    load_defaults(s);   /* a state saved before a param existed leaves that param at its default */
     char *save = NULL;
     for (char *kv = strtok_r(buf, ";", &save); kv; kv = strtok_r(NULL, ";", &save)) {
         char *eq = strchr(kv, '=');
@@ -385,12 +407,18 @@ static int get_state(const one_t *s, char *buf, int n) {
 
 static void set_param(void *inst, const char *key, const char *val) {
     one_t *s = inst;
-    if (!strcmp(key, "state")) set_state(s, val);
-    else if (!strcmp(key, "lfo_bpm")) {   /* the host's tempo (HAS_LFO_BPM), not a param */
+    if (!strcmp(key, "lfo_bpm")) {   /* the host's tempo (HAS_LFO_BPM), not a param: nothing to apply */
         float bpm = (float)atof(val);
         if (isfinite(bpm) && bpm >= 20.0f && bpm <= 400.0f) s->bpm = bpm;
-    } else store(s, key, val);
+        return;
+    }
+    if (!strcmp(key, "state")) set_state(s, val);
+    else store(s, key, val);
     apply(s);
+    int count = voice_count(s);
+    if (count < s->voices)   /* fewer voices: let go of the ones past the new count (they finish their release) */
+        for (int i = count; i < MAX_VOICES; i++) gate_off(&s->voice[i]);
+    s->voices = count;
 }
 
 static int time_text(char *buf, int n, float ms) {
@@ -551,7 +579,8 @@ static void render(void *inst, int16_t *out, int frames) {
             render_voice(s, v, acc, n, first);
         }
         for (int i = 0; i < n; i++) {
-            int16_t q = (int16_t)(soft_limit(acc[i]) * 32767.0f);
+            float y = isfinite(acc[i]) ? soft_limit(acc[i]) : 0.0f;   /* a last guard: never NaN to the host */
+            int16_t q = (int16_t)(y * 32767.0f);
             out[2 * (done + i)] = q;
             out[2 * (done + i) + 1] = q;
         }

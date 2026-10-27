@@ -45,10 +45,13 @@ static inline float env_next(env_t *e) {
     case ENV_DECAY:
         e->level += (e->sustain - e->level) * e->decay_coef;
         /* 1e-3 (-60 dB): float steps near 0.7 are too fine for a long decay to get closer by itself */
-        if (fabsf(e->level - e->sustain) < 1e-3f) { e->level = e->sustain; e->stage = ENV_SUSTAIN; }
+        if (fabsf(e->level - e->sustain) < 1e-3f) {
+            e->level = e->sustain;
+            e->stage = e->sustain > 0.0f ? ENV_SUSTAIN : ENV_IDLE;   /* nothing left to hear: a pluck frees its voice */
+        }
         break;
     case ENV_SUSTAIN:
-        e->level = e->sustain;   /* follows a sustain change while held */
+        e->level += (e->sustain - e->level) * e->kill_coef;   /* follows a sustain change while held, without a step */
         break;
     case ENV_RELEASE:
         e->level -= e->level * (e->fast ? e->kill_coef : e->release_coef);

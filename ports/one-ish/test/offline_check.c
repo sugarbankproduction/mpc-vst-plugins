@@ -33,6 +33,7 @@
 #include "ladder.h"
 #include "svf.h"
 #include "lfo.h"
+#include "env.h"
 #include "modmatrix.h"
 
 #define SR 44100
@@ -631,6 +632,20 @@ static void voices(void) {
     snprintf(what, sizeof what, "sustain pedal: a released key holds (rms %.3f) until the pedal lifts, then stops", held);
     check(held > 0.05 && quiet, what);
     E->destroy(e);
+    e = patch(WAVE_SAW, 0, 1, 100, 100);   /* a chord held while switching to mono, then released, must stop */
+    note(e, 1, 48, 100); note(e, 1, 52, 100);
+    render_f(e, x, SR / 10);
+    set(e, "voices", 0);
+    note(e, 0, 48, 0); note(e, 0, 52, 0);
+    check(silent_after(e, 1000), "a chord held through a switch to mono stops when its keys are released");
+    E->destroy(e);
+
+    env_t env;   /* a pluck (sustain 0) frees its voice when the decay ends, instead of holding it at silence */
+    memset(&env, 0, sizeof env);
+    env_set_times(&env, 1, 50, 0, 50, SR);
+    env_gate_on(&env);
+    for (int i = 0; i < SR / 2; i++) env_next(&env);
+    check(env.stage == ENV_IDLE, "a pluck envelope (sustain 0) is idle once its decay ends, with the key still down");
 }
 
 static void cutoff_text(void) {
@@ -734,14 +749,15 @@ static void state(void) {
     check(same, "saved state restores every value on a new instance");
 
     E->set_param(b, "state", "amp_s=nan;volume=inf;amp_a=-50;o1_wave=7;bogus;=3;amp_r=");
-    check(get(b, "amp_s") == 78 && get(b, "volume") == 42, "a damaged state's NaN and infinite values are ignored");
+    /* a state starts from the defaults (an older project lacks newer keys), so bad values leave the default */
+    check(get(b, "amp_s") == 70 && get(b, "volume") == 70, "a damaged state's NaN and infinite values leave the defaults");
     check(get(b, "amp_a") == 0 && get(b, "o1_wave") == 1 && get(b, "amp_r") == 0,
           "a damaged state's out-of-range values are clamped to the param's range");
     memset(st, 'x', sizeof st - 1);
     st[sizeof st - 1] = 0;
     memcpy(st, "volume=5;", 9);
     E->set_param(b, "state", st);
-    check(get(b, "volume") == 42, "a state too long for the chunk is ignored, not half restored");
+    check(get(b, "volume") == 70, "a state too long for the chunk is ignored, not half restored");
     E->destroy(a);
     E->destroy(b);
 }
