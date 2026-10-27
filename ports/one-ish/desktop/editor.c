@@ -7,6 +7,11 @@
  * gfx.h): no maker's names, marks or photos. This file: the layout (scaled to fit the screen; ONEISH_EDITOR_SCALE
  * overrides it), the mouse, the MIDI from the window, and the VST2 side.
  *
+ * RANDOM (the console button next to ANALOG) shows the patch randomiser on the screen (src/randomize.h): RANDOMISE makes
+ * a new sound, MUTATE a variation of this one by AMOUNT, the lock buttons keep sections as they are, UNDO / REDO step
+ * through the last RND_HIST sounds. Each result is set param by param through the same path as a knob (setParameter,
+ * audioMasterAutomate between begin/end edit), so the host and the window follow it.
+ *
  * MORE pages, as on the instrument: a module with a small triangle in its top-right corner has second-layer controls;
  * a click on the triangle shows them on the centre screen (the MORE button lists every page, ANALOG opens the analog
  * character page). A page can show some items only for one option of another control (the synth effect's page lists
@@ -28,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "editor.h"
+#include "../src/randomize.h"
 
 layout_t L;
 HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -131,6 +137,7 @@ static void layout(void) {
     L.tab_matrix = zone(ZONE_TAB_MATRIX);
     L.tab_more = zone(ZONE_TAB_MORE);
     L.tab_analog = zone(ZONE_TAB_ANALOG);
+    L.tab_random = zone(ZONE_TAB_RANDOM);
     L.encoder = zone(ZONE_ENCODER);
     L.bprev = zone(ZONE_PREV);
     L.bnext = zone(ZONE_NEXT);
@@ -163,6 +170,26 @@ RECT matrix_cell(int r, int col) {
     return c;
 }
 
+/* the randomiser page: RANDOMISE and MUTATE side by side (rows 0-1), the amount bar (row 2, right), the section locks
+ * (rows 3-6, two columns), UNDO and REDO (row 7, left) */
+RECT rnd_rect(int z) {
+    int half = (rw(&L.row[0]) - sc(8)) / 2, xl = L.row[0].left, xr = xl + half + sc(8);
+    RECT r = {0, 0, 0, 0};
+    if (z == Z_RND_GO || z == Z_RND_MUTATE) {
+        int x = z == Z_RND_GO ? xl : xr;
+        SetRect(&r, x, L.row[0].top + sc(3), x + half, L.row[1].bottom - sc(3));
+    } else if (z == Z_RND_AMOUNT) {
+        SetRect(&r, xr + sc(54), L.row[2].top + sc(4), xr + half - sc(40), L.row[2].bottom - sc(4));
+    } else if (z >= Z_RND_LOCK && z < Z_RND_LOCK + RS_COUNT) {
+        int k = z - Z_RND_LOCK, x = k < 4 ? xl : xr, row = 3 + k % 4;
+        SetRect(&r, x, L.row[row].top + sc(2), x + half, L.row[row].bottom - sc(2));
+    } else if (z == Z_RND_UNDO || z == Z_RND_REDO) {
+        int q = (half - sc(8)) / 2, x = xl + (z == Z_RND_REDO ? q + sc(8) : 0);
+        SetRect(&r, x, L.row[7].top + sc(2), x + q, L.row[7].bottom - sc(2));
+    }
+    return r;
+}
+
 /* ---- values ---- */
 void param_text(ed_t *e, int i, char *out, int n) {
     char disp[64] = "", lab[32] = "";
@@ -184,6 +211,81 @@ static void edit_value(ed_t *e, int i, float v) {   /* a one-shot change, bracke
     if (e->host) e->host(e->fx, audioMasterBeginEdit, i, 0, NULL, 0);
     set_value(e, i, v);
     if (e->host) e->host(e->fx, audioMasterEndEdit, i, 0, NULL, 0);
+}
+
+/* ---- the randomiser: results go in param by param like knob moves; a history of sounds for UNDO / REDO ---- */
+static void rnd_snapshot(ed_t *e, float *v) {
+    for (int i = 0; i < NPARAMS; i++) v[i] = e->fx->getParameter(e->fx, i);
+}
+static int rnd_same(const float *a, const float *b) {
+    for (int i = 0; i < NPARAMS; i++)
+        if (fabsf(a[i] - b[i]) > 1e-6f) return 0;
+    return 1;
+}
+static void rnd_push(ed_t *e, const float *v, const char *name) {   /* a new sound: anything REDO could reach goes */
+    if (e->hist_n > 0) e->hist_n = e->hist_pos + 1;
+    if (e->hist_n == RND_HIST) {   /* full: the oldest goes */
+        memmove(e->hist[0], e->hist[1], sizeof e->hist[0] * (RND_HIST - 1));
+        memmove(e->hist_name[0], e->hist_name[1], sizeof e->hist_name[0] * (RND_HIST - 1));
+        e->hist_n--;
+    }
+    memcpy(e->hist[e->hist_n], v, sizeof e->hist[0]);
+    snprintf(e->hist_name[e->hist_n], sizeof e->hist_name[0], "%s", name);
+    e->hist_pos = e->hist_n++;
+}
+/* every param that differs, as a knob move would set it. LINK CUTOFF would drag one cutoff along with the other while
+ * they land, so it is off meanwhile and goes back on (if the sound has it) last, with the new cutoffs' offset. */
+static void rnd_apply(ed_t *e, const float *target) {
+    static int link = -2;
+    if (link == -2) link = rnd_key("flt_link") < NPARAMS ? rnd_key("flt_link") : -1;
+    float cur[NPARAMS];
+    rnd_snapshot(e, cur);
+    if (link >= 0 && cur[link] > 0.5f) edit_value(e, link, 0.0f);
+    for (int i = 0; i < NPARAMS; i++)
+        if (i != link && fabsf(target[i] - cur[i]) > 1e-7f) edit_value(e, i, target[i]);
+    if (link >= 0 && target[link] > 0.5f) edit_value(e, link, target[link]);
+}
+static void rnd_action(ed_t *e, int mutate) {   /* RANDOMISE (0) or MUTATE (1) */
+    float cur[NPARAMS], out[NPARAMS];
+    char name[40];
+    if (!e->rnd_seed) e->rnd_seed = ((uint32_t)GetTickCount() * 2654435761u) ^ (uint32_t)(uintptr_t)e ^ 0x2545F491u;
+    if (!e->rnd_seed) e->rnd_seed = 1;
+    rnd_snapshot(e, cur);
+    if (e->hist_n == 0 || !rnd_same(cur, e->hist[e->hist_pos])) {   /* the sound before, to come back to */
+        char prog[32] = "";
+        int p = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0);
+        e->fx->dispatcher(e->fx, effGetProgramNameIndexed, p, 0, prog, 0);
+        if (e->hist_n) snprintf(name, sizeof name, "Edited");
+        else snprintf(name, sizeof name, "Start: %s", prog);
+        rnd_push(e, cur, name);
+    }
+    if (mutate) {
+        rnd_mutate(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed);
+        snprintf(name, sizeof name, "Mutation %d (%.0f%%)", ++e->mut_count, e->rnd_amount * 100.0f);
+    } else {
+        int a = rnd_generate(cur, out, e->rnd_locks, &e->rnd_seed);
+        snprintf(name, sizeof name, "Random %d: %s", ++e->rnd_count, RND_ARCH[a]);
+    }
+    rnd_apply(e, out);
+    rnd_snapshot(e, cur);   /* as the plugin took it */
+    rnd_push(e, cur, name);
+    InvalidateRect(e->wnd, NULL, FALSE);
+}
+static void rnd_step(ed_t *e, int dir) {   /* UNDO (-1) / REDO (+1) through the history */
+    float cur[NPARAMS];
+    if (!e->hist_n) return;
+    rnd_snapshot(e, cur);
+    if (!rnd_same(cur, e->hist[e->hist_pos])) rnd_push(e, cur, "Edited");   /* changed by hand since: keep that too */
+    int to = e->hist_pos + dir;
+    if (to < 0 || to >= e->hist_n) return;
+    e->hist_pos = to;
+    rnd_apply(e, e->hist[to]);
+    InvalidateRect(e->wnd, NULL, FALSE);
+}
+static void rnd_set_amount(ed_t *e, int x) {   /* the amount bar: 0 .. 100% across it */
+    RECT b = rnd_rect(Z_RND_AMOUNT);
+    float v = (x - b.left) / (float)(rw(&b) > 0 ? rw(&b) : 1);
+    e->rnd_amount = roundf((v < 0 ? 0 : v > 1 ? 1 : v) * 100.0f) / 100.0f;
 }
 
 static float option_norm(int i, int opt) { return PARAMS[i].nopts > 1 ? (float)opt / (PARAMS[i].nopts - 1) : 0.0f; }
@@ -244,7 +346,18 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (!PtInRect(&L.screen, pt)) return -1;
     if (PtInRect(&L.sub_prev, pt) && screen_subs(e) > 1) return Z_SUB_PREV;
     if (PtInRect(&L.sub_next, pt) && screen_subs(e) > 1) return Z_SUB_NEXT;
-    if (e->screen == SCR_MATRIX) {
+    if (e->screen == SCR_RANDOM) {
+        static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO};
+        for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
+            RECT r = rnd_rect(Z[k]);
+            if (Z[k] == Z_RND_AMOUNT) InflateRect(&r, sc(4), sc(4));   /* easier to catch */
+            if (PtInRect(&r, pt)) return Z[k];
+        }
+        for (int k = 0; k < RS_COUNT; k++) {
+            RECT r = rnd_rect(Z_RND_LOCK + k);
+            if (PtInRect(&r, pt)) return Z_RND_LOCK + k;
+        }
+    } else if (e->screen == SCR_MATRIX) {
         for (int r = 0; r < ROWS && e->sub * ROWS + r < NMATRIX; r++)
             for (int k = 0; k < MX_COLS; k++) {
                 RECT c = matrix_cell(r, k + 1);
@@ -282,7 +395,7 @@ static int hit(ed_t *e, int x, int y) {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
         {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
-        {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}};
+        {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}};
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++)
         if (PtInRect(Z[k].r, pt)) return Z[k].z;
     return -1;
@@ -361,6 +474,8 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
         if (!e->ribbon_on) ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 127);
         e->ribbon_cc = cc;
         e->ribbon_on = 1;
+    } else if (e->mode == M_RND_AMOUNT) {
+        rnd_set_amount(e, x);
     } else if (e->mode == M_ENC) {
         int steps = (e->enc_y - y) / sc(18);
         if (steps) {
@@ -402,6 +517,15 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         show(e, SCR_INDEX, e->screen == SCR_INDEX ? (e->sub + 1) % subs : 0);
     } else if (z == Z_TAB_ANALOG && PG_ANALOG >= 0) {
         show(e, PG_ANALOG, 0);
+    } else if (z == Z_TAB_RANDOM) {
+        show(e, SCR_RANDOM, 0);
+    } else if (z == Z_RND_GO || z == Z_RND_MUTATE) {
+        rnd_action(e, z == Z_RND_MUTATE);
+    } else if (z == Z_RND_UNDO || z == Z_RND_REDO) {
+        rnd_step(e, z == Z_RND_UNDO ? -1 : 1);
+    } else if (z >= Z_RND_LOCK && z < Z_RND_LOCK + RS_COUNT) {
+        e->rnd_locks ^= 1u << (z - Z_RND_LOCK);
+        InvalidateRect(e->wnd, NULL, FALSE);
     } else if (z == Z_SUB_PREV) {
         show(e, e->screen, (e->sub + subs - 1) % subs);
     } else if (z == Z_SUB_NEXT) {
@@ -424,6 +548,7 @@ static void press(ed_t *e, int x, int y) {
     case Z_PAD: e->mode = M_PAD; e->pad_on = 1; break;
     case Z_RIBBON: e->mode = M_RIBBON; e->ribbon_cc = -1; break;
     case Z_ENCODER: e->mode = M_ENC; e->enc_y = y; e->enc_moved = 0; break;
+    case Z_RND_AMOUNT: e->mode = M_RND_AMOUNT; break;
     default:
         if (i >= Z_KEYS) { press_zone(e, i); return; }
         break;
@@ -546,6 +671,12 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         ScreenToClient(w, &pt);
         int i = hit(e, pt.x, pt.y), dir = GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 1 : -1;
         if (i == Z_ENCODER) { set_program(e, e->shown_prog - dir); return 0; }
+        if (i == Z_RND_AMOUNT) {
+            float v = e->rnd_amount + dir * 0.01f;
+            e->rnd_amount = roundf((v < 0 ? 0 : v > 1 ? 1 : v) * 100.0f) / 100.0f;
+            InvalidateRect(w, NULL, FALSE);
+            return 0;
+        }
         if (i < 0 || i >= NPARAMS) {   /* over the screen: its sub-pages */
             int subs = screen_subs(e);
             if (PtInRect(&L.screen, pt) && subs > 1) show(e, e->screen, (e->sub + subs - dir) % subs);
@@ -663,6 +794,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->pad_x = 0.5f;
         e->ribbon = 0.5f;
         e->ribbon_cc = -1;
+        e->rnd_amount = 0.2f;
         eds[i] = e;
         wrapped_dispatch = fx->dispatcher;
         wrapped_replacing = fx->processReplacing;

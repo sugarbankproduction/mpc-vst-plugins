@@ -1,5 +1,6 @@
 /* Load the desktop ONE-ish.dll the way a DAW does (LoadLibrary + VSTPluginMain), play a note, save/restore its
- * state, then play every preset in its program list. Proves the DLL's export, MIDI path, audio path and presets on
+ * state, then play every preset in its program list, then drive the editor window (keyboard, ribbon, the randomiser
+ * page: RANDOMISE, UNDO, REDO, MUTATE, locks, and clicks while another thread renders). Proves the DLL's export, MIDI path, audio path and presets on
  * Windows itself; with a second path, writes all the presets to one WAV to listen to:
  *   load_test.exe path\to\ONE-ish.dll [presets.wav] */
 #include <math.h>
@@ -10,6 +11,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include "layout.h"   /* build/desktop/layout.h: where the editor's ribbon, buttons and MORE triangles are */
+#include "params.h"   /* build/params.h: the parameters' keys, in VST order */
+#include "../src/randomize.h"   /* which lock section each parameter is in */
 #define TEST_MIDI_LOG 0x4F314D4C   /* as editor.h: effVendorSpecific index for the MIDI the window passed on */
 
 typedef struct AEffect AEffect;
@@ -37,8 +40,12 @@ typedef struct {
 } VstMidiEvent;
 typedef struct { int32_t numEvents; intptr_t reserved; void *events[2]; } VstEvents;
 
+static int automated[NPARAMS], begins, ends;   /* what the plugin told the host (audioMasterAutomate, Begin/EndEdit) */
 static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, float o) {
-    (void)e; (void)i; (void)v; (void)p; (void)o;
+    (void)e; (void)v; (void)p; (void)o;
+    if (op == 0 && i >= 0 && i < NPARAMS) automated[i]++;
+    if (op == 43) begins++;
+    if (op == 44) ends++;
     return op == 1 ? 2400 : 0;   /* audioMasterVersion */
 }
 
@@ -196,6 +203,139 @@ static void ribbon_test(AEffect *fx, HWND child, float s) {
     check(on >= 0 && off > on && pos >= 5 && rising && abs(first - 13) <= 2 && abs(last - 102) <= 2, what);
 }
 
+/* ---- the randomiser page ---- */
+/* where its controls sit, in base units: mirrors editor.c's layout() (the screen's rows) and rnd_rect() */
+enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_LOCK };
+static void rnd_point(int what, int k, float *x, float *y) {
+    float x0 = ZONE_SCREEN[0] + 8.0f, x1 = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f, top = ZONE_SCREEN[1] + 6.0f + 36 + 20 + 18;
+    float half = (x1 - x0 - 8) / 2, xr = x0 + half + 8, q = (half - 8) / 2;
+    switch (what) {
+    case RP_GO: *x = x0 + half / 2; *y = top + 22; break;
+    case RP_MUTATE: *x = xr + half / 2; *y = top + 22; break;
+    case RP_UNDO: *x = x0 + q / 2; *y = top + 22 * 7 + 11; break;
+    case RP_REDO: *x = x0 + q + 8 + q / 2; *y = top + 22 * 7 + 11; break;
+    default: *x = (k < 4 ? x0 : xr) + half / 2; *y = top + 22 * (3 + k % 4) + 11; break;
+    }
+}
+static void rnd_click(HWND child, float s, int what, int k) {
+    float x, y;
+    rnd_point(what, k, &x, &y);
+    click(child, s, x, y);
+}
+static void snapshot(AEffect *fx, float *v) { for (int i = 0; i < NPARAMS; i++) v[i] = fx->getParameter(fx, i); }
+static double max_diff(const float *a, const float *b) {
+    double m = 0;
+    for (int i = 0; i < NPARAMS; i++) if (fabs(a[i] - b[i]) > m) m = fabs(a[i] - b[i]);
+    return m;
+}
+static int count_diff(const float *a, const float *b) {
+    int n = 0;
+    for (int i = 0; i < NPARAMS; i++) n += a[i] != b[i];
+    return n;
+}
+
+/* the audio thread for the clicks-while-playing check: a held chord, blocks rendered until told to stop */
+static volatile LONG audio_stop;
+static volatile LONG audio_blocks, audio_bad;
+static DWORD WINAPI audio_thread(LPVOID arg) {
+    AEffect *fx = arg;
+    float l[256], r[256], *out[2] = {l, r};
+    while (!audio_stop) {
+        fx->processReplacing(fx, NULL, out, 256);
+        for (int i = 0; i < 256; i++)
+            if (!isfinite(l[i]) || !isfinite(r[i]) || fabsf(l[i]) > 1.0f || fabsf(r[i]) > 1.0f) audio_bad++;
+        audio_blocks++;
+    }
+    return 0;
+}
+
+static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    static float before[NPARAMS], after[NPARAMS], now[NPARAMS];
+    char what[200];
+    click_zone(child, s, ZONE_TAB_RANDOM);
+    snapshot(fx, before);
+    memset(automated, 0, sizeof automated);
+    begins = ends = 0;
+    rnd_click(child, s, RP_GO, 0);
+    snapshot(fx, after);
+    int changed = count_diff(before, after), told = 0, never_moved = 0;
+    for (int i = 0; i < NPARAMS; i++) {
+        told += after[i] != before[i] && automated[i] > 0;
+        never_moved += rnd_section_of(i) == RS_NEVER && after[i] != before[i];
+    }
+    snprintf(what, sizeof what, "RANDOMISE changes %d params, the host is told of %d of them (%d edits begun, %d ended), "
+             "%d never-touched params moved", changed, told, begins, ends, never_moved);
+    check(changed > 40 && told == changed && begins == ends && begins >= changed && never_moved == 0, what);
+    send_midi(fx, 0x90, 60, 100);
+    send_midi(fx, 0x90, 64, 100);
+    double rms = play(fx, 60, 512);
+    send_midi(fx, 0xB0, 123, 0);
+    play(fx, 200, 512);
+    snprintf(what, sizeof what, "the random sound plays (rms %.3f)", rms);
+    check(rms > 0.002, what);
+
+    rnd_click(child, s, RP_UNDO, 0);
+    snapshot(fx, now);
+    snprintf(what, sizeof what, "UNDO restores the sound before exactly (largest difference %.2g)", max_diff(now, before));
+    check(max_diff(now, before) == 0, what);
+    rnd_click(child, s, RP_REDO, 0);
+    snapshot(fx, now);
+    snprintf(what, sizeof what, "REDO brings the random sound back (largest difference %.2g)", max_diff(now, after));
+    check(max_diff(now, after) == 0, what);
+
+    rnd_click(child, s, RP_MUTATE, 0);
+    snapshot(fx, now);
+    int mutated = count_diff(after, now);
+    snprintf(what, sizeof what, "MUTATE at 20%% changes %d params (RANDOMISE changed %d)", mutated, changed);
+    check(mutated > 0 && mutated < changed, what);
+
+    rnd_click(child, s, RP_LOCK, RS_FILTER);   /* lock FILTERS and ENVELOPES, then RANDOMISE */
+    rnd_click(child, s, RP_LOCK, RS_ENV);
+    snapshot(fx, before);
+    rnd_click(child, s, RP_GO, 0);
+    snapshot(fx, after);
+    int locked_moved = 0, others = 0;
+    for (int i = 0; i < NPARAMS; i++) {
+        int sec = rnd_section_of(i);
+        if (sec == RS_FILTER || sec == RS_ENV || sec == RS_NEVER) locked_moved += after[i] != before[i];
+        else others += after[i] != before[i];
+    }
+    snprintf(what, sizeof what, "with FILTERS and ENVELOPES locked, RANDOMISE leaves them alone (%d moved) and changes "
+             "%d others", locked_moved, others);
+    check(locked_moved == 0 && others > 20, what);
+    rnd_click(child, s, RP_LOCK, RS_FILTER);
+    rnd_click(child, s, RP_LOCK, RS_ENV);
+
+    /* clicks while another thread renders, as in a host: no crash, nothing but finite audio within full scale */
+    send_midi(fx, 0x90, 48, 100);
+    send_midi(fx, 0x90, 55, 100);
+    send_midi(fx, 0x90, 64, 100);
+    audio_stop = audio_blocks = audio_bad = 0;
+    HANDLE t = CreateThread(NULL, 0, audio_thread, fx, 0, NULL);
+    for (int k = 0; k < 40; k++) {
+        rnd_click(child, s, k % 4 == 3 ? RP_UNDO : k % 2 ? RP_MUTATE : RP_GO, 0);
+        Sleep(5);
+    }
+    audio_stop = 1;
+    WaitForSingleObject(t, INFINITE);
+    CloseHandle(t);
+    send_midi(fx, 0xB0, 123, 0);
+    snprintf(what, sizeof what, "40 RANDOMISE / MUTATE / UNDO clicks while another thread rendered %ld blocks: %ld bad samples",
+             (long)audio_blocks, (long)audio_bad);
+    check(audio_blocks > 10 && audio_bad == 0, what);
+    play(fx, 200, 512);
+    if (bmp) {   /* a picture of the page after one more RANDOMISE, with the mouse over the button */
+        rnd_click(child, s, RP_GO, 0);
+        rnd_click(child, s, RP_LOCK, RS_FX);
+        float x, y;
+        rnd_point(RP_GO, 0, &x, &y);
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
+        shot(child, w, h, bmp, "_random");
+        rnd_click(child, s, RP_LOCK, RS_FX);
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));
+    }
+}
+
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void editor(AEffect *fx, const char *bmp) {
@@ -228,6 +368,10 @@ static void editor(AEffect *fx, const char *bmp) {
         snprintf(what, sizeof what, "letting go of the key stops it (rms %.4f)", after);
         check(after < held / 10, what);
         ribbon_test(fx, child, cr.right / (float)BASE_W);
+        random_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        click_zone(child, cr.right / (float)BASE_W, ZONE_TAB_MATRIX);   /* the matrix's first rows again */
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);   /* back to the first preset for the pictures */
+        play(fx, 400, 512);
         SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);   /* held again for the picture */
         play(fx, 4, 512);
     }

@@ -139,6 +139,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   7. Later (owner, 2026-10-27): a patch randomiser for inspiration: a "random" button that makes playable sounds
      (ranges kept musical: audible levels, open-enough cutoffs, sensible envelopes), a "mutate" amount for small
      variations of the current sound, per-section locks (e.g. keep the envelopes), undo, and later per timbral part.
+     Done 2026-10-27 (offline and the desktop window): `src/randomize.h` (rules per param key, six archetypes, a
+     safety pass) and a RANDOM page on the centre screen (RANDOMISE, MUTATE with an amount, 7 section locks, UNDO /
+     REDO over 32 sounds). Offline: 300 random sounds all heard and within the limiter's range; volume, tuning, bend,
+     keyboard settings, ribbon and link cutoff never touched. Left: per part (needs multitimbral), an MPC control.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base.

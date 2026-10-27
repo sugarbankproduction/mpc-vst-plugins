@@ -219,9 +219,9 @@ def build(lay):
         ("pitch_var", "Pitch Variance")])
 
     # ---- centre console: the screen (presets, mod matrix, MORE pages, help) and its buttons ----
-    zones = {"SCREEN": (770, 22, 400, 362), "TAB_MATRIX": (790, 408, 50, 46), "TAB_MORE": (840, 408, 50, 46),
-             "TAB_ANALOG": (890, 408, 46, 46), "ENCODER": (936, 398, 68, 104), "PREV": (1026, 408, 50, 46),
-             "NEXT": (1088, 408, 50, 46), "BRAND": (770, 506, 400, 26)}
+    zones = {"SCREEN": (770, 22, 400, 362), "TAB_MATRIX": (771, 408, 46, 46), "TAB_MORE": (817, 408, 46, 46),
+             "TAB_ANALOG": (865, 408, 46, 46), "TAB_RANDOM": (917, 408, 46, 46), "ENCODER": (963, 398, 64, 104),
+             "PREV": (1040, 408, 50, 46), "NEXT": (1100, 408, 50, 46), "BRAND": (770, 506, 400, 26)}
 
     # ---- mixer ----
     X = DX

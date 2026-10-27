@@ -5,6 +5,7 @@
 #include <string.h>
 #include "editor.h"
 #include "gfx.h"
+#include "../src/randomize.h"
 
 /* ---- help text: what the control under the mouse does (a key, or "_suffix" for every key ending in it) ---- */
 static const char *help_for(int i) {
@@ -122,7 +123,26 @@ static const char *zone_help(int z) {
     case Z_TAB_MATRIX: return "MATRIX: the 16 mod matrix rows, 8 at a time (click again, or scroll over the screen, for the others).";
     case Z_TAB_MORE: return "MORE: the list of every module's MORE page. The small triangles on the modules open them directly.";
     case Z_TAB_ANALOG: return "ANALOG: the analog character page (drift and per-voice differences).";
+    case Z_TAB_RANDOM: return "RANDOM: the patch randomiser. New sounds to play with, variations of this one, locks, undo.";
+    case Z_RND_GO: return "RANDOMISE: a new sound, made to be playable (heard, not harsh, in tune). Locked sections stay as "
+                          "they are; volume, tuning, bend and keyboard settings are never changed.";
+    case Z_RND_MUTATE: return "MUTATE: a variation of the sound playing now. AMOUNT sets how far: 10-20% a nudge, 100% a lot. "
+                              "Click again for another variation.";
+    case Z_RND_AMOUNT: return "AMOUNT: how far MUTATE moves the sound (drag or scroll). Default 20%.";
+    case Z_RND_UNDO: return "UNDO: back to the sound before (the last 32 are kept, your own edits in between too).";
+    case Z_RND_REDO: return "REDO: forward again after UNDO.";
     case Z_SUB_PREV: case Z_SUB_NEXT: return "The previous / next part of this page.";
+    }
+    if (z >= Z_RND_LOCK && z < Z_RND_LOCK + RS_COUNT) {
+        static const char *const LOCK_HELP[RS_COUNT] = {
+            "Lock OSCILLATORS (lit = kept): waves, footages, tuning, sync, FM, ring source, LFO 3's wave-shape amounts.",
+            "Lock MIXER (lit = kept): levels, each source's filter buttons, noise colour and envelope.",
+            "Lock FILTERS (lit = kept): both filters, route and mix, envelope / LFO / keyboard amounts, filter FM.",
+            "Lock ENVELOPES (lit = kept): filter, amp and mod envelopes with their extras.",
+            "Lock MODULATION (lit = kept): the LFOs, pitch LFO / envelope amounts and the mod matrix.",
+            "Lock EFFECTS (lit = kept): the synth effect, the delay and reverb sends and settings.",
+            "Lock PERFORMANCE (lit = kept): voices, glide, unison, analog character, spread and drift."};
+        return LOCK_HELP[z - Z_RND_LOCK];
     }
     return NULL;
 }
@@ -483,6 +503,46 @@ static void draw_index(HDC dc, ed_t *e, int subs) {
     }
 }
 
+/* a button on the screen: framed, filled when lit */
+static void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f) {
+    gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), lit ? 0xFF96D7E8 : 0xFF0F2230);
+    gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f, hot ? 0xFFFFFFFF : lit ? 0xFF96D7E8 : 0xFF3E6273);
+    text(dc, &r, label, f, lit ? RGB(11, 22, 33) : hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+/* the randomiser page: which sound of the history is playing, what it is, the buttons, the amount and the locks */
+static void draw_random(HDC dc, ed_t *e) {
+    char t[128], d[200];
+    if (e->hist_n) snprintf(t, sizeof t, "RANDOM:  %s   (%d of %d)", e->hist_name[e->hist_pos], e->hist_pos + 1, e->hist_n);
+    else snprintf(t, sizeof t, "RANDOM:  new sounds to play with");
+    title_line(dc, e, t, 1);
+    float cur[NPARAMS];
+    for (int i = 0; i < NPARAMS; i++) cur[i] = e->fx->getParameter(e->fx, i);
+    rnd_describe(cur, d, sizeof d);
+    text(dc, &L.head, d, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    screen_button(dc, rnd_rect(Z_RND_GO), "RANDOMISE", 0, e->hover == Z_RND_GO, font_big);
+    screen_button(dc, rnd_rect(Z_RND_MUTATE), "MUTATE", 0, e->hover == Z_RND_MUTATE, font_big);
+    int half = (rw(&L.row[0]) - sc(8)) / 2, xr = L.row[0].left + half + sc(8);
+    RECT lk = {L.row[2].left, L.row[2].top, L.row[2].left + half, L.row[2].bottom};
+    text(dc, &lk, "LOCK (lit = keep as it is):", font_cell, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    RECT bar = rnd_rect(Z_RND_AMOUNT), al = {xr, L.row[2].top, bar.left - sc(4), L.row[2].bottom};
+    RECT av = {bar.right + sc(4), L.row[2].top, xr + half, L.row[2].bottom};
+    int hot = e->hover == Z_RND_AMOUNT;
+    text(dc, &al, "AMOUNT", font_cell, hot ? T_HOT : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    float cy = (bar.top + bar.bottom) / 2.0f;
+    gfx_rect((float)bar.left, cy - 3.0f * L.s, (float)rw(&bar), 6.0f * L.s, 0xFF1C2C36);
+    gfx_rect((float)bar.left, cy - 3.0f * L.s, rw(&bar) * e->rnd_amount, 6.0f * L.s, 0xFF96D7E8);
+    if (hot) gfx_frame((float)bar.left - 1, (float)bar.top, (float)rw(&bar) + 2, (float)rh(&bar), 1.0f, 0x6096D7E8);
+    char pct[16];
+    snprintf(pct, sizeof pct, "%.0f%%", e->rnd_amount * 100.0f);
+    text(dc, &av, pct, font_cell, T_LCD, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    for (int k = 0; k < RS_COUNT; k++)
+        screen_button(dc, rnd_rect(Z_RND_LOCK + k), RND_SECTION[k], e->rnd_locks >> k & 1u, e->hover == Z_RND_LOCK + k,
+                      font_cell);
+    screen_button(dc, rnd_rect(Z_RND_UNDO), "UNDO", 0, e->hover == Z_RND_UNDO && e->hist_pos > 0, font_cell);
+    screen_button(dc, rnd_rect(Z_RND_REDO), "REDO", 0, e->hover == Z_RND_REDO && e->hist_pos < e->hist_n - 1, font_cell);
+}
+
 static void draw_screen(HDC dc, ed_t *e) {
     RECT *s = &L.screen;
     gfx_rect((float)s->left - 3, (float)s->top - 3, (float)rw(s) + 6, (float)rh(s) + 6, 0xFF050505);
@@ -502,6 +562,7 @@ static void draw_screen(HDC dc, ed_t *e) {
         if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0xFF0F1E2A);
     if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
     else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
+    else if (e->screen == SCR_RANDOM) draw_random(dc, e);
     else draw_page(dc, e, subs);
     /* help: what the control under the mouse does */
     char help[480];
@@ -513,6 +574,10 @@ static void draw_screen(HDC dc, ed_t *e) {
         snprintf(help, sizeof help, "%s: %s%s%s", PARAMS[e->hover].name, val, h ? "\n" : "", h ? h : "");
     } else if (zh) {
         snprintf(help, sizeof help, "%s", zh);
+    } else if (e->screen == SCR_RANDOM) {
+        snprintf(help, sizeof help, "RANDOMISE makes a new sound; MUTATE a variation of this one (AMOUNT: how far). "
+                                    "Light a section to keep it. UNDO / REDO step through the last sounds. Like it? "
+                                    "Save it in your host (a preset or the project).");
     } else if (e->screen == SCR_MATRIX) {
         snprintf(help, sizeof help, "Each row: SOURCE x AMOUNT moves DESTINATION. VIA scales it by a second source "
                                     "(V.AMT: how much); XFORM reshapes the source (X.AMT: how strongly). Click a value "
@@ -545,6 +610,7 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.tab_more, "MORE", e->screen >= 0 && e->screen != PG_ANALOG ? 1 : e->screen == SCR_INDEX,
                  e->hover == Z_TAB_MORE);
     panel_button(dc, &L.tab_analog, "ANALOG", PG_ANALOG >= 0 && e->screen == PG_ANALOG, e->hover == Z_TAB_ANALOG);
+    panel_button(dc, &L.tab_random, "RANDOM", e->screen == SCR_RANDOM, e->hover == Z_TAB_RANDOM);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     int cx = (L.encoder.left + L.encoder.right) / 2, r = sc(31);
