@@ -117,6 +117,46 @@ static void audition(AEffect *fx, const char *wav) {
     printf("     wrote %s (%d presets, %.0f s)\n", wav, np, frames / (double)SR);
 }
 
+/* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
+ * as a 24-bit BMP if asked, close it */
+static void editor(AEffect *fx, const char *bmp) {
+    char what[128];
+    check(fx->flags & 1, "the plugin says it has an editor window");
+    struct { int16_t top, left, bottom, right; } *rect = NULL;
+    fx->dispatcher(fx, 13 /* effEditGetRect */, 0, 0, &rect, 0);
+    int w = rect ? rect->right - rect->left : 0, h = rect ? rect->bottom - rect->top : 0;
+    snprintf(what, sizeof what, "editor size %d x %d", w, h);
+    check(w > 600 && h > 300, what);
+    if (w <= 0 || h <= 0) return;
+    HWND parent = CreateWindowExA(0, "STATIC", "host", WS_POPUP, 0, 0, w, h, NULL, NULL, GetModuleHandleA(NULL), NULL);
+    intptr_t ok = fx->dispatcher(fx, 14 /* effEditOpen */, 0, 0, parent, 0);
+    HWND child = GetWindow(parent, GW_CHILD);
+    check(ok && child, "the editor window opens inside the host's window");
+    if (child && bmp) {
+        HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+        HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+        HGDIOBJ old = SelectObject(dc, bm);
+        SendMessageA(child, WM_PRINTCLIENT, (WPARAM)dc, PRF_CLIENT);
+        BITMAPINFOHEADER bi = {sizeof bi, w, h, 1, 24, BI_RGB, 0, 0, 0, 0, 0};
+        int stride = (w * 3 + 3) & ~3;
+        static unsigned char px[4096 * 2048 * 3];
+        if (stride * h <= (int)sizeof px) {
+            GetDIBits(dc, bm, 0, h, px, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+            FILE *f = fopen(bmp, "wb");
+            if (f) {
+                BITMAPFILEHEADER fh = {0x4d42, (DWORD)(sizeof fh + sizeof bi + stride * h), 0, 0, sizeof fh + sizeof bi};
+                fwrite(&fh, sizeof fh, 1, f); fwrite(&bi, sizeof bi, 1, f); fwrite(px, stride * h, 1, f);
+                fclose(f);
+                printf("     wrote %s\n", bmp);
+            }
+        }
+        SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
+    }
+    fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
+    check(!IsWindow(child), "the editor window closes");
+    DestroyWindow(parent);
+}
+
 int main(int argc, char **argv) {
     HMODULE dll = LoadLibraryA(argc > 1 ? argv[1] : "ONE-ish.dll");
     if (!dll) { printf("FAIL LoadLibrary (error %lu)\n", GetLastError()); return 1; }
@@ -153,7 +193,8 @@ int main(int argc, char **argv) {
     if (n > 0) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, chunk, 0);
     check(fabsf(fx->getParameter(fx, 1) - before) < 1e-3f, "restores them");
 
-    audition(fx, argc > 2 ? argv[2] : NULL);
+    audition(fx, argc > 2 && argv[2][0] ? argv[2] : NULL);
+    editor(fx, argc > 3 ? argv[3] : NULL);
 
     fx->dispatcher(fx, 12, 0, 0, NULL, 0);
     fx->dispatcher(fx, 1 /* effClose */, 0, 0, NULL, 0);
