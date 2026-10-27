@@ -54,6 +54,11 @@
  *             alone); the non-linear ladder is the linear one at 0, stable at full resonance and drive in every mode
  *             and slope (with filter FM too), self-oscillates near the cutoff, distorts more as the level rises and
  *             softens its resonance when driven
+ *   wiring    the matrix's later sources and destinations: noise EG, sostenuto and ribbon as sources; pan, noise
+ *             colour mix, drift and spread as destinations; the ribbon over CC 16/17 (smoothed, spring and hold,
+ *             centre and left origin, CC 121) and its quick assignment; the effects as destinations (an LFO moves the
+ *             synth effect's mix and rate and the reverb send, a mix stepped by a square LFO doesn't zipper, the
+ *             newest voice's velocity drives the effect pass); a state with every param off its default fits the chunk
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
@@ -1249,13 +1254,14 @@ static void effects_tier3(void) {
         check(k ? diff > sum * 0.01 : diff < sum * 1e-9, what);
     }
 
-    /* bit crusher: 4 bits leave at most 17 levels; 1 kHz holds each value for about 44 samples */
+    /* bit crusher: 4 bits leave at most 17 levels; 1 kHz holds each value for about 44 samples (after the first block,
+     * where the wet fades in from off) */
     fx_params_t p = fx_none();
     p.sfx_on = 1; p.sfx_type = SFX_CRUSH; p.mix = 1; p.bits = 4; p.srate_hz = FX_SR;
     fx_run(&p, saw, l, r, SR);
     int levels = 0;
     static float seen[64];
-    for (int i = 0; i < SR && levels < 64; i++) {
+    for (int i = FX_BLOCK; i < SR && levels < 64; i++) {
         int found = 0;
         for (int j = 0; j < levels; j++) found |= seen[j] == l[i];
         if (!found) seen[levels++] = l[i];
@@ -1263,7 +1269,7 @@ static void effects_tier3(void) {
     p.bits = 24; p.srate_hz = 1000;
     fx_run(&p, saw, l, r, SR);
     int changes = 0;
-    for (int i = 1; i < SR; i++) changes += l[i] != l[i - 1];
+    for (int i = FX_BLOCK + 1; i < SR; i++) changes += l[i] != l[i - 1];
     snprintf(what, sizeof what, "bit crusher: 4 bits give %d levels (want <= 17); 1 kHz changes %d times a second (want ~1000)",
              levels, changes);
     check(levels <= 17 && levels > 4 && changes >= 990 && changes <= 1001, what);
@@ -3077,6 +3083,28 @@ static void bench(void) {
     double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
     printf("bench: 4 voices + chorus, delay, reverb %6.2f us per 128-frame block on this PC\n", us);
     E->destroy(e);
+    /* the same with the effect pass busy: LFOs to the chorus mix and rate, the reverb send and size, the newest
+     * voice's mod envelope to the delay feedback, and the ribbon's quick assignment to the delay time */
+    e = patch(SAW, 5, 300, 70, 250);
+    set(e, "voices", 7); set(e, "modfx_on", 1); set(e, "modfx_type", SFX_CHORUS); set(e, "mfx_send1", 30);
+    set(e, "mfx_send2", 30);
+    static const int fxd[5] = {MDF_MIX, MDF_RATE, MDF_SEND2, MDF_REV_SIZE, MDF_DLY_FB};
+    static const int fxs[5] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4, MS_MENV};
+    for (int k = 0; k < 5; k++) {
+        char key[32];
+        snprintf(key, sizeof key, "mod%d_src", k + 2); set(e, key, fxs[k]);
+        snprintf(key, sizeof key, "mod%d_dst", k + 2); set(e, key, MD_FX_FIRST + fxd[k]);
+        snprintf(key, sizeof key, "mod%d_amt", k + 2); set(e, key, 20);
+    }
+    set(e, "ribbon_dst", MD_FX_FIRST + MDF_DLY_TIME); set(e, "ribbon_amt", 10);
+    for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    double us2 = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+    printf("bench: the same + the effect pass (5 slots and the ribbon to effects) %6.2f us per 128-frame block (%+.2f)\n",
+           us2, us2 - us);
+    E->destroy(e);
     fx_bench();
 }
 
@@ -3315,6 +3343,297 @@ static void lfo_matrix(void) {
     }
 }
 
+/* play note 57 for `ms`, sending each CC event at its time (ms from the note-on, in order); the tracked pitch */
+typedef struct { int ms, cc, v; } cc_ev_t;
+static int cc_run(void *e, const cc_ev_t *ev, int nev, int ms, double *t, double *st) {
+    static float x[SR * 3];
+    note(e, 1, 57, 127);
+    int at = 0;
+    for (int k = 0; k <= nev; k++) {
+        int to = SR * (k < nev ? ev[k].ms : ms) / 1000;
+        if (to > at) { render_f(e, x + at, to - at); at = to; }
+        if (k < nev) midi3(e, 0xb0, ev[k].cc, ev[k].v);
+    }
+    return track(x, at, t, st);
+}
+
+/* a matrix slot: source, destination, amount */
+static void slot_set(void *e, int n, int src, int dst, double amt) {
+    char k[32];
+    snprintf(k, sizeof k, "mod%d_src", n); set(e, k, src);
+    snprintf(k, sizeof k, "mod%d_dst", n); set(e, k, dst);
+    snprintf(k, sizeof k, "mod%d_amt", n); set(e, k, amt);
+}
+
+/* a quiet triangle (well inside the output's linear range) through the open ladder; with `fx`, the synth effect on at
+ * mix 0 and wet gain 0, so its output is the dry signal times (1 - mix): the mix can be read off sample by sample */
+static void *dry_patch(int fx) {
+    void *e = pitch_patch();
+    set(e, "volume", 30);
+    if (fx) { set(e, "modfx_on", 1); set(e, "modfx_type", SFX_DELAY); set(e, "modfx_mix", 0); set(e, "modfx_gain", 0); }
+    return e;
+}
+
+/* b's output over a's, sample by sample where a is loud enough to divide by (NAN elsewhere): with dry_patch(1) against
+ * dry_patch(0), 1 - the synth effect's mix. b renders in host blocks of 100 frames, which split the control steps */
+static void dry_gain(void *a, void *b, float *g, int n) {
+    static float xa[SR], xb[SR];
+    int16_t buf[256];
+    render_f(a, xa, n);
+    for (int at = 0; at < n; at += 100) {
+        int m = n - at < 100 ? n - at : 100;
+        E->render(b, buf, m);
+        for (int i = 0; i < m; i++) xb[at + i] = buf[2 * i] / 32768.0f;
+    }
+    for (int i = 0; i < n; i++) g[i] = fabsf(xa[i]) > 0.04f ? xb[i] / xa[i] : NAN;
+}
+static double gain_mean(const float *g, int from_ms, int to_ms) {
+    double s = 0;
+    int c = 0;
+    for (int i = SR * from_ms / 1000; i < SR * to_ms / 1000; i++)
+        if (!isnan(g[i])) { s += g[i]; c++; }
+    return c ? s / c : NAN;
+}
+static double gain_max_step(const float *g, int n) {   /* the largest change between neighbouring samples */
+    double m = 0;
+    for (int i = 1; i < n; i++)
+        if (!isnan(g[i]) && !isnan(g[i - 1])) m = fmax(m, fabs(g[i] - g[i - 1]));
+    return m;
+}
+
+/* the matrix's later sources (noise EG, sostenuto, ribbon) and destinations (pan, colour mix, drift, spread, the
+ * effects), the ribbon over CC 16/17, and a state with every param off its default */
+static void matrix_wiring(void) {
+    static double t[MAXPTS], st[MAXPTS];
+    static float g[SR], l[SR], r[SR];
+    char what[260];
+    const double lfo2hz = 100 * log10(2 / 0.01) / 3;
+
+    /* noise EG as a source: attack 300 ms, sustain on, to pitch +12 st */
+    {
+        void *e = pitch_patch();
+        set(e, "noise_a", knob_ms(300));
+        slot_set(e, 2, MS_NOISE_EG, MD_PITCH, 50);
+        int k = pitch_run(e, 0, 700, t, st);
+        double a = pitch_at(t, st, k, 30), b = pitch_at(t, st, k, 600);
+        snprintf(what, sizeof what, "Noise EG (attack 300 ms) -> Pitch +50%%: note %.2f at 30 ms, %.2f at 600 ms (want under 60, "
+                 "then 69)", a, b);
+        check(a < 60 && fabs(b - 69) < 0.3, what);
+        E->destroy(e);
+    }
+    /* sostenuto as a source */
+    {
+        void *e = pitch_patch();
+        slot_set(e, 2, MS_SOSTENUTO, MD_PITCH, -50);
+        const cc_ev_t ev[] = {{200, 66, 127}};
+        int k = cc_run(e, ev, 1, 500, t, st);
+        double a = pitch_at(t, st, k, 150), b = pitch_at(t, st, k, 400);
+        snprintf(what, sizeof what, "Sostenuto -> Pitch -50%%: note %.2f before the pedal, %.2f with it down (want 57, 45)", a, b);
+        check(fabs(a - 57) < 0.3 && fabs(b - 45) < 0.3, what);
+        E->destroy(e);
+    }
+
+    /* the ribbon (Ribbon -> Pitch +50%: +-12 st at its ends). Centre origin, spring: a touch at the right end, then
+     * the finger lifts and it springs back; its CC steps are smoothed (a jump end to end takes tens of ms) */
+    {
+        void *e = pitch_patch();
+        slot_set(e, 2, MS_RIBBON, MD_PITCH, 50);
+        const cc_ev_t ev[] = {{0, 17, 127}, {0, 16, 0}, {300, 16, 127}, {500, 17, 0}};
+        int k = cc_run(e, ev, 4, 800, t, st);
+        double lo = pitch_at(t, st, k, 250), hi = pitch_at(t, st, k, 450), back = pitch_at(t, st, k, 750);
+        double up = -1, down = -1;
+        for (int i = 0; i < k; i++) {
+            if (up < 0 && t[i] > 300 && fabs(st[i] - 69) < 0.25) up = t[i] - 300;
+            if (down < 0 && t[i] > 500 && fabs(st[i] - 57) < 0.25) down = t[i] - 500;
+        }
+        snprintf(what, sizeof what, "ribbon (centre, spring): left end %.2f, right end %.2f (want 45, 69): there %.0f ms after "
+                 "the CC jump (smoothed: want 20-120); lifted: back to %.2f after %.0f ms (want 57, 20-150)", lo, hi, up,
+                 back, down);
+        check(fabs(lo - 45) < 0.3 && fabs(hi - 69) < 0.3 && up > 20 && up < 120 && fabs(back - 57) < 0.3 && down > 20
+              && down < 150, what);
+        E->destroy(e);
+
+        e = pitch_patch();   /* hold keeps the last place after the lift; reset controllers (CC 121) brings it back */
+        slot_set(e, 2, MS_RIBBON, MD_PITCH, 50);
+        set(e, "ribbon_mode", 1);
+        const cc_ev_t eh[] = {{0, 17, 127}, {0, 16, 127}, {200, 17, 0}, {500, 121, 0}};
+        k = cc_run(e, eh, 4, 800, t, st);
+        double held = pitch_at(t, st, k, 450), reset = pitch_at(t, st, k, 750);
+        snprintf(what, sizeof what, "ribbon (hold): %.2f 250 ms after the lift (want 69); CC 121: %.2f (want 57)", held, reset);
+        check(fabs(held - 69) < 0.3 && fabs(reset - 57) < 0.3, what);
+        E->destroy(e);
+
+        e = pitch_patch();   /* left origin: unipolar from the left end, 64 about half way; spring back to the left */
+        slot_set(e, 2, MS_RIBBON, MD_PITCH, 50);
+        set(e, "ribbon_origin", 1);
+        const cc_ev_t el[] = {{0, 17, 127}, {0, 16, 0}, {200, 16, 127}, {400, 16, 64}, {600, 17, 0}};
+        k = cc_run(e, el, 5, 900, t, st);
+        double a = pitch_at(t, st, k, 150), b = pitch_at(t, st, k, 350), c = pitch_at(t, st, k, 550),
+               d = pitch_at(t, st, k, 850);
+        snprintf(what, sizeof what, "ribbon (left origin, spring): %.2f, %.2f, %.2f at 0, 127, 64, back to %.2f (want 57, 69, "
+                 "63.05, 57)", a, b, c, d);
+        check(fabs(a - 57) < 0.3 && fabs(b - 69) < 0.3 && fabs(c - 63.05) < 0.3 && fabs(d - 57) < 0.3, what);
+        E->destroy(e);
+
+        e = pitch_patch();   /* its quick assignment, without a slot */
+        set(e, "ribbon_dst", MD_PITCH); set(e, "ribbon_amt", -25); set(e, "ribbon_mode", 1);
+        const cc_ev_t eq[] = {{0, 16, 127}};
+        k = cc_run(e, eq, 1, 400, t, st);
+        a = pitch_at(t, st, k, 300);
+        snprintf(what, sizeof what, "ribbon quick assignment -> Pitch -25%%, ribbon at the right end: note %.2f (want 51)", a);
+        check(fabs(a - 51) < 0.3, what);
+        E->destroy(e);
+    }
+
+    /* pan as a destination: Constant -> Pan -50% leans left by 4.77 dB (equal power); +100% silences the left */
+    for (int k = 0; k < 2; k++) {
+        void *e = patch(SAW, 0, 1, 100, 10);
+        set(e, "volume", 30);
+        slot_set(e, 2, MS_CONST, MD_PAN, k ? 100 : -50);
+        note(e, 1, 48, 127);
+        render_lr(e, l, r, SR / 2);
+        double sl = 0, sr = 0;
+        for (int i = SR / 4; i < SR / 2; i++) { sl += l[i] * l[i]; sr += r[i] * r[i]; }
+        if (k) {
+            snprintf(what, sizeof what, "Constant -> Pan +100%%: the left %.1f dB under the right (want silent)", 10 * log10(sl / sr + 1e-30));
+            check(sl == 0 && sr > 0, what);
+        } else {
+            snprintf(what, sizeof what, "Constant -> Pan -50%%: leans left by %.2f dB (want 4.77)", 10 * log10(sl / sr));
+            check(fabs(10 * log10(sl / sr) - 4.77) < 0.1, what);
+        }
+        E->destroy(e);
+    }
+    /* spread as a destination: two voices, spread knob 0, Constant -> Spread +100%: the first note goes hard right */
+    {
+        void *e = patch(SAW, 0, 1, 100, 10);
+        set(e, "volume", 30); set(e, "voices", 1);
+        slot_set(e, 2, MS_CONST, MD_SPREAD, 100);
+        note(e, 1, 48, 127);
+        render_lr(e, l, r, SR / 2);
+        double sl = 0, sr = 0;
+        for (int i = SR / 4; i < SR / 2; i++) { sl += l[i] * l[i]; sr += r[i] * r[i]; }
+        check(sl == 0 && sr > 0, "Constant -> Spread +100% (knob 0): the first note sits at its spread place, hard right");
+        E->destroy(e);
+    }
+    /* noise colour mix as a destination: Red+White at 0% moved +100% is white */
+    {
+        double rms;
+        void *e = noise_patch(0, 0);
+        slot_set(e, 2, MS_CONST, MD_NOISE_MIX, 100);
+        double s = noise_slope(e, &rms);
+        snprintf(what, sizeof what, "Constant -> Noise Color Mix +100%% on Red+White at 0%%: %+.2f dB/oct (want 0, white)", s);
+        check(fabs(s) < 0.6, what);
+        E->destroy(e);
+    }
+    /* drift as a destination: knob 0, Constant -> Analog Drift +100% wanders within +-4 cents */
+    {
+        enum { WIN = 12 };
+        static float y[N * WIN + 4096];
+        void *e = patch(TRI, 0, 1, 100, 10);
+        set(e, "volume", 30);
+        slot_set(e, 2, MS_CONST, MD_DRIFT, 100);
+        note(e, 1, 81, 127);
+        render_f(e, y, N * WIN + 4096);
+        double lo_c = 1e9, hi_c = -1e9;
+        for (int k = 0; k < WIN; k++) {
+            double c = cents(peak_hz(y + 4096 + k * N), 880);
+            lo_c = fmin(lo_c, c); hi_c = fmax(hi_c, c);
+        }
+        snprintf(what, sizeof what, "Constant -> Analog Drift +100%% (knob 0): pitch wanders %+.2f .. %+.2f cents", lo_c, hi_c);
+        check(lo_c > -4.3 && hi_c < 4.3 && hi_c - lo_c > 0.5, what);
+        E->destroy(e);
+    }
+
+    /* the effects as destinations. A 2 Hz unipolar square LFO -> Synth FX Mix +100% (knob 0): the mix is 100% for a
+     * quarter second, then 0; read off as the dry gain, sample by sample; it never steps (smoothed, then ramped) */
+    {
+        void *a = dry_patch(0), *b = dry_patch(1);
+        set(b, "lfo1_wave", LFO_SQUARE); set(b, "lfo1_polarity", 1); set(b, "lfo1_rate", lfo2hz);
+        slot_set(b, 2, MS_LFO1, MD_FX_FIRST + MDF_MIX, 100);
+        note(a, 1, 57, 127); note(b, 1, 57, 127);
+        dry_gain(a, b, g, SR);
+        double on = gain_mean(g, 50, 230), off = gain_mean(g, 300, 480), on2 = gain_mean(g, 550, 730),
+               step = gain_max_step(g, SR);
+        snprintf(what, sizeof what, "LFO 1 (square) -> Synth FX Mix +100%%: dry gain %.3f / %.3f / %.3f (want 0, 1, 0); largest "
+                 "step between samples %.4f (no zipper: want under 0.005)", on, off, on2, step);
+        check(on < 0.02 && off > 0.98 && on2 < 0.02 && step < 0.005, what);
+        E->destroy(a); E->destroy(b);
+
+        a = dry_patch(0); b = dry_patch(1);   /* the effect pass's per-voice sources: the newest sounding voice's */
+        slot_set(b, 2, MS_VEL, MD_FX_FIRST + MDF_MIX, 100);
+        note(a, 1, 57, 127); note(b, 1, 57, 127);
+        dry_gain(a, b, g, SR / 4);
+        double first = gain_mean(g, 100, 250);
+        note(a, 1, 64, 64); note(b, 1, 64, 64);
+        dry_gain(a, b, g, SR / 4);
+        double second = gain_mean(g, 100, 250);
+        snprintf(what, sizeof what, "Velocity -> Synth FX Mix +100%%: dry gain %.3f after a velocity-127 note, %.3f once a "
+                 "velocity-64 note is the newest (want 0, 0.50)", first, second);
+        check(first < 0.02 && fabs(second - 0.496) < 0.02, what);
+        E->destroy(a); E->destroy(b);
+
+        a = dry_patch(0); b = dry_patch(1);   /* the ribbon's quick assignment to an effect (left origin, hold) */
+        set(b, "ribbon_dst", MD_FX_FIRST + MDF_MIX); set(b, "ribbon_amt", 100); set(b, "ribbon_origin", 1);
+        set(b, "ribbon_mode", 1);
+        midi3(b, 0xb0, 16, 127);
+        note(a, 1, 57, 127); note(b, 1, 57, 127);
+        dry_gain(a, b, g, SR / 4);
+        double rib = gain_mean(g, 100, 250);
+        snprintf(what, sizeof what, "ribbon quick assignment -> Synth FX Mix +100%%, at the right end: dry gain %.3f (want 0)", rib);
+        check(rib < 0.02, what);
+        E->destroy(a); E->destroy(b);
+    }
+    /* LFO -> Synth FX Rate (a chorus at its slowest rate) and LFO -> Send 2 (the reverb, send knob 0): audible */
+    for (int k = 0; k < 2; k++) {
+        static float xa[SR], xb[SR];
+        void *a = dry_patch(0), *b = dry_patch(0);
+        void *both[2] = {a, b};
+        for (int j = 0; j < 2; j++) {
+            void *e = both[j];
+            set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_polarity", 1); set(e, "lfo1_rate", lfo2hz);
+            if (!k) { set(e, "modfx_on", 1); set(e, "modfx_type", SFX_CHORUS); set(e, "modfx_mix", 100);
+                      set(e, "modfx_rate", 0); set(e, "modfx_depth", 100); }
+            if (j) slot_set(e, 2, MS_LFO1, MD_FX_FIRST + (k ? MDF_SEND2 : MDF_RATE), 100);
+            note(e, 1, 57, 127);
+        }
+        render_f(a, xa, SR / 2);
+        render_f(b, xb, SR / 2);
+        double d = 0, s = 0;
+        for (int i = SR / 20; i < SR / 2; i++) { d += (xb[i] - xa[i]) * (xb[i] - xa[i]); s += xa[i] * xa[i]; }
+        snprintf(what, sizeof what, "LFO 1 -> %s +100%%: the output changes by %.1f dB against the signal (want audible)",
+                 k ? "Send 2 (Reverb)" : "Synth FX Rate", 10 * log10(d / s + 1e-30));
+        check(10 * log10(d / s + 1e-30) > -20, what);
+        E->destroy(a); E->destroy(b);
+    }
+
+    /* the worst state: every param off its default, the continuous ones at six significant digits */
+    {
+        static char stt[8192];
+        void *a = E->create(NULL), *b = E->create(NULL);
+        int changed = 0;
+        for (int i = 0; i < NPARAMS; i++) {
+            const param_t *p = &PARAMS[i];
+            double def = p->nopts ? round(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
+            double v = p->nopts ? fmod(def + 1, p->nopts) : p->min + (p->max - p->min) * 0.123457;
+            if (!p->nopts && fabs(v - def) < 1e-3) v = p->min + (p->max - p->min) * 0.876543;
+            set(a, p->key, v);
+        }
+        for (int i = 0; i < NPARAMS; i++) {
+            const param_t *p = &PARAMS[i];
+            double def = p->nopts ? round(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
+            changed += fabs(get(a, p->key) - def) > 1e-4;
+        }
+        int n = E->get_param(a, "state", stt, sizeof stt);
+        E->set_param(b, "state", stt);
+        int same = n > 0;
+        for (int i = 0; i < NPARAMS; i++) same &= get(a, PARAMS[i].key) == get(b, PARAMS[i].key);
+        snprintf(what, sizeof what, "a state with %d of %d params off their defaults: %d bytes of the 8192-byte chunk, restores "
+                 "every value", changed, NPARAMS, n);
+        check(same && changed >= NPARAMS - 2, what);
+        E->destroy(a); E->destroy(b);
+    }
+}
+
 int main(int argc, char **argv) {
     E = mpc_engine();
     if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); return 0; }
@@ -3333,6 +3652,7 @@ int main(int argc, char **argv) {
     modulation();
     matrix();
     lfo_matrix();
+    matrix_wiring();
     voices();
     effects();
     effects_tier3();

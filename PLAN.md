@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (now 126 have,
-  76 partial, 262 missing, 76 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (now 266 have,
+  47 partial, 151 missing, 76 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -117,9 +117,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      on the PC; filter FM on both filters about 11.4. Built by parallel agents in worktrees and merged. Left for later:
      envelope MIN time and the 13-value sync list, unison stacks that re-divide as keys are added, link cutoff in
      presets.
-  2. The front-panel window, laid out from the photos, with the keyboard, wheels and X/Y pad.
-  3. Tier 2: LFOs 3-4 and their options, 16-slot matrix with transforms and the missing sources/destinations, noise
-     colours and noise envelope, voice/keyboard options, stereo voices and pan, analog drift.
+  2. The front-panel window, laid out from the photos, with the keyboard, wheels and X/Y pad: done 2026-10-27, with
+     per-module MORE pages on the centre screen, a 16-row matrix and a ribbon strip (CC 16 position, CC 17 touch).
+  3. Tier 2: done 2026-10-27 (offline): LFOs 3-4 and their options, 16-slot matrix with transforms and the missing
+     sources/destinations (every effect control too, from global sources), noise colours and noise envelope,
+     voice/keyboard options, stereo voices and pan, analog drift, the assignable ribbon. 402 params, 27 presets.
+     Saved states hold only non-default values (worst case 6.2 of 8 KB).
   4. Tier 3: the full effect list (original designs; the Eventide reverbs are licensed, so original reverbs in their
      spirit). Done 2026-10-27 (offline): a synth effect slot with 15 types and CTRL 1/2, master delay (stereo or
      ping-pong, L/R times, offset) and reverb (plate, room, hall; size, freeze) on two sends with series and width; 3.1 MB

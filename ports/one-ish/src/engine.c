@@ -14,10 +14,13 @@
  * audio-rate FM from a chosen oscillator to each cutoff, LFO 1 and the mod envelope to pitch, LFO 3 to every
  * oscillator's wave angle and pulse width. A 16-slot modulation matrix (src/modmatrix.h: source x amount up to
  * +-300%, a controller with its own amount, a transform) over pitch, levels, wave shapes, both filters, amp, the
- * hard-wired amounts, envelope times (per voice) and LFO rates, variation and times; mod wheel, aftertouch, pitch
- * bend (separate up and down amounts, plus per-oscillator offsets), sustain and sostenuto pedals, HOLD, two
- * expression CCs (11 and 4). Up to 8 voices: a new note takes an idle voice, else one by the stealing mode (default:
- * the quietest releasing one, else the oldest held one); the same key replays its own voice. Mono (1 voice) plays
+ * hard-wired amounts, envelope times (per voice) and LFO rates, variation and times, pan, noise colour, drift and
+ * spread, and every continuous effect control (a second pass per control step, from the global sources: see
+ * fx_mod_step); mod wheel, aftertouch, pitch bend (separate up and down amounts, plus per-oscillator offsets), sustain
+ * and sostenuto pedals, HOLD, two expression CCs (11 and 4), a ribbon (CC 16 position, CC 17 touch: spring or hold,
+ * centre or left origin, with a quick assignment of its own). Up to 8 voices: a new note takes an idle voice, else
+ * one by the stealing mode (default: the quietest releasing one, else the oldest held one); the same key replays its
+ * own voice. Mono (1 voice) plays
  * legato with low, high or last-note priority. Velocity curves, transpose, octave shift, key-track centre, master
  * tune; per oscillator pitch tracking, note-on phase reset and a choice of hard sync source. Glide (portamento): each
  * voice slides from its own
@@ -95,6 +98,10 @@
 #define AN_LVL_DB 1.5f          /* its level: +-1.5 dB */
 #define AN_TUNE_ST 0.08f        /* each of its oscillators: +-8 cents */
 #define AN_RES 0.05f            /* its resonances: +-5% of the knob's range */
+#define RIBBON_CC 16       /* the ribbon's position, 0..127 (64: the middle) */
+#define RIBBON_TOUCH_CC 17 /* 127 (>= 64) as a finger lands on it, 0 as it lifts */
+#define RIBBON_RETURN_MS 50.0f   /* SPRING: back to the origin over about this long after the finger lifts */
+#define FX_MOD_MS 10.0f    /* the effect destinations' modulation is smoothed over about this long */
 
 /* engine-side slots, matched to params.json by key (so the VST order there can grow freely). Per oscillator the
  * slots run WAVE .. LAD from P_O1_WAVE + OSC_STRIDE * n (osc 1's SYNC slot is unused);
@@ -154,6 +161,7 @@ enum {
     P_NOISE_COLOR_PAIR, P_NOISE_COLOR_MIX, P_NOISE_ENV, P_NOISE_A, P_NOISE_R, P_NOISE_SUS,   /* noise colours and EG */
     P_PAN, P_SPREAD, P_DRIFT,
     P_AN_CUT, P_AN_ENV, P_AN_LVL, P_AN_TUNE, P_AN_RES, P_AN_LADDER,   /* ANALOG CHARACTER (with drift) */
+    P_RIBBON_DST, P_RIBBON_AMT, P_RIBBON_MODE, P_RIBBON_ORIGIN,   /* the ribbon's quick assignment and behaviour */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -243,6 +251,19 @@ static const char *const KEYS[P_COUNT] = {
     "noise_color_pair", "noise_color_mix", "noise_env", "noise_a", "noise_r", "noise_sus",
     "pan", "spread", "drift",
     "an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder",
+    "ribbon_dst", "ribbon_amt", "ribbon_mode", "ribbon_origin",
+};
+enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
+enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
+/* the effect destinations (modmatrix.h's MDF_* order): each one's slot */
+static const short FXMD_SLOT[MDF_COUNT] = {
+    P_MODFX_MIX, P_MODFX_GAIN, P_MODFX_CTRL1, P_MODFX_CTRL2, P_MODFX_RATE, P_MODFX_RATE_R, P_MODFX_DEPTH, P_MODFX_FB,
+    P_MODFX_FB_R, P_MODFX_TIME, P_MODFX_TIME_R, P_MODFX_DTIME, P_MODFX_DFB, P_MODFX_TONE, P_MODFX_SPREAD, P_MODFX_SWEEP,
+    P_MODFX_NOISE, P_MODFX_VRATE, P_MODFX_VDEPTH, P_MODFX_FLUTTER, P_MODFX_WOW, P_MODFX_BIAS, P_MODFX_ROOM,
+    P_MODFX_DECAY, P_MODFX_BITS, P_MODFX_SRATE, P_MODFX_RESO, P_MODFX_CUT1, P_MODFX_CUT2, P_MODFX_CUT3, P_MODFX_LVL1,
+    P_MODFX_LVL2, P_MODFX_LVL3, P_MFX_SEND1, P_MFX_SEND2, P_MFX_SERIES, P_MFX_WIDTH, P_DLY_TIME, P_DLY_TIME_R, P_DLY_FB,
+    P_DLY_TONE, P_DLY_OFFSET, P_REV_DECAY, P_REV_SIZE, P_REV_PRE, P_REV_DAMP, P_REV_LOWDAMP, P_REV_DIFF, P_REV_TONE,
+    P_REV_MOD, P_REV_EARLY,
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
@@ -298,6 +319,7 @@ typedef struct {
     float lfo_out[NLFO];     /* this control step's LFO outputs, delay and fades applied */
     float lfo_time[NLFO];    /* samples since the note-on, for the LFO delay and fades */
     float lfo_dm[NLFO][MDL_COUNT];   /* the matrix's LFO destinations from the last control step */
+    float src[MS_COUNT];     /* the matrix sources at the last control step (the effect pass reads the newest voice's) */
     env_cfg_t ecfg[NENV];    /* each envelope's settings with this voice's matrix modulation (when it has any) */
     float eq[NENV][5];       /* the stage times ecfg was worked out for, as env_q() values */
     unsigned egen[NENV];     /* and the shared settings' generation */
@@ -347,6 +369,20 @@ typedef struct {
     uint8_t mod_list[MOD_SLOTS];   /* the matrix slots in use, and how many */
     int mod_n;
     int mod_env, mod_lfo;    /* a slot in use goes to an envelope's / an LFO's settings */
+    uint8_t fx_list[MOD_SLOTS];   /* the slots in use that reach the effects (mod_list has the others), and how many */
+    int fx_n;
+    int fx_mod;              /* a slot or the ribbon reaches the effects: the effect pass runs */
+    int fx_live;             /* the smoothed effect modulation is not all 0 yet */
+    float fxm[MDF_COUNT];    /* the effect destinations' modulation, smoothed (+-1 = +-the control's range) */
+    float fx_lo[MDF_COUNT], fx_hi[MDF_COUNT];   /* each effect destination's range (its param's) */
+    signed char fx_of[P_COUNT];   /* each slot's effect destination (MDF_*), or -1 */
+    uint64_t fx_was;         /* bit k: effect destination k was modulated (not 0) at the last control step */
+    uint64_t fx_dst;         /* bit k: a slot in use or the ribbon reaches effect destination k */
+    fx_params_t fxp;         /* the effect settings as fx.h reads them, kept between renders */
+    int fx_stale;            /* a setting changed since fxp was worked out */
+    float rib, rib_to;       /* the ribbon's position (0..127, smoothed) and where it is heading */
+    int rib_touch, rib_back; /* a finger is on it; SPRING is taking it back to its origin */
+    float rib_coef, fx_coef; /* per control step: the spring's return; the effect modulation's smoothing */
     unsigned env_gen;        /* counts changes to the shared envelope settings */
     float exp1, exp2;        /* expression controllers (CC 11, CC 4), 0..1 */
     float bpm;               /* the host's tempo, for synced LFOs, delay and envelopes */
@@ -472,7 +508,8 @@ static float lfo_samples(float knob) { return knob > 0.0f ? env_ms(fminf(knob, 1
 
 /* the LFOs' settings that don't change per voice */
 static void apply_lfos(one_t *s) {
-    s->bipolar = 1u << MS_KEY | 1u << MS_RAND | 1u << MS_BEND;
+    s->bipolar = 1u << MS_KEY | 1u << MS_RAND | 1u << MS_BEND
+                 | (uint32_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON;
     static const int src[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
     for (int n = 0; n < NLFO; n++) {
         const float *x = lfo_x(s, n);
@@ -486,15 +523,25 @@ static void apply_lfos(one_t *s) {
     }
 }
 
-/* the matrix slots in use, and whether any reaches envelope or LFO settings (else those per-voice paths are skipped) */
+/* the matrix slots in use, split into those the voices evaluate and those that reach the effects (the effect pass),
+ * and whether any (or the ribbon's quick assignment) reaches envelope or LFO settings (else those per-voice paths are
+ * skipped) or the effects (else the effect pass is skipped) */
 static void apply_matrix(one_t *s) {
-    s->mod_n = mod_active(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->mod_list);
-    s->mod_env = s->mod_lfo = 0;
-    for (int k = 0; k < s->mod_n; k++) {
-        int d = (int)s->val[P_MOD_BASE + MOD_SLOT_PARAMS * s->mod_list[k] + 1];
+    uint8_t all[MOD_SLOTS];
+    int n = mod_active(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], all), rd = (int)s->val[P_RIBBON_DST];
+    s->fx_stale = 1;   /* a setting changed: the next render works the effect settings out again */
+    s->mod_n = s->fx_n = 0;
+    s->mod_env = rd >= MD_FENV_DELAY && rd <= MD_ENV_END;
+    s->mod_lfo = rd >= MD_LFO1_RATE && rd <= MD_LFO_END;
+    s->fx_dst = rd >= MD_FX_FIRST && rd <= MD_FX_END ? 1ull << (rd - MD_FX_FIRST) : 0;
+    for (int k = 0; k < n; k++) {
+        int d = (int)s->val[P_MOD_BASE + MOD_SLOT_PARAMS * all[k] + 1];
+        if (d >= MD_FX_FIRST) { s->fx_list[s->fx_n++] = all[k]; s->fx_dst |= 1ull << (d - MD_FX_FIRST); continue; }
+        s->mod_list[s->mod_n++] = all[k];
         s->mod_env |= d >= MD_FENV_DELAY && d <= MD_ENV_END;
         s->mod_lfo |= d >= MD_LFO1_RATE && d <= MD_LFO_END;
     }
+    s->fx_mod = s->fx_dst != 0;
 }
 
 /* ANALOG CHARACTER: each voice card's parts times the knobs, in the units the voice reads them in */
@@ -675,9 +722,9 @@ static void pan_targets(const one_t *s, voice_t *v, float pan_mod, int snap) {
 }
 
 /* ANALOG DRIFT, once per control step while it is up: each wander eases (a one-pole, DRIFT_TAU_S) towards a random
- * target in -1..1 and picks a new one every 0.3-1.5 s, so it stays within -1..1. out: the wanders times the amount. */
-static void drift_step(const one_t *s, voice_t *v, float *out) {
-    float amt = s->val[P_DRIFT] * 0.01f;
+ * target in -1..1 and picks a new one every 0.3-1.5 s, so it stays within -1..1. out: the wanders times the amount
+ * (0..1: the knob with the matrix's drift modulation). */
+static void drift_step(const one_t *s, voice_t *v, float *out, float amt) {
     for (int k = 0; k < NDRIFT; k++) {
         if (--v->drift_left[k] <= 0) {
             v->drift_tgt[k] = white(&v->drift_rng);
@@ -686,6 +733,34 @@ static void drift_step(const one_t *s, voice_t *v, float *out) {
         }
         v->drift[k] += (v->drift_tgt[k] - v->drift[k]) * s->drift_coef;
         out[k] = v->drift[k] * amt;
+    }
+}
+
+/* THE RIBBON. Its position arrives as CC 16 (0..127, 64 the middle) and is smoothed at control rate (about 10 ms), so
+ * the CC's steps are not heard; CC 17 says whether a finger is on it (>= 64) or has lifted. Its value, the Ribbon
+ * source: with the origin at the centre -1..1, exactly 0 at 64; with the origin at the left 0..1 from the left end.
+ * SPRING takes it back to the origin over about 50 ms once the finger lifts (and on CC 121, reset controllers);
+ * HOLD keeps the last position (a controller mapped to CC 16 without CC 17 acts the same in either mode). */
+static float ribbon_origin(const one_t *s) { return (int)s->val[P_RIBBON_ORIGIN] == RIB_LEFT ? 0.0f : 64.0f; }
+static float ribbon_value(const one_t *s) {
+    if ((int)s->val[P_RIBBON_ORIGIN] == RIB_LEFT) return s->rib * (1.0f / 127.0f);
+    return (s->rib - 64.0f) * (s->rib < 64.0f ? 1.0f / 64.0f : 1.0f / 63.0f);
+}
+static void ribbon_rest(one_t *s) {
+    s->rib_to = ribbon_origin(s);
+    s->rib_back = 1;
+}
+static void ribbon_step(one_t *s) {   /* once per control step */
+    float d = s->rib_to - s->rib;
+    s->rib = fabsf(d) < 1e-3f ? s->rib_to : s->rib + d * (s->rib_back ? s->rib_coef : s->glide);
+}
+static void ribbon_cc(one_t *s, int cc, int v) {
+    if (cc == RIBBON_CC) {
+        s->rib_to = (float)v;
+        s->rib_back = 0;
+    } else {
+        s->rib_touch = v >= 64;
+        if (!s->rib_touch && (int)s->val[P_RIBBON_MODE] == RIB_SPRING) ribbon_rest(s);
     }
 }
 
@@ -743,7 +818,16 @@ static void *create(const char *data_dir) {
     s->gain_coef = env_coef(5.0f, SR);
     s->glide = 1.0f - expf(-(float)CR / (GLIDE_MS * 0.001f * SR));
     s->drift_coef = 1.0f - expf(-(float)CR / (DRIFT_TAU_S * SR));
+    s->fx_coef = 1.0f - expf(-(float)CR / (FX_MOD_MS * 0.001f * SR));
+    s->rib_coef = 1.0f - expf(-3.0f * CR / (RIBBON_RETURN_MS * 0.001f * SR));   /* 95% back in that time */
+    memset(s->fx_of, -1, sizeof s->fx_of);
+    for (int k = 0; k < MDF_COUNT; k++) {
+        s->fx_of[FXMD_SLOT[k]] = (signed char)k;
+        for (int i = 0; i < NPARAMS; i++)
+            if (!strcmp(PARAMS[i].key, KEYS[FXMD_SLOT[k]])) { s->fx_lo[k] = PARAMS[i].min; s->fx_hi[k] = PARAMS[i].max; }
+    }
     apply(s);
+    s->rib = s->rib_to = ribbon_origin(s);
     return s;
 }
 
@@ -1053,10 +1137,13 @@ static void midi(void *inst, const uint8_t *m, int len) {
     else if (st == 0xb0 && d1 == 66) sostenuto_pedal(s, d2 >= 64);
     else if (st == 0xb0 && d1 == 11) s->exp1 = s->expression = d2 / 127.0f;   /* expression: matrix sources Exp 1, 2 */
     else if (st == 0xb0 && d1 == 4) s->exp2 = d2 / 127.0f;
+    else if (st == 0xb0 && (d1 == RIBBON_CC || d1 == RIBBON_TOUCH_CC)) ribbon_cc(s, d1, d2);
     else if (st == 0xb0 && d1 == 121) {   /* reset all controllers */
         s->wheel = s->aftertouch = s->bend = s->expression = s->exp1 = s->exp2 = 0.0f;
         sustain_pedal(s, 0);
         sostenuto_pedal(s, 0);
+        s->rib_touch = 0;
+        ribbon_rest(s);
     }
     else if (st == 0xb0 && (d1 == 120 || d1 == 123)) all_off(s, d1 == 120);
 }
@@ -1102,13 +1189,19 @@ static void set_param(void *inst, const char *key, const char *val) {
             s->bpm = bpm;
             apply_envs(s);   /* synced envelope times and LFO rates follow the tempo */
             apply_lfos(s);
+            s->fx_stale = 1;   /* and synced effect times and rates */
         }
         return;
     }
     if (!strcmp(key, "state")) set_state(s, val);
     else store(s, key, val);
-    link_cutoffs(s, slot(key));
+    int k = slot(key);
+    link_cutoffs(s, k);
     apply(s);
+    /* a new origin or SPRING with no finger on the ribbon: it goes back to its (new) origin */
+    if ((k < 0 || k == P_RIBBON_ORIGIN || k == P_RIBBON_MODE) && !s->rib_touch
+        && (int)s->val[P_RIBBON_MODE] == RIB_SPRING)
+        ribbon_rest(s);
     int count = voices_used(s);
     if (count < s->voices)   /* fewer voices: let go of the ones past the new count (they finish their release) */
         for (int i = count; i < MAX_VOICES; i++) {
@@ -1358,7 +1451,7 @@ static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
  * envelope settings, levels */
 static void control_voice(one_t *s, voice_t *v) {
     const float *p = s->val;
-    float src[MS_COUNT], dm[MD_COUNT];
+    float *src = v->src, dm[MD_COUNT];
     glide_step(s, v);
     update_note_hz(s, v);
     voice_lfos(s, v);
@@ -1385,7 +1478,13 @@ static void control_voice(one_t *s, voice_t *v) {
     src[MS_EXP2] = s->exp2;
     src[MS_RAND_UNI] = v->rand_u;
     src[MS_CONST] = 1.0f;
-    mod_eval_list(&p[P_MOD_BASE], &p[P_MODX_BASE], s->mod_list, s->mod_n, src, s->bipolar, dm);
+    src[MS_NOISE_EG] = v->noise_env;
+    src[MS_SOSTENUTO] = s->sostenuto ? 1.0f : 0.0f;
+    src[MS_RIBBON] = ribbon_value(s);
+    /* the voice's slots (none reaches an effect: those are the effect pass's) */
+    mod_eval_list(&p[P_MOD_BASE], &p[P_MODX_BASE], s->mod_list, s->mod_n, src, s->bipolar, dm, MD_FX_FIRST);
+    int rd = (int)p[P_RIBBON_DST];   /* the ribbon's quick assignment, to a voice destination */
+    if (rd > MD_OFF && rd < MD_FX_FIRST) dm[rd] += src[MS_RIBBON] * p[P_RIBBON_AMT] * 0.01f;
     memcpy(v->lfo_dm, &dm[MD_LFO1_RATE], sizeof v->lfo_dm);   /* the LFOs read these next step */
     voice_envs(s, v, dm);
     float fenv = src[MS_FENV], key_oct = kc / 12.0f;
@@ -1394,7 +1493,8 @@ static void control_voice(one_t *s, voice_t *v) {
                   + src[MS_MENV] * (p[P_PITCH_ENV] * 0.01f + dm[MD_PITCH_ENV]) * ENV_PITCH_ST
                   + bend_semis(s, -1) + dm[MD_PITCH] * MOD_PITCH_ST;
     float dr[NDRIFT] = {0};   /* analog drift, -1..1 x the amount per oscillator and for the cutoffs; off: none at all */
-    if (p[P_DRIFT] > 0.0f) drift_step(s, v, dr);
+    float drift = clampf(p[P_DRIFT] * 0.01f + dm[MD_DRIFT], 0.0f, 1.0f);
+    if (drift > 0.0f) drift_step(s, v, dr, drift);
     const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST + v->an_tune[0],
                                    dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST + v->an_tune[1],
                                    dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2) + dr[2] * DRIFT_ST + v->an_tune[2]};
@@ -1420,8 +1520,12 @@ static void control_voice(one_t *s, voice_t *v) {
              clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES] + v->an_res[1], 0.0f, 1.0f), (int)p[P_SVF_MODE],
              (int)p[P_SVF_PAIR], SR);
     set_targets(s, v, dm, v->lfo_out[2]);
-    noise_targets(s, v, 0.0f);   /* colour mix modulation: for the matrix (later) */
-    pan_targets(s, v, 0.0f, 0);  /* pan modulation: for the matrix (later) */
+    noise_targets(s, v, dm[MD_NOISE_MIX]);
+    /* pan modulation, and spread's: the knob moved (within 0..100%) times the voice's place in the spread */
+    float pan = dm[MD_PAN];
+    if (dm[MD_SPREAD] != 0.0f)
+        pan += (clampf(p[P_SPREAD] + 100.0f * dm[MD_SPREAD], 0.0f, 100.0f) - p[P_SPREAD]) * 0.01f * spread_place(s, v);
+    pan_targets(s, v, pan, 0);
 }
 
 /* 2^x for the filter FM's few octaves: a 5th-order polynomial on the fraction (within 0.0002, a third of a cent) and
@@ -1619,85 +1723,176 @@ static const struct { short slot; float lo, hi; } FXD_SLOT[FXD_COUNT] = {
     [FXD_CUT1] = {P_MODFX_CUT1, 0, 100}, [FXD_CUT2] = {P_MODFX_CUT2, 0, 100}, [FXD_CUT3] = {P_MODFX_CUT3, 0, 100},
 };
 
-/* the effect settings in the units fx.h reads. CTRL 1 and CTRL 2 move their targets by up to +-100% of the target's
- * range (a performance offset on top of the knob, as the panel's two quick controls). */
+/* THE EFFECT PASS, once per control step while a matrix slot or the ribbon reaches an effect (else skipped, once its
+ * modulation has settled at 0). The effects run once for all voices, so these slots are evaluated a second time
+ * from global sources: the free-running LFOs, mod wheel, aftertouch, pitch bend, ribbon, the pedals, expression,
+ * constant; the per-voice sources (envelopes, velocity, keyboard, random, noise EG, gate) are the most recently
+ * started sounding voice's, or 0 when nothing sounds. Each destination's sum is smoothed (a one-pole, FX_MOD_MS), so
+ * a stepped source (S&H, a gate, the CC-driven ones) never zippers; the effects' gains then ramp across each step.
+ * Returns the effect destinations whose settings need working out again (bit k: MDF_* k; fx_params_mod): those
+ * modulated now or at the last step, and CTRL 1/2's targets when they are. */
+static uint64_t fx_mod_step(one_t *s) {
+    if (!s->fx_mod && !s->fx_live) return 0;
+    float dm[MD_COUNT];
+    const float *fx = dm + MD_FX_FIRST;
+    memset(dm + MD_FX_FIRST, 0, sizeof(float) * MDF_COUNT);   /* (the slots here reach no other destination) */
+    if (s->fx_mod) {
+        const voice_t *nv = NULL;   /* the newest sounding voice */
+        for (int i = 0; i < MAX_VOICES; i++) {
+            const voice_t *v = &s->voice[i];
+            if (v->env[ENV_AMP].stage != ENV_IDLE && (!nv || v->age > nv->age)) nv = v;
+        }
+        float src[MS_COUNT];
+        if (nv) memcpy(src, nv->src, sizeof src);
+        else memset(src, 0, sizeof src);
+        static const int lfo_src[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
+        for (int n = 0; n < NLFO; n++) src[lfo_src[n]] = s->lfo_val[n];   /* free-running, not the voice's copies */
+        src[MS_WHEEL] = s->wheel;
+        src[MS_AT] = s->aftertouch;
+        src[MS_BEND] = s->bend;
+        src[MS_SUSTAIN] = s->sustain ? 1.0f : 0.0f;
+        src[MS_SOSTENUTO] = s->sostenuto ? 1.0f : 0.0f;
+        src[MS_EXP1] = s->exp1;
+        src[MS_EXP2] = s->exp2;
+        src[MS_CONST] = 1.0f;
+        src[MS_RIBBON] = ribbon_value(s);
+        mod_eval_list(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->fx_list, s->fx_n, src, s->bipolar, dm, 0);
+        int rd = (int)s->val[P_RIBBON_DST];
+        if (rd >= MD_FX_FIRST && rd <= MD_FX_END) dm[rd] += src[MS_RIBBON] * s->val[P_RIBBON_AMT] * 0.01f;
+    }
+    uint64_t now = 0;
+    for (uint64_t m = s->fx_dst | s->fx_was; m; m &= m - 1) {   /* the destinations reached now or still settling */
+        int k = __builtin_ctzll(m);
+        float d = fx[k] - s->fxm[k];
+        s->fxm[k] = fabsf(d) < 1e-6f ? fx[k] : s->fxm[k] + d * s->fx_coef;
+        now |= (uint64_t)(s->fxm[k] != 0.0f) << k;
+    }
+    uint64_t dirty = now | s->fx_was;
+    s->fx_was = now;
+    s->fx_live = now != 0;
+    for (int c = 0; c < 2; c++)   /* a modulated CTRL moves its target */
+        if (dirty >> (MDF_CTRL1 + c) & 1) {
+            int k = FXD_SLOT[fx_ctrl_dst(s, c)].slot;
+            if (k >= 0) dirty |= 1ull << s->fx_of[k];
+        }
+    return dirty;
+}
+
+/* an effect control's value as the effects use it: the knob, moved by the matrix's effect modulation by up to +-100%
+ * of its range, then (for CTRL 1/2's target) by CTRL 1/2, themselves destinations, by up to +-100% of the target's
+ * range (a performance offset on top of the knob, as the panel's two quick controls) */
+static float fx_eff(const one_t *s, int j, const int *ctrl) {
+    int k = s->fx_of[j];
+    float v = s->val[j];
+    if (k >= 0 && s->fxm[k] != 0.0f) v = clampf(v + s->fxm[k] * (s->fx_hi[k] - s->fx_lo[k]), s->fx_lo[k], s->fx_hi[k]);
+    for (int c = 0; c < 2; c++)
+        if (ctrl[c] == j) {   /* (a CTRL is never a CTRL's target: no deeper than this) */
+            int d = fx_ctrl_dst(s, c);
+            v = clampf(v + fx_eff(s, P_MODFX_CTRL1 + c, ctrl) * 0.01f * (FXD_SLOT[d].hi - FXD_SLOT[d].lo), FXD_SLOT[d].lo,
+                       FXD_SLOT[d].hi);
+        }
+    return v;
+}
+
+/* CTRL 1 and CTRL 2's target slots (-1: none) */
+static void fx_ctrl_slots(const one_t *s, int *ctrl) {
+    for (int c = 0; c < 2; c++) ctrl[c] = FXD_SLOT[fx_ctrl_dst(s, c)].slot;
+}
+
+/* the setting(s) effect control j (an FXMD_SLOT) gives, in the units fx.h reads */
+static void fx_field(const one_t *s, int j, const int *ctrl, fx_params_t *f) {
+    int type = (int)s->val[P_MODFX_TYPE], sync = s->val[P_MODFX_SYNC] > 0.5f, dsync = s->val[P_DLY_SYNC] > 0.5f;
+    float v = fx_eff(s, j, ctrl);
+    switch (j) {
+    case P_MODFX_MIX: f->mix = v * 0.01f; break;
+    case P_MODFX_GAIN: f->gain = fx_gain_x(v); break;
+    case P_MODFX_FB: f->fb = v * 0.0095f; break;   /* +-95% */
+    case P_MODFX_FB_R: f->fb_r = v * 0.0095f; break;
+    case P_MODFX_DFB: f->dfb = v * 0.0095f; break;
+    case P_MODFX_TIME: f->time_ms = fx_mod_time_ms(type, v); break;
+    case P_MODFX_TIME_R: f->time_r_ms = fx_mod_time_ms(type, v); break;
+    case P_MODFX_DTIME: f->dtime_ms = sync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v); break;
+    case P_MODFX_RATE: f->rate_hz = sync ? fx_div_hz(v, s->bpm) : fx_rate_hz(v); break;
+    case P_MODFX_RATE_R: f->rate_r_hz = sync ? fx_div_hz(v, s->bpm) : fx_rate_hz(v); break;
+    case P_MODFX_VRATE: f->vib_hz = sync ? fx_div_hz(v, s->bpm) : fx_vib_hz(v); break;
+    case P_MODFX_DEPTH: f->depth = v * 0.01f; break;
+    case P_MODFX_TONE: f->tone = v * 0.01f; break;
+    case P_MODFX_SPREAD: f->spread = v * 0.01f; break;
+    case P_MODFX_SWEEP: f->sweep = v * 0.01f; break;
+    case P_MODFX_NOISE: f->noise = v * 0.01f; break;
+    case P_MODFX_VDEPTH: f->vib_depth = v * 0.01f; break;
+    case P_MODFX_FLUTTER: f->flutter = v * 0.01f; break;
+    case P_MODFX_WOW: f->wow = v * 0.01f; break;
+    case P_MODFX_BIAS: f->bias = v * 0.01f; break;
+    case P_MODFX_ROOM: f->room = v * 0.01f; break;
+    case P_MODFX_DECAY: f->decay = v * 0.01f; break;
+    case P_MODFX_BITS: f->bits = v; break;
+    case P_MODFX_SRATE: f->srate_hz = fx_srate_hz(v); break;
+    case P_MODFX_RESO: f->reso = v * 0.01f; break;
+    case P_MODFX_CUT1: case P_MODFX_CUT2: case P_MODFX_CUT3: f->cut_hz[j - P_MODFX_CUT1] = fx_cut_hz(v); break;
+    case P_MODFX_LVL1: case P_MODFX_LVL2: case P_MODFX_LVL3: f->lvl[j - P_MODFX_LVL1] = v * 0.01f; break;
+    case P_MFX_SEND1: f->send1 = v * 0.01f; break;
+    case P_MFX_SEND2: f->send2 = v * 0.01f; break;
+    case P_MFX_SERIES: f->series = v * 0.01f; break;
+    case P_MFX_WIDTH: f->width = v * 0.01f; break;
+    case P_DLY_TIME: f->dly_l_ms = dsync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v); break;
+    case P_DLY_TIME_R: f->dly_r_ms = dsync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v); break;
+    case P_DLY_FB: f->dly_fb = v * 0.0095f; break;
+    case P_DLY_TONE: f->dly_tone = v * 0.01f; break;
+    case P_DLY_OFFSET: f->dly_offset = v * 0.01f; break;
+    case P_REV_DECAY: case P_REV_SIZE:   /* a bigger space rings longer: decay and size make the decay time together */
+        f->rev_size = fx_rev_size(fx_eff(s, P_REV_SIZE, ctrl));
+        f->rev_rt60 = fx_rev_rt60(fx_eff(s, P_REV_DECAY, ctrl)) * f->rev_size;
+        break;
+    case P_REV_DAMP: f->rev_damp = v * 0.009f; break;
+    case P_REV_LOWDAMP: f->rev_lowdamp = v * 0.01f; break;
+    case P_REV_PRE: f->rev_pre_ms = v; break;
+    case P_REV_DIFF: f->rev_diff = v * 0.01f; break;
+    case P_REV_TONE: f->rev_tone = v * 0.01f; break;
+    case P_REV_MOD: f->rev_mod = v * 0.02f; break;
+    case P_REV_EARLY: f->rev_early = v * 0.01f; break;
+    default: break;   /* CTRL 1/2: only through their targets */
+    }
+}
+
+/* every effect setting (once per render: the knobs may have moved) */
 static void fx_params(const one_t *s, fx_params_t *f) {
-    float p[P_COUNT];
-    memcpy(p, s->val, sizeof p);
-    for (int c = 0; c < 2; c++) {
-        int d = fx_ctrl_dst(s, c), k = FXD_SLOT[d].slot;
-        if (k >= 0) p[k] = clampf(p[k] + s->val[P_MODFX_CTRL1 + c] * 0.01f * (FXD_SLOT[d].hi - FXD_SLOT[d].lo),
-                                  FXD_SLOT[d].lo, FXD_SLOT[d].hi);
-    }
-    int type = (int)p[P_MODFX_TYPE], sync = p[P_MODFX_SYNC] > 0.5f, dsync = p[P_DLY_SYNC] > 0.5f;
+    const float *p = s->val;
     f->sfx_on = p[P_MODFX_ON] > 0.5f;
-    f->sfx_type = type;
-    f->mix = p[P_MODFX_MIX] * 0.01f;
-    f->gain = fx_gain_x(p[P_MODFX_GAIN]);
-    f->fb = p[P_MODFX_FB] * 0.0095f;   /* +-95% */
-    f->fb_r = p[P_MODFX_FB_R] * 0.0095f;
-    f->dfb = p[P_MODFX_DFB] * 0.0095f;
-    f->time_ms = fx_mod_time_ms(type, p[P_MODFX_TIME]);
-    f->time_r_ms = fx_mod_time_ms(type, p[P_MODFX_TIME_R]);
-    f->dtime_ms = sync ? fx_div_ms(p[P_MODFX_DTIME], s->bpm) : fx_delay_ms(p[P_MODFX_DTIME]);
-    f->rate_hz = sync ? fx_div_hz(p[P_MODFX_RATE], s->bpm) : fx_rate_hz(p[P_MODFX_RATE]);
-    f->rate_r_hz = sync ? fx_div_hz(p[P_MODFX_RATE_R], s->bpm) : fx_rate_hz(p[P_MODFX_RATE_R]);
-    f->vib_hz = sync ? fx_div_hz(p[P_MODFX_VRATE], s->bpm) : fx_vib_hz(p[P_MODFX_VRATE]);
-    f->depth = p[P_MODFX_DEPTH] * 0.01f;
-    f->tone = p[P_MODFX_TONE] * 0.01f;
-    f->spread = p[P_MODFX_SPREAD] * 0.01f;
-    f->sweep = p[P_MODFX_SWEEP] * 0.01f;
-    f->noise = p[P_MODFX_NOISE] * 0.01f;
-    f->vib_depth = p[P_MODFX_VDEPTH] * 0.01f;
-    f->flutter = p[P_MODFX_FLUTTER] * 0.01f;
-    f->wow = p[P_MODFX_WOW] * 0.01f;
-    f->bias = p[P_MODFX_BIAS] * 0.01f;
-    f->room = p[P_MODFX_ROOM] * 0.01f;
-    f->decay = p[P_MODFX_DECAY] * 0.01f;
-    f->bits = p[P_MODFX_BITS];
-    f->srate_hz = fx_srate_hz(p[P_MODFX_SRATE]);
-    f->reso = p[P_MODFX_RESO] * 0.01f;
-    for (int j = 0; j < 3; j++) {
-        f->cut_hz[j] = fx_cut_hz(p[P_MODFX_CUT1 + j]);
-        f->lvl[j] = p[P_MODFX_LVL1 + j] * 0.01f;
-    }
+    f->sfx_type = (int)p[P_MODFX_TYPE];
     f->ftype = (int)p[P_MODFX_FTYPE];
     f->mfx_on = p[P_MFX_ON] > 0.5f;
-    f->send1 = p[P_MFX_SEND1] * 0.01f;
-    f->send2 = p[P_MFX_SEND2] * 0.01f;
-    f->series = p[P_MFX_SERIES] * 0.01f;
-    f->width = p[P_MFX_WIDTH] * 0.01f;
-    f->dly_l_ms = dsync ? fx_div_ms(p[P_DLY_TIME], s->bpm) : fx_delay_ms(p[P_DLY_TIME]);
-    f->dly_r_ms = dsync ? fx_div_ms(p[P_DLY_TIME_R], s->bpm) : fx_delay_ms(p[P_DLY_TIME_R]);
-    f->dly_fb = p[P_DLY_FB] * 0.0095f;
-    f->dly_tone = p[P_DLY_TONE] * 0.01f;
-    f->dly_offset = p[P_DLY_OFFSET] * 0.01f;
     f->dly_pp = p[P_DLY_PP] > 0.5f;
     f->rev_type = (int)p[P_REV_TYPE];
     f->rev_freeze = p[P_REV_FREEZE] > 0.5f;
-    f->rev_size = fx_rev_size(p[P_REV_SIZE]);
-    f->rev_rt60 = fx_rev_rt60(p[P_REV_DECAY]) * f->rev_size;   /* a bigger space rings longer */
-    f->rev_damp = p[P_REV_DAMP] * 0.009f;
-    f->rev_lowdamp = p[P_REV_LOWDAMP] * 0.01f;
-    f->rev_pre_ms = p[P_REV_PRE];
-    f->rev_diff = p[P_REV_DIFF] * 0.01f;
-    f->rev_tone = p[P_REV_TONE] * 0.01f;
-    f->rev_mod = p[P_REV_MOD] * 0.02f;
-    f->rev_early = p[P_REV_EARLY] * 0.01f;
     f->wet_pan = p[P_PAN] * 0.01f;
+    int ctrl[2];
+    fx_ctrl_slots(s, ctrl);
+    for (int k = 0; k < MDF_COUNT; k++) fx_field(s, FXMD_SLOT[k], ctrl, f);
+}
+
+/* the effect pass's settings (bit k of `dirty`: MDF_* k), the others as they are: each control step, only what moves */
+static void fx_params_mod(const one_t *s, fx_params_t *f, uint64_t dirty) {
+    int ctrl[2];
+    fx_ctrl_slots(s, ctrl);
+    for (int k = 0; k < MDF_COUNT; k++)
+        if (dirty >> k & 1) fx_field(s, FXMD_SLOT[k], ctrl, f);
 }
 
 static void render(void *inst, int16_t *out, int frames) {
     one_t *s = inst;
     float acc[128], xl[128], xr[128], l[128], r[128];   /* the voices: mono sum, panned voices' offsets; the output */
-    fx_params_t fxp;
-    fx_params(s, &fxp);
+    fx_params_t *fxp = &s->fxp;
+    if (s->fx_stale) {   /* a knob moved (or the tempo): every effect setting again, the modulation included */
+        s->fx_stale = 0;
+        fx_params(s, fxp);
+    }
     int done = 0;
     while (done < frames) {
         int first = s->phase == 0;
         int n = CR - s->phase;
         if (n > frames - done) n = frames - done;
-        if (first) control_lfos(s);
+        if (first) { control_lfos(s); ribbon_step(s); }
         if (n > 128) n = 128;
         memset(acc, 0, sizeof(float) * n);
         memset(xl, 0, sizeof(float) * n);
@@ -1711,7 +1906,12 @@ static void render(void *inst, int16_t *out, int frames) {
         }
         if (side)   /* the dry path in stereo: every voice at its place */
             for (int i = 0; i < n; i++) { xl[i] += acc[i]; xr[i] += acc[i]; }
-        fx_process(&s->fx, &fxp, acc, side ? xl : acc, side ? xr : acc, l, r, n);   /* synth effect: mono in */
+        if (first) {   /* the effect pass, after the voices' sources: only the settings it moves */
+            uint64_t dirty = fx_mod_step(s);
+            if (dirty) fx_params_mod(s, fxp, dirty);
+        }
+        fxp->ramp = CR - s->phase;   /* the effect gains ramp across the whole control step, however the host splits it */
+        fx_process(&s->fx, fxp, acc, side ? xl : acc, side ? xr : acc, l, r, n);   /* synth effect: mono in */
         for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host */
             float yl = isfinite(l[i]) ? soft_limit(l[i]) : 0.0f, yr = isfinite(r[i]) ? soft_limit(r[i]) : 0.0f;
             out[2 * (done + i)] = (int16_t)(yl * 32767.0f);

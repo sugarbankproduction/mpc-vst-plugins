@@ -19,11 +19,13 @@
 
 /* sources: envelopes 0..1, LFOs -1..1 (or 0..1 when unipolar), velocity / mod wheel / aftertouch / expression 0..1,
  * keyboard -1..1 over C-1..C9 around middle C, a per-note random value -1..1 (Random) or 0..1 (Random Uni), the pitch
- * wheel -1..1, KB gate and sustain 0 or 1, constant 1. Option order in params.json ("Off"/"None" first); new sources
- * go at the end so saved slots keep their meaning. */
+ * wheel -1..1, KB gate, sustain and sostenuto 0 or 1, constant 1, the noise EG 0..1, the ribbon -1..1 (origin
+ * centre) or 0..1 (origin left). Option order in params.json ("Off"/"None" first); new sources go at the end so saved
+ * slots keep their meaning. */
 enum {
     MS_OFF, MS_FENV, MS_AENV, MS_MENV, MS_LFO1, MS_LFO2, MS_VEL, MS_WHEEL, MS_AT, MS_KEY, MS_RAND,
-    MS_LFO3, MS_LFO4, MS_BEND, MS_GATE, MS_SUSTAIN, MS_EXP1, MS_EXP2, MS_RAND_UNI, MS_CONST, MS_COUNT
+    MS_LFO3, MS_LFO4, MS_BEND, MS_GATE, MS_SUSTAIN, MS_EXP1, MS_EXP2, MS_RAND_UNI, MS_CONST,
+    MS_NOISE_EG, MS_SOSTENUTO, MS_RIBBON, MS_COUNT
 };
 
 enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };   /* transforms, params.json order */
@@ -31,7 +33,18 @@ enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };  
 /* destinations, option order in params.json; new ones at the end. At +-100%: pitch +-24 semitones, levels / wave
  * shapes / FM amount / resonance / drive / filter mix / spacing / variation +-100% of their range, cutoffs +-5 octaves,
  * amp level x0..x2, the hard-wired amounts +-100 of their knob, beat +-7 Hz, envelope and LFO times and LFO rates +-the
- * whole knob, LFO rate (st) +-24 semitones. */
+ * whole knob, LFO rate (st) +-24 semitones, pan +-1 (the centre to a side), noise colour mix, drift and spread +-the
+ * whole knob. The effect destinations (MDF_* below, from MD_FX_FIRST) move each effect control by +-100% of its range;
+ * the effects run once for all voices, so the engine evaluates the slots that reach them in a pass of their own. */
+/* the effect destinations, in their params.json order: the synth effect, the master sends, delay, reverb */
+enum {
+    MDF_MIX, MDF_GAIN, MDF_CTRL1, MDF_CTRL2, MDF_RATE, MDF_RATE_R, MDF_DEPTH, MDF_FB, MDF_FB_R, MDF_TIME, MDF_TIME_R,
+    MDF_DTIME, MDF_DFB, MDF_TONE, MDF_SPREAD, MDF_SWEEP, MDF_NOISE, MDF_VRATE, MDF_VDEPTH, MDF_FLUTTER, MDF_WOW,
+    MDF_BIAS, MDF_ROOM, MDF_DECAY, MDF_BITS, MDF_SRATE, MDF_RESO, MDF_CUT1, MDF_CUT2, MDF_CUT3, MDF_LVL1, MDF_LVL2,
+    MDF_LVL3, MDF_SEND1, MDF_SEND2, MDF_SERIES, MDF_WIDTH, MDF_DLY_TIME, MDF_DLY_TIME_R, MDF_DLY_FB, MDF_DLY_TONE,
+    MDF_DLY_OFFSET, MDF_REV_DECAY, MDF_REV_SIZE, MDF_REV_PRE, MDF_REV_DAMP, MDF_REV_LOWDAMP, MDF_REV_DIFF,
+    MDF_REV_TONE, MDF_REV_MOD, MDF_REV_EARLY, MDF_COUNT
+};
 enum {
     MD_OFF, MD_PITCH, MD_O1_PITCH, MD_O2_PITCH, MD_O3_PITCH, MD_O1_LEVEL, MD_O2_LEVEL, MD_O3_LEVEL, MD_NOISE_LEVEL,
     MD_RING_LEVEL, MD_O1_ANGLE, MD_O2_ANGLE, MD_O3_ANGLE, MD_O1_PW, MD_O2_PW, MD_O3_PW, MD_O1_MIX, MD_O2_MIX, MD_O3_MIX,
@@ -44,6 +57,8 @@ enum {
     MD_FENV_DELAY, MD_ENV_END = MD_FENV_DELAY + 3 * 7 - 1,
     /* per LFO (1-4), MDL_COUNT apart: rate, rate in semitones, variation, delay, fade in, fade out */
     MD_LFO1_RATE, MD_LFO_END = MD_LFO1_RATE + 4 * 6 - 1,
+    MD_PAN, MD_NOISE_MIX, MD_DRIFT, MD_SPREAD,
+    MD_FX_FIRST, MD_FX_END = MD_FX_FIRST + MDF_COUNT - 1,   /* the effects (MDF_* order) */
     MD_COUNT
 };
 enum { MDE_DELAY, MDE_ATTACK, MDE_HOLD, MDE_DECAY, MDE_SUSTAIN, MDE_RELEASE, MDE_SCALE, MDE_COUNT };
@@ -78,10 +93,10 @@ static inline int mod_active(const float *slots, const float *extra, uint8_t *li
 /* slots: MOD_SLOTS x (source, destination, amount, via) as the param values; extra: MOD_SLOTS x (via amount,
  * transform, transform amount); list / nlist: the slots to evaluate (mod_active); src[MS_COUNT] with src[MS_OFF]
  * unused; bipolar: bit s set when source s is bipolar. dst[MD_COUNT] gets each destination's summed modulation, -1..1
- * per full-amount slot. */
+ * per full-amount slot; only dst[0 .. nd - 1] are cleared first (the listed slots reach no destination past them). */
 static inline void mod_eval_list(const float *slots, const float *extra, const uint8_t *list, int nlist, const float *src,
-                                 uint32_t bipolar, float *dst) {
-    for (int d = 0; d < MD_COUNT; d++) dst[d] = 0.0f;
+                                 uint32_t bipolar, float *dst, int nd) {
+    for (int d = 0; d < nd; d++) dst[d] = 0.0f;
     for (int k = 0; k < nlist; k++) {
         int i = list[k];
         const float *sl = slots + i * MOD_SLOT_PARAMS, *ex = extra + i * MOD_SLOT_EXTRA;
@@ -104,5 +119,5 @@ static inline void mod_eval_list(const float *slots, const float *extra, const u
 /* every slot, for callers without a list */
 static inline void mod_eval(const float *slots, const float *extra, const float *src, uint32_t bipolar, float *dst) {
     uint8_t list[MOD_SLOTS];
-    mod_eval_list(slots, extra, list, mod_active(slots, extra, list), src, bipolar, dst);
+    mod_eval_list(slots, extra, list, mod_active(slots, extra, list), src, bipolar, dst, MD_COUNT);
 }
