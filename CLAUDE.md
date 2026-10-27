@@ -35,3 +35,11 @@ Ground rules:
 - Keep Moog names, code and presets out of the project.
 - This checkout lives on Windows: run the repo's bash tools through `win/run.sh` (Git Bash + Docker Desktop), e.g.
   `win/run.sh tools/test_port.sh ports/one-ish/vst.json`. It runs them in a Linux workbench container (`win/Dockerfile`).
+- Desktop first (owner's decision, 2026-10-27). Each phase: change the engine, then
+  `win/run.sh bash ports/one-ish/test/run.sh` (offline checks) and `win/run.sh bash ports/one-ish/desktop/build.sh`, run
+  `ports/one-ish/build/desktop/load_test.exe` and `host_test.exe` on Windows, then `ports/one-ish/desktop/install.sh`
+  (to `%USERPROFILE%\VST2`) so the owner can play it in a VST2 host. The engine runs at 44.1 kHz only.
+- MPC builds (`tools/build_port.sh ... all`, `tools/test_port.sh` x86 and aarch64) and an independent code review run at
+  milestones only: after Phase 5 (both filters), after Phase 8 (polyphony; needs an on-device `tools/bench.sh`), after
+  Phase 9 (page and Q-Links) and before a release. Inside this Dropbox folder `build_port.sh` fails at random (Dropbox
+  holds new folders open, so the skin step's rmdir fails); run it from a copy outside Dropbox until the repo moves.

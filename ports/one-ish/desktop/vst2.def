@@ -1,0 +1,3 @@
+; Windows DLLs export only what is listed: VST2 hosts look for VSTPluginMain
+EXPORTS
+    VSTPluginMain
