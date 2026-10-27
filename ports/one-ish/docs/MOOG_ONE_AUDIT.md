@@ -180,23 +180,23 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | Three EGs per voice: filter, amplifier, modulation | p40 | Have | `fenv_*`, `amp_*`, `menv_*` | - | - |
-| DELAY TIME (MORE) | 0.0 ms to 10.0 s (p44) | Missing | - | S | none |
-| ATTACK | 1 ms to 10 s, plus MIN (p41) | Have | `*_a` 1 ms to 10 s, log knob; linear attack | - | - |
-| HOLD TIME (MORE) | 0.0 ms to 10.0 s (p44) | Missing | - | S | none |
-| DECAY | 1 ms to 10 s (p41) | Have | `*_d`, exponential | - | - |
+| DELAY TIME (MORE) | 0.0 ms to 10.0 s (p44) | Have | `*_delay`: 0 = off, then 1 ms to 10 s on the time knobs' log scale; holds the current level, then the attack starts (2026-10-27, offline) | - | none |
+| ATTACK | 1 ms to 10 s, plus MIN (p41) | Have | `*_a` 1 ms to 10 s, log knob; curve set by `*_acurve` (default linear) | - | - |
+| HOLD TIME (MORE) | 0.0 ms to 10.0 s (p44) | Have | `*_hold`: 0 = off, then 1 ms to 10 s; stays at the peak (2026-10-27, offline) | - | none |
+| DECAY | 1 ms to 10 s (p41) | Have | `*_d`; curve `*_dcurve` (default 50% exp = the old one-pole decay, 99% in the set time) | - | - |
 | SUSTAIN | 0 to 10 (p41) | Have | `*_s` 0-100% | - | - |
-| RELEASE | 1 ms to 10 s (p41) | Have | `*_r`, exponential | - | - |
+| RELEASE | 1 ms to 10 s (p41) | Have | `*_r`; curve `*_rcurve` (default 50% exp); now ends at exactly the set time | - | - |
 | MIN setting below 1 ms, ignored by TIME SCALE | p40 | Partial | Shortest time 1 ms | S | none |
-| ATTACK CURVE | 100% log to linear to 100% exp (p45) | Partial | Fixed linear | M (shared curve shaper for all stages) | low |
-| DECAY CURVE | 100% log to linear to 100% exp (p45) | Partial | Fixed exponential | (same) | low |
-| RELEASE CURVE | 100% log to linear to 100% exp (p45) | Partial | Fixed exponential | (same) | low |
-| MULTI TRIG: legato notes restart the envelope or not | on/off (p42) | Partial | Fixed: poly always restarts, mono legato never does | S | none |
-| RESET: restart the attack from zero (mono/unison with multi trig) | off/on (p44) | Partial | Always from the current level (from zero only after silence) | S | none |
-| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Missing | - | S | none |
-| LOOP: repeat the whole DAHDSR (trapezoid) | on/off (p42) | Missing | - | S | none |
-| LATCH: hold at sustain after key up; with LOOP keeps cycling | on/off (p42) | Missing | - | S | none |
-| TIME SCALE, keeps the stage ratios; modulatable | 10% to 1000% (p44) | Missing | - | S | none (control rate) |
-| VEL MOD AMT: velocity scales the envelope output | -100% to +100% (p45) | Partial | Velocity always scales the amp 100%; other envelopes only through a matrix slot | S | none |
+| ATTACK CURVE | 100% log to linear to 100% exp (p45) | Have | `*_acurve` -100..100%: one shared shaper (u = u m + b per sample), every curve takes the stage's whole time (2026-10-27, offline) | - | none (faster than before: control-rate envelopes step 16 samples at once) |
+| DECAY CURVE | 100% log to linear to 100% exp (p45) | Have | `*_dcurve` -100..100%, default 50 (2026-10-27, offline) | - | none |
+| RELEASE CURVE | 100% log to linear to 100% exp (p45) | Have | `*_rcurve` -100..100%, default 50 (2026-10-27, offline) | - | none |
+| MULTI TRIG: legato notes restart the envelope or not | on/off (p42) | Have | `*_multi` (default on): off, a new note on a voice whose key is still down carries on from the envelope's current position (2026-10-27, offline) | - | none |
+| RESET: restart the attack from zero (mono/unison with multi trig) | off/on (p44) | Have | `*_reset`: every restart from zero (also a stolen or replayed voice in poly) (2026-10-27, offline) | - | none |
+| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Partial | `*_sync`: the five time knobs pick from the LFOs' 11 divisions (1/32 to 4 bars, longest on the right) at the host tempo; time scale does not apply (2026-10-27, offline) | S | none |
+| LOOP: repeat the whole DAHDSR (trapezoid) | on/off (p42) | Have | `*_loop`: after the decay it goes straight to the release, then the delay again, while held (2026-10-27, offline) | - | none |
+| LATCH: hold at sustain after key up; with LOOP keeps cycling | on/off (p42) | Have | `*_latch`: key up ignored until the voice is replayed or stolen, latch is switched off or All Notes Off (2026-10-27, offline) | - | none |
+| TIME SCALE, keeps the stage ratios; modulatable | 10% to 1000% (p44) | Partial | `*_scale` 10-1000%, log knob with 100% in the middle; not a matrix destination yet (2026-10-27, offline) | S | none |
+| VEL MOD AMT: velocity scales the envelope output | -100% to +100% (p45) | Have | `*_vel`: amp default 100% (as before), filter and mod 0%; also scales the envelope as a matrix source (2026-10-27, offline) | - | none |
 | DEST quick assign [UI] | p43 | Missing | - | M | none |
 | Envelope picture with curves [UI] | p43, p45 | Missing | - | - | none |
 | EG stage times and time scale as matrix destinations | p76 | Missing | See section 15 | M | low-medium |
@@ -766,7 +766,7 @@ which are not build candidates for an MPC plugin.
 | 5. Noise | 1 | 1 | 7 | 0 |
 | 6. Mixer | 3 | 1 | 5 | 4 |
 | 7. Filters | 12 | 4 | 8 | 1 |
-| 8. Envelopes | 5 | 7 | 9 | 2 |
+| 8. Envelopes | 15 | 3 | 3 | 2 |
 | 9. LFOs | 2 | 9 | 11 | 1 |
 | 10. VCA | 1 | 0 | 4 | 1 |
 | 11. Output | 0 | 0 | 6 | 5 |
@@ -782,10 +782,10 @@ which are not build candidates for an MPC plugin.
 | 21. Editing and saving | 0 | 0 | 4 | 3 |
 | 22. Settings (global, MIDI, CV, utilities, library, tuning) | 0 | 3 | 23 | 18 |
 | 24. Appendices A and B (USB keyboard, MIDI learn, NRPN) | 0 | 2 | 4 | 2 |
-| **Total** | **79** | **84** | **301** | **78** |
+| **Total** | **89** | **80** | **295** | **78** |
 
 Rows are features or parameters, so the totals weigh a 30-row sequencer the same as 30 oscillator parameters; read
-them per module, not as one score. Leaving out [HW]/[UI] rows, 223 sound or behaviour items are missing.
+them per module, not as one score. Leaving out [HW]/[UI] rows, 217 sound or behaviour items are missing.
 
 ## Prioritised build order
 

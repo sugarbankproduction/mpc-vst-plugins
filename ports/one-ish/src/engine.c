@@ -4,10 +4,12 @@
  * white noise, each sent to the SVF, the ladder, both or neither by its own two buttons; a state-variable filter
  * (LP/BP/HP/notch; a pair of elements with spacing, in series or parallel: src/svf.h) and a ladder filter (cutoff,
  * resonance, drive, LP/HP, 24-6 dB) in parallel or in series (SVF into ladder) with a mix between them, their cutoff
- * knobs optionally linked; three envelopes (filter, amp, mod). Shared: two LFOs (free or tempo-synced).
+ * knobs optionally linked; three DAHDSR envelopes (filter, amp, mod: src/env.h, with stage curves, loop, latch, tempo
+ * sync, time scale, velocity amount, multi trig and reset). Shared: two LFOs (free or tempo-synced).
  * Hard-wired modulation as on the Moog One panel: filter envelope, LFO 2, keyboard tracking (-200..+200%) and
  * audio-rate FM from a chosen oscillator to each cutoff, LFO 1 and the mod envelope to pitch. An 8-slot modulation
- * matrix (source x amount, scaled by a via source) over pitch, levels, both filters and amp; mod wheel, aftertouch, pitch bend and sustain pedal. Up to 8 voices: a new
+ * matrix (source x amount, scaled by a via source) over pitch, levels, both filters and amp; mod wheel, aftertouch,
+ * pitch bend and sustain pedal. Up to 8 voices: a new
  * note takes an idle voice, else the quietest releasing one, else the oldest held one; the same key replays its own
  * voice. Mono (1 voice) plays legato with last-note priority. Glide (portamento): each voice slides from its own
  * last pitch at a constant rate (LCR), in a constant time (LCT) or exponentially (EXP); optionally only on legato
@@ -88,6 +90,13 @@ enum {
     P_GLIDE, P_GLIDE_TIME, P_GLIDE_TYPE, P_GLIDE_LEGATO, P_GLIDE_GATED, P_GLISSANDO,
     P_UNISON, P_UNI_COUNT, P_UNI_DETUNE, P_PITCH_VAR,
     P_SVF_SPACE, P_SVF_PAIR, P_FLT_LINK, P_LAD_FM, P_SVF_FM, P_LAD_FM_SRC, P_SVF_FM_SRC,   /* the filters' MORE page */
+    /* each envelope's extras, in ENV_FILTER, ENV_AMP, ENV_MOD order, EX_STRIDE apart (X_* below) */
+    P_FENV_DELAY, P_FENV_HOLD, P_FENV_ACURVE, P_FENV_DCURVE, P_FENV_RCURVE, P_FENV_LOOP, P_FENV_LATCH, P_FENV_SYNC,
+    P_FENV_MULTI, P_FENV_RESET, P_FENV_SCALE, P_FENV_VEL,
+    P_AMP_DELAY, P_AMP_HOLD, P_AMP_ACURVE, P_AMP_DCURVE, P_AMP_RCURVE, P_AMP_LOOP, P_AMP_LATCH, P_AMP_SYNC,
+    P_AMP_MULTI, P_AMP_RESET, P_AMP_SCALE, P_AMP_VEL,
+    P_MENV_DELAY, P_MENV_HOLD, P_MENV_ACURVE, P_MENV_DCURVE, P_MENV_RCURVE, P_MENV_LOOP, P_MENV_LATCH, P_MENV_SYNC,
+    P_MENV_MULTI, P_MENV_RESET, P_MENV_SCALE, P_MENV_VEL,
     P_COUNT
 };
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
@@ -101,6 +110,8 @@ enum { RING_1X2, RING_2X3 };                    /* "ring_src" options */
 enum { FM_1TO2, FM_1TO3, FM_3TO1 };             /* "fm_route" options */
 enum { ENV_FILTER, ENV_AMP, ENV_MOD, NENV, ENV_STRIDE = P_AMP_A - P_ENV_A };
 enum { LFO_STRIDE = P_LFO2_RATE - P_LFO1_RATE };
+enum { X_DELAY, X_HOLD, X_ACURVE, X_DCURVE, X_RCURVE, X_LOOP, X_LATCH, X_SYNC, X_MULTI, X_RESET, X_SCALE, X_VEL,
+       EX_STRIDE = P_AMP_DELAY - P_FENV_DELAY };
 static const char *const KEYS[P_COUNT] = {
 #define OSC_KEYS(n) "o" #n "_wave", "o" #n "_oct", "o" #n "_freq", "o" #n "_beat", "o" #n "_angle", "o" #n "_pw", \
                     "o" #n "_mix", "o" #n "_level"
@@ -126,7 +137,11 @@ static const char *const KEYS[P_COUNT] = {
     "rev_decay", "rev_damp", "rev_pre", "rev_mix",
     "glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando",
     "unison", "uni_count", "uni_detune", "pitch_var",
-    "svf_space", "svf_pair", "flt_link", "lad_fm", "svf_fm", "lad_fm_src", "svf_fm_src"
+    "svf_space", "svf_pair", "flt_link", "lad_fm", "svf_fm", "lad_fm_src", "svf_fm_src",
+#define ENV_EXTRA_KEYS(e) e "_delay", e "_hold", e "_acurve", e "_dcurve", e "_rcurve", e "_loop", e "_latch", e "_sync", \
+                          e "_multi", e "_reset", e "_scale", e "_vel"
+    ENV_EXTRA_KEYS("fenv"), ENV_EXTRA_KEYS("amp"), ENV_EXTRA_KEYS("menv")
+#undef ENV_EXTRA_KEYS
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
@@ -180,7 +195,8 @@ typedef struct {
     int sustain;             /* the pedal (CC 64) is down */
     lfo_t lfo[NLFO];
     float lfo_val[NLFO];     /* this control step's LFO outputs */
-    float bpm;               /* the host's tempo, for synced LFOs */
+    float bpm;               /* the host's tempo, for synced LFOs, delay and envelopes */
+    env_cfg_t ecfg[NENV];    /* each envelope's settings (times, curves, loop, latch...), shared by the voices */
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
     float gain_coef, glide;  /* per sample / per control step */
     int phase;               /* samples into the current control step */
@@ -231,6 +247,39 @@ static float dly_ms(const one_t *s) {
     return DLY_MIN_MS * powf(DLY_RANGE, s->val[P_DLY_TIME] * 0.01f);
 }
 
+/* envelope times. A synced time knob picks a tempo division, longest on the right; free times are scaled by the
+ * envelope's time scale (10% .. 1000%, a log knob with 100% in the middle). Delay and hold at 0 are off. */
+static float env_scale(float knob) { return powf(10.0f, (knob - 50.0f) * 0.02f); }
+static int env_div(float knob) { return NDIV - 1 - sync_div(knob); }
+static float env_time(const one_t *s, int n, float knob, int zero_off) {
+    const float *x = &s->val[P_FENV_DELAY + EX_STRIDE * n];
+    if (zero_off && knob <= 0.0f) return 0.0f;
+    if (x[X_SYNC] > 0.5f) return 60000.0f / s->bpm * SYNC_DIV[env_div(knob)].beats;
+    return env_ms(knob) * env_scale(x[X_SCALE]);
+}
+
+/* the envelope's output at this velocity (0..1): VEL MOD AMT +100% scales it by the velocity, -100% by its inverse,
+ * 0 leaves it at full */
+static float env_vel(const one_t *s, int n, float velocity) {
+    float a = s->val[P_FENV_VEL + EX_STRIDE * n] * 0.01f;
+    return a >= 0.0f ? 1.0f - a + a * velocity : 1.0f + a * velocity;
+}
+
+/* the envelopes' settings, which every voice's envelopes read */
+static void apply_envs(one_t *s) {
+    for (int n = 0; n < NENV; n++) {
+        const float *e = &s->val[P_ENV_A + ENV_STRIDE * n], *x = &s->val[P_FENV_DELAY + EX_STRIDE * n];
+        env_cfg_t *c = &s->ecfg[n];
+        const float ms[5] = {env_time(s, n, x[X_DELAY], 1), env_time(s, n, e[0], 0), env_time(s, n, x[X_HOLD], 1),
+                             env_time(s, n, e[1], 0), env_time(s, n, e[3], 0)};
+        env_config(c, ms, e[2] * 0.01f, x[X_ACURVE] * 0.01f, x[X_DCURVE] * 0.01f, x[X_RCURVE] * 0.01f, SR);
+        c->loop = x[X_LOOP] > 0.5f;
+        c->latch = x[X_LATCH] > 0.5f;
+        c->multi = x[X_MULTI] > 0.5f;
+        c->reset = x[X_RESET] > 0.5f;
+    }
+}
+
 static float lfo_hz(const one_t *s, int n) {
     const float *l = &s->val[P_LFO1_RATE + LFO_STRIDE * n];
     if (l[2] > 0.5f) return s->bpm / 60.0f / SYNC_DIV[sync_div(l[0])].beats;
@@ -243,11 +292,7 @@ static void apply(one_t *s) {
         const float *o = &s->val[P_O1_WAVE + OSC_STRIDE * n];
         s->ratio[n] = powf(2.0f, (o[O_OCT] - OCT_CENTRE) + o[O_FREQ] / 12.0f);
     }
-    for (int n = 0; n < NENV; n++) {
-        const float *e = &s->val[P_ENV_A + ENV_STRIDE * n];
-        for (int i = 0; i < MAX_VOICES; i++)
-            env_set_times(&s->voice[i].env[n], env_ms(e[0]), env_ms(e[1]), e[2] * 0.01f, env_ms(e[3]), SR);
-    }
+    apply_envs(s);
     float t = glide_ms(s->val[P_GLIDE_TIME]) * 0.001f;
     s->glide_frac = t > 0.0f ? (float)CR / (SR * t) : 2.0f;
     s->glide_exp = 1.0f - expf(-GLIDE_EXP_K * fminf(s->glide_frac, 1.0f));
@@ -272,7 +317,7 @@ static int voices_used(const one_t *s) {
 }
 
 static float gain_target(const one_t *s, const voice_t *v) {
-    return v->velocity * s->val[P_VOLUME] * 0.01f * HEADROOM * v->amp_mod * v->uni_gain;
+    return env_vel(s, ENV_AMP, v->velocity) * s->val[P_VOLUME] * 0.01f * HEADROOM * v->amp_mod * v->uni_gain;
 }
 
 /* the pitch the voice plays (semitones): the glided pitch, in whole semitones with glissando */
@@ -358,6 +403,7 @@ static void *create(const char *data_dir) {
         v->note = -1;
         v->amp_mod = 1.0f;
         v->uni_gain = 1.0f;
+        for (int n = 0; n < NENV; n++) v->env[n].cfg = &s->ecfg[n];
         v->cut = s->val[P_FLT_CUT];
         v->svf_cut = s->val[P_SVF_CUT];
     }
@@ -417,7 +463,10 @@ static void forget(one_t *s, int note) {
 }
 
 static void gate_on(voice_t *v) {
-    for (int n = 0; n < NENV; n++) env_gate_on(&v->env[n]);
+    /* a legato note (this voice's key still down) restarts an envelope only with its MULTI TRIG on */
+    int legato = v->gate && !v->sustained && v->env[ENV_AMP].stage != ENV_IDLE;
+    for (int n = 0; n < NENV; n++)
+        if (!legato || v->env[n].cfg->multi) env_gate_on(&v->env[n]);
     v->gate = 1;
     v->sustained = 0;
 }
@@ -539,8 +588,8 @@ static void all_off(one_t *s, int hard) {
         voice_t *v = &s->voice[i];
         if (hard)   /* All Sound Off: silent within a few ms, without a click */
             for (int n = 0; n < NENV; n++) env_kill(&v->env[n]);
-        else
-            for (int n = 0; n < NENV; n++) env_gate_off(&v->env[n]);
+        else   /* latched envelopes too */
+            for (int n = 0; n < NENV; n++) env_release(&v->env[n]);
         v->gate = 0;
         v->sustained = 0;
     }
@@ -597,9 +646,12 @@ static void link_cutoffs(one_t *s, int k) {
 
 static void set_param(void *inst, const char *key, const char *val) {
     one_t *s = inst;
-    if (!strcmp(key, "lfo_bpm")) {   /* the host's tempo (HAS_LFO_BPM), not a param: nothing to apply */
+    if (!strcmp(key, "lfo_bpm")) {   /* the host's tempo (HAS_LFO_BPM), not a param: only synced envelopes need it applied */
         float bpm = (float)atof(val);
-        if (isfinite(bpm) && bpm >= 20.0f && bpm <= 400.0f) s->bpm = bpm;
+        if (isfinite(bpm) && bpm >= 20.0f && bpm <= 400.0f && bpm != s->bpm) {
+            s->bpm = bpm;
+            apply_envs(s);   /* synced envelope times follow the tempo */
+        }
         return;
     }
     if (!strcmp(key, "state")) set_state(s, val);
@@ -608,8 +660,14 @@ static void set_param(void *inst, const char *key, const char *val) {
     apply(s);
     int count = voices_used(s);
     if (count < s->voices)   /* fewer voices: let go of the ones past the new count (they finish their release) */
-        for (int i = count; i < MAX_VOICES; i++) gate_off(&s->voice[i]);
+        for (int i = count; i < MAX_VOICES; i++) {
+            gate_off(&s->voice[i]);
+            for (int n = 0; n < NENV; n++) env_release(&s->voice[i].env[n]);   /* latched ones too */
+        }
     s->voices = count;
+    for (int i = 0; i < MAX_VOICES; i++)   /* LATCH off: envelopes it held open after key up now release */
+        for (int n = 0; n < NENV; n++)
+            if (!s->ecfg[n].latch && s->voice[i].env[n].held && !s->voice[i].gate) env_release(&s->voice[i].env[n]);
 }
 
 static int time_text(char *buf, int n, float ms) {
@@ -624,8 +682,19 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
         float hz = cut_hz(s->val[k]);
         return hz < 1000.0f ? snprintf(buf, n, "%.0f Hz", hz) : snprintf(buf, n, "%.2f kHz", hz * 0.001f);
     }
-    if (k >= P_ENV_A && k < P_ENV_A + NENV * ENV_STRIDE && (k - P_ENV_A) % ENV_STRIDE != 2)   /* A, D, R: not S */
+    if (k >= P_ENV_A && k < P_ENV_A + NENV * ENV_STRIDE && (k - P_ENV_A) % ENV_STRIDE != 2) {   /* A, D, R: not S */
+        if (s->val[P_FENV_SYNC + EX_STRIDE * ((k - P_ENV_A) / ENV_STRIDE)] > 0.5f)
+            return snprintf(buf, n, "%s", SYNC_DIV[env_div(s->val[k])].name);
         return time_text(buf, n, env_ms(s->val[k]));
+    }
+    if (k >= P_FENV_DELAY && k < P_FENV_DELAY + NENV * EX_STRIDE) {   /* delay, hold, time scale */
+        int x = (k - P_FENV_DELAY) % EX_STRIDE, e = (k - P_FENV_DELAY) / EX_STRIDE;
+        if (x == X_SCALE) return snprintf(buf, n, "%.0f%%", env_scale(s->val[k]) * 100.0f);
+        if (x != X_DELAY && x != X_HOLD) return 0;
+        if (s->val[k] <= 0.0f) return snprintf(buf, n, "0 ms");
+        if (s->val[P_FENV_SYNC + EX_STRIDE * e] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[env_div(s->val[k])].name);
+        return time_text(buf, n, env_ms(s->val[k]));
+    }
     if (k == P_GLIDE_TIME) return s->val[k] > 0.0f ? time_text(buf, n, glide_ms(s->val[k])) : snprintf(buf, n, "0 ms");
     if (k == P_MODFX_RATE) {
         float hz = modfx_hz(s->val[k]);
@@ -683,9 +752,9 @@ static void control_voice(one_t *s, voice_t *v) {
     update_note_hz(s, v);
     float key = voice_key(s, v);   /* the glided pitch drives keyboard tracking and the Keyboard source */
     src[MS_OFF] = 0.0f;
-    src[MS_FENV] = env_run(&v->env[ENV_FILTER], CR);
-    src[MS_AENV] = v->env[ENV_AMP].level;
-    src[MS_MENV] = env_run(&v->env[ENV_MOD], CR);
+    src[MS_FENV] = env_run(&v->env[ENV_FILTER], CR) * env_vel(s, ENV_FILTER, v->velocity);
+    src[MS_AENV] = v->env[ENV_AMP].level * env_vel(s, ENV_AMP, v->velocity);
+    src[MS_MENV] = env_run(&v->env[ENV_MOD], CR) * env_vel(s, ENV_MOD, v->velocity);
     src[MS_LFO1] = s->lfo_val[0];
     src[MS_LFO2] = s->lfo_val[1];
     src[MS_VEL] = v->velocity;

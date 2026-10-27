@@ -32,6 +32,7 @@
  *             pitches up to +-50 cents and leaves a stack about as loud as one voice; stacks share the voice pool
  *             (8 voices, count 4: two notes, a third steals a whole stack); never more voices than the voice count;
  *             mono + unison stacks one note; release lets go of the whole stack; pitch variance stays within range
+ *   env extras  curves, delay, hold, loop, latch, sync, time scale, velocity amount, multi trig and reset
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
@@ -984,8 +985,11 @@ static void voices(void) {
     E->destroy(e);
 
     env_t env;   /* a pluck (sustain 0) frees its voice when the decay ends, instead of holding it at silence */
+    env_cfg_t cfg;
     memset(&env, 0, sizeof env);
-    env_set_times(&env, 1, 50, 0, 50, SR);
+    memset(&cfg, 0, sizeof cfg);
+    env_config(&cfg, (const float[5]){0, 1, 0, 50, 50}, 0, 0, 0.5f, 0.5f, SR);
+    env.cfg = &cfg;
     env_gate_on(&env);
     for (int i = 0; i < SR / 2; i++) env_next(&env);
     check(env.stage == ENV_IDLE, "a pluck envelope (sustain 0) is idle once its decay ends, with the key still down");
@@ -1160,6 +1164,202 @@ static void keys(void) {
     E->midi(e, cc120, 3);
     check(silent_after(e, 10), "All Sound Off (CC 120) is silent within 10 ms (a 2 ms fade, no click)");
     E->destroy(e);
+}
+
+/* one envelope on its own (env.h): times in ms (delay, attack, hold, decay, release), sustain 0..1, curves -1..1 */
+static void env_setup(env_t *e, env_cfg_t *c, float d, float a, float h, float dc, float s, float r, float acurve,
+                      float dcurve, float rcurve) {
+    memset(e, 0, sizeof *e);
+    memset(c, 0, sizeof *c);
+    env_config(c, (const float[5]){d, a, h, dc, r}, s, acurve, dcurve, rcurve, SR);
+    c->multi = 1;
+    e->cfg = c;
+}
+
+/* the envelope's level after `ms` more milliseconds */
+static float env_after(env_t *e, double ms) {
+    float l = e->level;
+    for (int i = (int)(ms * SR / 1000 + 0.5); i > 0; i--) l = env_next(e);
+    return l;
+}
+
+/* peak of |x| between two times in ms */
+static double peak_in(const float *x, double from, double to) {
+    double p = 0;
+    for (int i = (int)(from * SR / 1000); i < (int)(to * SR / 1000); i++) p = fmax(p, fabs(x[i]));
+    return p;
+}
+
+static void envelope_extras(void) {
+    static float x[SR * 3];
+    char what[240], txt[32], txt2[32];
+    env_t e;
+    env_cfg_t c;
+
+    /* curves: the level halfway through a 100 ms attack, and a 100 ms decay to 0, for log, linear and exp; every
+     * curve still takes the stage's whole time */
+    static const float curves[3] = {-1, 0, 1};
+    float mid_a[3], mid_d[3];
+    int a_len[3];
+    for (int k = 0; k < 3; k++) {
+        env_setup(&e, &c, 0, 100, 0, 100, 0, 100, curves[k], curves[k], 0);
+        env_gate_on(&e);
+        mid_a[k] = env_after(&e, 50);
+        int n = SR / 20;
+        while (e.stage == ENV_ATTACK && n < SR) { env_next(&e); n++; }
+        a_len[k] = n;
+        env_after(&e, 50);
+        mid_d[k] = e.level;
+    }
+    snprintf(what, sizeof what, "attack curves log/linear/exp: %.2f / %.2f / %.2f at mid-attack, each attack %d / %d / %d samples (want 4410)",
+             mid_a[0], mid_a[1], mid_a[2], a_len[0], a_len[1], a_len[2]);
+    check(mid_a[0] > 0.6f && fabsf(mid_a[1] - 0.5f) < 0.01f && mid_a[2] < 0.4f && abs(a_len[0] - 4410) <= 2 &&
+          abs(a_len[1] - 4410) <= 2 && abs(a_len[2] - 4410) <= 2, what);
+    snprintf(what, sizeof what, "decay curves log/linear/exp: %.2f / %.2f / %.2f at mid-decay (an exp decay falls fast, then slows)",
+             mid_d[0], mid_d[1], mid_d[2]);
+    check(mid_d[0] > 0.6f && fabsf(mid_d[1] - 0.5f) < 0.01f && mid_d[2] < 0.4f, what);
+
+    /* the default decay curve (50%) is the old one-pole decay: 99% of the way in the decay time */
+    env_setup(&e, &c, 0, 1, 0, 1000, 0, 100, 0, 0.5f, 0.5f);
+    env_gate_on(&e);
+    while (e.stage == ENV_ATTACK) env_next(&e);
+    float q1 = env_after(&e, 250), q2 = env_after(&e, 250), q4 = env_after(&e, 490);
+    snprintf(what, sizeof what, "default decay (curve 50%%): %.3f, %.3f, %.4f at 250, 500, 990 ms of 1 s (one-pole: %.3f, %.3f, %.4f)",
+             q1, q2, q4, exp(-4.6 * 0.25), exp(-4.6 * 0.5), exp(-4.6 * 0.99));
+    check(fabs(q1 - exp(-4.6 * 0.25)) < 0.012 && fabs(q2 - exp(-4.6 * 0.5)) < 0.012 && q4 < 0.012, what);
+
+    /* hold keeps the peak; delay holds the start */
+    env_setup(&e, &c, 30, 10, 100, 100, 0, 100, 0, 0.5f, 0.5f);
+    env_gate_on(&e);
+    float d1 = env_after(&e, 29), a1 = env_after(&e, 6), h1 = env_after(&e, 10), h2 = env_after(&e, 90), dc = env_after(&e, 10);
+    snprintf(what, sizeof what, "delay 30 ms, attack 10, hold 100: %.2f at 29 ms, %.2f at 35, %.2f at 45, %.2f at 135, %.2f at 145",
+             d1, a1, h1, h2, dc);
+    check(d1 == 0 && a1 > 0.3f && a1 < 0.7f && h1 == 1 && h2 == 1 && dc < 0.9f, what);
+
+    /* loop: delay 10, attack 10, hold 10, decay 20 to 50%, release 30: a 80 ms trapezoid while held; key up lets
+     * it finish its release and stop; latched, it keeps cycling */
+    static float lv[SR];
+    env_setup(&e, &c, 10, 10, 10, 20, 0.5f, 30, 0, 0.5f, 0.5f);
+    c.loop = 1;
+    env_gate_on(&e);
+    for (int i = 0; i < SR / 2; i++) lv[i] = env_next(&e);
+    int per = (int)(0.08 * SR);
+    float diff = 0, top = 0, low = 1;
+    for (int i = per; i < SR / 2 - per; i++) {
+        diff = fmaxf(diff, fabsf(lv[i] - lv[i + per]));
+        top = fmaxf(top, lv[i]);
+        low = fminf(low, lv[i]);
+    }
+    env_gate_off(&e);
+    env_after(&e, 31);
+    int stopped = e.stage == ENV_IDLE;
+    snprintf(what, sizeof what, "loop: repeats every 80 ms (largest difference %.4f), %.2f..%.2f each cycle; key up stops it %s",
+             diff, low, top, stopped ? "after the release" : "NOT");
+    check(diff < 1e-3f && top == 1 && low == 0 && stopped, what);
+    env_setup(&e, &c, 10, 10, 10, 20, 0.5f, 30, 0, 0.5f, 0.5f);
+    c.loop = c.latch = 1;
+    env_gate_on(&e);
+    env_after(&e, 45);
+    env_gate_off(&e);
+    top = 0;
+    for (int i = 0; i < SR / 2; i++) top = fmaxf(top, env_next(&e));
+    snprintf(what, sizeof what, "loop + latch: keeps cycling after key up (peak %.2f in the next 500 ms)", top);
+    check(top == 1 && e.stage != ENV_IDLE, what);
+
+    /* latch through the engine: the note holds at sustain after key up until LATCH is switched off */
+    void *en = patch(SAW, 1, 50, 50, 50);
+    set(en, "amp_latch", 1);
+    note(en, 1, 57, 127);
+    render_f(en, x, SR / 2);
+    double held = peak_in(x, 400, 500);
+    note(en, 0, 57, 0);
+    render_f(en, x, SR);
+    double after = peak_in(x, 900, 1000);
+    set(en, "amp_latch", 0);
+    int gone = silent_after(en, 300);
+    snprintf(what, sizeof what, "latch: key up keeps the sustain level (%.3f held, %.3f a second after key up); latch off releases it",
+             held, after);
+    check(held > 0.05 && fabs(after - held) < 0.1 * held && gone, what);
+    E->destroy(en);
+
+    /* delay through the engine: the note starts when its delay is over */
+    en = patch(SAW, 1, 1000, 100, 100);
+    set(en, "amp_delay", knob_ms(200));
+    E->get_param(en, "amp_delay_display", txt, sizeof txt);
+    note(en, 1, 57, 127);
+    render_f(en, x, SR / 2);
+    double before = peak_in(x, 0, 195), on = peak_in(x, 210, 300);
+    snprintf(what, sizeof what, "amp delay \"%s\": %.4f before 195 ms, %.3f after 210 ms", txt, before, on);
+    check(!strcmp(txt, "200 ms") && before < 1e-3 && on > 0.1, what);
+    E->destroy(en);
+
+    /* sync: an attack of a quarter note follows the tempo; the knob reads the division */
+    double t95[2];
+    for (int k = 0; k < 2; k++) {
+        en = patch(SAW, 1, 1000, 100, 100);
+        E->set_param(en, "lfo_bpm", k ? "60" : "120");
+        set(en, "amp_sync", 1);
+        set(en, "amp_a", 60);   /* the 5th-longest division: 1/4 */
+        E->get_param(en, "amp_a_display", txt, sizeof txt);
+        note(en, 1, 57, 127);
+        render_f(en, x, SR * 3 / 2);
+        t95[k] = time_to(x, SR * 3 / 2, 0.95f) / 44.1;
+        E->destroy(en);
+    }
+    snprintf(what, sizeof what, "amp attack synced to \"%s\": 95%% after %.0f ms at 120 BPM, %.0f ms at 60 (want 475, 950)",
+             txt, t95[0], t95[1]);
+    check(!strcmp(txt, "1/4") && fabs(t95[0] - 475) < 15 && fabs(t95[1] - 950) < 25, what);
+
+    /* time scale 200% doubles every stage time */
+    double ts[2];
+    for (int k = 0; k < 2; k++) {
+        en = patch(SAW, 100, 1000, 100, 100);
+        if (k) set(en, "amp_scale", 50 + 50 * log10(2));
+        E->get_param(en, "amp_scale_display", k ? txt : txt2, sizeof txt);
+        note(en, 1, 57, 127);
+        render_f(en, x, SR / 2);
+        ts[k] = time_to(x, SR / 2, 0.95f) / 44.1;
+        E->destroy(en);
+    }
+    snprintf(what, sizeof what, "time scale \"%s\" vs \"%s\": a 100 ms attack reaches 95%% after %.0f ms, %.0f ms", txt2, txt,
+             ts[0], ts[1]);
+    check(!strcmp(txt2, "100%") && !strcmp(txt, "200%") && fabs(ts[1] / ts[0] - 2) < 0.1, what);
+
+    /* velocity amount: 100% (the default) scales loudness by velocity as before, 0% ignores it, -100% inverts it */
+    static const int amts[3] = {100, 0, -100};
+    double loud[3][2];
+    for (int k = 0; k < 3; k++)
+        for (int v = 0; v < 2; v++) {
+            en = patch(SAW, 1, 1000, 100, 100);
+            set(en, "amp_vel", amts[k]);
+            note(en, 1, 57, v ? 127 : 32);
+            loud[k][v] = rms_of(en, SR / 4);
+            E->destroy(en);
+        }
+    snprintf(what, sizeof what, "amp velocity amount 100/0%%: velocity 32 against 127 = %.3f / %.3f (want %.3f / 1); -100%%: "
+             "rms %.3f at 32, %.4f at 127", loud[0][0] / loud[0][1], loud[1][0] / loud[1][1], 32 / 127.0, loud[2][0], loud[2][1]);
+    check(fabs(loud[0][0] / loud[0][1] - 32 / 127.0) < 0.02 && fabs(loud[1][0] / loud[1][1] - 1) < 0.01 &&
+          loud[2][0] > 10 * loud[2][1], what);
+
+    /* multi trig and reset in mono: a legato note after the envelope has settled at 30% */
+    double lev[3], first[3];
+    for (int k = 0; k < 3; k++) {   /* 0: multi on (default), 1: multi off, 2: multi on + reset */
+        en = patch(SAW, 50, 50, 30, 100);
+        set(en, "voices", 0);
+        if (k == 1) set(en, "amp_multi", 0);
+        if (k == 2) set(en, "amp_reset", 1);
+        note(en, 1, 57, 127);
+        render_f(en, x, SR / 2);
+        double settled = peak_in(x, 400, 500);
+        note(en, 1, 60, 127);
+        render_f(en, x, SR / 5);
+        first[k] = peak_in(x, 0, 5) / settled;
+        lev[k] = peak_in(x, 40, 60) / settled;
+        E->destroy(en);
+    }
+    snprintf(what, sizeof what, "mono legato note, level against before: multi trig on %.2f (restarts), off %.2f (carries on); "
+             "reset: first 5 ms %.2f (from 0), without %.2f", lev[0], lev[1], first[2], first[0]);
+    check(lev[0] > 1.5 && fabs(lev[1] - 1) < 0.15 && first[2] < 0.5 && first[0] > 0.8, what);
 }
 
 static double get(void *e, const char *k) {
@@ -1669,6 +1869,7 @@ int main(int argc, char **argv) {
     effects();
     envelope();
     keys();
+    envelope_extras();
     state();
     glide_unison();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
