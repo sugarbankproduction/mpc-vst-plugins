@@ -125,3 +125,10 @@ rev_decay
 rev_damp
 rev_pre
 rev_mix
+svf_space
+svf_pair
+flt_link
+lad_fm
+svf_fm
+lad_fm_src
+svf_fm_src

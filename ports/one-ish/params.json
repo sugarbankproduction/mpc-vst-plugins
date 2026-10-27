@@ -67,10 +67,10 @@
   {"key": "menv_r", "name": "Mod Env Release", "min": 0, "max": 100, "default": 61.9, "dynamic_display": true},
   {"key": "lad_env", "name": "Ladder Env Amt", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "lad_lfo", "name": "Ladder LFO2 Amt", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
-  {"key": "lad_kbd", "name": "Ladder Kbd Track", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "lad_kbd", "name": "Ladder Kbd Track", "min": -200, "max": 200, "unit": "%", "default": 0, "display": "int"},
   {"key": "svf_env", "name": "SVF Env Amt", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "svf_lfo", "name": "SVF LFO2 Amt", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
-  {"key": "svf_kbd", "name": "SVF Kbd Track", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "svf_kbd", "name": "SVF Kbd Track", "min": -200, "max": 200, "unit": "%", "default": 0, "display": "int"},
   {"key": "pitch_lfo", "name": "Pitch LFO1 Amt", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "pitch_env", "name": "Pitch Mod Env Amt", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "lfo1_rate", "name": "LFO 1 Rate", "min": 0, "max": 100, "default": 66.7, "dynamic_display": true},
@@ -127,7 +127,14 @@
   {"key": "rev_decay", "name": "Reverb Decay", "min": 0, "max": 100, "unit": "%", "default": 60, "display": "int"},
   {"key": "rev_damp", "name": "Reverb Damping", "min": 0, "max": 100, "unit": "%", "default": 40, "display": "int"},
   {"key": "rev_pre", "name": "Reverb Pre-delay", "min": 0, "max": 200, "unit": "ms", "default": 10, "display": "int"},
-  {"key": "rev_mix", "name": "Reverb Mix", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
+  {"key": "rev_mix", "name": "Reverb Mix", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "svf_space", "name": "SVF Spacing", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "svf_pair", "name": "SVF Series/Parallel", "options": ["Series", "Parallel"], "default": "Parallel"},
+  {"key": "flt_link", "name": "Link Cutoff", "options": ["Off", "On"], "default": "Off"},
+  {"key": "lad_fm", "name": "Ladder FM Amt", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "svf_fm", "name": "SVF FM Amt", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "lad_fm_src", "name": "Ladder FM Source", "options": ["Osc 1", "Osc 2", "Osc 3"], "default": "Osc 1"},
+  {"key": "svf_fm_src", "name": "SVF FM Source", "options": ["Osc 1", "Osc 2", "Osc 3"], "default": "Osc 1"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -160,6 +167,8 @@
   {"label": "MOD FX", "keys": ["modfx_type", "modfx_rate", "modfx_depth", "modfx_fb", "modfx_mix"]},
   {"label": "DELAY", "keys": ["dly_time", "dly_sync", "dly_fb", "dly_tone", "dly_pp", "dly_mix"]},
   {"label": "REVERB", "keys": ["rev_decay", "rev_damp", "rev_pre", "rev_mix"]},
-  {"label": "OUT", "keys": ["volume"]}
+  {"label": "OUT", "keys": ["volume"]},
+  {"label": "SVF PAIR", "keys": ["svf_space", "svf_pair", "flt_link"]},
+  {"label": "FILTER FM", "keys": ["lad_fm", "lad_fm_src", "svf_fm", "svf_fm_src"]}
  ]
 }

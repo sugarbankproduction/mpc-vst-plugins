@@ -114,6 +114,16 @@ PATCHES = [
                     "o2_beat": 1.5, "mod2_src": "Mod Env", "mod2_dst": "Osc 1 Angle", "mod2_amt": 40,
                     "flt_cut": hz(3500), "flt_res": 25, "pitch_lfo": 2, "lfo1_rate": lfo(5.5), "lfo1_wave": "Sine",
                     "voices": "Mono", "dly_sync": "On", "dly_time": div("1/8"), "dly_fb": 25, "dly_mix": 20}),
+    ("Vowel Pair", {**amp(80, 1200, 85, 900),
+                    "o2_level": 80, "o2_freq": 0.08, "o1_svf": "On", "o1_lad": "Off", "o2_svf": "On", "o2_lad": "Off",
+                    "svf_mode": "BP", "svf_pair": "Parallel", "svf_space": 35, "svf_cut": hz(550), "svf_res": 75,
+                    "svf_lfo": 25, "lfo2_rate": lfo(0.3), "lfo2_wave": "Sine", "svf_kbd": 50, "flt_mix": 0,
+                    "voices": "6", "modfx_type": "Chorus", "modfx_rate": 30, "modfx_depth": 40, "modfx_mix": 35,
+                    "rev_mix": 30, "rev_decay": 60}),
+    ("FM Growl", {**amp(2, 500, 80, 150), **fenv(1, 400, 30, 200),
+                  "o2_level": 0, "o2_oct": "16'", "o2_mix": 100, "o1_svf": "On", "o1_lad": "Off",
+                  "svf_mode": "LP", "svf_pair": "Series", "svf_cut": hz(350), "svf_res": 45, "svf_env": 40,
+                  "svf_kbd": 60, "svf_fm": 30, "svf_fm_src": "Osc 2", "flt_mix": 0, "voices": "Mono"}),
 ]
 
 
@@ -124,8 +134,13 @@ def main():
         for k in patch:
             if k not in by_key:
                 raise SystemExit("%s: %r is not a parameter" % (name, k))
+        # Link Cutoff ties the two cutoff knobs together as each one is set, and the wrapper sets a preset's values in
+        # file order. So it comes first and is always Off in a preset: both cutoffs then land as written, whatever the
+        # sound before had. (On, the second cutoff would move the first.)
+        if patch.get("flt_link", "Off") != "Off":
+            raise SystemExit("%s: presets keep flt_link Off (it would move the cutoffs while they load)" % name)
         values = {}
-        for p in PARAMS:   # every parameter, in VST order
+        for p in sorted(PARAMS, key=lambda p: p["key"] != "flt_link"):   # every parameter, link first, then VST order
             v = patch.get(p["key"], p.get("default", p.get("min", 0)))
             if "options" in p and isinstance(v, (int, float)):
                 v = p["options"][int(v)]
