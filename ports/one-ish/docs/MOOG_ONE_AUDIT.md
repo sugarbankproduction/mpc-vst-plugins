@@ -604,11 +604,23 @@ type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20
 | 10 BAND VOCODER (p109): MIX (CTRL 1), SIBILANCE (CTRL 2), SENSITIVITY (mic gate), TONE, NOISE [HW: needs a mic input] | 0-100% | Missing | No audio input on an MPC instrument plugin | L | none/voice; shared medium |
 | 16 BAND VOCODER (p109): same parameters [HW: needs a mic input] | 0-100% | Missing | - | L | none/voice; shared medium-high |
 
+Beyond the Moog One (2026-10-27, offline): open-source synth effect types, MIT-licensed
+(`third_party/THIRD_PARTY.md`). **Modal Resonator**: Mutable Instruments Rings excited by the voices (its six models,
+`modfx_model`; structure, position, brightness on TONE, damping on DECAY; tuned to the newest note with `modfx_follow`,
+or middle C, plus `modfx_pitch`). **Granular**: Mutable Instruments Clouds (`modfx_gmode` granular, stretch, looping
+delay, spectral; `modfx_quality`; position, size, pitch, density, texture, freeze; spread, feedback and reverb on
+SPREAD, FEEDBACK and ROOM). **Tape Color**, **Density**, **Console**: Airwindows ToTape6, Density and Console7
+(channel into buss) ported to C (`modfx_drive`, `modfx_bump`, `modfx_lowcut`). PC cost per 128-frame block, shared:
+Rings 5-42 us by model (modal the most), Clouds 12-73 us by mode (spectral works in bursts of up to about 360 us),
+Tape Color 19-25, Density 10-15, Console 14-16.
+
 ### 18c. Eventide Master Effects (master bus only, one at a time) [LIC]
 
 These are licensed algorithms. Only original reverbs in the same spirit can be built; none can match them. ONE-ish's
 master reverb (`rev_type`: Plate, Room, Hall) shares one set of knobs; decay is a time (`rev_decay`, 0.25-10 s at
-size 100%, scaled by size).
+size 100%, scaled by size). A fourth type, Space (2026-10-27, offline), is Airwindows Galactic ported to C (MIT): DECAY
+sets how much of the space each new sound replaces (100% or FREEZE: it holds), TONE its brightness, MOD LEVEL its
+detune, SIZE its bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us per block on the PC).
 
 **Eventide Plate** (p110) against ONE-ish's plate (Dattorro figure-of-eight tank)
 

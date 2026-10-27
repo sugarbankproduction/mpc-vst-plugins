@@ -63,6 +63,10 @@
  *             limiter (peak, rms, zero runs while held), single notes bounded; the never-touched params and locked
  *             sections keep their values exactly; the same seed gives the same sound; MUTATE at 10% moves a few params a
  *             little; MUTATE at 100% and chains of mutations stay heard and safe
+ *   oss       the open-source effects (Rings, Clouds, Airwindows): the Airwindows ports match the original plugins' output
+ *             (reference values rendered from their own code), every new type exactly dry at mix 0 and bounded at its
+ *             extremes, Rings rings at its note (and follows the keyboard), Clouds' freeze holds, CTRL/DRIVE readouts,
+ *             the new matrix destinations; oss_fx_*.wav to listen to; their CPU in the bench
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
@@ -83,6 +87,7 @@
 #include "env.h"
 #include "modmatrix.h"
 #include "fx.h"
+#include "fx/mi_effects.h"
 #include "randomize.h"
 
 #define SR 44100
@@ -1039,6 +1044,8 @@ static fx_params_t fx_none(void) {
     p.mfx_on = 1; p.width = 1;
     p.dly_l_ms = p.dly_r_ms = 250; p.dly_tone = 1;
     p.rev_rt60 = 2; p.rev_size = 1; p.rev_diff = 1; p.rev_tone = 1; p.rev_mod = 1; p.rev_early = 0.5f; p.rev_damp = 0.3f;
+    p.structure = 0.4f; p.position = 0.5f; p.size = 0.5f; p.density = 0.7f; p.texture = 0.5f; p.note = 60; p.follow = 1;
+    p.drive = 0.5f; p.bump = 0.5f; p.rev_decay_k = 0.5f; p.rev_size_k = 0.5f;   /* the open-source types: their defaults */
     return p;
 }
 
@@ -1069,8 +1076,9 @@ static double energy_db(const float *l, const float *r, int from, int to) {
 }
 
 static const char *const SFX_NAMES[SFX_NTYPES] = {"delay", "bbd", "tape", "echo", "flanger", "stereo_flanger", "chorus",
-    "dual_chorus", "ensemble", "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator"};
-static const char *const REV_NAMES[3] = {"plate", "room", "hall"};
+    "dual_chorus", "ensemble", "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator",
+    "modal_resonator", "granular", "tape_color", "density", "console"};
+static const char *const REV_NAMES[4] = {"plate", "room", "hall", "space"};
 
 /* the master delay and reverb, and the routing around them */
 static void effects(void) {
@@ -2918,22 +2926,23 @@ static void fx_wavs(const char *demo_path) {
     snprintf(dir, sizeof dir, "%s", demo_path);
     char *slash = strrchr(dir, '/');
     if (slash) slash[1] = 0; else dir[0] = 0;
-    for (int k = 0; k < SFX_NTYPES + 5; k++) {
+    enum { NT = SFX_RESON + 1 };   /* the original types (the open-source ones write oss_fx_*.wav: oss_wavs) */
+    for (int k = 0; k < NT + 5; k++) {
         void *e = patch(SAW, 5, 400, 70, 300);
         set(e, "o2_level", 70); set(e, "o2_freq", 0.08); set(e, "flt_cut", 70); set(e, "volume", 70);
         const char *name;
-        if (k < SFX_NTYPES) {
+        if (k < NT) {
             name = SFX_NAMES[k];
             set(e, "modfx_on", 1); set(e, "modfx_type", k);
             if (k <= SFX_ECHO) set(e, "modfx_mix", 35);
             if (k == SFX_CRUSH) { set(e, "modfx_mix", 100); set(e, "modfx_bits", 6); }
             if (k == SFX_RESON) set(e, "modfx_mix", 80);
-        } else if (k == SFX_NTYPES) {   /* 300 ms left, 450 ms right */
+        } else if (k == NT) {   /* 300 ms left, 450 ms right */
             name = "master_delay"; set(e, "mfx_send1", 40); set(e, "dly_time", 80.8); set(e, "dly_time_r", 84.9);
-        } else if (k == SFX_NTYPES + 1) {
+        } else if (k == NT + 1) {
             name = "master_pingpong"; set(e, "mfx_send1", 40); set(e, "dly_pp", 1); set(e, "dly_fb", 45);
         } else {
-            name = REV_NAMES[k - SFX_NTYPES - 2]; set(e, "mfx_send2", 40); set(e, "rev_type", k - SFX_NTYPES - 2);
+            name = REV_NAMES[k - NT - 2]; set(e, "mfx_send2", 40); set(e, "rev_type", k - NT - 2);
         }
         int16_t *o = pcm;
         note(e, 1, 48, 100); note(e, 1, 55, 100); note(e, 1, 60, 100);
@@ -2945,8 +2954,10 @@ static void fx_wavs(const char *demo_path) {
         snprintf(path, sizeof path, "%sfx_%s.wav", dir, name);
         write_wav(path, pcm, (uint32_t)((o - pcm) / 2));
     }
-    printf("wrote %d effect WAVs to %s (fx_*.wav)\n", SFX_NTYPES + 5, dir[0] ? dir : "./");
+    printf("wrote %d effect WAVs to %s (fx_*.wav)\n", NT + 5, dir[0] ? dir : "./");
 }
+
+static void oss_bench(void);
 
 /* a busy patch (three oscillators, both filters in series, the matrix busy) held at 1, 4 and 8 voices */
 static void bench(void) {
@@ -3111,6 +3122,7 @@ static void bench(void) {
            us2, us2 - us);
     E->destroy(e);
     fx_bench();
+    oss_bench();
 }
 
 /* a triangle (near a sine, so zero crossings track its pitch) through the open ladder, for pitch modulation */
@@ -3866,6 +3878,353 @@ static void random_demo_wav(const char *demo_path) {
     printf("wrote %s (%d random sounds)\n", path, SOUNDS);
 }
 
+/* ---- the open-source effects: Rings ("Modal Resonator") and Clouds ("Granular") from Mutable Instruments
+ * (src/fx/mi_effects.h), and the Airwindows ports (src/fx/airwindows.h): ToTape6 ("Tape Color"), Density, Console7
+ * ("Console") and Galactic (the "Space" reverb) ---- */
+
+/* the Airwindows reference signal: 2 s of a saw and a sine on each side, then 1 s of silence for the tails */
+#define AW_NS (SR * 3)
+static void aw_input(float *l, float *r) {
+    for (int i = 0; i < AW_NS; i++) {
+        double t = i / 44100.0, env = i < 88200 ? 1.0 : 0.0;
+        double saw = 2.0 * fmod(t * 110.0, 1.0) - 1.0, saw2 = 2.0 * fmod(t * 164.81, 1.0) - 1.0;
+        l[i] = (float)(env * (0.5 * saw + 0.2 * sin(2 * M_PI * 2200.0 * t)));
+        r[i] = (float)(env * (0.5 * saw2 + 0.2 * sin(2 * M_PI * 3300.0 * t)));
+    }
+}
+
+/* The original plugins' output on aw_input(), left and right at samples 1013 + 8191 k (k = 0..15): their own
+ * processReplacing (github.com/airwindows/airwindows, commit dfa54018) built with a stub host class, 16-sample host
+ * blocks, the same random seeds as the ports (AW_SEED_L/R). Over all 3 s the ports came within 4e-7 of them. */
+enum { AW_TAPE, AW_DENS_HI, AW_DENS_LO, AW_CONSOLE, AW_GALACTIC, AW_NREF };
+static const char *const AW_REF_NAME[AW_NREF] = {
+    "ToTape6 (input +4.8 dB, soften 0.5, head bump 0.5, flutter 0.5)", "Density (density 2, highpass 0.3)",
+    "Density (density -0.5: anti-saturation, highpass 0.3)", "Console7Channel (fader 0.9) into Console7Buss",
+    "Galactic (replace 0.5, brightness 0.5, detune 0.5, bigness 0.6)"};
+static const float AW_REF[AW_NREF][32] = {
+    {-0.7214348f, 0.3151377f, 0.9899911f, -0.7114329f, -0.4282421f, 0.9753665f, 0.6425798f, 0.392024f, -0.9755188f,
+     -0.921349f, 0.6392987f, 0.4843381f, -0.962505f, -0.5622168f, 0.3087145f, -0.5028243f, 0.893977f, 0.3300969f,
+     -0.1095754f, -0.8324704f, 0.9897414f, 0.9886203f, -0.002708709f, 0.001079001f, -0.001835891f, 0.0004388239f,
+     -0.0008163155f, 0.0003136861f, -0.0005194091f, 0.0001023711f, -0.0002532782f, 8.139052e-05f},
+    {0.4235357f, 0.1706023f, 0.9891142f, -0.7781131f, -0.6809713f, -0.9999999f, 0.9625359f, 0.2667976f, -0.2130699f,
+     -0.8903742f, -0.01305277f, 0.9512016f, -0.7726724f, 0.8544357f, 0.03477127f, -0.9924477f, 0.7729135f, 0.9951863f,
+     0.9017604f, 0.5613296f, -0.1650961f, 0.9942436f, -1.141391e-07f, -2.108589e-08f, -2.807644e-08f, 9.157709e-08f,
+     -1.85023e-08f, -9.866302e-09f, -1.301062e-07f, -3.732435e-08f, 3.746378e-08f, 2.275695e-09f},
+    {0.03999482f, 0.01461639f, 0.2424759f, -0.09681559f, -0.07633582f, -0.8415244f, 0.186545f, 0.02358699f,
+     -0.0184959f, -0.1340795f, -0.001074881f, 0.1740118f, -0.09548144f, 0.1194257f, 0.002876766f, -0.2582708f,
+     0.09553996f, 0.2773013f, 0.1396446f, 0.05734255f, -0.01412174f, 0.2697997f, -9.374e-09f, -1.731739e-09f,
+     -2.305858e-09f, 7.521029e-09f, -1.519554e-09f, -8.102981e-10f, -1.068534e-08f, -3.065369e-09f, 3.07682e-09f,
+     1.86898e-10f},
+    {0.002122186f, 0.11887f, 0.7830151f, -0.4026249f, -0.4204597f, -0.7607088f, 0.6066093f, 0.03768636f, -0.3295038f,
+     -0.3769145f, 0.05264127f, 0.5594503f, -0.2517045f, 0.1316138f, -0.1396887f, -0.3475188f, 0.6491855f, 0.5043419f,
+     0.04629119f, -0.05457895f, 0.1862439f, 0.6812176f, 4.707841e-08f, 1.133854e-08f, 3.392779e-08f, 4.306084e-08f,
+     2.911938e-08f, 5.689813e-09f, 2.082336e-08f, 2.51115e-08f, 3.596903e-08f, 4.254523e-08f},
+    {4.113562e-08f, -1.744731e-08f, 0.01359903f, -0.05539098f, 0.01530917f, 0.08866876f, 0.0356232f, -0.1222579f,
+     0.007067522f, -0.005293428f, 0.174432f, 0.04884697f, 0.1376856f, 0.02770042f, -0.1307475f, -0.00269787f,
+     0.2589404f, 0.01138627f, -0.01832201f, 0.06032277f, 0.01205681f, -0.2210383f, 0.08647336f, -0.1281978f,
+     0.08097564f, 0.2768059f, 0.1215532f, 0.02317261f, -0.04966209f, 0.02864691f, 0.1403616f, 0.06961895f},
+};
+
+/* the port of reference k on aw_input(), in 16-sample blocks (as the engine calls the effects) */
+static void aw_port(int k, const float *il, const float *ir, float *ol, float *orr) {
+    static union { aw_totape6_t t; aw_density_t d; aw_console7_t c; aw_galactic_t g; } st;
+    switch (k) {
+    case AW_TAPE: aw_totape6_init(&st.t); break;
+    case AW_CONSOLE: aw_console7_init(&st.c); break;
+    case AW_GALACTIC: aw_galactic_init(&st.g); break;
+    default: aw_density_init(&st.d); break;
+    }
+    for (int at = 0; at + 16 <= AW_NS; at += 16) {
+        const float *a = il + at, *b = ir + at;
+        float *x = ol + at, *y = orr + at;
+        switch (k) {
+        case AW_TAPE: aw_totape6(&st.t, 0.7f, 0.5f, 0.5f, 0.5f, 0.5f, 1.0f, a, b, x, y, 16); break;
+        case AW_DENS_HI: aw_density(&st.d, 0.6f, 0.3f, 1.0f, 1.0f, a, b, x, y, 16); break;
+        case AW_DENS_LO: aw_density(&st.d, 0.1f, 0.3f, 1.0f, 1.0f, a, b, x, y, 16); break;
+        case AW_CONSOLE: aw_console7(&st.c, 0.9f, a, b, x, y, 16); break;
+        default: aw_galactic(&st.g, 0.5f, 0.5f, 0.5f, 0.6f, 1.0f, a, b, x, y, 16); break;
+        }
+    }
+}
+
+/* the strongest partial of `x` from `from` on (N samples), Hz */
+static double peak_from(const float *x, int from) { return peak_hz(x + from); }
+
+static void oss_effects(void) {
+    static float l[SR * 6], r[SR * 6], saw[SR * 6], il[AW_NS], ir[AW_NS], ol[AW_NS], orr[AW_NS];
+    char what[300];
+    for (int i = 0; i < SR * 6; i++) saw[i] = 0.8f * (2.0f * (float)fmod(i * 110.0 / SR, 1.0) - 1.0f);
+    static const int OSS[] = {SFX_RINGS, SFX_CLOUDS, SFX_AWTAPE, SFX_DENSITY, SFX_CONSOLE};
+    enum { NOSS = 5 };
+
+    /* the Airwindows ports against the original plugins */
+    aw_input(il, ir);
+    for (int k = 0; k < AW_NREF; k++) {
+        aw_port(k, il, ir, ol, orr);
+        double worst = 0;
+        for (int j = 0; j < 16; j++) {
+            int i = 1013 + j * 8191;
+            worst = fmax(worst, fmax(fabs(ol[i] - AW_REF[k][2 * j]), fabs(orr[i] - AW_REF[k][2 * j + 1])));
+        }
+        snprintf(what, sizeof what, "Airwindows port %s: within %.2g of the original plugin at 32 points (want < 1e-4)",
+                 AW_REF_NAME[k], worst);
+        check(worst < 1e-4, what);
+    }
+
+    /* the memory they borrow: Rings and Clouds fit the synth effect's delay lines */
+    snprintf(what, sizeof what, "Rings (%.0f KB) and Clouds (%.0f KB) fit the synth effect's delay lines (%.0f KB)",
+             mi_rings_bytes() / 1024.0, mi_clouds_bytes() / 1024.0, MI_MEM_BYTES / 1024.0);
+    check(mi_rings_bytes() <= MI_MEM_BYTES && mi_clouds_bytes() <= MI_MEM_BYTES, what);
+
+    /* every new type: exactly dry at mix 0; finite and bounded at its extremes, a hot input, every model, mode and
+     * quality (Clouds freezing half way); the Space reverb at full decay, size and detune, and frozen */
+    int exact = 1, bad = 0, runs = 0;
+    float worst = 0;
+    for (int t = 0; t < NOSS; t++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = OSS[t]; p.mix = 0;
+        fx_run(&p, saw, l, r, SR / 2);
+        for (int i = 0; i < SR / 2; i++) exact &= l[i] == saw[i] && r[i] == saw[i];
+    }
+    static float hot[SR * 3];
+    for (int i = 0; i < SR * 3; i++) hot[i] = 2.5f * saw[i];
+    for (int t = 0; t < NOSS; t++) {
+        int variants = OSS[t] == SFX_RINGS ? 2 * MI_RINGS_MODELS : OSS[t] == SFX_CLOUDS ? 2 * MI_CLOUDS_MODES * 4 : 2;
+        for (int v = 0; v < variants; v++) {
+            fx_params_t p = fx_none();
+            p.sfx_on = 1; p.sfx_type = OSS[t]; p.mix = 1; p.gain = 2;
+            p.structure = p.position = p.size = p.density = p.texture = p.drive = p.bump = p.lowcut = 1;
+            p.tone = v & 1 ? 0 : 1; p.decay = 1; p.flutter = 1; p.fb = 0.95f; p.room = 1; p.spread = 1;
+            p.model = (v >> 1) % MI_RINGS_MODELS; p.note = v & 1 ? 0 : 120;
+            p.gmode = (v >> 1) % MI_CLOUDS_MODES; p.quality = (v >> 1) / MI_CLOUDS_MODES; p.pitch_st = v & 1 ? -48 : 48;
+            memset(&fxs, 0, sizeof fxs);
+            for (int at = 0; at < SR * 3; at += 128) {
+                p.freeze = OSS[t] == SFX_CLOUDS && at >= SR * 3 / 2;
+                fx_process(&fxs, &p, NULL, hot + at, hot + at, l + at, r + at, SR * 3 - at < 128 ? SR * 3 - at : 128);
+            }
+            for (int i = 0; i < SR * 3; i++) {
+                if (!isfinite(l[i]) || !isfinite(r[i])) bad++;
+                worst = fmaxf(worst, fmaxf(fabsf(l[i]), fabsf(r[i])));
+            }
+            runs++;
+        }
+    }
+    for (int k = 0; k < 2; k++) {
+        fx_params_t p = fx_none();
+        p.send2 = 1; p.rev_type = REV_SPACE; p.rev_decay_k = 1; p.rev_size_k = 1; p.rev_mod = 2; p.rev_tone = 1;
+        memset(&fxs, 0, sizeof fxs);
+        for (int at = 0; at < SR * 3; at += 128) {
+            p.rev_freeze = k && at >= SR;
+            fx_process(&fxs, &p, NULL, hot + at, hot + at, l + at, r + at, SR * 3 - at < 128 ? SR * 3 - at : 128);
+        }
+        for (int i = 0; i < SR * 3; i++) {
+            if (!isfinite(l[i]) || !isfinite(r[i])) bad++;
+            worst = fmaxf(worst, fmaxf(fabsf(l[i] - hot[i]), fabsf(r[i] - hot[i])));
+        }
+        runs++;
+    }
+    check(exact, "Modal Resonator, Granular, Tape Color, Density, Console at mix 0: the output is the input exactly");
+    snprintf(what, sizeof what, "the open-source types at their extremes (%d runs: every Rings model, every Clouds mode and "
+             "quality, a +8 dB input, feedback, density, pitch +-48, freeze; Space at full decay and frozen): finite, "
+             "largest %.1f", runs, worst);
+    check(!bad && worst < 50, what);
+
+    /* Rings rings at its note: an impulse into the modal and string models tuned to A4 (440 Hz), and A3 */
+    for (int k = 0; k < 4; k++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = SFX_RINGS; p.mix = 1; p.model = k & 1 ? MI_RINGS_STRING : MI_RINGS_MODAL;
+        p.note = k & 2 ? 57 : 69; p.structure = 0.25f; p.tone = 0.3f; p.decay = 0.8f; p.position = 0.3f;
+        fx_run(&p, NULL, l, r, SR);
+        double want = k & 2 ? 220 : 440, got = peak_from(l, IMP + 1024);
+        snprintf(what, sizeof what, "Rings %s model at note %d rings at %.1f Hz (want %.0f, %+.1f cents)",
+                 k & 1 ? "string" : "modal", (int)p.note, got, want, cents(got, want));
+        check(fabs(cents(got, want)) < 10, what);
+    }
+
+    /* ...through the engine: KEY FOLLOW tunes it to the played note; off, to middle C plus PITCH */
+    for (int k = 0; k < 2; k++) {
+        void *e = patch(SAW, 0, 1, 100, 5);
+        static float o[SR * 2];
+        set(e, "modfx_on", 1); set(e, "modfx_type", SFX_RINGS); set(e, "modfx_mix", 100); set(e, "modfx_model", 2);
+        set(e, "modfx_decay", 85); set(e, "modfx_tone", 40); set(e, "modfx_struct", 25); set(e, "volume", 60);
+        if (k) { set(e, "modfx_follow", 0); set(e, "modfx_pitch", 7); }
+        note(e, 1, k ? 48 : 57, 100);
+        render_f(e, o, SR / 4);
+        note(e, 0, k ? 48 : 57, 0);
+        render_f(e, o, SR);
+        double want = k ? 392.0 : 220.0, got = peak_from(o, 2048);
+        snprintf(what, sizeof what, "Modal Resonator through the engine, key follow %s: the tail rings at %.1f Hz (want %.0f)",
+                 k ? "off, pitch +7 (G4) with C3 played" : "on, A3 played", got, want);
+        check(fabs(cents(got, want)) < 15, what);
+        E->destroy(e);
+    }
+
+    /* Clouds: FREEZE holds the texture after the input stops; without it the texture dies away */
+    double held[2][2];
+    for (int k = 0; k < 2; k++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = SFX_CLOUDS; p.mix = 1; p.density = 0.8f; p.size = 0.5f; p.position = 0.3f;
+        memset(&fxs, 0, sizeof fxs);
+        static float in[SR * 5];
+        for (int i = 0; i < SR * 5; i++) in[i] = i < SR ? saw[i] : 0.0f;
+        for (int at = 0; at < SR * 5; at += 128) {
+            p.freeze = k && at >= SR - 4096;
+            fx_process(&fxs, &p, NULL, in + at, in + at, l + at, r + at, SR * 5 - at < 128 ? SR * 5 - at : 128);
+        }
+        held[k][0] = energy_db(l, r, SR * 2, SR * 2 + SR / 2) - 10 * log10(SR / 2.0);
+        held[k][1] = energy_db(l, r, SR * 4, SR * 4 + SR / 2) - 10 * log10(SR / 2.0);
+    }
+    snprintf(what, sizeof what, "Granular freeze: %.1f dB at 2 s and %.1f dB at 4 s after the input stops at 1 s (holds); "
+             "not frozen: %.0f dB at 4 s (dies away)", held[1][0], held[1][1], held[0][1]);
+    check(held[1][0] > -40 && fabs(held[1][1] - held[1][0]) < 6 && held[0][1] < -80, what);
+
+    /* the type's own CTRL 1/2 targets and the DRIVE readout in each Airwindows type's terms */
+    void *e = patch(SAW, 0, 1, 100, 10);
+    char a[48], b[48], c[48], d[48];
+    set(e, "modfx_type", SFX_CLOUDS);
+    E->get_param(e, "modfx_ctrl1_display", a, sizeof a);
+    E->get_param(e, "modfx_ctrl2_display", b, sizeof b);
+    set(e, "modfx_type", SFX_AWTAPE); set(e, "modfx_drive", 75);
+    E->get_param(e, "modfx_drive_display", c, sizeof c);
+    set(e, "modfx_type", SFX_DENSITY);
+    E->get_param(e, "modfx_drive_display", d, sizeof d);
+    snprintf(what, sizeof what, "Granular CTRL 1 / 2 read \"%s\" / \"%s\"; DRIVE 75%% reads \"%s\" on Tape Color, \"%s\" "
+             "on Density", a, b, c, d);
+    check(!strcmp(a, "Position +0%") && !strcmp(b, "Density +0%") && !strcmp(c, "+6.0 dB") && !strcmp(d, "2.75"), what);
+    E->destroy(e);
+
+    /* the new matrix destinations: named in every destination list, and they move the effect (Constant -> Synth FX
+     * Drive +100% on Density at drive 0 against none) */
+    static const char *const DST[] = {"Synth FX Pitch", "Synth FX Structure", "Synth FX Position", "Synth FX Size",
+                                      "Synth FX Density", "Synth FX Texture", "Synth FX Drive", "Synth FX Head Bump",
+                                      "Synth FX Low Cut"};
+    int named = 0;
+    for (int i = 0; i < NPARAMS; i++)
+        if (!strcmp(PARAMS[i].key, "mod1_dst") || !strcmp(PARAMS[i].key, "ribbon_dst"))
+            for (int k = 0; k < 9; k++)
+                named += MD_FX_FIRST + MDF_PITCH + k < PARAMS[i].nopts
+                         && !strcmp(PARAMS[i].opts[MD_FX_FIRST + MDF_PITCH + k], DST[k]);
+    static float o1[SR], o2[SR];
+    for (int k = 0; k < 2; k++) {
+        void *v = patch(SAW, 0, 1, 100, 10);
+        set(v, "modfx_on", 1); set(v, "modfx_type", SFX_DENSITY); set(v, "modfx_mix", 100); set(v, "modfx_drive", 0);
+        if (k) slot_set(v, 2, MS_CONST, MD_FX_FIRST + MDF_DRIVE, 100);
+        note(v, 1, 57, 100);
+        render_f(v, k ? o2 : o1, SR / 4);
+        E->destroy(v);
+    }
+    double dd = 0, ss = 0;
+    for (int i = SR / 8; i < SR / 4; i++) { dd += (o1[i] - o2[i]) * (o1[i] - o2[i]); ss += o1[i] * o1[i]; }
+    snprintf(what, sizeof what, "the 9 new effect destinations are named in Mod 1 and Ribbon Dest (%d of 18); Constant -> "
+             "Synth FX Drive +100%% changes Density's output by %.1f dB", named, 10 * log10(dd / (ss + 1e-30) + 1e-30));
+    check(named == 18 && dd > ss * 0.01, what);
+}
+
+/* each open-source effect alone: microseconds per 128-frame block, on average and the 99th percentile (the slowest
+ * blocks but one in a hundred: Clouds' spectral mode works in bursts, an FFT every 1024 samples; the single slowest
+ * block mostly measures this PC being busy) */
+static void oss_time(const fx_params_t *p, double *mean, double *worst) {
+    enum { BLOCKS = 4000 };
+    static float x[128 * 64], l[128], r[128];
+    for (int i = 0; i < 128 * 64; i++) x[i] = 0.5f * (2.0f * (float)fmod(i * 110.0 / SR, 1.0) - 1.0f);
+    memset(&fxs, 0, sizeof fxs);
+    fx_process(&fxs, p, NULL, x, x, l, r, 128);   /* (the first block builds the effect) */
+    static double us_of[BLOCKS];
+    double sum = 0;
+    for (int b = 0; b < BLOCKS; b++) {
+        struct timespec t0, t1;
+        const float *in = x + 128 * (b & 63);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        fx_process(&fxs, p, NULL, in, in, l, r, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3;
+        sum += us;
+        us_of[b] = us;
+    }
+    qsort(us_of, BLOCKS, sizeof us_of[0], cmp_d);
+    *mean = sum / BLOCKS;
+    *worst = us_of[BLOCKS * 99 / 100];
+}
+
+static void oss_bench(void) {
+    static const char *const MODEL[MI_RINGS_MODELS] = {"modal", "sympathetic", "string", "fm", "chords", "string+verb"};
+    static const char *const MODE[MI_CLOUDS_MODES] = {"granular", "stretch", "looping", "spectral"};
+    double m, w;
+    for (int k = 0; k < MI_RINGS_MODELS; k++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = SFX_RINGS; p.mix = 0.5f; p.model = k; p.tone = 0.6f;
+        oss_time(&p, &m, &w);
+        printf("bench: Modal Resonator %-12s %6.2f us per 128-frame block (99%%: %.1f)\n", MODEL[k], m, w);
+    }
+    for (int q = 0; q < 4; q += 2)
+        for (int k = 0; k < MI_CLOUDS_MODES; k++) {
+            fx_params_t p = fx_none();
+            p.sfx_on = 1; p.sfx_type = SFX_CLOUDS; p.mix = 0.5f; p.gmode = k; p.quality = q; p.room = 0.3f;
+            oss_time(&p, &m, &w);
+            printf("bench: Granular %-9s %s %6.2f us per 128-frame block (99%%: %.1f)\n", MODE[k],
+                   q ? "8-bit " : "16-bit", m, w);
+        }
+    static const int AW[3] = {SFX_AWTAPE, SFX_DENSITY, SFX_CONSOLE};
+    for (int k = 0; k < 3; k++) {
+        fx_params_t p = fx_none();
+        p.sfx_on = 1; p.sfx_type = AW[k]; p.mix = 0.5f; p.drive = 0.6f; p.flutter = 0.3f;
+        oss_time(&p, &m, &w);
+        printf("bench: %-24s %6.2f us per 128-frame block (99%%: %.1f)\n", SFX_NAMES[AW[k]], m, w);
+    }
+    fx_params_t p = fx_none();
+    p.send2 = 0.3f; p.rev_type = REV_SPACE;
+    oss_time(&p, &m, &w);
+    printf("bench: master reverb space    %6.2f us per 128-frame block (99%%: %.1f)\n", m, w);
+}
+
+/* a phrase per new effect into <dir>/oss_fx_<name>.wav: a chord, a run and the tail, as fx_wavs, with settings that
+ * show each one off */
+static void oss_wavs(const char *demo_path) {
+    enum { CHORD = 344, NOTE = 86, TAIL = 688 };   /* 1 s, 0.25 s, 2 s in 128-frame blocks */
+    static int16_t pcm[(CHORD + 4 * NOTE + TAIL) * 256];
+    static const int run[4] = {64, 67, 72, 74};
+    static const char *const NAME[] = {"modal_resonator", "resonator_sympathetic", "resonator_string_verb", "granular",
+                                       "granular_spectral", "tape_color", "density", "console", "space_reverb"};
+    char dir[256], path[320];
+    snprintf(dir, sizeof dir, "%s", demo_path);
+    char *slash = strrchr(dir, '/');
+    if (slash) slash[1] = 0; else dir[0] = 0;
+    for (int k = 0; k < 9; k++) {
+        int pluck = k <= 2;   /* the resonators are rung by short notes */
+        void *e = patch(SAW, 2, pluck ? 150 : 400, pluck ? 0 : 70, pluck ? 100 : 300);
+        set(e, "o2_level", 70); set(e, "o2_freq", 0.08); set(e, "flt_cut", 70); set(e, "volume", 70);
+        if (k < 8) set(e, "modfx_on", 1);
+        if (k <= 2) {
+            set(e, "modfx_type", SFX_RINGS); set(e, "modfx_mix", 75); set(e, "modfx_decay", 58); set(e, "modfx_tone", 55);
+            set(e, "modfx_model", k == 0 ? MI_RINGS_MODAL : k == 1 ? MI_RINGS_SYMPATHETIC : MI_RINGS_STRING_VERB);
+        } else if (k <= 4) {
+            set(e, "modfx_type", SFX_CLOUDS); set(e, "modfx_mix", 70); set(e, "modfx_density", 80);
+            set(e, "modfx_texture", 65); set(e, "modfx_room", 40); set(e, "modfx_spread", 80); set(e, "modfx_fb", 25);
+            if (k == 4) set(e, "modfx_gmode", MI_CLOUDS_SPECTRAL); else set(e, "modfx_pitch", 12);
+        } else if (k == 5) {
+            set(e, "modfx_type", SFX_AWTAPE); set(e, "modfx_mix", 100); set(e, "modfx_drive", 75); set(e, "modfx_bump", 60);
+            set(e, "modfx_flutter", 30); set(e, "modfx_tone", 70);
+        } else if (k == 6) {
+            set(e, "modfx_type", SFX_DENSITY); set(e, "modfx_mix", 100); set(e, "modfx_drive", 55); set(e, "modfx_gain", 40);
+        } else if (k == 7) {
+            set(e, "modfx_type", SFX_CONSOLE); set(e, "modfx_mix", 100); set(e, "modfx_drive", 95);
+        } else {
+            set(e, "mfx_send2", 45); set(e, "rev_type", REV_SPACE); set(e, "rev_decay", 70); set(e, "rev_size", 70);
+            set(e, "rev_tone", 55);
+        }
+        int16_t *o = pcm;
+        note(e, 1, 48, 100); note(e, 1, 55, 100); note(e, 1, 60, 100);
+        for (int b = 0; b < CHORD; b++, o += 256) E->render(e, o, 128);
+        note(e, 0, 48, 0); note(e, 0, 55, 0); note(e, 0, 60, 0);
+        for (int n = 0; n < 4; n++) o = play(e, o, run[n], NOTE);
+        o = rest(e, o, TAIL);
+        E->destroy(e);
+        snprintf(path, sizeof path, "%soss_fx_%s.wav", dir, NAME[k]);
+        write_wav(path, pcm, (uint32_t)((o - pcm) / 2));
+    }
+    printf("wrote 9 open-source effect WAVs to %s (oss_fx_*.wav)\n", dir[0] ? dir : "./");
+}
+
 int main(int argc, char **argv) {
     E = mpc_engine();
     if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); return 0; }
@@ -3894,6 +4253,7 @@ int main(int argc, char **argv) {
     voices();
     effects();
     effects_tier3();
+    oss_effects();
     envelope();
     keys();
     envelope_extras();
@@ -3905,6 +4265,7 @@ int main(int argc, char **argv) {
     randomiser();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
+    oss_wavs(argc > 1 ? argv[1] : "demo.wav");
     analog_wavs(argc > 1 ? argv[1] : "demo.wav");
     random_demo_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);

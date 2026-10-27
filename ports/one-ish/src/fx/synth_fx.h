@@ -2,16 +2,28 @@
  * signal). Original designs from textbook parts: modulated delay lines read with 4-point Hermite interpolation,
  * first-order all-pass phasers, a one-pole/saturator BBD and tape model, a diffusing spring-style echo tank, a sample
  * and hold bit crusher and a bank of three state-variable filters (Zavalishin's trapezoidal "TPT" form).
- * Each channel runs its own line, so a mono input (both channels equal) and a panned stereo input both work. */
+ * Each channel runs its own line, so a mono input (both channels equal) and a panned stereo input both work.
+ * The open-source types: Mutable Instruments Rings and Clouds (mi_effects.h, C++ behind a C interface) and the
+ * Airwindows ToTape6, Density and Console7 (airwindows.h). Only one type runs at a time, so they are built over the
+ * delay lines' memory: no memory of their own. */
 #pragma once
 #include "common.h"
+#include "mi_effects.h"
+#include "airwindows.h"
 
 #define SFX_SIZE 131072   /* 2.97 s per channel: delay-type times up to 2 s, plus modulation */
 #define SFX_MASK (SFX_SIZE - 1)
+_Static_assert(MI_MEM_BYTES == 2 * SFX_SIZE * sizeof(float), "Rings and Clouds live in the delay lines' memory");
 #define SFX_MAX_STAGES 12
 
 typedef struct {
-    float l[SFX_SIZE], r[SFX_SIZE];   /* the delay lines (every delay, chorus and flanger type uses them) */
+    union {   /* one type at a time: the delay lines, or an open-source type's state in their place */
+        struct { float l[SFX_SIZE], r[SFX_SIZE]; };   /* the delay lines (every delay, chorus and flanger type uses them) */
+        _Alignas(8) unsigned char mi[MI_MEM_BYTES];   /* Rings or Clouds (mi_effects.h) */
+        aw_totape6_t tape;
+        aw_density_t dens;
+        aw_console7_t cons;
+    };
     int w;
     float ph, ph_r, vph, wph;         /* LFO phases: left, right, vibrato/flutter, tape wow */
     float fbl, fbr;                   /* the last wet samples, fed back */
@@ -248,6 +260,32 @@ static void sfx_reson(sfx_t *f, const fx_params_t *p, const float *inL, const fl
     }
 }
 
+/* ---- the open-source types ---- */
+static void sfx_oss(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
+    switch (p->sfx_type) {
+    case SFX_RINGS: {   /* brightness on TONE, damping on DECAY */
+        mi_rings_in_t q = {p->model, p->note, p->strum, p->structure, p->tone, p->decay, p->position};
+        mi_rings_process(f->mi, &q, inL, inR, wl, wr, n);
+        break;
+    }
+    case SFX_CLOUDS: {   /* spread on SPREAD, feedback on FEEDBACK (its positive half), reverb on ROOM */
+        mi_clouds_in_t q = {p->gmode, p->quality, p->freeze, p->position, p->size, p->density, p->texture, p->pitch_st,
+                            p->spread, fx_clamp(p->fb * (1.0f / 0.95f), 0.0f, 1.0f), p->room};
+        mi_clouds_process(f->mi, &q, inL, inR, wl, wr, n);
+        break;
+    }
+    case SFX_AWTAPE:   /* input on DRIVE, soften against TONE, head bump, flutter; output and dry/wet are GAIN and MIX */
+        aw_totape6(&f->tape, p->drive, 1.0f - p->tone, p->bump, p->flutter, 0.5f, 1.0f, inL, inR, wl, wr, n);
+        break;
+    case SFX_DENSITY:   /* density on DRIVE, highpass on LOW CUT */
+        aw_density(&f->dens, p->drive, p->lowcut, 1.0f, 1.0f, inL, inR, wl, wr, n);
+        break;
+    default:   /* SFX_CONSOLE: the channel fader on DRIVE */
+        aw_console7(&f->cons, p->drive, inL, inR, wl, wr, n);
+        break;
+    }
+}
+
 /* the synth effect's wet signal for n samples */
 static void sfx_process(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
     switch (p->sfx_type) {
@@ -255,6 +293,9 @@ static void sfx_process(sfx_t *f, const fx_params_t *p, const float *inL, const 
     case SFX_PHASER6: case SFX_PHASER12: case SFX_TPHASER: sfx_phaser(f, p, inL, inR, wl, wr, n); break;
     case SFX_CRUSH: sfx_crush(f, p, inL, inR, wl, wr, n); break;
     case SFX_RESON: sfx_reson(f, p, inL, inR, wl, wr, n); break;
+    case SFX_RINGS: case SFX_CLOUDS: case SFX_AWTAPE: case SFX_DENSITY: case SFX_CONSOLE:
+        sfx_oss(f, p, inL, inR, wl, wr, n);
+        break;
     default: sfx_mod_lines(f, p, inL, inR, wl, wr, n); break;
     }
 }
@@ -267,4 +308,12 @@ static void sfx_reset(sfx_t *f, const fx_params_t *p) {
                                                                    : p->time_ms * 0.001f * FX_SR;
     f->dr = (p->sfx_type == SFX_SFLANGER || p->sfx_type == SFX_SCHORUS ? p->time_r_ms : p->time_ms) * 0.001f * FX_SR;
     f->al = f->ar = sfx_ap_coef(p, 0.0f);
+    switch (p->sfx_type) {   /* the open-source types, built over the delay lines (zeroed above) */
+    case SFX_RINGS: mi_rings_init(f->mi); break;
+    case SFX_CLOUDS: mi_clouds_init(f->mi); break;
+    case SFX_AWTAPE: aw_totape6_init(&f->tape); break;
+    case SFX_DENSITY: aw_density_init(&f->dens); break;
+    case SFX_CONSOLE: aw_console7_init(&f->cons); break;
+    default: break;
+    }
 }

@@ -11,7 +11,7 @@ build() {   # build <objdir> <out> <flags...>: offline_check.c plus the engine s
   local dir=$1 out=$2; shift 2
   local objs=()
   for f in "$P/test/offline_check.c" $SOURCES; do
-    local o="$dir/$(basename "${f%.*}").o"
+    local o="$dir/$(printf %s "${f%.*}" | tr / _).o"   # the path in the name: two resources.cc must not collide
     case "$f" in
       *.cc|*.cpp|*.cxx) g++ -std=gnu++11 -fno-exceptions -fno-rtti "$@" "${INC[@]}" $CFLAGS -c "$f" -o "$o" ;;
       *) gcc -std=gnu11 -Wall -Wextra "$@" "${INC[@]}" $CFLAGS -c "$f" -o "$o" ;;

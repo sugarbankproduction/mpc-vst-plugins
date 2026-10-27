@@ -400,3 +400,17 @@ ribbon_dst
 ribbon_amt
 ribbon_mode
 ribbon_origin
+modfx_pitch
+modfx_follow
+modfx_struct
+modfx_pos
+modfx_model
+modfx_size
+modfx_density
+modfx_texture
+modfx_freeze
+modfx_gmode
+modfx_quality
+modfx_drive
+modfx_bump
+modfx_lowcut
