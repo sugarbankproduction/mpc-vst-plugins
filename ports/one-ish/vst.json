@@ -21,5 +21,6 @@
   ],
   "defines": {
     "HAS_LFO_BPM": 1
-  }
+  },
+  "presets": "presets.json"
 }

@@ -1,6 +1,7 @@
-/* Load the desktop ONE-ish.dll the way a DAW does (LoadLibrary + VSTPluginMain), play a note and save/restore its
- * state. Proves the DLL's export, MIDI path and audio path on Windows itself:
- *   load_test.exe path\to\ONE-ish.dll */
+/* Load the desktop ONE-ish.dll the way a DAW does (LoadLibrary + VSTPluginMain), play a note, save/restore its
+ * state, then play every preset in its program list. Proves the DLL's export, MIDI path, audio path and presets on
+ * Windows itself; with a second path, writes all the presets to one WAV to listen to:
+ *   load_test.exe path\to\ONE-ish.dll [presets.wav] */
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -60,6 +61,62 @@ static double play(AEffect *fx, int blocks, int frames) {   /* rms of `blocks` h
     return sqrt(e / (blocks * frames));
 }
 
+enum { SR = 44100, BLOCK = 512, PHRASE_BLOCKS = 8 * SR / BLOCK / 2, MAX_PRESETS = 64 };   /* 4 s per preset */
+
+/* every preset through the DLL's program list: a short line then a chord. Each must sound and stay off the limiter's
+ * ceiling. With a path, all of them go into one WAV to listen to, in program order. */
+static void audition(AEffect *fx, const char *wav) {
+    static int16_t pcm[MAX_PRESETS * PHRASE_BLOCKS * BLOCK * 2];
+    static const unsigned char line[] = {48, 55, 60, 67}, chord[] = {48, 60, 64, 67};
+    float l[BLOCK], r[BLOCK], *out[2] = {l, r};
+    int np = fx->numPrograms < MAX_PRESETS ? fx->numPrograms : MAX_PRESETS, frames = 0;
+    char what[160];
+    snprintf(what, sizeof what, "%d presets in the program list", fx->numPrograms);
+    check(fx->numPrograms > 1, what);
+    for (int p = 0; p < np; p++) {
+        char name[64] = "";
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, p, NULL, 0);
+        fx->dispatcher(fx, 5 /* effGetProgramName */, 0, 0, name, 0);
+        double e = 0, peak = 0;
+        for (int b = 0; b < PHRASE_BLOCKS; b++) {
+            int t = b * BLOCK * 10 / SR;   /* tenths of a second: notes at 0, 0.4, 0.8, 1.2 s, chord 1.8-3 s */
+            if (b * BLOCK % (SR * 4 / 10) < BLOCK && t < 16) {
+                int k = t / 4;
+                if (k > 0) send_midi(fx, 0x80, line[k - 1], 0);
+                if (k < 4) send_midi(fx, 0x90, line[k], 100);
+            }
+            if (t == 18 && (b - 1) * BLOCK * 10 / SR < 18)
+                for (int k = 0; k < 4; k++) send_midi(fx, 0x90, chord[k], 100);
+            if (t == 30 && (b - 1) * BLOCK * 10 / SR < 30)
+                for (int k = 0; k < 4; k++) send_midi(fx, 0x80, chord[k], 0);
+            fx->processReplacing(fx, NULL, out, BLOCK);
+            for (int i = 0; i < BLOCK; i++) {
+                e += l[i] * l[i];
+                if (fabsf(l[i]) > peak) peak = fabsf(l[i]);
+                pcm[2 * frames] = (int16_t)(l[i] * 32767.0f);
+                pcm[2 * frames + 1] = (int16_t)(r[i] * 32767.0f);
+                frames++;
+            }
+        }
+        send_midi(fx, 0xb0, 123, 0);   /* all notes off between presets */
+        double rms = sqrt(e / (PHRASE_BLOCKS * BLOCK));
+        snprintf(what, sizeof what, "preset %2d \"%s\": rms %.3f, peak %.2f", p, name, rms, peak);
+        check(rms > 0.005 && peak < 0.999, what);
+    }
+    if (!wav) return;
+    FILE *f = fopen(wav, "wb");
+    if (!f) { printf("FAIL cannot write %s\n", wav); failures++; return; }
+    uint32_t bytes = (uint32_t)frames * 4, v32;
+    uint16_t v16;
+    fwrite("RIFF", 1, 4, f); v32 = 36 + bytes; fwrite(&v32, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f);
+    v32 = 16; fwrite(&v32, 4, 1, f); v16 = 1; fwrite(&v16, 2, 1, f); v16 = 2; fwrite(&v16, 2, 1, f);
+    v32 = SR; fwrite(&v32, 4, 1, f); v32 = SR * 4; fwrite(&v32, 4, 1, f); v16 = 4; fwrite(&v16, 2, 1, f);
+    v16 = 16; fwrite(&v16, 2, 1, f); fwrite("data", 1, 4, f); fwrite(&bytes, 4, 1, f);
+    fwrite(pcm, 4, frames, f);
+    fclose(f);
+    printf("     wrote %s (%d presets, %.0f s)\n", wav, np, frames / (double)SR);
+}
+
 int main(int argc, char **argv) {
     HMODULE dll = LoadLibraryA(argc > 1 ? argv[1] : "ONE-ish.dll");
     if (!dll) { printf("FAIL LoadLibrary (error %lu)\n", GetLastError()); return 1; }
@@ -95,6 +152,8 @@ int main(int argc, char **argv) {
     fx->setParameter(fx, 1, before > 0.5f ? 0.1f : 0.9f);
     if (n > 0) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, chunk, 0);
     check(fabsf(fx->getParameter(fx, 1) - before) < 1e-3f, "restores them");
+
+    audition(fx, argc > 2 ? argv[2] : NULL);
 
     fx->dispatcher(fx, 12, 0, 0, NULL, 0);
     fx->dispatcher(fx, 1 /* effClose */, 0, 0, NULL, 0);
