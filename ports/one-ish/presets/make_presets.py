@@ -234,6 +234,21 @@ PATCHES = [
                           "voices": "8", "spread": 70,
                           "an_cut": 60, "an_env": 70, "an_lvl": 60, "an_tune": 50, "an_res": 50, "an_ladder": 80,
                           "drift": 60, **chorus(0.3, 9, 30, 30), **reverb(30, 3.2)}),
+    # the ARP section: hold a chord; it climbs three octaves and back (pendulum), in 1/16s with a little swing, synced
+    ("Arp Cascade", {**amp(1, 260, 25, 140), **fenv(1, 220, 0, 120),
+                     "o2_level": 60, "o2_freq": 0.07, "flt_cut": hz(900), "flt_res": 40, "lad_env": 45, "voices": "8",
+                     "arp_on": "On", "arp_pattern": "Up", "arp_oct": "3", "arp_dir": "Up/Down", "arp_pendulum": "On",
+                     "arp_div": "1/16", "arp_gate": 45, "arp_swing": 56,
+                     **delay("1/8.", 35, 20, synced=True), **reverb(20, 2.2)}),
+    # the GENERATIVE section: play one key (latched); a Euclidean rhythm (7 of 16) plays a slowly changing Turing machine
+    # melody in minor pentatonic over two octaves from it, some steps skipped, velocities varied
+    ("Euclid Turing Bells", {**amp(1, 1400, 0, 900), **fenv(1, 600, 10, 500),
+                             "o1_wave": "Tri", "o1_angle": 50, "o2_level": 45, "o2_oct": "4'", "o2_wave": "Tri",
+                             "o2_angle": 50, "flt_cut": hz(3500), "lad_env": 20, "voices": "8",
+                             "gen_euclid_on": "On", "gen_steps": 16, "gen_hits": 7, "gen_rot": 2, "gen_prob": 90,
+                             "gen_vel_rand": 30, "gen_tm_on": "On", "gen_tm_len": 8, "gen_tm_change": 12,
+                             "gen_scale": "Pent Minor", "gen_range": "2", "arp_gate": 70, "arp_latch": "On",
+                             **delay("1/8.", 45, 30, synced=True), **reverb(30, 3.0)}),
 ]
 
 
