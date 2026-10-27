@@ -127,6 +127,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   6. Later (owner, 2026-10-27): the open-source Plaits macro-oscillator models (Mutable Instruments, MIT licence:
      keep its copyright notice) as an extra oscillator mode. To check first: C++ in the MPC build, its 48 kHz
      tuning at 44.1 kHz, and the CPU per voice of each model on the device.
+  7. Later (owner, 2026-10-27): a patch randomiser for inspiration: a "random" button that makes playable sounds
+     (ranges kept musical: audible levels, open-enough cutoffs, sensible envelopes), a "mutate" amount for small
+     variations of the current sound, per-section locks (e.g. keep the envelopes), undo, and later per timbral part.
+  8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
+     though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
+     Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
 - **Then, the MPC port (in order):**
   1. MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, from a copy outside Dropbox (CLAUDE.md).
