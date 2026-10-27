@@ -171,6 +171,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      "Modal Bells", "Grain Cloud", "Tape Bass". No added memory (they use the slot's own buffers). PC cost per block:
      Rings up to 42 us (modal), Clouds 12-73 us by mode (spectral in bursts). Left: their CPU on the device, a place
      for the 14 params on the desktop window and the MPC page; Beads, Elements, Warps, Marbles.
+  10. After the Windows version is finished (owner, 2026-10-27): a web version to share with friends: the engine
+     compiled to WebAssembly in an AudioWorklet, a browser panel generated from the same layout data, Web MIDI, patches
+     in the browser (download/share as files), static hosting on Vercel. Build and test locally first; deploying
+     publishes it, so only on the owner's go-ahead.
+  Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
+  remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
 - **Then, the MPC port (in order):**
   1. MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, from a copy outside Dropbox (CLAUDE.md).
