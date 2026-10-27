@@ -30,7 +30,10 @@ voice; medium = ~10-40%; high = over ~40%, or the feature adds whole voices. Eff
 once, not per voice, so they read "none/voice" plus their shared cost.
 
 **Not in the Moog One but in ONE-ish (kept for reference):** ladder Drive (`flt_drive`), Ladder Drive and Amp Level as
-matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
+matrix destinations, the effects' CTRL 1/2 as offsets on their targets; Analog Drift, Spread and every continuous
+effect control as matrix destinations (the effects from global sources, an effect pass per control step), Sostenuto
+as a source, and a ribbon (CC 16 position, CC 17 touch; spring or hold, centre or left origin) as a source with its
+own quick assignment (2026-10-27, offline).
 
 ---
 
@@ -126,10 +129,10 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 | Noise EG: ATTACK | 1 ms to 10 s (p29) | Have | `noise_a` 1 ms-10 s (linear), shaping the noise when `noise_env` is On (default Off) (2026-10-27, offline) | - | low |
 | Noise EG: RELEASE | 1 ms to 10 s (p29) | Have | `noise_r` 1 ms-10 s | - | low |
 | Noise EG: SUSTAIN button (off: release acts as decay after the attack) | on/off (p29) | Have | `noise_sus` | - | none |
-| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Partial | Its level is kept per voice (`noise_env`, 0..1) for the matrix; not wired yet | S | low |
+| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Partial | Source "Noise EG" (per voice, 0..1; 2026-10-27, offline); its stages are not destinations yet | S | low |
 | Colours: white, red (-6 dB/oct), purple (+6 dB/oct) | p30 | Have | Red: white through a 40 Hz one-pole low-pass; purple: its first difference; same RMS as white. Measured -6.1 / +5.8 dB/oct over 250 Hz-4 kHz (2026-10-27, offline) | - | low |
 | COLOR pair select | Red+White, Red+Purple, White+Purple (p30) | Have | `noise_color_pair` | - | none |
-| COLOR MIX between the two selected colours (also a matrix destination) | knob (p30, p76) | Partial | `noise_color_mix` 0-100%, equal-power crossfade (default Red+White at 100% = white, as before); not a matrix destination yet | S | low |
+| COLOR MIX between the two selected colours (also a matrix destination) | knob (p30, p76) | Have | `noise_color_mix` 0-100%, equal-power crossfade (default Red+White at 100% = white, as before); matrix destination "Noise Color Mix" (2026-10-27, offline) | - | low |
 | Pink noise by mixing red and white | p30 | Have | Red+White near 50% (about -2.5 dB/oct) | - | - |
 
 ## 6. Mixer (p31-32)
@@ -236,7 +239,7 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 | PAN of the active Synth | Left to Right (p51) | Have | `pan` -100..100%, equal power (centre exactly as the old mono sum, hard left +3 dB on the left); the mod effect's wet sits at the pan (2026-10-27, offline) | - | none |
 | VCA MORE: level and pan of all three Synths on one page [MULTI][UI] | 0-100%, 100% L to 100% R (p52) | Missing | - | S (with parts) | none |
 | SPREAD: per-voice stereo placement around the pan | 0% to 100% (p52) | Have | `spread`: each new note takes the next place in an alternating pattern (+-1, +-0.5, +-0.75, +-0.25) around the pan; a unison stack fans out by its place in the stack; mono stays on the pan. Stereo voice bus: voices off the centre add their difference to a side bus, centred voices cost nothing extra (2026-10-27, offline) | - | low |
-| Per-voice pan as a matrix destination | p76, p96 | Partial | The voice bus is stereo and `pan_targets()` takes a per-voice offset; not wired to the matrix yet | S | low |
+| Per-voice pan as a matrix destination | p76, p96 | Have | "Pan" (+-100% = the centre to a side) and "Spread" (+-the knob), per voice (2026-10-27, offline) | - | low |
 
 ## 11. Output (p53-56)
 
@@ -318,7 +321,7 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 | FILTER EG | Have | "Filter Env" | - | - |
 | AMPLIFIER EG | Have | "Amp Env" | - | - |
 | MODULATION EG | Have | "Mod Env" | - | - |
-| NOISE EG | Missing | - | S (with noise EG) | low |
+| NOISE EG | Have | "Noise EG" (0..1, per voice; 2026-10-27, offline) | - | - |
 | MOD WHEEL | Have | "Mod Wheel" (CC 1) | - | - |
 | PITCH WHEEL | Have | "Pitch Wheel" (-1..1) | - | - |
 | PAD X [HW] | Missing | Could map to a MIDI CC | S | none |
@@ -342,7 +345,7 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 
 | Moog One controller list | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|
-| Same 26 entries as the sources (NONE, MOD WHEEL, PITCH WHEEL, PAD X/Y/PRESSURE/GATE, VELOCITY, AFTERTOUCH, KEY PITCH, KB GATE, SUSTAIN, EXP 1/2, CV IN 1/2, the four EGs, LFO 1-4, RANDOM, RANDOM BIPOLAR, CONSTANT) | Partial | `modN_via` offers the same list as the sources (19 + None); missing: pad X/Y/pressure/gate, CV, noise EG (2026-10-27, offline) | S | none |
+| Same 26 entries as the sources (NONE, MOD WHEEL, PITCH WHEEL, PAD X/Y/PRESSURE/GATE, VELOCITY, AFTERTOUCH, KEY PITCH, KB GATE, SUSTAIN, EXP 1/2, CV IN 1/2, the four EGs, LFO 1-4, RANDOM, RANDOM BIPOLAR, CONSTANT) | Partial | `modN_via` offers the same list as the sources (22 + None, with Noise EG, Sostenuto and Ribbon); missing: pad X/Y/pressure/gate, CV (2026-10-27, offline) | S | none |
 
 ### 15d. Matrix transforms (p71, p75)
 
@@ -371,14 +374,14 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 | Oscillator 1-3: PULSE (width) | Have | "Osc n PW" | - | - |
 | Oscillator 1-3: MIX | Have | "Osc n Wave Mix" | - | - |
 | Oscillator 1-3: OCTAVE (step-mod list, p91) | Missing | - | S | none |
-| Noise: COLOR MIX | Missing | Needs colours | S | none |
+| Noise: COLOR MIX | Have | "Noise Color Mix" (+-100% = the whole knob) | - | - |
 | Noise: ATTACK, SUSTAIN, RELEASE (noise EG) | Missing | Needs noise EG | S | none |
 | Mixer: OSC 1, 2, 3 LEVEL | Have | "Osc n Level" | - | - |
 | Mixer: RMOD LEVEL | Missing | Needs ring mod | S | none |
 | Mixer: NOISE LEVEL | Have | "Noise Level" | - | - |
 | Mixer: EXT LEVEL [HW] | Missing | No audio input | - | none |
 | VCA: LEVEL | Have | "Amp Level" (x0..x2) | - | - |
-| VCA: PAN | Missing | Needs stereo voices | M | low |
+| VCA: PAN | Have | "Pan" (+-100% = the centre to a side) | - | - |
 | Filters: SVF/LADDER MIX | Have | "Filter Mix" | - | - |
 | SVF: CUTOFF | Have | "SVF Cutoff" (+-5 oct) | - | - |
 | SVF: RESONANCE | Have | "SVF Res" | - | - |
@@ -773,17 +776,17 @@ which are not build candidates for an MPC plugin.
 | 2. Rear panel | 0 | 3 | 3 | 3 |
 | 3. Oscillators | 12 | 2 | 6 | 1 |
 | 4. Oscillator common (pitch mod, ring mod, wave mod, FM) | 6 | 0 | 2 | 0 |
-| 5. Noise | 1 | 1 | 7 | 0 |
+| 5. Noise | 2 | 0 | 7 | 0 |
 | 6. Mixer | 4 | 1 | 4 | 4 |
 | 7. Filters | 22 | 1 | 1 | 1 |
 | 8. Envelopes | 15 | 3 | 3 | 2 |
 | 9. LFOs | 2 | 9 | 11 | 1 |
-| 10. VCA | 1 | 0 | 4 | 1 |
+| 10. VCA | 2 | 0 | 4 | 1 |
 | 11. Output | 0 | 0 | 6 | 5 |
 | 12. Performance Sets | 0 | 2 | 3 | 3 |
 | 13. Master Clock | 0 | 3 | 4 | 2 |
 | 14. Voice allocation (Hold, Chord, Polyphony) | 4 | 4 | 4 | 1 |
-| 15. Modulation (structure, sources, controllers, transforms, destinations) | 27 | 10 | 51 | 10 |
+| 15. Modulation (structure, sources, controllers, transforms, destinations) | 30 | 10 | 48 | 10 |
 | 16. Arpeggiator | 0 | 0 | 17 | 0 |
 | 17. Sequencer | 0 | 0 | 31 | 5 |
 | 18. Effects (architecture, every type, Eventide) | 69 | 10 | 8 | 1 |
@@ -792,10 +795,10 @@ which are not build candidates for an MPC plugin.
 | 21. Editing and saving | 0 | 0 | 4 | 3 |
 | 22. Settings (global, MIDI, CV, utilities, library, tuning) | 0 | 3 | 23 | 18 |
 | 24. Appendices A and B (USB keyboard, MIDI learn, NRPN) | 0 | 2 | 4 | 2 |
-| **Total** | **175** | **69** | **220** | **76** |
+| **Total** | **180** | **68** | **217** | **76** |
 
 Rows are features or parameters, so the totals weigh a 30-row sequencer the same as 30 oscillator parameters; read
-them per module, not as one score. Leaving out [HW]/[UI] rows, 144 sound or behaviour items are missing.
+them per module, not as one score. Leaving out [HW]/[UI] rows, 141 sound or behaviour items are missing.
 
 ## Prioritised build order
 

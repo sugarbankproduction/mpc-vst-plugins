@@ -41,7 +41,7 @@ static void fx_synth(fx_t *f, const fx_params_t *p, const float *mono, const flo
     int run = p->sfx_on && (p->mix > 0.0f || (f->sfx_run && f->mix > 0.0f));
     if (run && (!f->sfx_run || f->sfx_type != p->sfx_type)) {
         sfx_reset(&f->sfx, p);
-        f->mix = p->mix;
+        f->mix = f->sfx_run ? p->mix : 0.0f;   /* from off (dry, as mix 0): the wet fades in, no step (a modulated mix) */
         f->gain = p->gain;
     }
     f->sfx_run = run;
@@ -49,7 +49,7 @@ static void fx_synth(fx_t *f, const fx_params_t *p, const float *mono, const flo
     if (!run) { fx_copy(outL, inL, n); fx_copy(outR, inR, n); return; }
     float wl[FX_BLOCK], wr[FX_BLOCK], dm, dg;
     sfx_process(&f->sfx, p, mono ? mono : inL, mono ? mono : inR, wl, wr, n);
-    float m = fx_ramp(&f->mix, p->mix, n, &dm), g = fx_ramp(&f->gain, p->gain, n, &dg);
+    float m = fx_ramp(&f->mix, p->mix, n, p->ramp, &dm), g = fx_ramp(&f->gain, p->gain, n, p->ramp, &dg);
     float pl = sqrtf(1.0f - p->wet_pan), pr = sqrtf(1.0f + p->wet_pan);   /* equal power, 1 and 1 at the centre */
     for (int i = 0; i < n; i++) {
         float dry = 1.0f - m, wet = m * g;
@@ -76,8 +76,8 @@ static void fx_master(fx_t *f, const fx_params_t *p, float *l, float *r, int n) 
     if (rev && (!f->rev_run || f->rev.type != p->rev_type)) { rv_reset(&f->rev, p); f->rev_idle = 0; }
     if (!f->dly_run && !f->rev_run) { f->series = p->series; f->width = p->width; }
     float dl[FX_BLOCK], dr[FX_BLOCK], rl[FX_BLOCK], rr[FX_BLOCK], d1, d2, ds, dw;
-    float s1 = fx_ramp(&f->send1, p->send1, n, &d1), s2 = fx_ramp(&f->send2, p->send2, n, &d2);
-    float se = fx_ramp(&f->series, p->series, n, &ds), wd = fx_ramp(&f->width, p->width, n, &dw);
+    float s1 = fx_ramp(&f->send1, p->send1, n, p->ramp, &d1), s2 = fx_ramp(&f->send2, p->send2, n, p->ramp, &d2);
+    float se = fx_ramp(&f->series, p->series, n, p->ramp, &ds), wd = fx_ramp(&f->width, p->width, n, p->ramp, &dw);
     if (dly) {
         float a = s1;
         for (int i = 0; i < n; i++, a += d1) { dl[i] = l[i] * a; dr[i] = r[i] * a; }

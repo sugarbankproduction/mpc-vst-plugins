@@ -56,6 +56,7 @@ typedef struct {   /* what the effects read; worked out by the engine (fx_params
     float rev_rt60, rev_size;             /* decay time (s) and size (0.5..2) */
     float rev_damp, rev_lowdamp, rev_pre_ms, rev_diff, rev_tone, rev_mod, rev_early;   /* 0..1 except pre and mod (0..2) */
     float wet_pan;                        /* the synth pan, -1..1: where the synth effect's wet signal sits */
+    int ramp;                             /* samples to the settings' next change (0: the block): the gains' ramp length */
 } fx_params_t;
 
 /* ---- knob (0..100, or the param's own range) to units, shared by fx_params() and the display text ---- */
@@ -137,10 +138,13 @@ static inline float fx_sat(float x) {
     x = fx_clamp(x, -3.0f, 3.0f);
     return x * (27.0f + x * x) / (27.0f + 9.0f * x * x);
 }
-/* a value ramped across a block: from its last block's value to this one's */
-static inline float fx_ramp(float *last, float to, int n, float *step) {
+/* a value ramped across a block: from its last block's value to this one's. len: the ramp's length when the block is
+ * only its first part (the engine's control step split by the host's block end; 0 or n: the block); the next block,
+ * at the same target, carries on at the same slope */
+static inline float fx_ramp(float *last, float to, int n, int len, float *step) {
     float from = *last;
-    *step = (to - from) / (float)n;
-    *last = to;
+    if (len < n) len = n;
+    *step = (to - from) / (float)len;
+    *last = len == n ? to : from + *step * (float)n;
     return from;
 }

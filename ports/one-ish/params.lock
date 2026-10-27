@@ -390,3 +390,7 @@ noise_sus
 pan
 spread
 drift
+ribbon_dst
+ribbon_amt
+ribbon_mode
+ribbon_origin
