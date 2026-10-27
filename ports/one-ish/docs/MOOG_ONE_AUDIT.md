@@ -814,8 +814,8 @@ outside Carla's fixed settings.
 
 | Expectation | ONE-ish today | Effort | Note |
 |---|---|---|---|
-| Plays in tune at any host sample rate (44.1, 48, 88.2, 96 kHz) | The engine runs at 44.1 kHz only (`SR`), and the shared wrapper ignores `effSetSampleRate`: at 48 kHz everything plays about 1.5 semitones sharp and every time is 9% short | L | Plaits, Rings and Clouds carry patched 44.1 kHz constants; the MPC is always 44.1 kHz, so this is desktop-only. Owner's decision |
-| Full-resolution output | The wrapper renders 16-bit integer blocks (`int16_t`) and converts to float: a -96 dB floor and a possible block of latency | M | Shared wrapper (`wrapper/vst2_wrap.c`), used by every MPC port: change it behind a desktop switch |
+| Plays in tune at any host sample rate (44.1, 48, 88.2, 96 kHz) | Have (2026-10-27, desktop, offline): the engine still runs at 44.1 kHz and `desktop/hostrate.c` converts it to the host's rate (`desktop/resample.c`, a 72-tap windowed sinc: flat to 20 kHz, images 103 dB down), reporting the converter's latency (40 samples at 48 kHz, 79 at 96 kHz). A4 within 0.01 cent at 44.1/48/96 kHz, synced arp steps on the host's timeline (`desktop/rate_test.c`) | - | Wrapper and MPC unchanged. CPU about 40 us per 512-frame block for the converter (0.4% of real time at 48 kHz) |
+| Full-resolution output | Have (2026-10-27, desktop, offline): float samples from the engine (`one_ish_render_float`, the int16 path's samples before its last step), through a desktop-only engine table the wrapper is compiled against; 44.1 kHz output matches the old 16-bit output sample for sample when quantised | - | Shared wrapper not changed (only renamed symbols at compile time, desktop build) |
 | Microtuning: Scala `.scl` / `.kbm` files | Missing (only master tune and fine tune) | M | Not in this manual; common in desktop synths. Per-voice pitch already comes from one function (`update_note_hz`), so a table lookup is cheap |
 | Undo / redo of any edit in the window | Only the randomiser's history; hosts differ in plugin undo | M | Could share the snapshot store (21) |
 | The 14 open-source effect params on the window | Missing (generic host editor only) | S | `desktop/gen_layout.py` |
@@ -909,6 +909,12 @@ beside the engine work.
 
 **1. Desktop correctness: any sample rate, full-resolution output** (beyond the manual). Effort L. CPU: none at
 44.1 kHz; at 96 kHz every voice and effect costs about twice as much per second (the desktop has room).
+- Done differently, 2026-10-27 (desktop, offline): rate conversion at the plugin edge instead of a run-time `SR`, so no
+  DSP file changed. `desktop/hostrate.c` (see its header) renders the 44.1 kHz engine through the unchanged wrapper one
+  128-frame block at a time and converts it to the host's rate (`desktop/resample.c`), with float output, the latency
+  reported, host MIDI placed at the engine block nearest its time and the song position moved to each engine block.
+  Tests: `desktop/resample_test.c` (quality, delay, CPU) and `desktop/rate_test.c` in `load_test.exe`. The plan below
+  stays as the alternative if the engine should ever run at the host's rate itself (twice the engine's CPU at 96 kHz).
 - Make the sample rate a run-time value (today `SR` is a constant in the engine and the effects, and Plaits, Rings and
   Clouds carry patched 44.1 kHz constants); take it from `effSetSampleRate` on the desktop; keep 44.1 kHz on the MPC.
 - Float output instead of the wrapper's 16-bit blocks, and report any block latency to the host.

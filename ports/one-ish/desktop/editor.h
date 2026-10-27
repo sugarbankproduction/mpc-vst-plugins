@@ -36,7 +36,8 @@ typedef struct {
     char detune, noteOffVelocity, reserved1, reserved2;
 } VstMidiEvent;
 
-enum { effSetProgram = 2, effGetProgram = 3, effGetParamLabel = 6, effGetParamDisplay = 7, effEditGetRect = 13,
+enum { effSetProgram = 2, effGetProgram = 3, effGetParamLabel = 6, effGetParamDisplay = 7, effSetSampleRate = 10,
+       effMainsChanged = 12, effEditGetRect = 13,
        effEditOpen = 14, effEditClose = 15, effEditIdle = 19, effProcessEvents = 25, effGetProgramNameIndexed = 29 };
 enum { audioMasterAutomate = 0, audioMasterUpdateDisplay = 42, audioMasterBeginEdit = 43, audioMasterEndEdit = 44 };
 #define effFlagsHasEditor 1
@@ -105,6 +106,7 @@ typedef struct {
     float hist[RND_HIST][NPARAMS];
     char hist_name[RND_HIST][40];
     patches_t pt;                              /* user patches and the browser (patches.c) */
+    struct hostrate *hr;                       /* the host's rate and float output (hostrate.c); NULL: none */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT };
 
