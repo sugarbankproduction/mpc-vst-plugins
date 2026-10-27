@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (now 266 have,
-  47 partial, 151 missing, 76 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (now 284 have,
+  50 partial, 130 missing, 75 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -127,8 +127,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      spirit). Done 2026-10-27 (offline): a synth effect slot with 15 types and CTRL 1/2, master delay (stereo or
      ping-pong, L/R times, offset) and reverb (plate, room, hall; size, freeze) on two sends with series and width; 3.1 MB
      of buffers; 1.5-7 us per block per synth type, 3.6 delay, 6-18 reverb on the PC. Left: vocoders (no mic input),
-     shimmer and blackhole reverbs (CPU), per-type effect presets. Tier 4: arpeggiator, chord, then a decision with the
-     owner on the sequencer and multitimbral parts.
+     shimmer and blackhole reverbs (CPU), per-type effect presets. Tier 4: arpeggiator and chord memory done 2026-10-27
+     (offline): the manual's arp (Up/Down/Order/Random, 1-4 octaves up/down/up-down/down-up, octave order, pendulum
+     once/twice, random repeating or not, synced 1/1-1/128 straight/dotted/triplet or a free 10-280 BPM, gate, swing,
+     latch (and HOLD), note reset) and chord memory (CHORD LEARN as an on/off param, first key the root; 14 built-in
+     shapes; applied after the arp), sample-accurate, following the host's song position (`HAS_SONG_POS`); `arp_*`,
+     `chord_*`; 437 params, 29 presets. Next: a decision with the owner on the sequencer and multitimbral parts.
   5. After Tier 2/3 (owner, 2026-10-27): an Analog Character section, all 0 by default: per-voice component
      differences (cutoff, envelope times, level, slight detune), drift, and a non-linear ladder if the CPU allows.
      Done 2026-10-27 (offline): `an_cut`, `an_res`, `an_env`, `an_lvl`, `an_tune`, `an_ladder` with `drift` in the
@@ -145,7 +149,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      keyboard settings, ribbon and link cutoff never touched. Left: per part (needs multitimbral), an MPC control.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
-     Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base.
+     Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27
+     (offline), `gen_*`: a Euclidean rhythm (1-32 steps, hits, rotation; Bjorklund), step probability, velocity
+     randomness, and a Turing machine (length 2-16, change 0-100%, the held keys or 8 scales over 1-4 octaves). With
+     the arp off, Euclid plays the held chord on its hits. Left: saving a locked Turing loop with the preset, ratchets.
   9. Later (owner, 2026-10-27): open-source effects to port, MIT-licensed only unless the owner decides otherwise
      (GPL code such as Surge XT, Vital or Dragonfly would make ONE-ish GPL): Mutable Instruments Clouds/Beads
      (granular), Rings (resonator), Elements (modal), Warps (cross-modulation), Marbles (random generator, for the

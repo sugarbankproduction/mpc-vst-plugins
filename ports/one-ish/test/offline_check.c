@@ -64,7 +64,15 @@
  *             sections keep their values exactly; the same seed gives the same sound; MUTATE at 10% moves a few params a
  *             little; MUTATE at 100% and chains of mutations stay heard and safe
  *   state     save/restore round trip; damaged or oversized states don't break the instance
- *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav)
+ *   arp/gen   (read from the engine's "gen_log" of generated notes) every arp pattern's order, octave range, direction
+ *             and octave order, pendulum once/twice, random with and without repeats; synced 1/16 at 120 and 90 BPM, a
+ *             free rate, swing and gate length on the exact sample; the host's song position (on its grid, a late
+ *             start, a loop back); arp_latch and HOLD latch, a new set replaces; chord learn (an inversion, reported
+ *             to the host), chord memory transposed by the key and applied after the arp; Bjorklund patterns and
+ *             rotation, Euclid with and without the arp; probability 0/100/50%; velocity randomness; the Turing
+ *             machine locked repeats, open changes, stays in its scale; everything off is a fresh instance's samples
+ *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav,
+ *             arp_demo.wav)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
  *             MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
@@ -3110,6 +3118,30 @@ static void bench(void) {
     printf("bench: the same + the effect pass (5 slots and the ribbon to effects) %6.2f us per 128-frame block (%+.2f)\n",
            us2, us2 - us);
     E->destroy(e);
+    for (int k = 0; k < 2; k++) {   /* 8 voices of the busy patch played by the arp (1/32, Maj7 chords, so all 8 sound),
+                                     * with Euclid, probability, velocity random and the Turing machine; then the same
+                                     * 8 voices held, for the difference */
+        e = patch(SAW, 5, 300, 70, 250);
+        set(e, "voices", 7); set(e, "o2_level", 80); set(e, "o3_level", 60);
+        route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
+        set(e, "mod2_src", 6); set(e, "mod2_dst", 9); set(e, "mod2_amt", 30);
+        if (k == 0) {
+            set(e, "arp_on", 1); set(e, "arp_div", 5); set(e, "arp_gate", 100); set(e, "arp_oct", 1);
+            set(e, "chord_on", 1); set(e, "chord_shape", 7); set(e, "gen_euclid_on", 1); set(e, "gen_steps", 16);
+            set(e, "gen_hits", 13); set(e, "gen_prob", 90); set(e, "gen_vel_rand", 40); set(e, "gen_tm_on", 1);
+            set(e, "gen_tm_change", 30); set(e, "gen_scale", 7); set(e, "gen_range", 1);
+            for (int j = 0; j < 4; j++) note(e, 1, 48 + 3 * j, 100);
+        } else {
+            for (int j = 0; j < 8; j++) note(e, 1, 48 + 3 * j, 100);
+        }
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double ua = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        printf("bench: 8 voices, %s %6.2f us per 128-frame block (%.2f per voice)\n",
+               k ? "the same patch held (no arp):          " : "arp 1/32 + chords + Euclid + Turing:", ua, ua / 8);
+        E->destroy(e);
+    }
     fx_bench();
 }
 
@@ -3866,6 +3898,491 @@ static void random_demo_wav(const char *demo_path) {
     printf("wrote %s (%d random sounds)\n", path, SOUNDS);
 }
 
+/* ---- the performance section: arpeggiator, chord memory, generative steps ---- */
+typedef struct { long long t; int note, vel; } gev_t;
+#define GEV_MAX 8192
+static gev_t gev[GEV_MAX];
+
+/* the generated notes since the last read (the engine's "gen_log" readout), appended to gev from n on */
+static int gen_events(void *e, int n) {
+    static char b[8192];
+    if (E->get_param(e, "gen_log", b, sizeof b) <= 0) return n;
+    for (char *p = b; *p && n < GEV_MAX;) {
+        long long t;
+        int nt, v, used;
+        if (sscanf(p, "%lld:%d:%d;%n", &t, &nt, &v, &used) != 3) break;
+        gev[n++] = (gev_t){t, nt, v};
+        p += used;
+    }
+    return n;
+}
+
+/* render `frames` in host blocks of 128 (the log is read after each); with ppq >= 0 each block is told the song position
+ * first (transport playing at `bpm`), as the wrapper's song_pos() does */
+static int gen_render_pos(void *e, int frames, int n, double *ppq, double bpm) {
+    int16_t buf[256];
+    for (int at = 0; at < frames; at += 128) {
+        int m = frames - at < 128 ? frames - at : 128;
+        if (ppq) { E->song_pos(e, *ppq, bpm, 1, m); *ppq += m * bpm / 60.0 / SR; }
+        E->render(e, buf, m);
+        n = gen_events(e, n);
+    }
+    return n;
+}
+static int gen_render(void *e, int frames, int n) { return gen_render_pos(e, frames, n, NULL, 0); }
+
+/* the note-ons (vel > 0) or note-offs (vel 0) among the first n events */
+static int gen_pick(int n, int on, int *note, long long *t, int *vel, int max) {
+    int c = 0;
+    for (int i = 0; i < n && c < max; i++)
+        if ((gev[i].vel > 0) == on) {
+            if (note) note[c] = gev[i].note;
+            if (t) t[c] = gev[i].t;
+            if (vel) vel[c] = gev[i].vel;
+            c++;
+        }
+    return c;
+}
+
+/* "key=value,key=value" */
+static void setkv(void *e, const char *kv) {
+    char b[512], *save = NULL;
+    snprintf(b, sizeof b, "%s", kv);
+    for (char *t = strtok_r(b, ",", &save); t; t = strtok_r(NULL, ",", &save)) {
+        char *eq = strchr(t, '=');
+        if (!eq) continue;
+        *eq = 0;
+        E->set_param(e, t, eq + 1);
+    }
+}
+
+static void *arp_patch(void) {
+    void *e = patch(SAW, 1, 100, 80, 20);
+    set(e, "voices", 7);
+    E->set_param(e, "lfo_bpm", "120");
+    return e;
+}
+
+/* the first `want` notes the arp plays from keys (pressed in that order) with settings kv; returns how many it got */
+static int arp_notes(const char *kv, const int *keys, int nk, int *got, int want) {
+    void *e = arp_patch();
+    set(e, "arp_on", 1);
+    setkv(e, kv);
+    for (int k = 0; k < nk; k++) note(e, 1, keys[k], 100);
+    int n = gen_render(e, SR * 4, 0);   /* 4 s at 1/16, 120 BPM: 32 steps */
+    E->destroy(e);
+    return gen_pick(n, 1, got, NULL, NULL, want);
+}
+static int same_notes(const int *got, int n, const int *want, int wn) {
+    if (n < wn) return 0;
+    for (int i = 0; i < wn; i++)
+        if (got[i] != want[i]) return 0;
+    return 1;
+}
+static void arp_case(const char *what, const char *kv, const int *want, int wn) {
+    static const int keys[3] = {64, 60, 67};   /* E, C, G: Order differs from Up */
+    int got[64], n = arp_notes(kv, keys, 3, got, 64);
+    char b[512];
+    int used = snprintf(b, sizeof b, "arp %s:", what);
+    for (int i = 0; i < wn && i < n && used < (int)sizeof b - 8; i++) used += snprintf(b + used, sizeof b - used, " %d", got[i]);
+    check(same_notes(got, n, want, wn), b);
+}
+
+/* samples from a phrase's start to step k's start (or a point `frac` into it, for its end), as the engine places them:
+ * the first sample at or after that beat position */
+static long long step_at(double bpm, double step_beats, double k, double swing_beats) {
+    double beats = k * step_beats + (((long long)floor(k) & 1) ? swing_beats : 0);
+    return (long long)ceil(beats * 60.0 * SR / bpm - 1e-6);
+}
+
+static void arp_generative(void) {
+    char what[512];
+    /* each pattern's order: keys E C G pressed in that order */
+    static const int up[] = {60, 64, 67, 60, 64, 67}, down[] = {67, 64, 60, 67, 64, 60}, order[] = {64, 60, 67, 64, 60, 67};
+    arp_case("Up", "arp_pattern=0", up, 6);
+    arp_case("Down", "arp_pattern=1", down, 6);
+    arp_case("Order (as played)", "arp_pattern=2", order, 6);
+    static const int pend1[] = {60, 64, 67, 64, 60, 64, 67, 64}, pend2[] = {60, 64, 67, 67, 64, 60, 60, 64};
+    arp_case("Up + pendulum, ends once", "arp_pendulum=1", pend1, 8);
+    arp_case("Up + pendulum, ends twice", "arp_pendulum=1,arp_pend_mode=1", pend2, 8);
+    static const int oct2[] = {60, 64, 67, 72, 76, 79, 60}, octord[] = {60, 72, 64, 76, 67, 79, 60};
+    static const int octdn[] = {60, 64, 67, 48, 52, 55, 60};
+    static const int updown3[] = {60, 64, 67, 72, 76, 79, 84, 88, 91, 72, 76, 79, 60};
+    arp_case("2 octaves up", "arp_oct=1", oct2, 7);
+    arp_case("2 octaves, octave order", "arp_oct=1,arp_oct_order=1", octord, 7);
+    arp_case("2 octaves down", "arp_oct=1,arp_dir=1", octdn, 7);
+    arp_case("3 octaves up/down", "arp_oct=2,arp_dir=2", updown3, 13);
+    {   /* random, non-repeating: each pass a new order of all three, never a note twice in a row */
+        static const int keys[3] = {64, 60, 67};
+        int got[64], n = arp_notes("arp_pattern=3", keys, 3, got, 30), ok = n >= 30, orders = 0;
+        for (int i = 0; ok && i + 3 <= 30; i += 3) {
+            int sum = got[i] + got[i + 1] + got[i + 2], prod_ok = got[i] != got[i + 1] && got[i + 1] != got[i + 2] && got[i] != got[i + 2];
+            ok &= sum == 191 && prod_ok;
+            orders += i > 0 && (got[i] != got[i - 3] || got[i + 1] != got[i - 2]);
+        }
+        for (int i = 1; i < n; i++) ok &= got[i] != got[i - 1];
+        snprintf(what, sizeof what, "arp Random non-repeating: 10 passes, each all three notes, no note twice in a row, the "
+                 "order changing (%d of 9 passes differ from the one before)", orders);
+        check(ok && orders >= 3, what);
+        int rep = 0, in = 1;
+        n = arp_notes("arp_pattern=3,arp_rnd_mode=1", keys, 3, got, 30);
+        for (int i = 0; i < n; i++) in &= got[i] == 60 || got[i] == 64 || got[i] == 67;
+        for (int i = 1; i < n; i++) rep += got[i] == got[i - 1];
+        snprintf(what, sizeof what, "arp Random repeating: only the held notes, and repeats allowed (%d in 30)", rep);
+        check(n == 30 && in && rep > 0, what);
+    }
+
+    /* timing: a synced 1/16 at 120 and 90 BPM lands on the exact sample; gate length; swing; free rate */
+    for (int c = 0; c < 4; c++) {
+        static const double bpms[4] = {120, 90, 120, 100};
+        double bpm = bpms[c], swing = c == 2 ? 0.125 : 0;   /* swing 75%: the off-step 1/8 beat late */
+        void *e = arp_patch();
+        char b[32];
+        snprintf(b, sizeof b, "%g", bpm);
+        E->set_param(e, "lfo_bpm", b);
+        set(e, "arp_on", 1); set(e, "arp_gate", 25);
+        if (c == 2) set(e, "arp_swing", 75);
+        if (c == 3) { set(e, "arp_sync", 0); set(e, "arp_rate", 100); E->set_param(e, "lfo_bpm", "140"); }
+        int16_t buf[256];
+        E->render(e, buf, 100);   /* the key arrives off the block grid */
+        E->render(e, buf, 77);
+        note(e, 1, 60, 100);
+        int n = gen_render(e, SR * 2, 0);
+        long long on[64], off[64];
+        int non = gen_pick(n, 1, NULL, on, NULL, 64), noff = gen_pick(n, 0, NULL, off, NULL, 64), ok = non >= 12 && noff >= 12;
+        ok &= on[0] == 177;   /* NOTE RESET: the first step at once */
+        for (int k = 0; k < 12 && ok; k++) {
+            ok &= on[k] - on[0] == step_at(bpm, 0.25, k, swing);
+            /* the end: a quarter of this step's own length (swing makes the pair uneven) */
+            double t0 = k * 0.25 + ((k & 1) ? swing : 0), t1 = (k + 1) * 0.25 + (((k + 1) & 1) ? swing : 0);
+            ok &= off[k] - on[0] == (long long)ceil((t0 + 0.25 * (t1 - t0)) * 60.0 * SR / bpm - 1e-6);
+        }
+        snprintf(what, sizeof what, "arp timing %s: 12 steps of 1/16 on the exact sample (step 1 at %lld, step 2 at %lld), "
+                 "each note off at 25%% of its step", c == 0 ? "synced 120 BPM" : c == 1 ? "synced 90 BPM" : c == 2 ?
+                 "120 BPM, swing 75%" : "free rate 100 BPM (host at 140)", non > 2 ? on[1] - on[0] : -1, non > 2 ? on[2] - on[0] : -1);
+        check(ok, what);
+        E->destroy(e);
+    }
+    {   /* the host's song position: steps on the song's grid; a late start plays its step at once; a loop back */
+        void *e = arp_patch();
+        set(e, "arp_on", 1);
+        double ppq = 3.9;
+        note(e, 1, 60, 100);
+        int n = gen_render_pos(e, 128 * 80, 0, &ppq, 120);
+        long long t[64];
+        int c = gen_pick(n, 1, NULL, t, NULL, 64);
+        snprintf(what, sizeof what, "song position 3.9 at 120 BPM: steps on beat 4.0 and 4.25 (samples %lld and %lld, want 2205 "
+                 "and 7718)", c > 1 ? t[0] : -1, c > 1 ? t[1] : -1);
+        check(c > 1 && t[0] == 2205 && t[1] == 7718, what);
+        long long jump_at = 128 * 80;
+        ppq = 0.0;   /* the loop: back to the song's start */
+        n = gen_render_pos(e, 128 * 60, 0, &ppq, 120);
+        c = gen_pick(n, 1, NULL, t, NULL, 64);
+        int doubles = 0;
+        for (int i = 1; i < c; i++) doubles += t[i] - t[i - 1] < 5000;
+        snprintf(what, sizeof what, "a jump back to beat 0 plays step 0 at once (sample %lld after the jump), nothing twice",
+                 c ? t[0] - jump_at : -1);
+        check(c > 1 && t[0] == jump_at && doubles == 0, what);
+        E->destroy(e);
+        e = arp_patch();
+        set(e, "arp_on", 1);
+        ppq = 4.01;   /* a phrase 0.01 beat after step 16: that step now, then step 17 at 4.25 */
+        note(e, 1, 60, 100);
+        n = gen_render_pos(e, 128 * 80, 0, &ppq, 120);
+        c = gen_pick(n, 1, NULL, t, NULL, 64);
+        snprintf(what, sizeof what, "a phrase starting just after a step plays it at once (%lld), the next on the grid (%lld, want 5292)",
+                 c > 1 ? t[0] : -1, c > 1 ? t[1] : -1);
+        check(c > 1 && t[0] == 0 && t[1] == 5292, what);
+        E->destroy(e);
+    }
+
+    /* latch: the arp keeps playing after the keys come up; a new set replaces; latch off stops it. HOLD does the same. */
+    for (int h = 0; h < 2; h++) {
+        void *e = arp_patch();
+        set(e, "arp_on", 1);
+        set(e, h ? "hold" : "arp_latch", 1);
+        note(e, 1, 60, 100); note(e, 1, 64, 100);
+        gen_render(e, SR / 2, 0);
+        note(e, 0, 60, 0); note(e, 0, 64, 0);
+        int got[64], n = gen_render(e, SR, 0), c = gen_pick(n, 1, got, NULL, NULL, 64), ok = c >= 7;
+        for (int i = 0; i < c; i++) ok &= got[i] == 60 || got[i] == 64;
+        note(e, 1, 62, 100); note(e, 0, 62, 0);
+        n = gen_render(e, SR, 0);
+        int c2 = gen_pick(n, 1, got, NULL, NULL, 64), ok2 = c2 >= 7;
+        for (int i = 0; i < c2; i++) ok2 &= got[i] == 62;
+        set(e, h ? "hold" : "arp_latch", 0);
+        gen_render(e, SR / 10, 0);
+        n = gen_render(e, SR, 0);
+        int c3 = gen_pick(n, 1, NULL, NULL, NULL, 64);
+        snprintf(what, sizeof what, "%s latches the arp: %d notes after the keys came up, a new key replaces them (%d of it), "
+                 "off stops it (%d notes after)", h ? "HOLD" : "arp_latch", c, c2, c3);
+        check(ok && ok2 && c3 == 0 && silent_after(e, 300), what);
+        E->destroy(e);
+    }
+    {   /* without latch the arp stops when the keys come up, and nothing hangs */
+        void *e = arp_patch();
+        set(e, "arp_on", 1);
+        note(e, 1, 60, 100);
+        gen_render(e, SR / 2, 0);
+        note(e, 0, 60, 0);
+        int n = gen_render(e, SR / 2, 0);
+        check(gen_pick(n, 1, NULL, NULL, NULL, 64) == 0 && silent_after(e, 300), "arp stops when the keys come up, silent after");
+        /* switching the arp on while a key sounds plainly lets it go (no hanging note) */
+        void *f = arp_patch();
+        note(f, 1, 60, 100);
+        gen_render(f, SR / 10, 0);
+        set(f, "arp_on", 1);
+        note(f, 0, 60, 0);
+        check(silent_after(f, 400), "turning the arp on lets go of a note already sounding");
+        E->destroy(e); E->destroy(f);
+    }
+
+    /* chord memory: learn (first key the root, an inversion), the Custom shape, transposed by the played key */
+    {
+        void *e = arp_patch();
+        set(e, "chord_learn", 1);
+        note(e, 1, 64, 100); note(e, 1, 60, 100); note(e, 1, 67, 100);   /* E, then C below, G above */
+        note(e, 0, 64, 0); note(e, 0, 60, 0); note(e, 0, 67, 0);
+        set(e, "chord_learn", 0);
+        char key[64], keys_seen[256] = "";
+        for (int i = 0; i < 8 && mpc_engine_changed(e, key, sizeof key) > 0; i++) {
+            strncat(keys_seen, key, sizeof keys_seen - strlen(keys_seen) - 2);
+            strncat(keys_seen, " ", sizeof keys_seen - strlen(keys_seen) - 1);
+        }
+        snprintf(what, sizeof what, "chord learn E C G: Custom shape, intervals %g %g %g (want -4 3 0); reported: %s",
+                 get(e, "chord_iv1"), get(e, "chord_iv2"), get(e, "chord_iv3"), keys_seen);
+        check(get(e, "chord_shape") == 0 && get(e, "chord_iv1") == -4 && get(e, "chord_iv2") == 3 && get(e, "chord_iv3") == 0
+              && strstr(keys_seen, "chord_shape") && strstr(keys_seen, "chord_iv1"), what);
+        set(e, "chord_on", 1);
+        gen_render(e, SR / 2, 0);
+        gen_events(e, 0);   /* (drop what learning logged) */
+        note(e, 1, 62, 100);   /* D: D, Bb below, F above */
+        int got[16];
+        long long t[16];
+        int n = gen_render(e, 1024, 0), c = gen_pick(n, 1, got, t, NULL, 16);
+        snprintf(what, sizeof what, "chord memory: key 62 plays %d notes %d %d %d (want 62 58 65), together", c, got[0], got[1], got[2]);
+        check(c == 3 && got[0] == 62 && got[1] == 58 && got[2] == 65 && t[0] == t[2], what);
+        note(e, 0, 62, 0);
+        check(silent_after(e, 300), "chord memory: the key's release lets go of its whole chord");
+        set(e, "chord_shape", 7);   /* Maj7 */
+        note(e, 1, 50, 100);
+        n = gen_render(e, 1024, 0);
+        c = gen_pick(n, 1, got, NULL, NULL, 16);
+        check(c == 4 && got[0] == 50 && got[1] == 54 && got[2] == 57 && got[3] == 61, "chord memory: Maj7 on key 50 plays 50 54 57 61");
+        note(e, 0, 50, 0);
+        /* after the arp: each arpeggiated note plays the chord (the learned one again) */
+        set(e, "chord_shape", 0);
+        set(e, "arp_on", 1);
+        note(e, 1, 60, 100); note(e, 1, 67, 100);
+        n = gen_render(e, SR / 2, 0);
+        c = gen_pick(n, 1, got, t, NULL, 16);
+        snprintf(what, sizeof what, "chord after the arp: step 1 = %d %d %d, step 2 = %d %d %d (want 60 56 63, 67 63 70)",
+                 got[0], got[1], got[2], got[3], got[4], got[5]);
+        check(c >= 6 && got[0] == 60 && got[1] == 56 && got[2] == 63 && got[3] == 67 && got[4] == 63 && got[5] == 70
+              && t[0] == t[2] && t[3] > t[2], what);
+        E->destroy(e);
+    }
+
+    /* Euclidean rhythms: Bjorklund's patterns, rotation, and steps that play only on hits */
+    {
+        static const struct { int steps, hits, rot; const char *want; } eu[] = {
+            {8, 3, 0, "x..x..x."}, {8, 5, 0, "x.xx.xx."}, {8, 3, 1, ".x..x..x"}, {8, 5, 2, "x.x.xx.x"},
+            {16, 4, 0, "x...x...x...x..."}, {5, 2, 0, "x.x.."},
+            {12, 5, 0, "x.x..x.x..x."},   /* Toussaint lists x..x.x..x.x.: the same rhythm, started on another onset */
+            {8, 0, 0, "........"}, {4, 4, 0, "xxxx"}, {13, 5, 0, "x..x.x..x.x.."},
+        };
+        for (unsigned i = 0; i < sizeof eu / sizeof eu[0]; i++) {
+            void *e = arp_patch();
+            set(e, "gen_steps", eu[i].steps); set(e, "gen_hits", eu[i].hits); set(e, "gen_rot", eu[i].rot);
+            char b[64] = "";
+            E->get_param(e, "gen_euclid", b, sizeof b);
+            snprintf(what, sizeof what, "Euclid E(%d,%d) rotation %d: %s (want %s)", eu[i].hits, eu[i].steps, eu[i].rot, b, eu[i].want);
+            check(!strcmp(b, eu[i].want), what);
+            E->destroy(e);
+        }
+        void *e = arp_patch();   /* E(3,8) with no arp: the held chord on each hit */
+        set(e, "gen_euclid_on", 1); set(e, "gen_steps", 8); set(e, "gen_hits", 3);
+        note(e, 1, 60, 100); note(e, 1, 67, 100);
+        int got[64];
+        long long t[64];
+        int n = gen_render(e, SR * 2, 0), c = gen_pick(n, 1, got, t, NULL, 64), ok = c == 12;
+        static const int hits[6] = {0, 3, 6, 8, 11, 14};
+        for (int i = 0; ok && i < 6; i++)
+            ok &= t[2 * i] - t[0] == step_at(120, 0.25, hits[i], 0) && t[2 * i + 1] == t[2 * i] && got[2 * i] == 60 && got[2 * i + 1] == 67;
+        check(ok, "Euclid E(3,8) without the arp: the held chord on steps 0 3 6 8 11 14, nothing between");
+        E->destroy(e);
+        e = arp_patch();   /* with the arp: its pattern moves on only on hits */
+        set(e, "arp_on", 1); set(e, "gen_euclid_on", 1); set(e, "gen_steps", 8); set(e, "gen_hits", 5);
+        note(e, 1, 60, 100); note(e, 1, 64, 100); note(e, 1, 67, 100);
+        n = gen_render(e, SR * 2, 0);
+        c = gen_pick(n, 1, got, t, NULL, 64);
+        static const int hits5[6] = {0, 2, 3, 5, 6, 8};
+        ok = c == 10;
+        for (int i = 0; ok && i < 6; i++) ok &= t[i] - t[0] == step_at(120, 0.25, hits5[i], 0) && got[i] == (i % 3 == 0 ? 60 : i % 3 == 1 ? 64 : 67);
+        check(ok, "Euclid E(5,8) with the arp Up: C E G on the hits (steps 0 2 3 5 6 8), the pattern moving only on hits");
+        E->destroy(e);
+    }
+
+    /* probability and velocity randomness */
+    {
+        int counts[3];
+        static const double pr[3] = {0, 100, 50};
+        for (int k = 0; k < 3; k++) {
+            void *e = arp_patch();
+            set(e, "arp_on", 1); set(e, "gen_prob", pr[k]); set(e, "arp_div", 5);   /* 1/32: 16 steps a second */
+            note(e, 1, 60, 100);
+            int n = gen_render(e, SR * 30, 0);
+            counts[k] = gen_pick(n, 1, NULL, NULL, NULL, GEV_MAX);
+            E->destroy(e);
+        }
+        snprintf(what, sizeof what, "probability over 480 steps: 0%% plays %d, 100%% plays %d, 50%% plays %d (want 0, 480, about 240)",
+                 counts[0], counts[1], counts[2]);
+        check(counts[0] == 0 && counts[1] == 480 && counts[2] > 200 && counts[2] < 280, what);
+        void *e = arp_patch();
+        set(e, "arp_on", 1); set(e, "gen_vel_rand", 100);
+        note(e, 1, 60, 100);
+        int vel[64], n = gen_render(e, SR * 3, 0), c = gen_pick(n, 1, NULL, NULL, vel, 64), distinct = 0, inr = 1;
+        for (int i = 0; i < c; i++) {
+            inr &= vel[i] >= 36 && vel[i] <= 127;
+            int seen = 0;
+            for (int j = 0; j < i; j++) seen |= vel[j] == vel[i];
+            distinct += !seen;
+        }
+        snprintf(what, sizeof what, "velocity random 100%%: %d different velocities in %d notes, all within 100 +-64 and 1..127", distinct, c);
+        check(c >= 20 && distinct >= 10 && inr, what);
+        E->destroy(e);
+    }
+
+    /* the Turing machine: locked repeats exactly, fully open always changes, notes stay in the scale */
+    {
+        int got[2][64], c[2];
+        for (int k = 0; k < 2; k++) {
+            void *e = arp_patch();
+            set(e, "gen_tm_on", 1); set(e, "gen_tm_len", 8); set(e, "gen_tm_change", k ? 100 : 0);
+            set(e, "gen_scale", 2); set(e, "gen_range", 1);   /* Major, 2 octaves from the held key */
+            note(e, 1, 48, 100);
+            int n = gen_render(e, SR * 4, 0);
+            c[k] = gen_pick(n, 1, got[k], NULL, NULL, 64);
+            E->destroy(e);
+        }
+        int repeat = c[0] >= 32, distinct = 0, changed = 0, in_scale = 1;
+        for (int i = 0; i + 8 < 32; i++) { repeat &= got[0][i] == got[0][i + 8]; changed += got[1][i] != got[1][i + 8]; }
+        for (int i = 0; i < 8; i++) {
+            int seen = 0;
+            for (int j = 0; j < i; j++) seen |= got[0][j] == got[0][i];
+            distinct += !seen;
+        }
+        static const int major[12] = {1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1};
+        for (int k = 0; k < 2; k++)
+            for (int i = 0; i < c[k]; i++) in_scale &= got[k][i] >= 48 && got[k][i] < 72 && major[(got[k][i] - 48) % 12];
+        snprintf(what, sizeof what, "Turing machine: change 0 repeats its 8 steps exactly (%d different notes), change 100 changes "
+                 "%d of 24, every note in C major within 2 octaves of the key", distinct, changed);
+        check(repeat && distinct >= 3 && changed >= 16 && in_scale && c[1] >= 32, what);
+        void *e = arp_patch();   /* Held Notes: only the keys held (and their octaves, range 2) */
+        set(e, "gen_tm_on", 1); set(e, "gen_tm_change", 50); set(e, "gen_range", 1);
+        note(e, 1, 60, 100); note(e, 1, 63, 100); note(e, 1, 67, 100);
+        int g[64], n = gen_render(e, SR * 4, 0), cc = gen_pick(n, 1, g, NULL, NULL, 64), held = cc >= 30;
+        for (int i = 0; i < cc; i++) held &= g[i] == 60 || g[i] == 63 || g[i] == 67 || g[i] == 72 || g[i] == 75 || g[i] == 79;
+        check(held, "Turing machine on Held Notes plays only the held keys and their octave above");
+        note(e, 0, 60, 0); note(e, 0, 63, 0); note(e, 0, 67, 0);
+        n = gen_render(e, SR / 2, 0);
+        check(gen_pick(n, 1, NULL, NULL, NULL, 64) == 0, "Turing machine without latch stops when the keys come up");
+        set(e, "arp_latch", 1);
+        note(e, 1, 55, 100); note(e, 0, 55, 0);
+        n = gen_render(e, SR, 0);
+        check(gen_pick(n, 1, NULL, NULL, NULL, 64) >= 7, "Turing machine with latch runs on with no key held");
+        E->destroy(e);
+    }
+
+    /* everything off: the same samples as a fresh instance, after the section was switched on and off and its knobs moved */
+    {
+        void *a = patch(SAW, 5, 200, 70, 100), *b = patch(SAW, 5, 200, 70, 100);
+        setkv(b, "arp_on=1,chord_on=1,gen_tm_on=1,gen_euclid_on=1,chord_learn=1,chord_learn=0,arp_on=0,chord_on=0,"
+                 "gen_tm_on=0,gen_euclid_on=0,arp_pattern=2,arp_oct=3,chord_shape=5,gen_steps=7,gen_prob=20,arp_div=2");
+        static float xa[SR], xb[SR];
+        int same = 1;
+        for (int pass = 0; pass < 2; pass++) {
+            for (int k = 0; k < 3; k++) { note(a, !pass, 48 + 4 * k, 90); note(b, !pass, 48 + 4 * k, 90); }
+            render_f(a, xa, SR / 2);
+            render_f(b, xb, SR / 2);
+            for (int i = 0; i < SR / 2; i++) same &= xa[i] == xb[i];
+        }
+        check(same, "arp, chord and generative off: the same samples as a fresh instance");
+        E->destroy(a); E->destroy(b);
+    }
+}
+
+/* test/out/arp_demo.wav: the arp's patterns, a Euclidean groove and a Turing machine sequence, to listen to */
+static void arp_wav(const char *demo_path) {
+    enum { SEC = SR };
+    static int16_t pcm[44 * SEC * 2];
+    char dir[256], path[320];
+    snprintf(dir, sizeof dir, "%s", demo_path);
+    char *slash = strrchr(dir, '/');
+    if (slash) slash[1] = 0; else dir[0] = 0;
+    int16_t *o = pcm;
+    static const int cm7[4] = {48, 51, 55, 58};
+    static const char *const parts[] = {
+        "arp_pattern=0,arp_oct=1",                              /* Up, 2 octaves */
+        "arp_pattern=1,arp_oct=1",                              /* Down */
+        "arp_pattern=2,arp_oct=2,arp_dir=2,arp_pendulum=1",     /* Order, 3 octaves up/down, pendulum */
+        "arp_pattern=3,arp_oct=1,arp_swing=62,arp_gate=30",     /* Random with swing */
+        "arp_pattern=0,arp_oct=1,arp_oct_order=1,arp_timing=2,arp_div=3",   /* octave order, 1/8 triplets */
+        "arp_pattern=0,chord_on=1,chord_shape=13,arp_div=3,arp_gate=80",    /* power chords after the arp, 1/8 */
+    };
+    void *e = NULL;
+    for (unsigned p = 0; p < sizeof parts / sizeof parts[0]; p++) {   /* 3 s each */
+        e = patch(SAW, 2, 250, 30, 120);
+        set(e, "o2_level", 60); set(e, "o2_freq", 0.07); set(e, "flt_cut", knob_for_hz(900)); set(e, "flt_res", 40);
+        set(e, "lad_env", 45); set(e, "fenv_d", knob_ms(220)); set(e, "fenv_s", 0); set(e, "voices", 7); set(e, "volume", 60);
+        set(e, "mfx_send1", 15); set(e, "dly_sync", 1); set(e, "dly_time", 60); set(e, "mfx_send2", 20);
+        E->set_param(e, "lfo_bpm", "118");
+        set(e, "arp_on", 1);
+        setkv(e, parts[p]);
+        for (int k = 0; k < 4; k++) note(e, 1, cm7[k], 100);
+        o = rest(e, o, 3 * SEC / 128);
+        for (int k = 0; k < 4; k++) note(e, 0, cm7[k], 0);
+        E->destroy(e);
+    }
+    /* a Euclidean groove: a bass line on E(5,16) under chord stabs on E(3,8) rotated, mixed from two instances */
+    void *bass = patch(SAW, 1, 180, 0, 60), *stab = patch(SAW, 3, 300, 20, 200);
+    set(bass, "o2_level", 70); set(bass, "o2_oct", 1); set(bass, "flt_cut", knob_for_hz(400)); set(bass, "flt_res", 55);
+    set(bass, "lad_env", 50); set(bass, "fenv_d", knob_ms(150)); set(bass, "fenv_s", 0); set(bass, "volume", 70);
+    setkv(bass, "arp_on=1,arp_pattern=2,gen_euclid_on=1,gen_steps=16,gen_hits=5,gen_vel_rand=30,arp_gate=60");
+    set(stab, "o1_mix", 100); set(stab, "o2_level", 80); set(stab, "o2_freq", 0.1); set(stab, "flt_cut", knob_for_hz(2500));
+    set(stab, "voices", 7); set(stab, "volume", 45); set(stab, "mfx_send2", 35);
+    setkv(stab, "gen_euclid_on=1,gen_steps=8,gen_hits=3,gen_rot=2,arp_div=3,arp_gate=40,chord_on=1,chord_shape=8");
+    E->set_param(bass, "lfo_bpm", "122"); E->set_param(stab, "lfo_bpm", "122");
+    static const int line[3] = {36, 43, 46};
+    for (int k = 0; k < 3; k++) note(bass, 1, line[k], 110);
+    note(stab, 1, 60, 100);
+    for (int b = 0; b < 12 * SEC / 128; b++, o += 256) {
+        int16_t x[256], y[256];
+        E->render(bass, x, 128);
+        E->render(stab, y, 128);
+        for (int i = 0; i < 256; i++) { int v = x[i] + y[i]; o[i] = (int16_t)(v > 32767 ? 32767 : v < -32768 ? -32768 : v); }
+        if (b == 6 * SEC / 128) { note(stab, 0, 60, 0); note(stab, 1, 58, 100); }   /* the stabs move halfway */
+    }
+    E->destroy(bass); E->destroy(stab);
+    /* a Turing machine: minor pentatonic over 2 octaves, slowly changing, then locked */
+    e = patch(TRI, 1, 300, 20, 250);
+    set(e, "o2_level", 50); set(e, "o2_oct", 3); set(e, "flt_cut", knob_for_hz(3000)); set(e, "voices", 7);
+    set(e, "mfx_send1", 30); set(e, "dly_sync", 1); set(e, "dly_time", 70); set(e, "dly_fb", 45); set(e, "mfx_send2", 30);
+    E->set_param(e, "lfo_bpm", "110");
+    setkv(e, "gen_tm_on=1,gen_tm_len=8,gen_tm_change=15,gen_scale=7,gen_range=1,gen_prob=85,gen_vel_rand=25,arp_gate=70,arp_latch=1");
+    note(e, 1, 57, 100); note(e, 0, 57, 0);
+    o = rest(e, o, 6 * SEC / 128);
+    set(e, "gen_tm_change", 0);   /* locked: the last 8 steps loop */
+    o = rest(e, o, 6 * SEC / 128);
+    set(e, "arp_latch", 0);
+    o = rest(e, o, SEC / 128);
+    E->destroy(e);
+    snprintf(path, sizeof path, "%sarp_demo.wav", dir);
+    write_wav(path, pcm, (uint32_t)((o - pcm) / 2));
+    printf("wrote %s (arp Up, Down, Order + pendulum, Random + swing, octave order in triplets, power chords; a Euclidean "
+           "groove; a Turing machine changing, then locked)\n", path);
+}
+
 int main(int argc, char **argv) {
     E = mpc_engine();
     if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); return 0; }
@@ -3903,10 +4420,12 @@ int main(int argc, char **argv) {
     noise_stereo_drift();
     analog_character();
     randomiser();
+    arp_generative();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     analog_wavs(argc > 1 ? argv[1] : "demo.wav");
     random_demo_wav(argc > 1 ? argv[1] : "demo.wav");
+    arp_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }

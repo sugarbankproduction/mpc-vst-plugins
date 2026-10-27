@@ -269,7 +269,7 @@ own quick assignment (2026-10-27, offline).
 | TEMPO | 10 BPM to 280 BPM (p61) | Partial | Follows host tempo (`lfo_bpm`, 20-400 BPM) | - | none |
 | TAP tempo [HW] | p61 | Missing | Host | - | none |
 | NUDGE + / - and NUDGE MODE [HW] | Increment (1 or 0.1 BPM), Bend (2 or 1 BPM) (p62) | Missing | Host | - | none |
-| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Missing | - | S | none |
+| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Partial | `arp_swing` 0-100% (50: none; used 10-90%), the arp's own (no master clock) (2026-10-27, offline) | - | none |
 | LOAD PRESET TEMPO | on/off (p62) | Missing | Host owns tempo | - | none |
 | External clock overrides the Master Clock | p60 | Partial | Host tempo only; no transport start/stop | - | none |
 | What can sync: arp, sequencer, LFOs, EGs, effects | p60 | Partial | LFOs and the delay | see 8, 9, 16, 18 | none |
@@ -279,9 +279,9 @@ own quick assignment (2026-10-27, offline).
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | HOLD: latch held notes; legato adds, non-legato replaces; with sustain it adds; latches the arp | on/off (p63) | Have | `hold`: as the manual; off lets go of what it latched (the pedals keep theirs); no arp yet (2026-10-27, offline) | - | none |
-| CHORD memory: one key plays a stored interval stack, first note is the root | on/off (p63) | Missing | - | M | high (multiplies sounding voices) |
-| CHORD LEARN, saved per Synth; silent or audible learn (Settings) [UI] | p63, p125 | Missing | - | M | none |
-| Chord is applied after the arp and sequencer | p63 | Missing | - | S (with chord + arp) | none |
+| CHORD memory: one key plays a stored interval stack, first note is the root | on/off (p63) | Have | `chord_on`, `chord_shape` (Custom = the learned chord in `chord_iv1..5`, +-24 st; or 14 built-in shapes), root first; voices as the chord needs (2026-10-27, offline) | - | high (multiplies sounding voices) |
+| CHORD LEARN, saved per Synth; silent or audible learn (Settings) [UI] | p63, p125 | Partial | `chord_learn` on/off param (no button on an MPC): first key clears and is the root, up to 5 more; off stores it and picks Custom; saved with the preset; always audible (no silent learn) (2026-10-27, offline) | - | none |
+| Chord is applied after the arp and sequencer | p63 | Have | every arp / generative note plays its chord (2026-10-27, offline) | - | none |
 | MONO | on/off (p64) | Have | `voices` = Mono, legato, last-note priority | - | - |
 | UNISON: all voices stack, divided among held keys | on/off (p64) | Partial | `unison`: fixed stacks of `uni_count` voices per note, a stack allocated and stolen whole (8 voices, count 4: two notes); stacks don't re-divide as keys are added (2026-10-27, offline) | M | high (each stacked voice costs a full voice) |
 | DETUNE of the unison stack, uneven spread around the centre | 0 to 10 (p64) | Have | `uni_detune` 0-100%: voices at u*sqrt(abs(u)) of +-50 cents (u evenly -1..1), symmetric, the centre voice stays put; stacks scaled by 1/sqrt(n) in level (2026-10-27, offline) | - | none |
@@ -410,23 +410,23 @@ own quick assignment (2026-10-27, offline).
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| Arpeggiator per Synth, saved with the Timbre | p78 | Missing | (MPC has its own arpeggiator and note repeat) | M | none |
-| ON | on/off (p78) | Missing | - | (in M) | none |
-| RATE, free | 10 BPM to 280 BPM (p78) | Missing | - | (in M) | none |
-| OCTAVE ORDER: each note through all octaves before the next note | on/off (p78) | Missing | - | S | none |
-| PENDULUM: play the pattern back reversed | on/off (p79) | Missing | - | S | none |
-| OCTAVE range | 1, 2, 3, 4 (p79) | Missing | - | S | none |
-| DIRECTION of the octaves | Up, Down, Up/Down, Down/Up (p79) | Missing | - | S | none |
-| PATTERN | Up, Down, Order, Random (p80) | Missing | - | S | none |
-| SYNC to the Master Clock | on/off (p81) | Missing | - | S | none |
-| CLOCK DIVISION | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p81) | Missing | - | S | none |
-| CLOCK TIMING | Straight, Dotted, Triplet (p81) | Missing | - | S | none |
-| GATE LENGTH | 1% to 100% (p81) | Missing | - | S | none |
-| FOLLOW SWING | off/on (p81) | Missing | - | S | none |
-| NOTE RESET: restart at once on a new note, or wait for the next division | off/on (p81) | Missing | - | S | none |
-| PENDULUM MODE: end notes played once or twice | Once, Twice (p81) | Missing | - | S | none |
-| RANDOM MODE | Non-repeating, Repeating (p81) | Missing | - | S | none |
-| HOLD latches the arpeggiator | p63 | Missing | - | S | none |
+| Arpeggiator per Synth, saved with the Timbre | p78 | Have | `arp_*`, saved with the preset; plays the engine's own voices (MPC ignores plugin MIDI out) (2026-10-27, offline) | - | none |
+| ON | on/off (p78) | Have | `arp_on` (2026-10-27, offline) | - | none |
+| RATE, free | 10 BPM to 280 BPM (p78) | Have | `arp_rate` 10-280 BPM when `arp_sync` is Off, with the division and timing (2026-10-27, offline) | - | none |
+| OCTAVE ORDER: each note through all octaves before the next note | on/off (p78) | Have | `arp_oct_order` (2026-10-27, offline) | - | none |
+| PENDULUM: play the pattern back reversed | on/off (p79) | Have | `arp_pendulum` (2026-10-27, offline) | - | none |
+| OCTAVE range | 1, 2, 3, 4 (p79) | Have | `arp_oct` 1-4 (2026-10-27, offline) | - | none |
+| DIRECTION of the octaves | Up, Down, Up/Down, Down/Up (p79) | Have | `arp_dir` (Up/Down: 0 +1 +2 +1) (2026-10-27, offline) | - | none |
+| PATTERN | Up, Down, Order, Random (p80) | Have | `arp_pattern` (2026-10-27, offline) | - | none |
+| SYNC to the Master Clock | on/off (p81) | Have | `arp_sync` (default On): host tempo; with the transport playing, the host's song position (`HAS_SONG_POS`), steps on the song grid (2026-10-27, offline) | - | none |
+| CLOCK DIVISION | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p81) | Have | `arp_div`, named 1/1 .. 1/128 (4 .. 1/32 beats) (2026-10-27, offline) | - | none |
+| CLOCK TIMING | Straight, Dotted, Triplet (p81) | Have | `arp_timing` (2026-10-27, offline) | - | none |
+| GATE LENGTH | 1% to 100% (p81) | Have | `arp_gate`; 100% ties into the next step (2026-10-27, offline) | - | none |
+| FOLLOW SWING | off/on (p81) | Partial | no master clock: `arp_swing` always applies (50% = none) (2026-10-27, offline) | - | none |
+| NOTE RESET: restart at once on a new note, or wait for the next division | off/on (p81) | Have | `arp_reset` (default On); with the transport playing, steps stay on the song grid (2026-10-27, offline) | - | none |
+| PENDULUM MODE: end notes played once or twice | Once, Twice (p81) | Have | `arp_pend_mode` (2026-10-27, offline) | - | none |
+| RANDOM MODE | Non-repeating, Repeating (p81) | Have | `arp_rnd_mode` (2026-10-27, offline) | - | none |
+| HOLD latches the arpeggiator | p63 | Have | `hold` or `arp_latch` latch the arp's keys (legato adds, a new set replaces; the sustain pedal keeps keys while down) (2026-10-27, offline) | - | none |
 
 ## 17. Sequencer (p82-95)
 
@@ -784,10 +784,10 @@ which are not build candidates for an MPC plugin.
 | 10. VCA | 4 | 0 | 1 | 1 |
 | 11. Output | 0 | 0 | 6 | 5 |
 | 12. Performance Sets | 0 | 2 | 3 | 3 |
-| 13. Master Clock | 0 | 3 | 4 | 2 |
-| 14. Voice allocation (Hold, Chord, Polyphony) | 8 | 1 | 3 | 1 |
+| 13. Master Clock | 0 | 4 | 3 | 2 |
+| 14. Voice allocation (Hold, Chord, Polyphony) | 10 | 2 | 0 | 0 |
 | 15. Modulation (structure, sources, controllers, transforms, destinations) | 70 | 3 | 15 | 10 |
-| 16. Arpeggiator | 0 | 0 | 17 | 0 |
+| 16. Arpeggiator | 16 | 1 | 0 | 0 |
 | 17. Sequencer | 0 | 0 | 31 | 5 |
 | 18. Effects (architecture, every type, Eventide) | 70 | 9 | 8 | 1 |
 | 19. Left Hand Controller (glide, bend, pad, curves) | 15 | 0 | 4 | 3 |
@@ -795,7 +795,7 @@ which are not build candidates for an MPC plugin.
 | 21. Editing and saving | 0 | 0 | 4 | 3 |
 | 22. Settings (global, MIDI, CV, utilities, library, tuning) | 3 | 2 | 21 | 18 |
 | 24. Appendices A and B (USB keyboard, MIDI learn, NRPN) | 0 | 2 | 4 | 2 |
-| **Total** | **266** | **47** | **151** | **76** |
+| **Total** | **284** | **50** | **130** | **75** |
 
 Rows are features or parameters, so the totals weigh a 30-row sequencer the same as 30 oscillator parameters; read
 them per module, not as one score. Leaving out [HW]/[UI] rows, 75 sound or behaviour items are missing.
@@ -872,8 +872,12 @@ Tier 2 total: roughly 10-14 days (plus L for the ladder model).
 ### Tier 4: performance tools and structure (lowest priority on an MPC)
 
 16. **Arpeggiator** (section 16): full feature set is M (2-3 days), CPU none. The MPC already has an arpeggiator and
-   note repeat, so this is mainly for preset portability.
-17. **Chord memory** (section 14): M (1-2 days); voice cost scales with chord size.
+   note repeat, so this is mainly for preset portability. Done 2026-10-27 (offline), with generative steps beyond the
+   Moog One (`gen_*`: Euclidean rhythm, step probability, velocity randomness, a Turing machine over the held keys or a
+   scale); the step clock follows the host's song position and plays the engine's own voices, sample-accurate.
+   PC bench: an arp at 1/32 with Maj7 chords, Euclid and the Turing machine on 8 voices costs about the same as the
+   8 voices held (within 1 us per block).
+17. **Chord memory** (section 14): M (1-2 days); voice cost scales with chord size. Done 2026-10-27 (offline).
 18. **Multitimbral parts** (sections 0, 10-14, 22b): up to 3 parts with key zones, per-part MIDI channel, shared voice
    pool, per-part effects and master sends. Effort: L (1-2 weeks). CPU: high (all parts share one voice budget, and
    each part effect adds shared cost). On the MPC, three ONE-ish instances on three tracks give most of this for free.

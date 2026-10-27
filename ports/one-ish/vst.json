@@ -20,7 +20,8 @@
     "aarch64"
   ],
   "defines": {
-    "HAS_LFO_BPM": 1
+    "HAS_LFO_BPM": 1,
+    "HAS_SONG_POS": 1
   },
   "presets": "presets.json"
 }

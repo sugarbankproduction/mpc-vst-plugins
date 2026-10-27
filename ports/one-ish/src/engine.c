@@ -34,6 +34,12 @@
  * After the voices, in stereo (src/fx.h): a synth effect of a chosen type (delays, chorus, flanger, phaser, bit
  * crusher, resonator...) with CTRL 1/2, taking the panned voices, then the master effects on two sends: a stereo
  * or ping-pong delay and a plate, room or hall reverb.
+ * Before the voices, a performance section (all off by default: then keys reach the voices exactly as before): an
+ * arpeggiator after the Moog One's (Up, Down, Order, Random; 1-4 octaves up/down; octave order; pendulum; synced
+ * divisions 1/1-1/128 straight, dotted or triplet, or a free rate; gate, swing, latch, note reset), chord memory (a
+ * learned chord or built-in shapes, applied after the arp), and generative steps beyond the Moog One: a Euclidean
+ * rhythm, step probability, velocity randomness and a looping random "Turing machine" melody over the held keys or a
+ * scale. Its step clock follows the host's song position (HAS_SONG_POS) and places notes on their exact sample.
  *
  * Audio runs per sample; modulation (envelopes 1 and 3, LFOs, the matrix, pitch, cutoffs) every CR samples, with levels and the
  * filter mix ramped across each step so no knob or mod move steps audibly.
@@ -52,6 +58,7 @@
 #include "lfo.h"
 #include "modmatrix.h"
 #include "fx.h"
+#include "seq.h"
 
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
@@ -162,6 +169,12 @@ enum {
     P_PAN, P_SPREAD, P_DRIFT,
     P_AN_CUT, P_AN_ENV, P_AN_LVL, P_AN_TUNE, P_AN_RES, P_AN_LADDER,   /* ANALOG CHARACTER (with drift) */
     P_RIBBON_DST, P_RIBBON_AMT, P_RIBBON_MODE, P_RIBBON_ORIGIN,   /* the ribbon's quick assignment and behaviour */
+    /* the performance section (src/seq.h and "THE PERFORMANCE SECTION" below): arpeggiator, chord memory, generative */
+    P_ARP_ON, P_ARP_PATTERN, P_ARP_OCT, P_ARP_DIR, P_ARP_OCT_ORDER, P_ARP_PENDULUM, P_ARP_PEND_MODE, P_ARP_RND_MODE,
+    P_ARP_SYNC, P_ARP_RATE, P_ARP_DIV, P_ARP_TIMING, P_ARP_GATE, P_ARP_SWING, P_ARP_LATCH, P_ARP_RESET,
+    P_CHORD_LEARN, P_CHORD_ON, P_CHORD_SHAPE, P_CHORD_IV1, P_CHORD_IV5 = P_CHORD_IV1 + CHORD_MAX - 2,
+    P_GEN_EUCLID, P_GEN_STEPS, P_GEN_HITS, P_GEN_ROT, P_GEN_PROB, P_GEN_VEL_RAND, P_GEN_TM, P_GEN_TM_LEN,
+    P_GEN_TM_CHANGE, P_GEN_SCALE, P_GEN_RANGE,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -252,6 +265,12 @@ static const char *const KEYS[P_COUNT] = {
     "pan", "spread", "drift",
     "an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder",
     "ribbon_dst", "ribbon_amt", "ribbon_mode", "ribbon_origin",
+    [P_ARP_ON] = "arp_on", "arp_pattern", "arp_oct", "arp_dir", "arp_oct_order", "arp_pendulum", "arp_pend_mode",
+    "arp_rnd_mode", "arp_sync", "arp_rate", "arp_div", "arp_timing", "arp_gate", "arp_swing", "arp_latch", "arp_reset",
+    [P_CHORD_LEARN] = "chord_learn", "chord_on", "chord_shape", "chord_iv1", "chord_iv2", "chord_iv3", "chord_iv4",
+    "chord_iv5",
+    [P_GEN_EUCLID] = "gen_euclid_on", "gen_steps", "gen_hits", "gen_rot", "gen_prob", "gen_vel_rand", "gen_tm_on",
+    "gen_tm_len", "gen_tm_change", "gen_scale", "gen_range",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -403,6 +422,38 @@ typedef struct {
     float track[NOSC];       /* each oscillator's pitch tracking - 1 (0 at 100%) */
     float bend_off[NOSC][2]; /* each oscillator's bend up / down offset, whole semitones */
     char state_buf[STATE_MAX];   /* set_state's working copy (allocated with the instance, not per call) */
+    /* THE PERFORMANCE SECTION (arpeggiator, chord memory, generative steps): see its functions below */
+    int route;               /* where keys go (ROUTE_*), as last applied */
+    int seq_on;              /* the step clock plays (arp, Euclid or Turing machine on) */
+    int gen_bypass;          /* a generated note's release: HOLD and the pedals don't hold its voice */
+    uint8_t ocnt[128];       /* generated notes sounding, per note (overlapping chords share a voice) */
+    uint8_t cmem[128][CHORD_MAX], cmem_n[128];   /* the chord notes each key started (chord memory without the arp) */
+    seq_keys_t keys;         /* the keys the step clock plays from, oldest first */
+    int phys;                /* of them, keys still physically down */
+    int running;             /* a phrase is playing (keys held or latched) */
+    int start_pending;       /* a phrase began: line its first step up at the next render */
+    int16_t aseq[SEQ_MAX];   /* the arpeggiator's whole pattern, its velocities, length, one pass's length, place */
+    uint8_t avel[SEQ_MAX];
+    int alen, abase, apos, adirty, alast;
+    uint8_t eu[EU_MAX];      /* the Euclidean pattern, rotation applied (1 = hit) */
+    int eu_n;
+    uint8_t tm_reg[TM_MAX];  /* the Turing machine's loop */
+    int tm_pos;
+    uint32_t grng;           /* the generative choices' random numbers */
+    struct { int64_t at; int note; } pend[64];   /* generated notes' releases, by sample */
+    int npend;
+    int64_t now;             /* samples rendered since create() */
+    /* the step clock: beat position pos0 + clk * bps; steps fall on k * step (+ swing on odd k) */
+    double pos0, bps, step, swoff;
+    int64_t clk, next_k, k0;
+    int follow;              /* the clock follows the host's song position (sync on, transport playing) */
+    double sp_ppq, sp_bpm;   /* the host's last song_pos() */
+    int sp_playing, sp_new;
+    int learning, learn_fresh, learn_n;   /* CHORD LEARN: on, waiting for its first key, the keys so far */
+    int learn[CHORD_MAX];
+    unsigned changed;        /* params the engine set itself (bit i: CHANGED_KEY[i]), for mpc_engine_changed() */
+    struct { int64_t t; uint8_t note, vel; } glog[128];   /* the last generated notes (get_param "gen_log", for tests) */
+    int glog_head, glog_n;
 } one_t;
 
 static int slot(const char *key) {
@@ -562,8 +613,23 @@ static void apply_analog(one_t *s) {
     }
 }
 
+/* the performance section's settings: whether the step clock plays, the Euclidean pattern (rotated later by
+ * ROTATION steps: E(3,8) rotated by 1 is .x..x..x), and the arpeggiator's pattern is built again at its next step */
+static void apply_perf(one_t *s) {
+    const float *p = s->val;
+    s->seq_on = p[P_ARP_ON] > 0.5f || p[P_GEN_EUCLID] > 0.5f || p[P_GEN_TM] > 0.5f;
+    int n = (int)clampf(roundf(p[P_GEN_STEPS]), 1, EU_MAX), hits = (int)clampf(roundf(p[P_GEN_HITS]), 0, (float)n);
+    int rot = (int)clampf(roundf(p[P_GEN_ROT]), 0, EU_MAX - 1) % n;
+    uint8_t e[EU_MAX];
+    euclid(n, hits, e);
+    for (int i = 0; i < n; i++) s->eu[i] = e[(i - rot + n) % n];
+    s->eu_n = n;
+    s->adirty = 1;
+}
+
 /* recompute what the audio path reads from the parameter values */
 static void apply(one_t *s) {
+    apply_perf(s);
     for (int n = 0; n < NOSC; n++) {
         const float *o = &s->val[P_O1_WAVE + OSC_STRIDE * n];
         s->ratio[n] = powf(2.0f, (o[O_OCT] - OCT_CENTRE) + o[O_FREQ] / 12.0f);
@@ -826,6 +892,12 @@ static void *create(const char *data_dir) {
         for (int i = 0; i < NPARAMS; i++)
             if (!strcmp(PARAMS[i].key, KEYS[FXMD_SLOT[k]])) { s->fx_lo[k] = PARAMS[i].min; s->fx_hi[k] = PARAMS[i].max; }
     }
+    s->grng = 0x1b873593u;   /* fixed: the same generative choices in every instance, from the same start */
+    for (int i = 0; i < TM_MAX; i++) s->tm_reg[i] = (uint8_t)(seq_rand(&s->grng) >> 24);
+    s->bps = 120.0 / 60.0 / SR;
+    s->step = 0.25;
+    s->sp_ppq = -1.0;
+    s->alast = -1;
     apply(s);
     s->rib = s->rib_to = ribbon_origin(s);
     return s;
@@ -908,6 +980,7 @@ static int hold_on(const one_t *s) { return s->val[P_HOLD] > 0.5f; }
 /* a released key: held on by the sustain pedal, HOLD or (a note sounding when it went down) the sostenuto pedal, or
  * let go */
 static void key_up(one_t *s, voice_t *v) {
+    if (s->gen_bypass) { gate_off(v); return; }   /* a generated note's end: the arp's latch holds its keys instead */
     if (s->sustain || hold_on(s) || (s->sostenuto && v->sost)) v->sustained = 1;
     else gate_off(v);
 }
@@ -1123,17 +1196,390 @@ static void all_off(one_t *s, int hard) {
     }
 }
 
+/* ==== THE PERFORMANCE SECTION =====================================================================================
+ * Keys go one of four ways (ROUTE_*):
+ *   plain  straight to the voices, as before this section existed (everything here off: the very same samples);
+ *   chord  CHORD memory on: each key plays its chord, the key as the root (a built-in shape, or the learned one);
+ *   seq    the STEP CLOCK runs (ARP on, or a GENERATIVE Euclidean rhythm or Turing machine): the keys feed it and it
+ *          plays its own notes on the voices, each through chord memory too (the Moog One's order, p63: keys, then
+ *          the arpeggiator, then chord). Each step's note: the Turing machine's when it is on, else the arpeggiator's,
+ *          else every key at once (a Euclidean rhythm on the chord held). A Euclidean rest or a failed PROBABILITY
+ *          draw plays nothing, and the arp's pattern moves on only when a note plays;
+ *   learn  CHORD LEARN on: the keys play as they are and set the chord (first key the root); turning learn off stores it
+ *          in chord_iv1..5 and picks the Custom shape.
+ * A change of way lets go of every sound (a held key must not hang).
+ * Timing: the step clock is a beat position worked out per sample (pos0 + clk x bps), so a step falls on its exact
+ * sample inside a block: render() splits its work at each step and each note's end. Synced (arp_sync), it follows the
+ * host: with the transport playing it takes the song position (song_pos(), HAS_SONG_POS) at each block, so steps sit
+ * on the song's grid (a phrase waits for the next step; one starting up to a quarter step late plays that step at
+ * once); stopped, it runs on at the host tempo. Unsynced it runs at arp_rate. With NOTE RESET on and the transport
+ * stopped, the first key restarts the clock so its step plays at once; off, it waits for the next step. Latch (arp_latch
+ * or HOLD) keeps the keys after they come up (legato keys add, a new set replaces); the sustain pedal keeps them while
+ * down. Generated notes ignore HOLD and the pedals (their keys are latched instead). */
+enum { ROUTE_PLAIN, ROUTE_CHORD, ROUTE_SEQ, ROUTE_LEARN };
+static const float ARP_DIV_BEATS[8] = {4, 2, 1, 0.5f, 0.25f, 0.125f, 0.0625f, 0.03125f};   /* "arp_div": 1/1 .. 1/128 */
+static const float ARP_TIMING[3] = {1.0f, 1.5f, 2.0f / 3};   /* "arp_timing": straight, dotted, triplet */
+enum { RND_NONREPEAT, RND_REPEAT };                          /* "arp_rnd_mode" */
+#define LATE_FRAC 0.25     /* a phrase starting within this fraction of a step after it plays that step at once */
+#define JUMP_BEATS 1.0     /* the song position moving more than this from where the clock is: a locate or loop */
+#define PEND_MAX ((int)(sizeof ((one_t *)0)->pend / sizeof ((one_t *)0)->pend[0]))
+#define GLOG_MAX ((int)(sizeof ((one_t *)0)->glog / sizeof ((one_t *)0)->glog[0]))
+/* the params the engine sets itself (CHORD LEARN), as mpc_engine_changed() reports them */
+static const int CHANGED_SLOT[CHORD_MAX] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CHORD_IV1 + 1, P_CHORD_IV1 + 2, P_CHORD_IV1 + 3,
+                                            P_CHORD_IV1 + 4};
+
+static int route_of(const one_t *s) {
+    if (s->val[P_CHORD_LEARN] > 0.5f) return ROUTE_LEARN;
+    if (s->seq_on) return ROUTE_SEQ;
+    return s->val[P_CHORD_ON] > 0.5f ? ROUTE_CHORD : ROUTE_PLAIN;
+}
+
+static void glog_add(one_t *s, int note, int vel) {
+    int i;
+    if (s->glog_n < GLOG_MAX) i = (s->glog_head + s->glog_n++) % GLOG_MAX;
+    else { i = s->glog_head; s->glog_head = (s->glog_head + 1) % GLOG_MAX; }   /* full: the oldest goes */
+    s->glog[i].t = s->now;
+    s->glog[i].note = (uint8_t)note;
+    s->glog[i].vel = (uint8_t)vel;
+}
+
+/* a generated note on and off: counted per note, so two chords sharing a note (or a tied step) hold its voice until
+ * the last lets go; `bypass`: a step's end, which HOLD and the pedals don't hold */
+static void out_on(one_t *s, int note, int vel) {
+    if (note < 0 || note > 127) return;
+    if (s->ocnt[note] < 255) s->ocnt[note]++;
+    glog_add(s, note, vel);
+    note_on(s, note, vel);
+}
+static void out_off(one_t *s, int note, int bypass) {
+    if (note < 0 || note > 127 || !s->ocnt[note] || --s->ocnt[note]) return;
+    glog_add(s, note, 0);
+    s->gen_bypass = bypass;
+    note_off(s, note);
+    s->gen_bypass = 0;
+}
+
+/* the notes a root plays: itself, and with CHORD on the shape's notes above (or around) it, root first, no repeats */
+static int chord_notes(const one_t *s, int root, int *out) {
+    int n = 0, shape = (int)s->val[P_CHORD_SHAPE];
+    out[n++] = root;
+    if (s->val[P_CHORD_ON] < 0.5f) return n;
+    for (int i = 1; i < CHORD_MAX; i++) {
+        int iv = shape == 0 ? (int)roundf(s->val[P_CHORD_IV1 + i - 1]) : i < CHORD_SIZE[shape] ? CHORD_SHAPE[shape][i] : 0;
+        if (!iv) continue;
+        int dup = 0;
+        for (int j = 0; j < n; j++) dup |= out[j] == root + iv;
+        if (!dup) out[n++] = root + iv;
+    }
+    return n;
+}
+
+/* stop everything this section started and forget its keys (a change of way, All Notes Off) */
+static void gen_stop(one_t *s) {
+    s->gen_bypass = 1;
+    for (int n = 0; n < 128; n++)
+        if (s->ocnt[n]) { s->ocnt[n] = 0; note_off(s, n); }
+    s->gen_bypass = 0;
+    s->npend = 0;
+    memset(s->cmem_n, 0, sizeof s->cmem_n);
+    s->keys.n = s->phys = s->running = s->start_pending = 0;
+}
+
+/* chord memory on direct keys: the chord each key started is kept, so it ends as it began whatever the shape now */
+static void chord_key_off(one_t *s, int key) {
+    for (int i = 0; i < s->cmem_n[key]; i++) out_off(s, s->cmem[key][i], 0);
+    s->cmem_n[key] = 0;
+}
+static void chord_key_on(one_t *s, int key, int vel) {
+    int out[CHORD_MAX], n = chord_notes(s, key, out);
+    chord_key_off(s, key);   /* a repeated key (no note-off between) */
+    for (int i = 0; i < n; i++)
+        if (out[i] >= 0 && out[i] <= 127) { s->cmem[key][s->cmem_n[key]++] = (uint8_t)out[i]; out_on(s, out[i], vel); }
+}
+
+/* CHORD LEARN: the first key clears the last chord and is the root; up to five more keys add to it */
+static void learn_key(one_t *s, int note) {
+    if (s->learn_fresh) { s->learn_n = 0; s->learn_fresh = 0; }
+    for (int i = 0; i < s->learn_n; i++)
+        if (s->learn[i] == note) return;
+    if (s->learn_n < CHORD_MAX) s->learn[s->learn_n++] = note;
+}
+static void learn_commit(one_t *s) {   /* learn off: the chord, as intervals from its root, becomes the Custom shape */
+    if (s->learn_fresh || s->learn_n == 0) return;   /* nothing played: the old chord stays */
+    for (int i = 1; i < CHORD_MAX; i++)
+        s->val[P_CHORD_IV1 + i - 1] = i < s->learn_n ? clampf((float)(s->learn[i] - s->learn[0]), -24.0f, 24.0f) : 0.0f;
+    s->val[P_CHORD_SHAPE] = 0.0f;
+    s->changed = (1u << CHORD_MAX) - 1;   /* the host's controls follow (mpc_engine_changed) */
+}
+
+/* ---- the step clock ---- */
+static double step_t(const one_t *s, int64_t k) { return (double)k * s->step + ((k & 1) ? s->swoff : 0.0); }
+static double clock_pos(const one_t *s) { return s->pos0 + (double)s->clk * s->bps; }
+static void clock_anchor(one_t *s, double pos) { s->pos0 = pos; s->clk = 0; }
+static int64_t first_step_from(const one_t *s, double p) {   /* the first step at or after beat position p */
+    int64_t k = (int64_t)floor(p / s->step) - 1;
+    while (step_t(s, k) < p - 1e-9) k++;
+    return k;
+}
+static int64_t until(const one_t *s, double t) {   /* samples from now to beat position t (0 or less: due now) */
+    return (int64_t)ceil((t - s->pos0) / s->bps - 1e-6) - s->clk;
+}
+
+/* once per render while the clock plays: tempo, step length and swing, the host's song position, a new phrase's start */
+static void clock_block(one_t *s) {
+    const float *p = s->val;
+    int sync = p[P_ARP_SYNC] > 0.5f;
+    double bpm = sync ? (s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm) : (double)clampf(p[P_ARP_RATE], 10.0f, 280.0f);
+    double bps = bpm / 60.0 / SR, now_pos = clock_pos(s);
+    double step = ARP_DIV_BEATS[(int)clampf(p[P_ARP_DIV], 0, 7)] * ARP_TIMING[(int)clampf(p[P_ARP_TIMING], 0, 2)];
+    /* SWING: the on-step's share of each pair of steps (50%: none), so odd steps come later (or earlier) */
+    double swoff = (2.0 * clampf(p[P_ARP_SWING] * 0.01f, 0.1f, 0.9f) - 1.0) * step;
+    int restep = step != s->step || swoff != s->swoff, jump = 0;
+    s->step = step;
+    s->swoff = swoff;
+    int follow = sync && s->sp_playing && s->sp_ppq >= 0.0;
+    if (follow && s->sp_new) {   /* the song position at this block: on the song's grid, steps counted from its start */
+        jump = !s->follow || fabs(now_pos - s->sp_ppq) > JUMP_BEATS;
+        clock_anchor(s, s->sp_ppq);
+        if (jump) { s->next_k = first_step_from(s, s->sp_ppq - 0.002); s->k0 = 0; }   /* (0.002: the host's jitter) */
+    } else if (bps != s->bps) {
+        clock_anchor(s, now_pos);   /* a new tempo from here on */
+    }
+    s->bps = bps;
+    s->follow = follow;
+    s->sp_new = 0;
+    if (restep && !jump) {
+        s->next_k = first_step_from(s, clock_pos(s));
+        if (!follow) s->k0 = s->next_k;
+    }
+    if (!s->start_pending) return;
+    s->start_pending = 0;
+    if (!follow && p[P_ARP_RESET] > 0.5f) {   /* NOTE RESET: the phrase's first step now */
+        clock_anchor(s, 0.0);
+        s->next_k = s->k0 = 0;
+        return;
+    }
+    double at = clock_pos(s);   /* else the next step, or the last one if it was only just now */
+    int64_t k = first_step_from(s, at);
+    if (at - step_t(s, k - 1) < LATE_FRAC * (step_t(s, k) - step_t(s, k - 1))) k--;
+    s->next_k = k;
+    s->k0 = follow ? 0 : k;
+}
+
+static void pend_add(one_t *s, int note, int64_t at) {
+    if (s->npend == PEND_MAX) {   /* full (never with 8 voices): the first one ends now */
+        out_off(s, s->pend[0].note, 1);
+        s->pend[0] = s->pend[--s->npend];
+    }
+    s->pend[s->npend].note = note;
+    s->pend[s->npend++].at = at;
+}
+
+/* the ends due: before `now` (inclusive 0) or at it too (inclusive 1: after this sample's steps, so a 100% gate ties) */
+static void pend_release(one_t *s, int inclusive) {
+    for (int i = 0; i < s->npend;) {
+        if (s->pend[i].at < s->now || (inclusive && s->pend[i].at == s->now)) {
+            int note = s->pend[i].note;
+            s->pend[i] = s->pend[--s->npend];
+            out_off(s, note, 1);
+        } else {
+            i++;
+        }
+    }
+}
+
+/* one note of a step, through chord memory, with VELOCITY RANDOM; it ends at sample `off` */
+static void play_step(one_t *s, int note, int vel, int64_t off) {
+    float vr = s->val[P_GEN_VEL_RAND] * 0.01f;
+    if (vr > 0.0f) vel = (int)clampf(roundf((float)vel + (seq_rand01(&s->grng) * 2.0f - 1.0f) * vr * 64.0f), 1.0f, 127.0f);
+    int out[CHORD_MAX], n = chord_notes(s, note, out);
+    for (int i = 0; i < n; i++)
+        if (out[i] >= 0 && out[i] <= 127) { out_on(s, out[i], vel); pend_add(s, out[i], off); }
+}
+
+static void arp_rebuild(one_t *s) {
+    const float *p = s->val;
+    s->alen = arp_build(&s->keys, (int)p[P_ARP_PATTERN], (int)p[P_ARP_OCT] + 1, (int)p[P_ARP_DIR], p[P_ARP_OCT_ORDER] > 0.5f,
+                        p[P_ARP_PENDULUM] > 0.5f, p[P_ARP_PEND_MODE] > 0.5f, s->aseq, s->avel, &s->abase, &s->grng, s->alast);
+    if (s->alen) s->apos %= s->alen;
+    s->adirty = 0;
+}
+
+/* the arpeggiator's next note, -1 for none */
+static int arp_next(one_t *s, int *vel) {
+    const float *p = s->val;
+    if (s->adirty) arp_rebuild(s);
+    if (!s->alen) return -1;
+    int random = (int)p[P_ARP_PATTERN] == ARP_RANDOM, i;
+    if (random && (int)p[P_ARP_RND_MODE] == RND_REPEAT) {
+        i = (int)(seq_rand(&s->grng) % (uint32_t)s->abase);
+    } else {
+        if (s->apos >= s->alen) s->apos = 0;
+        i = s->apos++;
+    }
+    int note = s->aseq[i];
+    *vel = s->avel[i];
+    s->alast = note;
+    if (s->apos >= s->alen) {   /* the pattern starts again: a random one in a new order */
+        s->apos = 0;
+        if (random && (int)p[P_ARP_RND_MODE] == RND_NONREPEAT) {
+            arp_shuffle(s->aseq, s->avel, s->abase, &s->grng, note);
+            s->alen = arp_tail(s->aseq, s->avel, s->abase, p[P_ARP_PENDULUM] > 0.5f, p[P_ARP_PEND_MODE] > 0.5f);
+        }
+    }
+    return note;
+}
+
+/* step k: the Euclidean rhythm and PROBABILITY decide whether it plays; then its note(s), each held for GATE of the
+ * step (its own length: swing makes pairs uneven) */
+static void fire_step(one_t *s, int64_t k) {
+    const float *p = s->val;
+    int64_t e = k - s->k0;
+    if (p[P_GEN_EUCLID] > 0.5f && !s->eu[(e % s->eu_n + s->eu_n) % s->eu_n]) return;
+    float prob = p[P_GEN_PROB] * 0.01f;
+    if (prob < 1.0f && seq_rand01(&s->grng) >= prob) return;
+    double t0 = step_t(s, k), t1 = step_t(s, k + 1);
+    int64_t off = s->now + until(s, t0 + clampf(p[P_ARP_GATE], 1.0f, 100.0f) * 0.01 * (t1 - t0));
+    if (off <= s->now) off = s->now + 1;
+    if (p[P_GEN_TM] > 0.5f) {
+        int v = tm_step(s->tm_reg, (int)roundf(p[P_GEN_TM_LEN]), &s->tm_pos, p[P_GEN_TM_CHANGE] * 0.01f, &s->grng);
+        play_step(s, tm_note(v, (int)p[P_GEN_SCALE], (int)p[P_GEN_RANGE] + 1, &s->keys), s->keys.vel[s->keys.n - 1], off);
+    } else if (p[P_ARP_ON] > 0.5f) {
+        int vel, note = arp_next(s, &vel);
+        if (note >= 0) play_step(s, note, vel, off);
+    } else {
+        for (int i = 0; i < s->keys.n; i++) play_step(s, s->keys.note[i], s->keys.vel[i], off);
+    }
+}
+
+/* everything due at this sample: earlier ends, the steps, then the ends at this very sample */
+static void seq_due(one_t *s) {
+    pend_release(s, 0);
+    for (int guard = 0; s->running && s->keys.n && until(s, step_t(s, s->next_k)) <= 0; guard++) {
+        if (guard == 16) { s->next_k = first_step_from(s, clock_pos(s)); break; }   /* a huge jump: no burst of notes */
+        fire_step(s, s->next_k);
+        s->next_k++;
+    }
+    pend_release(s, 1);
+}
+
+/* samples until the next thing the clock does (at least 1) */
+static int64_t seq_next(const one_t *s) {
+    int64_t d = INT64_MAX;
+    if (s->running && s->keys.n) d = until(s, step_t(s, s->next_k));
+    for (int i = 0; i < s->npend; i++)
+        if (s->pend[i].at - s->now < d) d = s->pend[i].at - s->now;
+    return d < 1 ? 1 : d;
+}
+
+/* the keys while the clock plays */
+static int seq_latched(const one_t *s) { return s->val[P_ARP_LATCH] > 0.5f || hold_on(s); }
+static void seq_key_on(one_t *s, int note, int vel) {
+    seq_keys_t *k = &s->keys;
+    int start = !s->running || k->n == 0;
+    if (s->phys == 0 && k->n && seq_latched(s) && !s->sustain) { k->n = 0; start = 1; }   /* latched: a new set replaces */
+    int i = seq_find(k, note);
+    if (i >= 0) { s->phys -= k->down[i]; seq_remove(k, i); }   /* played again: to the end (ORDER) */
+    if (k->n == SEQ_KEYS) { s->phys -= k->down[0]; seq_remove(k, 0); }
+    k->note[k->n] = (int16_t)note;
+    k->vel[k->n] = (uint8_t)vel;
+    k->down[k->n++] = 1;
+    s->phys++;
+    s->adirty = 1;
+    if (start) {   /* a new phrase: the pattern and the Turing machine from their start */
+        s->running = s->start_pending = 1;
+        s->apos = s->tm_pos = 0;
+        s->alast = -1;
+    }
+}
+static void seq_key_off(one_t *s, int note) {
+    seq_keys_t *k = &s->keys;
+    int i = seq_find(k, note);
+    if (i < 0 || !k->down[i]) return;
+    k->down[i] = 0;
+    s->phys--;
+    if (!seq_latched(s) && !s->sustain) seq_remove(k, i);
+    s->adirty = 1;
+    if (k->n == 0) s->running = 0;
+}
+static void seq_unlatch(one_t *s) {   /* latch or the pedal let go: the keys no longer down leave */
+    if (seq_latched(s) || s->sustain) return;
+    for (int i = 0; i < s->keys.n;) {
+        if (s->keys.down[i]) i++;
+        else seq_remove(&s->keys, i);
+    }
+    s->adirty = 1;
+    if (s->keys.n == 0) s->running = 0;
+}
+
+static void key_on(one_t *s, int note, int vel) {
+    switch (s->route) {
+    case ROUTE_SEQ: seq_key_on(s, note, vel); return;
+    case ROUTE_CHORD: chord_key_on(s, note, vel); return;
+    case ROUTE_LEARN: learn_key(s, note); note_on(s, note, vel); return;   /* heard as played (not a silent learn) */
+    default: note_on(s, note, vel); return;
+    }
+}
+static void key_off(one_t *s, int note) {
+    switch (s->route) {
+    case ROUTE_SEQ: seq_key_off(s, note); return;
+    case ROUTE_CHORD: chord_key_off(s, note); return;
+    default: note_off(s, note); return;
+    }
+}
+
+/* after a set_param (k: its slot, -1 for a whole state): CHORD LEARN turned off stores the chord; a change of way lets
+ * go of everything; latch off lets go of the keys no longer down */
+static void perf_after_set(one_t *s, int k) {
+    int learn = s->val[P_CHORD_LEARN] > 0.5f;
+    if (k == P_CHORD_LEARN && learn != s->learning) {
+        if (learn) s->learn_fresh = 1;
+        else learn_commit(s);
+    }
+    s->learning = learn;
+    int r = route_of(s);
+    if (r != s->route) {
+        gen_stop(s);
+        all_off(s, 0);
+        s->route = r;
+    }
+    if (r == ROUTE_SEQ && (k == P_HOLD || k == P_ARP_LATCH || k < 0)) seq_unlatch(s);
+}
+
+/* the host's song position at each block (HAS_SONG_POS): the step clock follows it while synced and playing */
+static void song_pos(void *inst, double ppq, double bpm, int playing, int frames) {
+    one_t *s = inst;
+    (void)frames;
+    s->sp_ppq = ppq;
+    s->sp_bpm = bpm;
+    s->sp_playing = playing;
+    s->sp_new = 1;
+}
+
+/* engine.h: the params CHORD LEARN set, one key per call, so the host's controls follow */
+int mpc_engine_changed(void *inst, char *key, int len) {
+    one_t *s = inst;
+    if (!s->changed) return 0;
+    int i = __builtin_ctz(s->changed);
+    s->changed &= s->changed - 1;
+    snprintf(key, (size_t)len, "%s", KEYS[CHANGED_SLOT[i]]);
+    return 1;
+}
+
 static void midi(void *inst, const uint8_t *m, int len) {
     one_t *s = inst;
     if (len < 2) return;
     int st = m[0] & 0xf0, d1 = m[1] & 0x7f, d2 = len > 2 ? m[2] & 0x7f : 0;
     if (st == 0xd0) { s->aftertouch = d1 / 127.0f; return; }   /* channel pressure: two bytes */
     if (len < 3) return;
-    if (st == 0x90 && d2) note_on(s, d1, d2);
-    else if (st == 0x80 || st == 0x90) note_off(s, d1);
+    if (st == 0x90 && d2) key_on(s, d1, d2);
+    else if (st == 0x80 || st == 0x90) key_off(s, d1);
     else if (st == 0xe0) s->bend = (((d2 << 7) | d1) - 8192) / 8192.0f;
     else if (st == 0xb0 && d1 == 1) s->wheel = d2 / 127.0f;
-    else if (st == 0xb0 && d1 == 64) sustain_pedal(s, d2 >= 64);
+    else if (st == 0xb0 && d1 == 64) {
+        sustain_pedal(s, d2 >= 64);
+        if (d2 < 64 && s->route == ROUTE_SEQ) seq_unlatch(s);   /* the keys it kept in the arp leave */
+    }
     else if (st == 0xb0 && d1 == 66) sostenuto_pedal(s, d2 >= 64);
     else if (st == 0xb0 && d1 == 11) s->exp1 = s->expression = d2 / 127.0f;   /* expression: matrix sources Exp 1, 2 */
     else if (st == 0xb0 && d1 == 4) s->exp2 = d2 / 127.0f;
@@ -1145,7 +1591,10 @@ static void midi(void *inst, const uint8_t *m, int len) {
         s->rib_touch = 0;
         ribbon_rest(s);
     }
-    else if (st == 0xb0 && (d1 == 120 || d1 == 123)) all_off(s, d1 == 120);
+    else if (st == 0xb0 && (d1 == 120 || d1 == 123)) {
+        if (s->route != ROUTE_PLAIN) gen_stop(s);   /* the arp's keys and its notes too */
+        all_off(s, d1 == 120);
+    }
 }
 
 /* "state": every value as key=value;... (the wrapper saves it with the project) */
@@ -1214,6 +1663,7 @@ static void set_param(void *inst, const char *key, const char *val) {
     for (int i = 0; i < MAX_VOICES; i++)   /* LATCH off: envelopes it held open after key up now release */
         for (int n = 0; n < NENV; n++)
             if (!s->ecfg[n].latch && s->voice[i].env[n].held && !s->voice[i].gate) env_release(&s->voice[i].env[n]);
+    perf_after_set(s, k);
 }
 
 static int hz_text(char *buf, int n, float hz) {
@@ -1299,6 +1749,23 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
 static int get_param(void *inst, const char *key, char *buf, int n) {
     one_t *s = inst;
     if (!strcmp(key, "state")) return get_state(s, buf, n);
+    if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
+        int used = 0;
+        buf[0] = 0;
+        while (s->glog_n && used < n - 32) {
+            used += snprintf(buf + used, n - used, "%lld:%d:%d;", (long long)s->glog[s->glog_head].t,
+                             s->glog[s->glog_head].note, s->glog[s->glog_head].vel);
+            s->glog_head = (s->glog_head + 1) % GLOG_MAX;
+            s->glog_n--;
+        }
+        return used;
+    }
+    if (!strcmp(key, "gen_euclid")) {   /* ... and the Euclidean pattern as x and . */
+        int i = 0;
+        for (; i < s->eu_n && i < n - 1; i++) buf[i] = s->eu[i] ? 'x' : '.';
+        buf[i] = 0;
+        return i;
+    }
     size_t len = strlen(key);
     if (len > 8 && !strcmp(key + len - 8, "_display")) {
         char base[32];
@@ -1887,11 +2354,18 @@ static void render(void *inst, int16_t *out, int frames) {
         s->fx_stale = 0;
         fx_params(s, fxp);
     }
+    if (s->seq_on) clock_block(s);
     int done = 0;
     while (done < frames) {
+        int live = s->seq_on || s->npend > 0;   /* the step clock plays, or its last notes are still to end */
+        if (live) seq_due(s);   /* steps and note ends at this sample, before the voices' control step */
         int first = s->phase == 0;
         int n = CR - s->phase;
         if (n > frames - done) n = frames - done;
+        if (live) {   /* stop this piece at the next step or note end: they fall on their exact sample */
+            int64_t d = seq_next(s);
+            if (d < n) n = (int)d;
+        }
         if (first) { control_lfos(s); ribbon_step(s); }
         if (n > 128) n = 128;
         memset(acc, 0, sizeof(float) * n);
@@ -1919,8 +2393,10 @@ static void render(void *inst, int16_t *out, int frames) {
         }
         done += n;
         s->phase = (s->phase + n) % CR;
+        s->now += n;
+        s->clk += n;
     }
 }
 
-static const mpc_engine_t ENGINE = {create, destroy, midi, set_param, get_param, render, NULL, NULL};
+static const mpc_engine_t ENGINE = {create, destroy, midi, set_param, get_param, render, NULL, song_pos};
 const mpc_engine_t *mpc_engine(void) { return &ENGINE; }
