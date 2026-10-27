@@ -5,9 +5,12 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include "layout.h"   /* build/desktop/layout.h: where the editor's ribbon, buttons and MORE triangles are */
+#define TEST_MIDI_LOG 0x4F314D4C   /* as editor.h: effVendorSpecific index for the MIDI the window passed on */
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*audioMasterCallback)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -117,8 +120,84 @@ static void audition(AEffect *fx, const char *wav) {
     printf("     wrote %s (%d presets, %.0f s)\n", wav, np, frames / (double)SR);
 }
 
+/* a picture of the editor window as a 24-bit BMP (through WM_PRINTCLIENT, as a host's thumbnail would) */
+static void shot(HWND child, int w, int h, const char *bmp, const char *suffix) {
+    char path[512];
+    const char *dot = strrchr(bmp, '.');
+    snprintf(path, sizeof path, "%.*s%s.bmp", dot ? (int)(dot - bmp) : (int)strlen(bmp), bmp, suffix);
+    HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+    HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+    HGDIOBJ old = SelectObject(dc, bm);
+    SendMessageA(child, WM_PRINTCLIENT, (WPARAM)dc, PRF_CLIENT);
+    BITMAPINFOHEADER bi = {sizeof bi, w, h, 1, 24, BI_RGB, 0, 0, 0, 0, 0};
+    int stride = (w * 3 + 3) & ~3;
+    static unsigned char px[4096 * 2048 * 3];
+    if (stride * h <= (int)sizeof px) {
+        GetDIBits(dc, bm, 0, h, px, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+        FILE *f = fopen(path, "wb");
+        if (f) {
+            BITMAPFILEHEADER fh = {0x4d42, (DWORD)(sizeof fh + sizeof bi + stride * h), 0, 0, sizeof fh + sizeof bi};
+            fwrite(&fh, sizeof fh, 1, f); fwrite(&bi, sizeof bi, 1, f); fwrite(px, stride * h, 1, f);
+            fclose(f);
+            printf("     wrote %s\n", path);
+        }
+    }
+    SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
+}
+
+/* a click at a point given in the layout's base units (s: pixels per base unit) */
+static void click(HWND child, float s, float x, float y) {
+    LPARAM at = MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s));
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);
+    SendMessageA(child, WM_LBUTTONUP, 0, at);
+}
+static void click_zone(HWND child, float s, const short z[4]) { click(child, s, z[0] + z[2] / 2.0f, z[1] + z[3] / 2.0f); }
+static int click_more(HWND child, float s, int page) {   /* a module's MORE triangle */
+    for (int k = 0; k < NMORES; k++)
+        if (MORES[k].page == page && page >= 0) {
+            click(child, s, MORES[k].x + MORES[k].w * 0.7f, MORES[k].y + MORES[k].h * 0.3f);
+            return 1;
+        }
+    return 0;
+}
+
+/* the ribbon: a drag from left to right must reach the engine as CC 17 = 127 (touch), CC 16 rising (position) and
+ * CC 17 = 0 (release), through the window's MIDI queue and the audio thread (the editor keeps a copy of what it passed
+ * on, read back with effVendorSpecific / TEST_MIDI_LOG) */
+static void ribbon_test(AEffect *fx, HWND child, float s) {
+    unsigned char log[64][3];
+    play(fx, 2, 512);
+    fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0);   /* forget what came before */
+    float x0 = ZONE_RIBBON[0] + ZONE_RIBBON[2] * 0.1f, x1 = ZONE_RIBBON[0] + ZONE_RIBBON[2] * 0.8f;
+    int y = (int)lroundf((ZONE_RIBBON[1] + ZONE_RIBBON[3] / 2.0f) * s);
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM((int)lroundf(x0 * s), y));
+    play(fx, 1, 512);
+    for (int k = 1; k <= 10; k++) {
+        SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM((int)lroundf((x0 + (x1 - x0) * k / 10) * s), y));
+        play(fx, 1, 512);
+    }
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM((int)lroundf(x1 * s), y));
+    play(fx, 2, 512);
+    int n = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0), on = -1, off = -1, pos = 0, rising = 1, first = -1, last = -1;
+    for (int k = 0; k < n; k++) {
+        if (log[k][0] != 0xB0) continue;
+        if (log[k][1] == 17 && log[k][2] == 127 && on < 0) on = k;
+        if (log[k][1] == 17 && log[k][2] == 0) off = k;
+        if (log[k][1] == 16) {
+            if (last >= 0 && log[k][2] <= last) rising = 0;
+            if (first < 0) first = log[k][2];
+            last = log[k][2];
+            pos++;
+        }
+    }
+    char what[160];
+    snprintf(what, sizeof what, "a drag on the ribbon reaches the engine: %d messages, touch at %d, release at %d, "
+             "%d positions %d..%d", n, on, off, pos, first, last);
+    check(on >= 0 && off > on && pos >= 5 && rising && abs(first - 13) <= 2 && abs(last - 102) <= 2, what);
+}
+
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
- * as a 24-bit BMP if asked, close it */
+ * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
     check(fx->flags & 1, "the plugin says it has an editor window");
@@ -148,28 +227,31 @@ static void editor(AEffect *fx, const char *bmp) {
         double after = play(fx, 20, 512);
         snprintf(what, sizeof what, "letting go of the key stops it (rms %.4f)", after);
         check(after < held / 10, what);
+        ribbon_test(fx, child, cr.right / (float)BASE_W);
         SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);   /* held again for the picture */
         play(fx, 4, 512);
     }
     if (child && bmp) {
-        HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
-        HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
-        HGDIOBJ old = SelectObject(dc, bm);
-        SendMessageA(child, WM_PRINTCLIENT, (WPARAM)dc, PRF_CLIENT);
-        BITMAPINFOHEADER bi = {sizeof bi, w, h, 1, 24, BI_RGB, 0, 0, 0, 0, 0};
-        int stride = (w * 3 + 3) & ~3;
-        static unsigned char px[4096 * 2048 * 3];
-        if (stride * h <= (int)sizeof px) {
-            GetDIBits(dc, bm, 0, h, px, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
-            FILE *f = fopen(bmp, "wb");
-            if (f) {
-                BITMAPFILEHEADER fh = {0x4d42, (DWORD)(sizeof fh + sizeof bi + stride * h), 0, 0, sizeof fh + sizeof bi};
-                fwrite(&fh, sizeof fh, 1, f); fwrite(&bi, sizeof bi, 1, f); fwrite(px, stride * h, 1, f);
-                fclose(f);
-                printf("     wrote %s\n", bmp);
-            }
+        RECT cr;
+        GetClientRect(child, &cr);
+        float s = cr.right / (float)BASE_W;
+        shot(child, w, h, bmp, "");
+        SendMessageA(child, WM_LBUTTONUP, 0, 0);
+        click_zone(child, s, ZONE_TAB_MATRIX);   /* the matrix again: rows 9-16 */
+        shot(child, w, h, bmp, "_matrix2");
+        if (click_more(child, s, PG_LFO1)) shot(child, w, h, bmp, "_more_lfo1");
+        if (PG_SFX >= 0) {   /* the synth effect's page for one type (stereo flanger: two sub-pages) */
+            int type = ITEMS[PAGES[PG_SFX].first].param;
+            float was = fx->getParameter(fx, type);
+            fx->setParameter(fx, type, 5.0f / 14.0f);
+            click_more(child, s, PG_SFX);
+            shot(child, w, h, bmp, "_more_synthfx");
+            fx->setParameter(fx, type, was);
         }
-        SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
+        click_zone(child, s, ZONE_TAB_MORE);
+        shot(child, w, h, bmp, "_more_index");
+        click_zone(child, s, ZONE_TAB_ANALOG);
+        shot(child, w, h, bmp, "_analog");
     }
     if (child) SendMessageA(child, WM_LBUTTONUP, 0, 0);
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);

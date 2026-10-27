@@ -1,16 +1,20 @@
-/* Drawing for the desktop editor (see editor.c): the panels, knobs, LED lists, buttons, the oscillators' wave
- * screens, the centre console's screen, the left-hand controller and the keyboard. All drawn from scratch: GDI for
- * text, GDI+ (gfx.h) for anti-aliased shapes. UI thread only. */
+/* Drawing for the desktop editor (see editor.c): the panels and their MORE triangles, knobs, LED lists, buttons, the
+ * oscillators' wave screens, the centre console's screen (mod matrix, MORE pages), the left-hand controller, the
+ * ribbon and the keyboard. All drawn from scratch: GDI for text, GDI+ (gfx.h) for anti-aliased shapes. UI thread only. */
 #include <stdio.h>
 #include <string.h>
 #include "editor.h"
 #include "gfx.h"
 
-/* ---- help text: what the control under the mouse does ---- */
+/* ---- help text: what the control under the mouse does (a key, or "_suffix" for every key ending in it) ---- */
 static const char *help_for(int i) {
     static const struct { const char *key, *text; } H[] = {
-        {"_src", "Mod source: what moves the destination (an envelope, an LFO, velocity, the mod wheel, aftertouch, the key played, or a random value per note)."},
+        {"_fm_src", "Which oscillator frequency-modulates this filter's cutoff (with FM AMT)."},
+        {"_src", "Mod source: what moves the destination (envelopes, LFOs, velocity, wheels, aftertouch, the key played, random values, expression pedals, a constant)."},
         {"_dst", "Mod destination: what the source moves. Pitch in semitones, cutoffs in octaves, levels and mix in % of their range."},
+        {"_via_amt", "Via amount: how much the via source scales this row (100% = fully; minus turns it upside down)."},
+        {"_xf_amt", "Transform amount: how strongly the transform reshapes the source (0% = not at all)."},
+        {"_xf", "Transform: reshapes the source before it moves the destination. Limit Low/High clip one side; Squared and Cubed bend it into a curve."},
         {"_amt", "Mod amount: how far and which way (drag left/right; minus turns the source upside down). Double-click resets to 0."},
         {"_via", "Mod via: scales this row by a second source. LFO 1 -> Pitch via Mod Wheel = vibrato that the wheel brings in."},
         {"_svf", "Sends this mixer channel to the state-variable filter. With the Ladder button too it feeds both; with neither it is silent."},
@@ -25,45 +29,100 @@ static const char *help_for(int i) {
         {"_pw", "Pulse width: 50% is a square (hollow); narrower or wider sounds thinner and nasal."},
         {"_freq", "Tunes this oscillator up or down by up to 7 semitones, smoothly (7 = a fifth)."},
         {"_beat", "Detunes by a fixed number of Hz, so the beating stays at the same speed up and down the keyboard."},
+        {"_track", "Pitch tracking: how much this oscillator follows the keys (100% = normal, 0% = the same pitch on every key)."},
+        {"_bend_up_off", "Bend up offset: added to the bend range for this oscillator only, so the oscillators can bend by different amounts."},
+        {"_bend_dn_off", "Bend down offset: added to the bend range for this oscillator only."},
+        {"_sync_src", "Which oscillator restarts this one when Hard Sync is on."},
+        {"angle_lfo3", "LFO 3 moves the wave angle of all three oscillators: a moving, animated tone."},
+        {"pw_lfo3", "LFO 3 moves the pulse width of all three oscillators (pulse-width modulation)."},
         {"ring_src", "Which two oscillators the ring modulator multiplies (their triangle/saw waves): metallic, bell-like tones."},
         {"fm_amt", "Linear FM: one oscillator wobbles another's frequency at audio rate, for bells, brass and clangs."},
         {"fm_route", "Which oscillator modulates which: 1 > 2, 1 > 3 or 3 > 1. The modulator can be silent in the mixer."},
+        {"noise_a", "Noise envelope attack (with ENV on): how fast the noise fades in at each note."},
+        {"noise_r", "Noise envelope release (with ENV on): how fast the noise fades out (at once if Sustain is off)."},
+        {"noise_sus", "Noise sustain: on, the noise holds while the key is down; off, it fades out after the attack (a chiff)."},
+        {"noise_env", "Noise envelope: on, the noise gets its own attack/release; off, it follows the amplifier envelope."},
+        {"noise_color_mix", "Colour mix: blends the two noise colours picked with COLOR."},
+        {"noise_color_pair", "Noise colours: red (dark), white (bright), purple (very bright). COLOR MIX blends the pair."},
         {"flt_route", "Parallel: the two filters side by side. Series: the SVF feeds the ladder (send sources to the SVF, mix to Ladder)."},
         {"flt_mix", "Balance between the two filters' outputs: 0% all SVF, 100% all ladder."},
         {"_kbd", "Keyboard tracking: how much the cutoff follows the keys (100% = an octave per octave, around middle C)."},
-        {"_sync", "Sync: for an oscillator, restart with oscillator 1 (hard sync); for an LFO or the delay, lock to the host tempo."},
+        {"_timing", "Sync timing: with Sync on, the LFO's tempo division straight, dotted or triplet."},
+        {"_sync", "Sync: for an oscillator, restart with another oscillator (hard sync); for an LFO, an effect or the delay, lock to the host tempo."},
+        {"_range", "LFO range: Slow for long sweeps, Low and Medium for faster wobbles."},
+        {"_var", "Variation: each cycle's rate varies a little at random, like an analog LFO."},
+        {"_polarity", "Bipolar swings above and below; Unipolar only upwards from 0."},
+        {"_phase", "Start phase: where in its cycle the LFO starts when it is reset."},
+        {"_delay", "Delay: how long after the note this starts."},
+        {"_fade_in", "Fade in: how long the LFO takes to reach full depth after its delay."},
+        {"_fade_out", "Fade out: how long the LFO takes to die away (0 = never)."},
+        {"_repeats", "Repeats: how many cycles the LFO runs after each reset (Inf = keeps running)."},
+        {"_smooth", "Smoothing: rounds off the LFO's steps and corners (S&H becomes a smooth random wander)."},
         {"flt_res", "Ladder resonance: emphasis at the cutoff. Near the top the filter sings on its own as a sine (self-oscillation)."},
         {"flt_drive", "Drive: pushes the ladder's input into saturation for a thicker, growling tone."},
         {"flt_slope", "How steeply the ladder cuts: 24 dB per octave is the classic; 6 dB is gentle."},
         {"voices", "How many notes can sound at once. Mono plays one, legato, last key wins."},
-        {"bend_range", "How far the pitch wheel bends, in semitones."},
-        {"modfx_type", "The modulation effect: chorus, flanger or phaser (Off saves CPU)."},
+        {"hold", "Hold: notes keep sounding after you let go, until Hold is switched off."},
+        {"note_priority", "Mono note priority: with several keys held in Mono, which one sounds (lowest, highest or the last pressed)."},
+        {"steal_mode", "Voice stealing: when all voices are busy, which note makes way for a new one."},
+        {"bend_up", "How far the pitch wheel bends up, in semitones."},
+        {"bend_down", "How far the pitch wheel bends down, in semitones."},
+        {"vel_curve", "Velocity curve: how hard you must play for loud notes (Soft: little effort; Hard: a firm touch)."},
+        {"transpose", "Transposes everything you play, in semitones."},
+        {"octave_shift", "Shifts everything you play by octaves (the keyboard's OCTAVE buttons only move the on-screen keys)."},
+        {"key_center", "Key tracking centre: the note around which key tracking turns cutoffs and envelopes neither up nor down."},
+        {"master_tune", "Master tune: the pitch of A, 440 Hz as standard."},
+        {"fine_tune", "Fine tune, in cents."},
+        {"modfx_type", "The synth effect: delays, flangers, choruses, phasers, a bit crusher or a resonator. Its MORE page shows its own controls."},
+        {"modfx_ctrl1", "CTRL 1: moves the effect's most useful control (or the one set as its target on the MORE page), plus or minus."},
+        {"modfx_ctrl2", "CTRL 2: moves a second effect control (its target is on the MORE page)."},
+        {"modfx_c1_dst", "CTRL 1 target: the effect control CTRL 1 moves (Auto: the most useful one for the type)."},
+        {"modfx_c2_dst", "CTRL 2 target: the effect control CTRL 2 moves (Auto: a second useful one for the type)."},
+        {"modfx_gain", "Wet gain: the level of the effect's output (50% = as it comes)."},
+        {"mfx_series", "Delay > Reverb: how much of the delay goes on into the reverb."},
+        {"mfx_width", "Width of the master effects: 0% mono, 100% normal, 200% extra wide."},
         {"dly_pp", "Ping-pong: each echo crosses to the other side."},
+        {"rev_freeze", "Freeze: the reverb holds its tail forever (and takes no new sound) while on."},
+        {"pan", "Pan: where the sound sits between left and right."},
+        {"spread", "Spread: spreads the voices across the stereo field."},
+        {"drift", "Analog drift: slow, slight wandering of pitch and tone, different on every voice."},
+        {"ribbon_dst", "What the ribbon moves (its own destination, apart from the mod matrix)."},
+        {"ribbon_amt", "How far the ribbon moves its destination."},
+        {"ribbon_mode", "Spring: lets go back to the origin when released. Hold: stays where you left it."},
+        {"ribbon_origin", "Where the ribbon rests (its zero point)."},
         {"pitch_lfo", "LFO 1 to the pitch of all three oscillators (vibrato). The mod wheel also adds vibrato through matrix row 1."},
     };
     const char *key = PARAMS[i].key;
     size_t kl = strlen(key);
+    if (!strncmp(key, "an_", 3)) return "Analog character: how much the voices differ from each other in this respect (0 = all exactly alike).";
+    for (unsigned h = 0; h < sizeof H / sizeof H[0]; h++)   /* the key itself first, then the first matching ending */
+        if (H[h].key[0] != '_' && !strcmp(key, H[h].key)) return H[h].text;
     for (unsigned h = 0; h < sizeof H / sizeof H[0]; h++) {
         size_t hl = strlen(H[h].key);
-        if (H[h].key[0] == '_' ? kl > hl && !strcmp(key + kl - hl, H[h].key) : !strcmp(key, H[h].key)) return H[h].text;
+        if (H[h].key[0] == '_' && kl > hl && !strcmp(key + kl - hl, H[h].key)) return H[h].text;
     }
     return NULL;
 }
 
 static const char *zone_help(int z) {
+    if (z >= Z_PAGE && z < Z_PAGE + NPAGES) return "MORE: shows this module's other controls on the screen (click again for its next page, if any).";
     switch (z) {
     case Z_KEYS: return "Keyboard: click a key to play it (lower on the key = louder), drag across to slide between notes. "
                         "The octave buttons shift it.";
-    case Z_PITCH: return "Pitch wheel: drag up or down to bend; it springs back to the centre. The BEND knob sets the range.";
+    case Z_RIBBON: return "Ribbon: touch and slide along it. It sends MIDI CC 16 (position, left to right) and CC 17 (touched). "
+                          "Its settings: the triangle at its right end.";
+    case Z_PITCH: return "Pitch wheel: drag up or down to bend; it springs back to the centre. BEND + and BEND - set the range.";
     case Z_MODW: return "Mod wheel (MIDI CC 1): drag up to bring in the mod matrix's Mod Wheel rows (vibrato in most presets).";
     case Z_PAD: return "X/Y pad: drag inside it. Up/down sends aftertouch (the matrix source Aftertouch; back to 0 when you let go). "
-                       "Left/right sends MIDI CC 2, which the engine does not use yet.";
+                       "Left/right sends MIDI CC 2.";
     case Z_OCT_DOWN: case Z_OCT_UP: return "Octave: shifts the on-screen keyboard down or up, two octaves each way.";
     case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the presets; click it for the list.";
     case Z_PREV: case Z_NEXT: return "Previous / next preset.";
     case Z_NAME: return "Click the preset name for the list of presets.";
-    case Z_TAB_MATRIX: return "MATRIX: the 8 mod matrix rows on the screen.";
-    case Z_TAB_MORE: return "MORE: parameters that have no place on the panel yet (click again for the next page).";
+    case Z_TAB_MATRIX: return "MATRIX: the 16 mod matrix rows, 8 at a time (click again, or scroll over the screen, for the others).";
+    case Z_TAB_MORE: return "MORE: the list of every module's MORE page. The small triangles on the modules open them directly.";
+    case Z_TAB_ANALOG: return "ANALOG: the analog character page (drift and per-voice differences).";
+    case Z_SUB_PREV: case Z_SUB_NEXT: return "The previous / next part of this page.";
     }
     return NULL;
 }
@@ -137,6 +196,22 @@ static void draw_panels(HDC dc) {
     }
 }
 
+/* the MORE triangles in the modules' corners: black, rimmed; lit while their page is on the screen */
+static void draw_mores(ed_t *e) {
+    for (int k = 0; k < NMORES; k++) {
+        const RECT *r = &L.more[k];
+        int open = e->screen == MORES[k].page, hot = e->hover == Z_PAGE + MORES[k].page;
+        gpt_t t[3] = {{(float)r->left, (float)r->top}, {(float)r->right, (float)r->top}, {(float)r->right, (float)r->bottom}};
+        if (open) {
+            gpt_t g[3] = {{t[0].x - 3, t[0].y - 2}, {t[1].x + 2, t[1].y - 2}, {t[2].x + 2, t[2].y + 3}};
+            gfx_poly(g, 3, 0x40FFFFF0);
+        }
+        gfx_poly(t, 3, open ? 0xFFF4F4EE : 0xFF050506);
+        gfx_line(t[0].x, t[0].y, t[1].x, t[1].y, 1.0f, hot ? 0xFFD0D0D4 : 0xFF5A5A5E);
+        gfx_line(t[0].x, t[0].y, t[2].x, t[2].y, 1.0f, hot ? 0xFFD0D0D4 : 0xFF3A3A3E);
+    }
+}
+
 static void knob(float cx, float cy, float r, float v, int bipolar) {   /* a black skirt with a silver cap */
     for (int t = 0; t <= 10 && r > 10 * L.s; t++) {   /* a scale, except on the smallest knobs */
         gpt_t a = gfx_polar(cx, cy, r + 3.0f * L.s + 1, -135.0f + 27.0f * t), b = gfx_polar(cx, cy, r + 6.5f * L.s + 1, -135.0f + 27.0f * t);
@@ -170,10 +245,11 @@ static void draw_knob(HDC dc, ed_t *e, int i) {
     knob((float)cx, top + d / 2.0f + sc(4), d / 2.0f, v, PARAMS[i].min < 0 && PARAMS[i].max > 0);
     int tw = rw(b) > sc(76) ? rw(b) : sc(76), ly = top + d + sc(10);
     text_c(dc, cx, ly, tw, lh + 2, L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
-    if (!small) {
+    if (!small) {   /* the value no wider than its cell (and a little), so neighbours' values don't run together */
         char val[64];
         param_text(e, i, val, sizeof val);
-        text_c(dc, cx, ly + lh, tw, vh + 2, val, font_value, T_VALUE);
+        RECT vr = {cx - (rw(b) + sc(8)) / 2, ly + lh, cx + (rw(b) + sc(8)) / 2, ly + lh + vh + 2};
+        text(dc, &vr, val, font_value, T_VALUE, DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
 }
 
@@ -296,6 +372,117 @@ static void draw_wave(ed_t *e, const lay_wave_t *w) {   /* the oscillator's wave
     gfx_lines(pts, N + 1, 1.3f, 0xFFA8ECFF);
 }
 
+/* ---- the centre screen ---- */
+static void screen_amount(HDC dc, ed_t *e, int i, RECT c, int active, int compact) {   /* a bar and the value */
+    char val[64];
+    param_text(e, i, val, sizeof val);
+    float v = e->fx->getParameter(e->fx, i);
+    int bip = PARAMS[i].min < 0 && PARAMS[i].max > 0;
+    COLORREF col = active ? T_LCD : T_LCD_DIM;
+    DWORD fill = active ? 0xFF96D7E8 : 0xFF5A8291;
+    if (compact) {   /* the matrix: the value, a thin bar under it */
+        float tl = (float)c.left, tr = (float)c.right, by = c.bottom - 2.0f * L.s;
+        gfx_rect(tl, by, tr - tl, 2.0f * L.s, 0xFF1C2C36);
+        float from = bip ? (tl + tr) / 2 : tl, to = tl + v * (tr - tl);
+        gfx_rect(from < to ? from : to, by, fabsf(to - from) + 1, 2.0f * L.s, fill);
+        RECT vr = {c.left, c.top, c.right, c.bottom - sc(2)};
+        text(dc, &vr, val, font_cell, col, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    } else {
+        int vw = sc(46), cy = (c.top + c.bottom) / 2;
+        float tl = (float)c.left, tr = (float)(c.right - vw - sc(3));
+        gfx_rect(tl, cy - 3.0f * L.s, tr - tl, 6.0f * L.s, 0xFF1C2C36);
+        float from = bip ? (tl + tr) / 2 : tl, to = tl + v * (tr - tl);
+        gfx_rect(from < to ? from : to, cy - 3.0f * L.s, fabsf(to - from), 6.0f * L.s, fill);
+        RECT vr = {c.right - vw, c.top, c.right, c.bottom};
+        text(dc, &vr, val, font_cell, col, DT_RIGHT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
+    if (i == e->hover && e->hit_screen) gfx_frame((float)c.left - 1, (float)c.top, (float)rw(&c) + 2, (float)rh(&c), 1.0f, 0x6096D7E8);
+}
+
+static void screen_menu(HDC dc, ed_t *e, int i, RECT c, int active, HFONT f) {   /* an option list: its value */
+    char val[64];
+    param_text(e, i, val, sizeof val);
+    if (i == e->hover && e->hit_screen) gfx_frame((float)c.left, (float)c.top, (float)rw(&c), (float)rh(&c), 1.0f, 0xFF96D7E8);
+    RECT tr = {c.left + sc(3), c.top, c.right, c.bottom};
+    text(dc, &tr, val, f, active ? T_LCD : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+
+static void title_line(HDC dc, ed_t *e, const char *t, int subs) {
+    RECT r = L.tabline;
+    if (subs > 1) r.right = L.sub_prev.left - sc(4);
+    text(dc, &r, t, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (subs <= 1) return;
+    char n[16];
+    if (e->screen == SCR_MATRIX) snprintf(n, sizeof n, "%d-%d", e->sub * ROWS + 1, e->sub * ROWS + ROWS);   /* rows */
+    else snprintf(n, sizeof n, "%d / %d", e->sub + 1, subs);
+    RECT nr = {L.sub_prev.right, L.tabline.top, L.sub_next.left, L.tabline.bottom};
+    text(dc, &nr, n, font_tiny, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    text(dc, &L.sub_prev, "<", font_screen, e->hover == Z_SUB_PREV ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    text(dc, &L.sub_next, ">", font_screen, e->hover == Z_SUB_NEXT ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+
+static void draw_matrix(HDC dc, ed_t *e, int subs) {
+    title_line(dc, e, "MOD MATRIX:  SOURCE moves DESTINATION by AMOUNT x VIA", subs);
+    static const char *const head[] = {"#", "SOURCE", "DESTINATION", "AMOUNT", "VIA", "V.AMT", "XFORM", "X.AMT"};
+    for (int c = 0; c < MX_COLS + 1; c++) {
+        RECT h = {L.head.left + sc(MXC[c]), L.head.top, L.head.left + sc(MXC[c + 1]) - sc(4), L.head.bottom};
+        int right = c == 1 + MX_AMT || c == 1 + MX_VIA_AMT || c == 1 + MX_XF_AMT;
+        text(dc, &h, head[c], font_tiny, T_LCD_DIM, (right ? DT_RIGHT : DT_LEFT) | DT_VCENTER | DT_SINGLELINE);
+    }
+    for (int r = 0; r < ROWS; r++) {
+        int m = e->sub * ROWS + r;
+        if (m >= NMATRIX) break;
+        const short *row = MATRIX[m];
+        int active = option_of(e, row[MX_SRC]) > 0 && option_of(e, row[MX_DST]) > 0;
+        char num[8];
+        snprintf(num, sizeof num, "%d", m + 1);
+        RECT nr = matrix_cell(r, 0);
+        nr.right += sc(4);
+        text(dc, &nr, num, font_cell, active ? T_LCD : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        for (int k = 0; k < MX_COLS; k++) {
+            int i = row[k];
+            if (i < 0) continue;
+            RECT c = matrix_cell(r, k + 1);
+            if (PARAMS[i].nopts) screen_menu(dc, e, i, c, active, font_cell);
+            else screen_amount(dc, e, i, c, active, 1);
+        }
+    }
+}
+
+static void draw_page(HDC dc, ed_t *e, int subs) {
+    int items[512], n = page_items(e, e->screen, items);
+    char t[128];
+    snprintf(t, sizeof t, "MORE:  %s", PAGES[e->screen].title);
+    title_line(dc, e, t, subs);
+    text(dc, &L.head, PAGES[e->screen].note, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    for (int j = e->sub * SLOTS; j < n && j < (e->sub + 1) * SLOTS; j++) {
+        const lay_item_t *it = &ITEMS[items[j]];
+        RECT nm, c;
+        slot_rects(j % SLOTS, &nm, &c);
+        text(dc, &nm, it->label, font_cell, it->param == e->hover ? T_HOT : T_LCD_DIM,
+             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        if (PARAMS[it->param].nopts) screen_menu(dc, e, it->param, c, 1, font_cell);
+        else screen_amount(dc, e, it->param, c, 1, 0);
+    }
+}
+
+static void draw_index(HDC dc, ed_t *e, int subs) {
+    title_line(dc, e, "MORE:  every module's second-layer controls", subs);
+    text(dc, &L.head, "Click a page (or a module's triangle on the panel).", font_tiny, T_LCD_DIM,
+         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    for (int p = e->sub * SLOTS; p < NPAGES && p < (e->sub + 1) * SLOTS; p++) {
+        RECT nm, c;
+        slot_rects(p % SLOTS, &nm, &c);
+        RECT all = {nm.left, nm.top + sc(2), c.right, nm.bottom - sc(2)};
+        int hot = e->hover == Z_PAGE + p;
+        gfx_frame((float)all.left, (float)all.top, (float)rw(&all), (float)rh(&all), 1.0f, hot ? 0xFF96D7E8 : 0xFF27404E);
+        RECT tr = {all.left + sc(6), all.top, all.right - sc(16), all.bottom};
+        text(dc, &tr, PAGES[p].title, font_cell, hot ? T_HOT : T_LCD, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        RECT ar = {all.right - sc(16), all.top, all.right - sc(4), all.bottom};
+        text(dc, &ar, ">", font_cell, T_LCD_DIM, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
+}
+
 static void draw_screen(HDC dc, ed_t *e) {
     RECT *s = &L.screen;
     gfx_rect((float)s->left - 3, (float)s->top - 3, (float)rw(s) + 6, (float)rh(s) + 6, 0xFF050505);
@@ -308,70 +495,14 @@ static void draw_screen(HDC dc, ed_t *e) {
     text(dc, &L.name, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     text(dc, &L.prev, "<", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     text(dc, &L.next, ">", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    if (e->page == 0) {
-        text(dc, &L.tabline, "MOD MATRIX:  SOURCE moves DESTINATION by AMOUNT x VIA", font_tiny, T_LCD_DIM,
-             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        static const char *const head[] = {"#", "SOURCE", "DESTINATION", "AMOUNT", "VIA"};
-        static const int col[] = {0, 16, 82, 172, 254, 324};
-        for (int c = 0; c < 5; c++) {
-            RECT h = {L.head.left + sc(col[c]), L.head.top, L.head.left + sc(col[c + 1]), L.head.bottom};
-            text(dc, &h, head[c], font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        }
-    } else {
-        char t[96];
-        int pages = MORE_PAGES;
-        snprintf(t, sizeof t, "MORE  -  %d parameter%s not on the panel%s", NOTHER, NOTHER == 1 ? "" : "s",
-                 pages > 1 ? "  (click MORE for the next page)" : "");
-        text(dc, &L.tabline, t, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    }
+    if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
+    int subs = screen_subs(e);
+    if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
     for (int r = 0; r < ROWS; r++)
         if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0xFF0F1E2A);
-    if (e->page == 0) {
-        for (int r = 0; r < NMATRIX && r < ROWS; r++) {
-            int active = option_of(e, MATRIX[r][0]) > 0 && option_of(e, MATRIX[r][1]) > 0;
-            char num[8];
-            snprintf(num, sizeof num, "%d", r + 1);
-            RECT nr = {L.row[r].left + sc(2), L.row[r].top, L.row[r].left + sc(16), L.row[r].bottom};
-            text(dc, &nr, num, font_screen, active ? T_LCD : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-        }
-    }
-    for (int i = 0; i < NPARAMS; i++) {
-        RECT c, nm;
-        int active = 1;
-        if (L.where[i] == W_MATRIX && e->page == 0) {
-            c = L.ctl[i];
-            for (int r = 0; r < NMATRIX && r < ROWS; r++)
-                for (int k = 0; k < 4; k++)
-                    if (MATRIX[r][k] == i) active = option_of(e, MATRIX[r][0]) > 0 && option_of(e, MATRIX[r][1]) > 0;
-        } else if (L.where[i] == W_MORE && e->page == 1) {
-            int j = 0;
-            while (j < NOTHER && OTHER[j] != i) j++;
-            if (j / MORE_PER_PAGE != e->more_page) continue;
-            more_rects(j % MORE_PER_PAGE, &nm, &c);
-            text(dc, &nm, PARAMS[i].name, font_screen, i == e->hover ? T_HOT : T_LCD_DIM,
-                 DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        } else {
-            continue;
-        }
-        COLORREF col = active ? T_LCD : T_LCD_DIM;
-        char val[64];
-        param_text(e, i, val, sizeof val);
-        if (L.kind[i] == K_AMOUNT) {
-            float v = e->fx->getParameter(e->fx, i);
-            int vw = sc(36), cy = (c.top + c.bottom) / 2;
-            float tl = (float)c.left, tr = (float)(c.right - vw - sc(2));
-            gfx_rect(tl, cy - 3.0f * L.s, tr - tl, 6.0f * L.s, 0xFF1C2C36);
-            int bip = PARAMS[i].min < 0 && PARAMS[i].max > 0;
-            float from = bip ? (tl + tr) / 2 : tl, to = tl + v * (tr - tl);
-            gfx_rect(from < to ? from : to, cy - 3.0f * L.s, fabsf(to - from), 6.0f * L.s, active ? 0xFF96D7E8 : 0xFF5A8291);
-            RECT vr = {c.right - vw, c.top, c.right, c.bottom};
-            text(dc, &vr, val, font_screen, col, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        } else {
-            if (i == e->hover) gfx_frame((float)c.left, (float)c.top, (float)rw(&c), (float)rh(&c), 1.0f, 0xFF96D7E8);
-            RECT tr = {c.left + sc(3), c.top, c.right, c.bottom};
-            text(dc, &tr, val, font_screen, col, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        }
-    }
+    if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
+    else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
+    else draw_page(dc, e, subs);
     /* help: what the control under the mouse does */
     char help[480];
     const char *zh = zone_help(e->hover);
@@ -382,9 +513,14 @@ static void draw_screen(HDC dc, ed_t *e) {
         snprintf(help, sizeof help, "%s: %s%s%s", PARAMS[e->hover].name, val, h ? "\n" : "", h ? h : "");
     } else if (zh) {
         snprintf(help, sizeof help, "%s", zh);
+    } else if (e->screen == SCR_MATRIX) {
+        snprintf(help, sizeof help, "Each row: SOURCE x AMOUNT moves DESTINATION. VIA scales it by a second source "
+                                    "(V.AMT: how much); XFORM reshapes the source (X.AMT: how strongly). Click a value "
+                                    "for its list, drag an amount sideways. MATRIX again: rows 9-16.");
     } else {
         snprintf(help, sizeof help, "Drag a knob up/down (Shift: fine), scroll to nudge, double-click to reset. Click a "
-                                    "red button to step, an LED to pick, right-click for a list. Play the keys below.");
+                                    "red button to step, an LED to pick, right-click for a list. A module's corner "
+                                    "triangle shows its MORE page here. Play the keys and the ribbon below.");
     }
     gfx_line((float)L.help.left, L.help.top - 4.0f, (float)L.help.right, L.help.top - 4.0f, 1.0f, 0xFF27404E);
     text(dc, &L.help, help, font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
@@ -405,8 +541,10 @@ static void panel_button(HDC dc, const RECT *r, const char *label, int lit, int 
 
 static void draw_console(HDC dc, ed_t *e) {
     draw_screen(dc, e);
-    panel_button(dc, &L.tab_matrix, "MATRIX", e->page == 0, e->hover == Z_TAB_MATRIX);
-    panel_button(dc, &L.tab_more, NOTHER ? "MORE" : "MORE (0)", e->page == 1, e->hover == Z_TAB_MORE);
+    panel_button(dc, &L.tab_matrix, "MATRIX", e->screen == SCR_MATRIX, e->hover == Z_TAB_MATRIX);
+    panel_button(dc, &L.tab_more, "MORE", e->screen >= 0 && e->screen != PG_ANALOG ? 1 : e->screen == SCR_INDEX,
+                 e->hover == Z_TAB_MORE);
+    panel_button(dc, &L.tab_analog, "ANALOG", PG_ANALOG >= 0 && e->screen == PG_ANALOG, e->hover == Z_TAB_ANALOG);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     int cx = (L.encoder.left + L.encoder.right) / 2, r = sc(31);
@@ -463,6 +601,30 @@ static void draw_controller(HDC dc, ed_t *e) {
     text_c(dc, (p->left + p->right) / 2, p->bottom + sc(4), sc(80), sc(14), "X/Y PAD", font_label, T_LABEL);
 }
 
+/* the ribbon: a slim black strip in a brushed-silver rim over the keys, a glowing marker where it is touched */
+static void draw_ribbon(HDC dc, ed_t *e) {
+    RECT *r = &L.ribbon;
+    float x = (float)r->left, y = (float)r->top, w = (float)rw(r), h = (float)rh(r), b = 2.5f * L.s;
+    gfx_rect(x - 2, y - 2, w + 4, h + 4, 0xFF0A0A0A);
+    gfx_rect_grad(x, y, w, h, 0xFFE2E3E5, 0xFF8C8E92, 0);
+    gfx_rect_grad(x + b, y + b, w - 2 * b, h - 2 * b, 0xFF050506, 0xFF1C1C1E, 0);
+    for (int k = 1; k < 24; k++) {   /* faint tick marks along it, a longer one at the centre */
+        float tx = x + b + (w - 2 * b) * k / 24.0f, th = k == 12 ? h - 2 * b - 2 : (h - 2 * b) * 0.3f;
+        gfx_line(tx, y + h - b - 1, tx, y + h - b - 1 - th, 1.0f, k == 12 ? 0x50FFFFFF : 0x26FFFFFF);
+    }
+    RECT lr = {(int)(x + b + sc(6)), (int)y, (int)(x + sc(80)), (int)(y + h)};
+    text(dc, &lr, "RIBBON", font_tiny, e->hover == Z_RIBBON ? T_LABEL : RGB(96, 96, 100), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    float mx = x + b + e->ribbon * (w - 2 * b), my = y + h / 2;
+    if (e->ribbon_on) {
+        gfx_rect(mx - 9 * L.s, y + b, 18 * L.s, h - 2 * b, 0x3070D8FF);
+        gfx_rect(mx - 4 * L.s, y + b, 8 * L.s, h - 2 * b, 0x6090E4FF);
+        gfx_line(mx, y + b, mx, y + h - b, 2.0f * L.s, 0xFFE0F8FF);
+        gfx_disc(mx, my, 3.0f * L.s, 0xFFFFFFFF);
+    } else {
+        gfx_line(mx, y + b + 1, mx, y + h - b - 1, 1.2f, 0x6088A8B4);
+    }
+}
+
 static void draw_keys(HDC dc, ed_t *e) {
     RECT *k = &L.keys;
     float kw = rw(k) / (float)KEYS_WHITE, top = (float)k->top, h = (float)rh(k);
@@ -488,7 +650,7 @@ static void draw_keys(HDC dc, ed_t *e) {
         gfx_rect_grad(x + 1.5f, top, bw - 3, h * 0.62f - 5 * L.s, down ? 0xFF505054 : 0xFF2A2A2C, down ? 0xFF38383C : 0xFF121214, 0);
         gfx_rect(x + 2.5f, top + h * 0.62f - 7 * L.s, bw - 5, 3 * L.s, down ? 0xFF606064 : 0xFF3A3A3E);
     }
-    gfx_rect_grad((float)k->left, top, (float)rw(k), 7 * L.s, 0xC0000000, 0x00000000, 0);   /* shadow under the panel lip */
+    gfx_rect_grad((float)k->left, top, (float)rw(k), 7 * L.s, 0xC0000000, 0x00000000, 0);   /* shadow under the lip */
 }
 
 void paint(ed_t *e, HDC out) {
@@ -507,6 +669,7 @@ void paint(ed_t *e, HDC out) {
         gfx_line(x, 0, x, (float)L.h, 1.0f, 0x80301808);
     }
     draw_panels(dc);
+    draw_mores(e);
     for (int w = 0; w < NWAVES; w++) draw_wave(e, &WAVES[w]);
     for (int c = 0; c < NCTLS; c++) {
         int i = CTLS[c].param;
@@ -520,6 +683,7 @@ void paint(ed_t *e, HDC out) {
     }
     draw_console(dc, e);
     draw_controller(dc, e);
+    draw_ribbon(dc, e);
     draw_keys(dc, e);
     gfx_end();
     BitBlt(out, 0, 0, L.w, L.h, dc, 0, 0, SRCCOPY);
@@ -527,4 +691,3 @@ void paint(ed_t *e, HDC out) {
     DeleteObject(bm);
     DeleteDC(dc);
 }
-
