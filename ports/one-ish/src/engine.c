@@ -4,8 +4,9 @@
  * ladder) with a mix between them; three envelopes (filter, amp, mod). Shared: two LFOs (free or tempo-synced).
  * Hard-wired modulation as on the Moog One panel: filter envelope, LFO 2 and keyboard tracking to each cutoff,
  * LFO 1 and the mod envelope to pitch. An 8-slot modulation matrix (source x amount, scaled by a via source) over
- * pitch, levels, both filters and amp; mod wheel, aftertouch and pitch bend. One voice so far (mono, last-note
- * priority).
+ * pitch, levels, both filters and amp; mod wheel, aftertouch, pitch bend and sustain pedal. Up to 8 voices: a new
+ * note takes an idle voice, else the quietest releasing one, else the oldest held one; the same key replays its own
+ * voice. Mono (1 voice) plays legato with last-note priority.
  *
  * Audio runs per sample; modulation (envelopes 1 and 3, LFOs, pitch, cutoffs) every CR samples, with levels and the
  * filter mix ramped across each step so no knob or mod move steps audibly.
@@ -27,6 +28,7 @@
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
 #define MAX_HELD 16
+#define MAX_VOICES 8
 #define NOSC 3
 #define NSRC 4             /* oscillators 1-3 and noise */
 #define NLFO 2
@@ -61,7 +63,7 @@ enum {
     P_MENV_A, P_MENV_D, P_MENV_S, P_MENV_R,             /* mod envelope */
     P_LAD_ENV, P_LAD_LFO, P_LAD_KBD, P_SVF_ENV, P_SVF_LFO, P_SVF_KBD, P_PITCH_LFO, P_PITCH_ENV,
     P_LFO1_RATE, P_LFO1_WAVE, P_LFO1_SYNC, P_LFO2_RATE, P_LFO2_WAVE, P_LFO2_SYNC,
-    P_BEND_RANGE, P_MOD_BASE,                           /* then MOD_SLOTS x (source, destination, amount, via) */
+    P_BEND_RANGE, P_VOICES, P_MOD_BASE,                           /* then MOD_SLOTS x (source, destination, amount, via) */
     P_VOLUME = P_MOD_BASE + MOD_SLOTS * MOD_SLOT_PARAMS, P_COUNT
 };
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_SEMI, O_FINE, O_LEVEL, O_SYNC };
@@ -78,7 +80,7 @@ static const char *const KEYS[P_COUNT] = {
     "menv_a", "menv_d", "menv_s", "menv_r",
     "lad_env", "lad_lfo", "lad_kbd", "svf_env", "svf_lfo", "svf_kbd", "pitch_lfo", "pitch_env",
     "lfo1_rate", "lfo1_wave", "lfo1_sync", "lfo2_rate", "lfo2_wave", "lfo2_sync",
-    "bend_range",
+    "bend_range", "voices",
 #define SLOT_KEYS(n) [P_MOD_BASE + 4 * ((n) - 1)] = "mod" #n "_src", [P_MOD_BASE + 4 * ((n) - 1) + 1] = "mod" #n "_dst", \
                      [P_MOD_BASE + 4 * ((n) - 1) + 2] = "mod" #n "_amt", [P_MOD_BASE + 4 * ((n) - 1) + 3] = "mod" #n "_via"
     SLOT_KEYS(1), SLOT_KEYS(2), SLOT_KEYS(3), SLOT_KEYS(4), SLOT_KEYS(5), SLOT_KEYS(6), SLOT_KEYS(7), SLOT_KEYS(8),
@@ -110,19 +112,24 @@ typedef struct {
     float to_lad[NSRC], to_svf[NSRC], mix_lad;   /* last control step's levels and filter mix (ramp start) */
     float tgt_lad[NSRC], tgt_svf[NSRC], tgt_mix; /* this control step's (ramp end), modulation included */
     float amp_mod;           /* the matrix's amp level factor (0..2) */
+    int gate;                /* key down, or released while the sustain pedal is down */
+    int sustained;           /* released while the pedal is down: let go when it comes up */
+    unsigned age;            /* when its note started, for stealing the oldest */
 } voice_t;
 
 typedef struct {
     float val[P_COUNT];      /* each value in its own units: option index, semitones, cents, % or a 0..100 knob */
     float ratio[NOSC];       /* each oscillator's pitch against the played note */
-    voice_t voice;
+    voice_t voice[MAX_VOICES];
+    unsigned age;            /* counts note starts */
+    int sustain;             /* the pedal (CC 64) is down */
     lfo_t lfo[NLFO];
     float lfo_val[NLFO];     /* this control step's LFO outputs */
     float bpm;               /* the host's tempo, for synced LFOs */
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
     float gain_coef, glide;  /* per sample / per control step */
     int phase;               /* samples into the current control step */
-    int held[MAX_HELD];      /* keys down, oldest first: releasing the newest falls back to the one before (mono legato) */
+    int held[MAX_HELD];      /* keys down, oldest first (mono: releasing the newest falls back to the one before) */
     int nheld;
     char state_buf[STATE_MAX];   /* set_state's working copy (allocated with the instance, not per call) */
 } one_t;
@@ -174,9 +181,13 @@ static void apply(one_t *s) {
     }
     for (int n = 0; n < NENV; n++) {
         const float *e = &s->val[P_ENV_A + ENV_STRIDE * n];
-        env_set_times(&s->voice.env[n], env_ms(e[0]), env_ms(e[1]), e[2] * 0.01f, env_ms(e[3]), SR);
+        for (int i = 0; i < MAX_VOICES; i++)
+            env_set_times(&s->voice[i].env[n], env_ms(e[0]), env_ms(e[1]), e[2] * 0.01f, env_ms(e[3]), SR);
     }
 }
+
+static const int VOICE_COUNTS[] = {1, 2, 4, 6, 8};   /* the "voices" options */
+static int voice_count(const one_t *s) { return VOICE_COUNTS[(int)clampf(s->val[P_VOICES], 0, 4)]; }
 
 static float gain_target(const one_t *s, const voice_t *v) {
     return v->velocity * s->val[P_VOLUME] * 0.01f * HEADROOM * v->amp_mod;
@@ -207,13 +218,15 @@ static void *create(const char *data_dir) {
         if (k < 0) continue;
         s->val[k] = p->nopts ? roundf(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
     }
-    voice_t *v = &s->voice;
-    for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
-    v->noise = 0x9e3779b9u;
-    v->note = -1;
-    v->amp_mod = 1.0f;
-    v->cut = s->val[P_FLT_CUT];
-    v->svf_cut = s->val[P_SVF_CUT];
+    for (int i = 0; i < MAX_VOICES; i++) {
+        voice_t *v = &s->voice[i];
+        for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
+        v->noise = 0x9e3779b9u + 0x6d2b79f5u * (uint32_t)i;   /* each voice its own noise */
+        v->note = -1;
+        v->amp_mod = 1.0f;
+        v->cut = s->val[P_FLT_CUT];
+        v->svf_cut = s->val[P_SVF_CUT];
+    }
     for (int n = 0; n < NLFO; n++) lfo_init(&s->lfo[n], 0x2545f491u * (n + 1));
     s->bpm = 120.0f;
     s->gain_coef = env_coef(5.0f, SR);
@@ -224,8 +237,7 @@ static void *create(const char *data_dir) {
 
 static void destroy(void *inst) { free(inst); }
 
-static void start_note(one_t *s, int note) {
-    voice_t *v = &s->voice;
+static void start_note(one_t *s, voice_t *v, int note) {
     if (v->env[ENV_AMP].stage == ENV_IDLE) {   /* from silence every note starts the same way */
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
         ladder_reset(&v->lad);
@@ -256,29 +268,83 @@ static void forget(one_t *s, int note) {
         }
 }
 
+static void gate_on(voice_t *v) {
+    for (int n = 0; n < NENV; n++) env_gate_on(&v->env[n]);
+    v->gate = 1;
+    v->sustained = 0;
+}
+
+static void gate_off(voice_t *v) {
+    for (int n = 0; n < NENV; n++) env_gate_off(&v->env[n]);
+    v->gate = 0;
+    v->sustained = 0;
+}
+
+static void key_up(one_t *s, voice_t *v) {   /* a released key: held on by the sustain pedal, or let go */
+    if (s->sustain) v->sustained = 1;
+    else gate_off(v);
+}
+
+/* the voice for a new note among the first `voice_count` voices: the one already playing this key, else an idle one,
+ * else the quietest releasing one, else the oldest held one (stolen: it restarts from its current level, no click) */
+static voice_t *pick_voice(one_t *s, int note) {
+    int count = voice_count(s);
+    voice_t *best = NULL;
+    for (int i = 0; i < count; i++)
+        if (s->voice[i].note == note && s->voice[i].env[ENV_AMP].stage != ENV_IDLE) return &s->voice[i];
+    for (int i = 0; i < count; i++)
+        if (s->voice[i].env[ENV_AMP].stage == ENV_IDLE) return &s->voice[i];
+    for (int i = 0; i < count; i++)
+        if (!s->voice[i].gate && (!best || s->voice[i].env[ENV_AMP].level < best->env[ENV_AMP].level)) best = &s->voice[i];
+    if (best) return best;
+    best = &s->voice[0];
+    for (int i = 1; i < count; i++)
+        if (s->voice[i].age < best->age) best = &s->voice[i];
+    return best;
+}
+
 static void note_on(one_t *s, int note, int vel) {
     forget(s, note);              /* a repeated key moves to the top instead of being held twice */
     if (s->nheld == MAX_HELD) forget(s, s->held[0]);   /* drop the oldest key */
     s->held[s->nheld++] = note;
-    s->voice.velocity = vel / 127.0f;
-    s->voice.rand = white(&s->voice.noise);
-    start_note(s, note);
-    for (int n = 0; n < NENV; n++) env_gate_on(&s->voice.env[n]);
+    voice_t *v = voice_count(s) == 1 ? &s->voice[0] : pick_voice(s, note);
+    v->velocity = vel / 127.0f;
+    v->rand = white(&v->noise);
+    v->age = ++s->age;
+    start_note(s, v, note);
+    gate_on(v);
 }
 
 static void note_off(one_t *s, int note) {
     int was_top = s->nheld > 0 && s->held[s->nheld - 1] == note;
     forget(s, note);
-    if (s->nheld == 0)
-        for (int n = 0; n < NENV; n++) env_gate_off(&s->voice.env[n]);
-    else if (was_top) start_note(s, s->held[s->nheld - 1]);   /* back to the key still held, no retrigger */
+    if (voice_count(s) == 1) {   /* mono: back to the key still held, without a retrigger; else let go */
+        voice_t *v = &s->voice[0];
+        if (s->nheld == 0) key_up(s, v);
+        else if (was_top) start_note(s, v, s->held[s->nheld - 1]);
+        return;
+    }
+    for (int i = 0; i < MAX_VOICES; i++)
+        if (s->voice[i].note == note && s->voice[i].gate && !s->voice[i].sustained) key_up(s, &s->voice[i]);
+}
+
+static void sustain_pedal(one_t *s, int down) {
+    s->sustain = down;
+    if (down) return;
+    for (int i = 0; i < MAX_VOICES; i++)
+        if (s->voice[i].sustained) gate_off(&s->voice[i]);
 }
 
 static void all_off(one_t *s, int hard) {
     s->nheld = 0;
-    for (int n = 0; n < NENV; n++) {
-        if (hard) env_kill(&s->voice.env[n]);   /* All Sound Off: silent within a few ms, without a click */
-        else env_gate_off(&s->voice.env[n]);
+    for (int i = 0; i < MAX_VOICES; i++) {
+        voice_t *v = &s->voice[i];
+        if (hard)   /* All Sound Off: silent within a few ms, without a click */
+            for (int n = 0; n < NENV; n++) env_kill(&v->env[n]);
+        else
+            for (int n = 0; n < NENV; n++) env_gate_off(&v->env[n]);
+        v->gate = 0;
+        v->sustained = 0;
     }
 }
 
@@ -292,6 +358,7 @@ static void midi(void *inst, const uint8_t *m, int len) {
     else if (st == 0x80 || st == 0x90) note_off(s, d1);
     else if (st == 0xe0) s->bend = (((d2 << 7) | d1) - 8192) / 8192.0f;
     else if (st == 0xb0 && d1 == 1) s->wheel = d2 / 127.0f;
+    else if (st == 0xb0 && d1 == 64) sustain_pedal(s, d2 >= 64);
     else if (st == 0xb0 && (d1 == 120 || d1 == 123)) all_off(s, d1 == 120);
 }
 
@@ -468,7 +535,6 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
 
 static void render(void *inst, int16_t *out, int frames) {
     one_t *s = inst;
-    voice_t *v = &s->voice;
     float acc[128];
     int done = 0;
     while (done < frames) {
@@ -478,7 +544,9 @@ static void render(void *inst, int16_t *out, int frames) {
         if (first) control_lfos(s);
         if (n > 128) n = 128;
         memset(acc, 0, sizeof(float) * n);
-        if (v->env[ENV_AMP].stage != ENV_IDLE) {
+        for (int k = 0; k < MAX_VOICES; k++) {   /* voices past the current count still finish their release */
+            voice_t *v = &s->voice[k];
+            if (v->env[ENV_AMP].stage == ENV_IDLE) continue;
             if (first) control_voice(s, v);
             render_voice(s, v, acc, n, first);
         }

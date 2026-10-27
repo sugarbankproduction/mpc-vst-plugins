@@ -98,6 +98,25 @@ Start from a fork of mpc-vst-plugins so Claude Code gets the repo's own skill an
 Read CLAUDE.md, PLAN.md and docs/PORTING.md. Then do Phase 1 of PLAN.md: build poc/synth.c, run tools/test_port.sh, and explain in plain language what each step did and what passed.
 ```
 
+## Where we are (resume here)
+
+Updated 2026-10-27. Owner's instruction: work through all phases without stopping for approval at each one; desktop
+first, MPC builds and code review at milestones (CLAUDE.md).
+
+- **Done and pushed (branch `one-ish` on the owner's fork):** Phases 1-8 offline. Phase 8 (polyphony: Mono/2/4/6/8
+  voices, default 4; stealing; same-key retrigger; sustain pedal) is committed, but its **milestone is not done yet**.
+- **Next, in order:**
+  1. Phase 8 milestone: MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, run from a copy outside
+     Dropbox (CLAUDE.md says how); an independent code review of `ports/one-ish/src/`, then fix what it finds.
+  2. Phase 9: touchscreen page (layout.conf, drawn from scratch, Moog One manual's panel as layout reference only, no
+     Moog names/logos), Q-Links, `presets.json`; then its milestone.
+  3. Phase 10: decide with the owner whether multitimbral parts make sense on MPC (each track can host its own ONE-ish).
+  4. Phase 11: package with `tools/release.py` locally; publishing and the final name are the owner's decisions.
+- **Needs a real MPC (owner):** `tools/bench.sh` at 4 and 8 voices to set the default voice count; loading on the
+  device. Offline estimate: about 5.3 us per voice per block on the PC (8 voices: 42 us of the 2902 us budget there).
+- **Quick check after a restart:** start Docker Desktop, then `win/run.sh bash ports/one-ish/test/run.sh` must print
+  PASSED; `Play ONE-ish.bat` in `%USERPROFILE%\Tools` opens Carla with ONE-ish.
+
 ## Risks and open questions
 
 | Risk | Fallback |

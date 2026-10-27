@@ -12,11 +12,14 @@
  *             pitch envelope, a soft note after a loud one starts at its own level
  *   matrix    amounts and via scaling add up; mod wheel vibrato (the default slot 1); velocity to cutoff; aftertouch
  *             to a level; pitch bend
+ *   voices    chords; with 4 voices six held keys keep the newest four; a repeated key doesn't double up; the
+ *             sustain pedal holds and lets go; mono plays only the newest key
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to
- *   bench     (argv[1] == "bench") microseconds per 128-frame block on this machine; NOT the MPC's number
+ *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
+ *             MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
 #include <math.h>
 #include <stdint.h>
@@ -566,6 +569,70 @@ static void matrix(void) {
     E->destroy(e);
 }
 
+/* power (dB, against the strongest of them) at each frequency, +-3 bins */
+static void powers_db(const float *x, const double *hz, int n, double *db) {
+    const double *pw = spectrum(x);
+    double bin = (double)SR / N, top = 1e-30;
+    for (int i = 0; i < n; i++) {
+        int k0 = (int)(hz[i] / bin + 0.5);
+        double sum = 0;
+        for (int k = k0 - 3; k <= k0 + 3; k++) sum += pw[k];
+        db[i] = sum;
+        if (sum > top) top = sum;
+    }
+    for (int i = 0; i < n; i++) db[i] = 10 * log10(db[i] / top + 1e-30);
+}
+
+static double note_hz(int n) { return 440 * pow(2, (n - 69) / 12.0); }
+
+static int silent_after(void *e, int ms);
+
+static void voices(void) {
+    static float x[N + 8192];
+    char what[220];
+    /* six held keys, 4 voices: the oldest two are stolen. A 600 Hz ladder keeps each note close to its fundamental. */
+    static const int keys[] = {48, 50, 52, 53, 55, 57};
+    double hz[6], db[6];
+    void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+    set(e, "flt_cut", knob_for_hz(600));
+    for (int i = 0; i < 6; i++) { note(e, 1, keys[i], 100); hz[i] = note_hz(keys[i]); }
+    render_f(e, x, N + 8192);
+    powers_db(x + 8192, hz, 6, db);
+    snprintf(what, sizeof what, "4 voices, six keys held: C3 %.0f, D3 %.0f (stolen) | E3 %.0f, F3 %.0f, G3 %.0f, A3 %.0f dB",
+             db[0], db[1], db[2], db[3], db[4], db[5]);
+    /* a stolen note would sit near 0 dB; what remains at -30 dB is the saturator's intermodulation of the others */
+    check(db[0] < -25 && db[1] < -25 && db[2] > -12 && db[3] > -12 && db[4] > -12 && db[5] > -12, what);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 0, 1, 100, 10);   /* mono: a chord plays only its newest key */
+    set(e, "voices", 0); set(e, "flt_cut", knob_for_hz(600));
+    note(e, 1, 48, 100); note(e, 1, 52, 100);
+    render_f(e, x, N + 8192);
+    powers_db(x + 8192, hz, 3, db);
+    snprintf(what, sizeof what, "mono: C3 + E3 held plays E3 only (C3 %.0f dB, E3 %.0f dB)", db[0], db[2]);
+    check(db[0] < -40 && db[2] > -1, what);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 0, 1, 100, 10);   /* the same key twice replays its voice, not a second one */
+    note(e, 1, 60, 100);
+    double one = rms_of(e, SR / 4);
+    note(e, 1, 60, 100);
+    double two = rms_of(e, SR / 4);
+    snprintf(what, sizeof what, "the same key twice: rms %.3f, then %.3f (one voice, not two)", one, two);
+    check(two < 1.2 * one, what);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 0, 1, 100, 100);   /* sustain pedal */
+    midi3(e, 0xb0, 64, 127);
+    note(e, 1, 60, 100); note(e, 0, 60, 0);
+    double held = rms_of(e, SR / 2);
+    midi3(e, 0xb0, 64, 0);
+    int quiet = silent_after(e, 1000);
+    snprintf(what, sizeof what, "sustain pedal: a released key holds (rms %.3f) until the pedal lifts, then stops", held);
+    check(held > 0.05 && quiet, what);
+    E->destroy(e);
+}
+
 static void cutoff_text(void) {
     void *e = E->create(NULL);
     char a[32], b[32], c[32];
@@ -775,18 +842,26 @@ static void demo_wav(const char *path) {
     printf("wrote %s (%.1f s)\n", path, frames / (double)SR);
 }
 
+/* a busy patch (three oscillators, both filters in series, the matrix busy) held at 1, 4 and 8 voices */
 static void bench(void) {
-    enum { BLOCKS = 200000 };
+    enum { BLOCKS = 50000 };
     int16_t buf[256];
-    void *e = patch(WAVE_SAW, 5, 300, 70, 250);
-    note(e, 1, 60, 100);
-    struct timespec t0, t1;
-    clock_gettime(CLOCK_MONOTONIC, &t0);
-    for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-    double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
-    printf("bench: %.2f us per 128-frame block for one voice on this PC (MPC budget 2902 us, shared; device numbers need tools/bench.sh)\n", us);
-    E->destroy(e);
+    static const int counts[] = {1, 4, 8}, opt[] = {0, 2, 4};
+    for (int c = 0; c < 3; c++) {
+        void *e = patch(WAVE_SAW, 5, 300, 70, 250);
+        set(e, "voices", opt[c]); set(e, "o2_level", 80); set(e, "o3_level", 60);
+        set(e, "o1_route", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
+        set(e, "mod2_src", 6); set(e, "mod2_dst", 9); set(e, "mod2_amt", 30);
+        for (int k = 0; k < counts[c]; k++) note(e, 1, 48 + 3 * k, 100);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        printf("bench: %d voice%s %6.2f us per 128-frame block on this PC (%.2f per voice; MPC budget 2902 us, shared;"
+               " device numbers need tools/bench.sh)\n", counts[c], counts[c] > 1 ? "s" : " ", us, us / counts[c]);
+        E->destroy(e);
+    }
 }
 
 int main(int argc, char **argv) {
@@ -804,6 +879,7 @@ int main(int argc, char **argv) {
     routing();
     modulation();
     matrix();
+    voices();
     envelope();
     keys();
     state();

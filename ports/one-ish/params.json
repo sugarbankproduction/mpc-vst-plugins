@@ -92,7 +92,8 @@
   {"key": "mod8_src", "name": "Mod 8 Source", "options": ["Off", "Filter Env", "Amp Env", "Mod Env", "LFO 1", "LFO 2", "Velocity", "Mod Wheel", "Aftertouch", "Keyboard", "Random"], "default": "Off"},
   {"key": "mod8_dst", "name": "Mod 8 Dest", "options": ["Off", "Pitch", "Osc 1 Pitch", "Osc 2 Pitch", "Osc 3 Pitch", "Osc 1 Level", "Osc 2 Level", "Osc 3 Level", "Noise Level", "Ladder Cutoff", "Ladder Res", "Ladder Drive", "SVF Cutoff", "SVF Res", "Filter Mix", "Amp Level"], "default": "Off"},
   {"key": "mod8_amt", "name": "Mod 8 Amount", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
-  {"key": "mod8_via", "name": "Mod 8 Via", "options": ["None", "Filter Env", "Amp Env", "Mod Env", "LFO 1", "LFO 2", "Velocity", "Mod Wheel", "Aftertouch", "Keyboard", "Random"], "default": "None"}
+  {"key": "mod8_via", "name": "Mod 8 Via", "options": ["None", "Filter Env", "Amp Env", "Mod Env", "LFO 1", "LFO 2", "Velocity", "Mod Wheel", "Aftertouch", "Keyboard", "Random"], "default": "None"},
+  {"key": "voices", "name": "Voices", "options": ["Mono", "2", "4", "6", "8"], "default": "4"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_wave", "o1_oct", "o1_semi", "o1_fine"]},
@@ -119,6 +120,7 @@
   {"label": "MOD 6", "keys": ["mod6_src", "mod6_dst", "mod6_amt", "mod6_via"]},
   {"label": "MOD 7", "keys": ["mod7_src", "mod7_dst", "mod7_amt", "mod7_via"]},
   {"label": "MOD 8", "keys": ["mod8_src", "mod8_dst", "mod8_amt", "mod8_via"]},
+  {"label": "VOICES", "keys": ["voices"]},
   {"label": "OUT", "keys": ["volume"]}
  ]
 }
