@@ -45,7 +45,7 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | Hardware voices shared between Synths at will [MULTI] | p9 | Missing | - | M | none |
 | One Synth Effect per Synth plus two Master Effects on sends | p9, p96-101 | Partial | One fixed insert chain: mod FX, delay, reverb | M | none/voice; shared medium |
 | Voice: 3 VCOs, ring mod, noise, external input, mixer to SVF pair and ladder, VCA | p9-10 | Partial | 3 oscillators + noise to SVF and ladder to amp; no ring mod, no external input, one SVF | see sections 3-7 | - |
-| Each Synth: 4 LFOs and 3 EGs per voice (manual wording p10) | p10 | Partial | 3 EGs per voice; 2 LFOs shared by all voices | M | low |
+| Each Synth: 4 LFOs and 3 EGs per voice (manual wording p10) | p10 | Have | 3 EGs and 4 LFOs per voice: an LFO runs per voice when it restarts per note or the matrix moves it per voice, else every voice follows one free-running LFO (2026-10-27, offline) | - | - |
 | Modulation: hard-wired, Quick Assign (DEST buttons), Mod Matrix with controllers and transforms | p10, p67 | Partial | Hard-wired pitch and cutoff amounts, 8-slot matrix with "via"; no transforms, no quick assign | M | low |
 | Programmable: every knob and hidden parameter stored in Presets | p8 | Have | Full state string per instance (`get_state`/`set_state`), 13 programs | - | none |
 
@@ -78,7 +78,7 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | EXT INPUT: XLR/TRS combo, TRIM -9 dB to +65 dB; LINE input [HW] | p20 | Missing | An MPC instrument plugin gets no audio input | - | none |
 | CV IN 1-2, CV OUT 1-4; pedal jacks usable as CV inputs [HW] | p20-21 | Missing | - | - | none |
 | MIDI IN/THRU/OUT (DIN), USB MIDI, USB host, LAN [HW] | p20-21 | Partial | MIDI in from the host only | - | none |
-| Pedal jacks: SUSTAIN, EXP 1, EXP 2, assignable | p21, p140 | Partial | Sustain (CC 64) and sostenuto (CC 66) work; expression CC 11 is read into a stored value, not yet a matrix source (2026-10-27, offline) | S | none |
+| Pedal jacks: SUSTAIN, EXP 1, EXP 2, assignable | p21, p140 | Partial | Sustain (CC 64) and sostenuto (CC 66); CC 11 and CC 4 are the matrix sources Exp 1 and Exp 2 (2026-10-27, offline) | S | none |
 
 ## 3. Oscillators (p22-26)
 
@@ -113,8 +113,8 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | PITCH MOD: MOD EG AMT to all three oscillators | -10 to +10 (p27) | Have | `pitch_env` (+-100% = +-24 st) | - | - |
 | RING MOD as its own mixer channel | p27, p31 | Have | `ring_level`, with its own SVF/Ladder buttons | - | - |
 | RING MOD SOURCES, tapped from the tri/saw generators only | 1x2, 2x3 (p27) | Have | `ring_src` 1 x 2 / 2 x 3, from the tri/saw waves only | - | - |
-| WAVE ANGLE / LFO 3 AMT | 0 to 10 (p28) | Missing | Needs LFO 3 and wave angle | S (after both) | low |
-| PULSE WIDTH / LFO 3 AMT | 0 to 10 (p28) | Missing | Needs LFO 3 and PWM | S (after both) | low |
+| WAVE ANGLE / LFO 3 AMT | 0 to 10 (p28) | Have | `angle_lfo3` 0..100%: at 100% LFO 3 moves every oscillator's wave angle +-50% of its range (2026-10-27, offline) | - | - |
+| PULSE WIDTH / LFO 3 AMT | 0 to 10 (p28) | Have | `pw_lfo3` 0..100%: at 100% +-45% pulse width (2026-10-27, offline) | - | - |
 | FM AMT, linear FM | 0 to 10 (p28) | Have | `fm_amt`: the carrier's frequency x (1 + 2 x amount x modulator), per sample, not through-zero; matrix "FM Amount" | - | - |
 | FM ROUTE | 1 to 2, 1 to 3, 3 to 1 (p28) | Have | `fm_route` 1 > 2, 1 > 3, 3 > 1 (3 > 1 uses osc 3's previous sample) | - | - |
 
@@ -192,7 +192,7 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | RELEASE CURVE | 100% log to linear to 100% exp (p45) | Have | `*_rcurve` -100..100%, default 50 (2026-10-27, offline) | - | none |
 | MULTI TRIG: legato notes restart the envelope or not | on/off (p42) | Have | `*_multi` (default on): off, a new note on a voice whose key is still down carries on from the envelope's current position (2026-10-27, offline) | - | none |
 | RESET: restart the attack from zero (mono/unison with multi trig) | off/on (p44) | Have | `*_reset`: every restart from zero (also a stolen or replayed voice in poly) (2026-10-27, offline) | - | none |
-| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Partial | `*_sync`: the five time knobs pick from the LFOs' 11 divisions (1/32 to 4 bars, longest on the right) at the host tempo; time scale does not apply (2026-10-27, offline) | S | none |
+| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Partial | `*_sync`: the five time knobs pick from the delay's 11 divisions (1/32 to 4 bars, longest on the right) at the host tempo; time scale does not apply (2026-10-27, offline) | S | none |
 | LOOP: repeat the whole DAHDSR (trapezoid) | on/off (p42) | Have | `*_loop`: after the decay it goes straight to the release, then the delay again, while held (2026-10-27, offline) | - | none |
 | LATCH: hold at sustain after key up; with LOOP keeps cycling | on/off (p42) | Have | `*_latch`: key up ignored until the voice is replayed or stolen, latch is switched off or All Notes Off (2026-10-27, offline) | - | none |
 | TIME SCALE, keeps the stage ratios; modulatable | 10% to 1000% (p44) | Partial | `*_scale` 10-1000%, log knob with 100% in the middle; not a matrix destination yet (2026-10-27, offline) | S | none |
@@ -205,27 +205,27 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| Four LFOs (hard-wired: 1 to pitch, 2 to cutoffs, 3 to wave shape) | p46, p27-28 | Partial | Two (`lfo1_*`, `lfo2_*`); LFO 1 to pitch and LFO 2 to cutoffs are hard-wired | M | low |
-| LFOs per voice (manual p10) so they can restart per note | p10 | Partial | Shared, free-running for all voices | M | low (control rate) |
-| RATE | 0 to 10 within the RANGE (p46) | Have | `lfoN_rate`, log 0.05 Hz to 50 Hz | - | - |
-| RANGE | Slow 0.001-1 Hz, Low 0.01-10 Hz, Medium 0.1-100 Hz, High 1 Hz-1 kHz (p48) | Partial | One fixed range, 0.05-50 Hz | S (High needs per-sample LFOs) | low; medium for High |
-| WAVE: Triangle/Sine | p46 | Partial | Triangle and Sine as separate choices | - | - |
-| WAVE: Pulse with variable width | p46 | Partial | Square at 50% only | S | none |
-| WAVE: Saw/Ramp | p46 | Partial | Saw and Ramp as separate choices | - | - |
-| WAVE: S&H/Noise (smooth random) | p46 | Partial | S&H only | S | none |
-| VARIATION: morph within the wave category | 0% to 100% (p48-49) | Missing | - | S | none |
-| POLARITY | Unipolar, Bipolar (p49) | Missing | Always bipolar | S | none |
-| START PHASE (used on reset, repeats, clock start) | 0% to 100% (p49) | Missing | - | S | none |
+| Four LFOs (hard-wired: 1 to pitch, 2 to cutoffs, 3 to wave shape) | p46, p27-28 | Have | `lfo1_*` .. `lfo4_*`; LFO 1 to pitch, LFO 2 to cutoffs, LFO 3 to wave angle and width (2026-10-27, offline) | - | - |
+| LFOs per voice (manual p10) so they can restart per note | p10 | Have | Per voice when restarted (note-on reset, repeats) or modulated per voice; free-running otherwise (2026-10-27, offline) | - | - |
+| RATE | 0 to 10 within the RANGE (p46) | Have | `lfoN_rate`, three decades on a log knob within the range (2026-10-27, offline) | - | - |
+| RANGE | Slow 0.001-1 Hz, Low 0.01-10 Hz, Medium 0.1-100 Hz, High 1 Hz-1 kHz (p48) | Partial | `lfoN_range` Slow, Low (default), Medium; no High (1 Hz-1 kHz needs per-sample LFOs: the control rate is 2.76 kHz) (2026-10-27, offline) | S (High) | medium for High |
+| WAVE: Triangle/Sine | p46 | Have | Triangle and Sine, each morphing into the other with `lfoN_var` (2026-10-27, offline) | - | - |
+| WAVE: Pulse with variable width | p46 | Have | Square; `lfoN_var` narrows it from 50% to always low (2026-10-27, offline) | - | - |
+| WAVE: Saw/Ramp | p46 | Have | Saw and Ramp, each morphing through a triangle into the other (2026-10-27, offline) | - | - |
+| WAVE: S&H/Noise (smooth random) | p46 | Have | S&H and Noise (smooth random, the same random steps glided), each morphing into the other (2026-10-27, offline) | - | - |
+| VARIATION: morph within the wave category | 0% to 100% (p48-49) | Have | `lfoN_var`, from the chosen wave towards its partner; a matrix destination (2026-10-27, offline) | - | - |
+| POLARITY | Unipolar, Bipolar (p49) | Have | `lfoN_polarity` Bipolar / Unipolar (2026-10-27, offline) | - | - |
+| START PHASE (used on reset, repeats, clock start) | 0% to 100% (p49) | Partial | `lfoN_phase`, on note-on reset and repeats; host transport start not read (2026-10-27, offline) | S | none |
 | SYNC to the Master Clock | on/off (p49) | Have | `lfoN_sync`, host tempo | - | - |
-| SYNC DIVISION | 64, 32, 16, 8, 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (p49) | Partial | 4 bars to 1/32 (11 values) | S | none |
-| SYNC TIMING | Straight, Dotted, Triplet (p49) | Partial | A few triplets in the list; no dotted | S | none |
+| SYNC DIVISION | 64, 32, 16, 8, 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (p49) | Have | 13 divisions, 16 bars .. 1/256 (64 .. 1/64 quarter-note beats), a table of the LFOs' own (2026-10-27, offline) | - | - |
+| SYNC TIMING | Straight, Dotted, Triplet (p49) | Have | `lfoN_timing` Straight, Dotted (x1.5), Triplet (x2/3) (2026-10-27, offline) | - | - |
 | Reset to start phase on Master Clock start when synced | p49 | Missing | Host transport not read | S | none |
-| NOTE-ON RESET | off/on (p49) | Missing | - | S (needs per-voice LFOs) | low |
-| DELAY TIME before the LFO starts | Off, 0.1 ms to 10.0 s (p50) | Missing | - | S | none |
-| FADE IN TIME | Off, 0.1 ms to 10.0 s (p50) | Missing | - | S | none |
-| FADE OUT TIME | Off, 0.1 ms to 10.0 s (p50) | Missing | - | S | none |
-| REPEATS: a set number of cycles after note-on | Infinite, 1 to 32 (p50) | Missing | - | S | none |
-| SMOOTHING: one-pole lowpass on the LFO | 0% to 100% (p50) | Missing | - | S | none |
+| NOTE-ON RESET | off/on (p49) | Have | `lfoN_reset`: the voice restarts its LFO at the start phase, with its own random values (2026-10-27, offline) | - | - |
+| DELAY TIME before the LFO starts | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_delay` Off, 1 ms .. 10 s, per voice from the note-on; a restarted LFO waits at its start phase (2026-10-27, offline) | - | - |
+| FADE IN TIME | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_fade_in` Off, 1 ms .. 10 s (2026-10-27, offline) | - | - |
+| FADE OUT TIME | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_fade_out` Off, 1 ms .. 10 s, after the fade in (2026-10-27, offline) | - | - |
+| REPEATS: a set number of cycles after note-on | Infinite, 1 to 32 (p50) | Have | `lfoN_repeats` Inf, 1..32; then the LFO stays at 0 until the next note-on (2026-10-27, offline) | - | - |
+| SMOOTHING: one-pole lowpass on the LFO | 0% to 100% (p50) | Have | `lfoN_smooth`: cutoff 1 kHz at 1% down to 0.1 Hz at 100% (2026-10-27, offline) | - | - |
 | DEST quick assign; wave picture [UI] | p47-48 | Missing | - | M | none |
 
 ## 10. VCA (p50-52)
@@ -294,14 +294,14 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| Hard-wired: pitch (LFO 1, Mod EG), wave (LFO 3 to angle and width), FM, cutoff (EG, LFO 2, FM) | p67 | Partial | Pitch and cutoff hard-wires; no wave or FM ones | see 4, 7 | - |
+| Hard-wired: pitch (LFO 1, Mod EG), wave (LFO 3 to angle and width), FM, cutoff (EG, LFO 2, FM) | p67 | Have | All of them; each amount is also a matrix destination (2026-10-27, offline) | - | - |
 | Quick Assign: DEST and Expression Assign; ADD DESTINATION, EDIT MODULATIONS, DONE, CANCEL [UI] | p68-69 | Missing | - | M | none |
-| Matrix slots (numbered list; the count is not stated in this manual) | p70 | Partial | 8 fixed slots (`modN_*`) | S (16 slots) | low per slot (control rate) |
+| Matrix slots (numbered list; the count is not stated in this manual) | p70 | Have | 16 slots (`mod1_*` .. `mod16_*`) (2026-10-27, offline) | - | low (control rate; empty slots skipped) |
 | Per-slot DISABLE/ENABLE without deleting | p70 | Partial | Set the source to Off or the amount to 0 | S | none |
-| SOURCE AMOUNT | -300% to +300% (p70) | Partial | `modN_amt` -100% to +100% | S | none |
-| CONTROLLER with its own amount (negative inverts; a controller alone acts as a source) | -100% to +100% (p71) | Partial | `modN_via` scales at full strength; no amount, no inversion, no via-only slot | S | none |
-| Order: controller and transform first, source amount last | p70 | Partial | Via multiplies, then amount; no transform stage | S | none |
-| TRANSFORM stage | see 15d (p71) | Missing | - | S | none |
+| SOURCE AMOUNT | -300% to +300% (p70) | Have | `modN_amt` -300% .. +300% (2026-10-27, offline) | - | - |
+| CONTROLLER with its own amount (negative inverts; a controller alone acts as a source) | -100% to +100% (p71) | Have | `modN_via` with `modN_via_amt` -100..+100% (default +100%); a slot with only a controller uses it as the source (2026-10-27, offline) | - | - |
+| Order: controller and transform first, source amount last | p70 | Have | As the manual (2026-10-27, offline) | - | - |
+| TRANSFORM stage | see 15d (p71) | Have | `modN_xf` and `modN_xf_amt` (2026-10-27, offline) | - | - |
 | DESTINATION chosen as module, then parameter | see 15e (p71) | Partial | One flat list of 15 destinations | S | none |
 | DELETE a slot (later slots renumber); filter list by source or destination [UI] | p72 | Missing | - | - | none |
 | SAVE / LOAD (add or replace) whole matrices as named presets with notes [UI] | p73-74 | Missing | - | M | none |
@@ -313,14 +313,14 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | NONE | Have | "Off" | - | - |
 | LFO 1 | Have | "LFO 1" | - | - |
 | LFO 2 | Have | "LFO 2" | - | - |
-| LFO 3 | Missing | - | M (with the LFO) | low |
-| LFO 4 | Missing | - | M (with the LFO) | low |
+| LFO 3 | Have | "LFO 3" | - | - |
+| LFO 4 | Have | "LFO 4" | - | - |
 | FILTER EG | Have | "Filter Env" | - | - |
 | AMPLIFIER EG | Have | "Amp Env" | - | - |
 | MODULATION EG | Have | "Mod Env" | - | - |
 | NOISE EG | Missing | - | S (with noise EG) | low |
 | MOD WHEEL | Have | "Mod Wheel" (CC 1) | - | - |
-| PITCH WHEEL | Missing | Bend only goes to pitch | S | none |
+| PITCH WHEEL | Have | "Pitch Wheel" (-1..1) | - | - |
 | PAD X [HW] | Missing | Could map to a MIDI CC | S | none |
 | PAD Y [HW] | Missing | Could map to a MIDI CC | S | none |
 | PAD PRESSURE [HW] | Missing | Could map to a MIDI CC | S | none |
@@ -328,44 +328,44 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | VELOCITY | Have | "Velocity" | - | - |
 | AFTERTOUCH | Have | "Aftertouch" (channel pressure) | - | - |
 | KEY PITCH | Have | "Keyboard" (-1..1 around middle C) | - | - |
-| KB GATE | Missing | - | S | none |
-| SUSTAIN | Missing | Pedal state is known, not a source | S | none |
-| EXP 1 | Missing | Could map CC 11 | S | none |
-| EXP 2 | Missing | Could map CC 4 | S | none |
+| KB GATE | Have | "KB Gate" (the voice's key is down) | - | - |
+| SUSTAIN | Have | "Sustain" (CC 64) | - | - |
+| EXP 1 | Have | "Exp 1 (CC 11)" | - | - |
+| EXP 2 | Have | "Exp 2 (CC 4)" | - | - |
 | CV IN 1 [HW] | Missing | - | - | none |
 | CV IN 2 [HW] | Missing | - | - | none |
-| RANDOM (unipolar) | Partial | Only the bipolar per-note random | S | none |
+| RANDOM (unipolar) | Have | "Random Uni" (0..1, per note) | - | - |
 | RANDOM BIPOLAR | Have | "Random" (-1..1, per note) | - | - |
-| CONSTANT | Missing | - | S | none |
+| CONSTANT | Have | "Constant" | - | - |
 
 ### 15c. Matrix controllers (p75)
 
 | Moog One controller list | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|
-| Same 26 entries as the sources (NONE, MOD WHEEL, PITCH WHEEL, PAD X/Y/PRESSURE/GATE, VELOCITY, AFTERTOUCH, KEY PITCH, KB GATE, SUSTAIN, EXP 1/2, CV IN 1/2, the four EGs, LFO 1-4, RANDOM, RANDOM BIPOLAR, CONSTANT) | Partial | `modN_via` offers the same 10 entries as ONE-ish's sources; same gaps as 15b | S | none |
+| Same 26 entries as the sources (NONE, MOD WHEEL, PITCH WHEEL, PAD X/Y/PRESSURE/GATE, VELOCITY, AFTERTOUCH, KEY PITCH, KB GATE, SUSTAIN, EXP 1/2, CV IN 1/2, the four EGs, LFO 1-4, RANDOM, RANDOM BIPOLAR, CONSTANT) | Partial | `modN_via` offers the same list as the sources (19 + None); missing: pad X/Y/pressure/gate, CV, noise EG (2026-10-27, offline) | S | none |
 
 ### 15d. Matrix transforms (p71, p75)
 
 | Moog One transform | Range | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | NONE | - | Have | (no transform stage) | - | - |
-| LIMIT LOW | 0% to 100% | Missing | - | S | none |
-| LIMIT HIGH | 0% to 100% | Missing | - | S | none |
-| SQUARED | fixed | Missing | - | S | none |
-| CUBED | fixed | Missing | - | S | none |
+| LIMIT LOW | 0% to 100% | Have | "Limit Low": a floor 0..100% across the source's range (0% does nothing) | - | - |
+| LIMIT HIGH | 0% to 100% | Have | "Limit High": a ceiling (100% does nothing) | - | - |
+| SQUARED | fixed | Have | "Squared" | - | - |
+| CUBED | fixed | Have | "Cubed" | - | - |
 
 ### 15e. Matrix destinations (p76-77)
 
 | Moog One destination | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|
-| All oscillators: PITCH LFO 1 MOD (the hard-wired amount) | Missing | - | S | none |
-| All oscillators: PITCH EG MOD | Missing | - | S | none |
-| All oscillators: TRIANGLE LFO 3 MOD | Missing | Needs LFO 3 + wave angle | S | none |
-| All oscillators: PULSE LFO 3 MOD | Missing | Needs LFO 3 + PWM | S | none |
+| All oscillators: PITCH LFO 1 MOD (the hard-wired amount) | Have | "Pitch LFO1 Amt" | - | - |
+| All oscillators: PITCH EG MOD | Have | "Pitch EG Amt" | - | - |
+| All oscillators: TRIANGLE LFO 3 MOD | Have | "Angle LFO3 Amt" | - | - |
+| All oscillators: PULSE LFO 3 MOD | Have | "PW LFO3 Amt" | - | - |
 | All oscillators: FM MOD | Have | "FM Amount" | - | - |
 | All oscillators: PITCH OFFSET | Have | "Pitch" (+-24 st) | - | - |
 | Oscillator 1-3: FREQUENCY | Have | "Osc 1/2/3 Pitch" | - | - |
-| Oscillator 1-3: BEAT | Partial | Not a matrix destination yet; the knob is | - | none |
+| Oscillator 1-3: BEAT | Have | "Osc n Beat" (+-7 Hz) | - | - |
 | Oscillator 1-3: SAW (reset-time angle) | Have | "Osc n Angle" | - | - |
 | Oscillator 1-3: TRIANGLE (angle) | Have | "Osc n Angle" | - | - |
 | Oscillator 1-3: PULSE (width) | Have | "Osc n PW" | - | - |
@@ -382,25 +382,25 @@ matrix destinations, an always-on delay + reverb chain alongside the mod effect.
 | Filters: SVF/LADDER MIX | Have | "Filter Mix" | - | - |
 | SVF: CUTOFF | Have | "SVF Cutoff" (+-5 oct) | - | - |
 | SVF: RESONANCE | Have | "SVF Res" | - | - |
-| SVF: SPACING | Missing | Needs SVF pair | S | none |
-| SVF: EG AMOUNT | Missing | - | S | none |
-| SVF: LFO 2 AMOUNT | Missing | - | S | none |
-| SVF: FM AMOUNT | Missing | Needs filter FM | S | none |
+| SVF: SPACING | Have | "SVF Spacing" | - | - |
+| SVF: EG AMOUNT | Have | "SVF EG Amt" | - | - |
+| SVF: LFO 2 AMOUNT | Have | "SVF LFO2 Amt" | - | - |
+| SVF: FM AMOUNT | Have | "SVF FM Amt" | - | - |
 | Ladder: CUTOFF | Have | "Ladder Cutoff" | - | - |
 | Ladder: RESONANCE | Have | "Ladder Res" | - | - |
-| Ladder: EG AMOUNT | Missing | - | S | none |
-| Ladder: LFO 2 AMOUNT | Missing | - | S | none |
-| Ladder: FM AMOUNT | Missing | Needs filter FM | S | none |
-| EG 1-3: DELAY, HOLD | Missing | Needs those stages | S | none |
-| EG 1-3: ATTACK, DECAY, RELEASE | Missing | Times are set per patch, not per voice | M | low-medium (per-voice coefficient updates, one expf each) |
-| EG 1-3: SUSTAIN | Missing | - | S | none |
-| EG 1-3: TIME SCALE | Missing | Needs time scale | S | low |
+| Ladder: EG AMOUNT | Have | "Ladder EG Amt" | - | - |
+| Ladder: LFO 2 AMOUNT | Have | "Ladder LFO2 Amt" | - | - |
+| Ladder: FM AMOUNT | Have | "Ladder FM Amt" | - | - |
+| EG 1-3: DELAY, HOLD | Have | "... Env Delay", "... Env Hold" (per voice) | - | - |
+| EG 1-3: ATTACK, DECAY, RELEASE | Have | Per voice: a voice with envelope modulation gets its own envelope settings; a stage is recalculated when its time moves by over 1% (2026-10-27, offline) | - | low-medium: about 0.9 us per voice per block with three envelopes swept by an LFO, none when unused |
+| EG 1-3: SUSTAIN | Have | "... Env Sustain" (per voice) | - | - |
+| EG 1-3: TIME SCALE | Have | "... Env Time Scale" (per voice) | - | - |
 | EG 1-3: MULTI TRIGGER, SYNC, LOOP, LATCH (step-mod list, p91) | Missing | - | S | none |
-| LFO 1-4: RATE | Missing | - | S | none |
-| LFO 1-4: RATE (SEMITONES) | Missing | - | S | none |
-| LFO 1-4: VARIATION | Missing | Needs variation | S | none |
-| LFO 1-4: DELAY | Missing | Needs LFO delay | S | none |
-| LFO 1-4: FADE IN TIME, FADE OUT TIME (RAMP UP/DOWN TIME in the step-mod list) | Missing | Needs fades | S | none |
+| LFO 1-4: RATE | Have | "LFO n Rate" (+-100% = the whole knob; per voice) | - | - |
+| LFO 1-4: RATE (SEMITONES) | Have | "LFO n Rate (st)" (+-100% = +-24 st) | - | - |
+| LFO 1-4: VARIATION | Have | "LFO n Variation" | - | - |
+| LFO 1-4: DELAY | Have | "LFO n Delay" | - | - |
+| LFO 1-4: FADE IN TIME, FADE OUT TIME (RAMP UP/DOWN TIME in the step-mod list) | Have | "LFO n Fade In", "LFO n Fade Out" | - | - |
 | LFO 1-4: WAVEFORM (step-mod list, p91) | Missing | - | S | none |
 
 ## 16. Arpeggiator (p78-81)

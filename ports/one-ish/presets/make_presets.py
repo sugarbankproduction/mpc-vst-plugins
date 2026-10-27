@@ -11,6 +11,8 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 PARAMS = json.load(open(os.path.join(HERE, "..", "params.json"), encoding="utf-8"))["params"]
 DIVS = ["4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"]   # engine.c SYNC_DIV
+LFO_DIVS = ["16 bars", "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128",
+            "1/256"]   # engine.c LFO_DIV (dotted and triplet timing are lfoN_timing)
 
 
 def ms(t):        # envelope knobs: 1 ms .. 10 s, log (delay and hold: 0 is off)
@@ -21,11 +23,15 @@ def hz(f):        # cutoff knobs: 20 Hz .. 20 kHz, log
     return round(100 * math.log(f / 20) / math.log(1000), 1)
 
 
-def lfo(f):       # LFO rate knobs: 0.05 .. 50 Hz, log
-    return round(100 * math.log(f / 0.05) / math.log(1000), 1)
+def lfo(f):       # LFO rate knobs in the default Low range: 0.01 .. 10 Hz, log
+    return round(100 * math.log(f / 0.01) / math.log(1000), 1)
 
 
-def div(name):    # a synced LFO's rate knob picks a division
+def lfo_div(name):   # a synced LFO's rate knob picks a division
+    return round(100 * LFO_DIVS.index(name) / (len(LFO_DIVS) - 1), 1)
+
+
+def div(name):    # a synced delay time knob picks a division
     return round(100 * DIVS.index(name) / (len(DIVS) - 1), 1)
 
 
@@ -86,7 +92,7 @@ PATCHES = [
                         "modfx_type": "Chorus", "modfx_rate": 40, "modfx_depth": 50, "modfx_mix": 50, "rev_mix": 30}),
     ("Wobble Bass", {**amp(2, 400, 90, 150),
                      "o2_level": 80, "o2_oct": "16'", "o2_mix": 100, "flt_cut": hz(180), "flt_res": 60,
-                     "flt_drive": 45, "lad_lfo": 55, "lfo2_wave": "Sine", "lfo2_sync": "On", "lfo2_rate": div("1/8"),
+                     "flt_drive": 45, "lad_lfo": 55, "lfo2_wave": "Sine", "lfo2_sync": "On", "lfo2_rate": lfo_div("1/8"),
                      "voices": "Mono"}),
     ("Self-Osc Whistle", {**amp(40, 800, 90, 600),
                           "o1_level": 0, "noise_level": 0, "flt_res": 100, "flt_cut": hz(440), "lad_kbd": 100,
@@ -141,6 +147,24 @@ PATCHES = [
                    "flt_cut": hz(900), "flt_res": 25, "lad_env": 30, "voices": "8",
                    "modfx_type": "Chorus", "modfx_rate": 30, "modfx_depth": 50, "modfx_mix": 40,
                    "dly_sync": "On", "dly_time": div("1/8T"), "dly_fb": 30, "dly_mix": 20, "rev_mix": 30, "rev_decay": 70}),
+    # LFO 3 sweeps the wave angle and pulse width (the hard-wires); LFO 1 is a delayed vibrato that fades in after each
+    # note-on; LFO 4 is smooth random wander on the SVF, kept positive by a Limit Low transform; velocity shortens the
+    # filter envelope's decay; the mod wheel speeds LFO 3 up; aftertouch opens the ladder, squared for a gentle start.
+    ("Morph Motion", {**amp(30, 1200, 85, 900), **fenv(5, 900, 35, 700),
+                      "o1_wave": "Tri", "o1_angle": 50, "o1_mix": 40, "o2_level": 80, "o2_freq": 0.07, "o2_mix": 60,
+                      "angle_lfo3": 60, "pw_lfo3": 50, "lfo3_rate": lfo(0.35), "lfo3_wave": "Sine",
+                      "pitch_lfo": 2, "lfo1_rate": lfo(5.5), "lfo1_wave": "Triangle", "lfo1_var": 70,
+                      "lfo1_reset": "On", "lfo1_delay": ms(350), "lfo1_fade_in": ms(800), "mod1_amt": 0,
+                      "o1_svf": "On", "o2_svf": "On", "svf_mode": "BP", "svf_cut": hz(900), "svf_res": 35,
+                      "flt_mix": 60, "flt_cut": hz(1500), "flt_res": 20, "lad_env": 35, "lad_kbd": 50,
+                      "lfo4_wave": "Noise", "lfo4_rate": lfo(0.8), "lfo4_smooth": 30,
+                      "mod2_src": "LFO 4", "mod2_dst": "SVF Cutoff", "mod2_amt": 40, "mod2_xf": "Limit Low",
+                      "mod2_xf_amt": 50,
+                      "mod3_src": "Velocity", "mod3_dst": "Filter Env Decay", "mod3_amt": -20,
+                      "mod4_src": "Mod Wheel", "mod4_dst": "LFO 3 Rate (st)", "mod4_amt": 100,
+                      "mod5_src": "Aftertouch", "mod5_dst": "Ladder Cutoff", "mod5_amt": 50, "mod5_xf": "Squared",
+                      "voices": "6", "modfx_type": "Chorus", "modfx_rate": 30, "modfx_depth": 45, "modfx_mix": 35,
+                      "rev_mix": 30, "rev_decay": 65}),
 ]
 
 

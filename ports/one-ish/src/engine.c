@@ -5,22 +5,28 @@
  * (LP/BP/HP/notch; a pair of elements with spacing, in series or parallel: src/svf.h) and a ladder filter (cutoff,
  * resonance, drive, LP/HP, 24-6 dB) in parallel or in series (SVF into ladder) with a mix between them, their cutoff
  * knobs optionally linked; three DAHDSR envelopes (filter, amp, mod: src/env.h, with stage curves, loop, latch, tempo
- * sync, time scale, velocity amount, multi trig and reset). Shared: two LFOs (free or tempo-synced).
+ * sync, time scale, velocity amount, multi trig and reset). Four LFOs (src/lfo.h: seven waves with a variation morph,
+ * three rate ranges or tempo sync with dotted and triplet timing, bipolar or unipolar, smoothing), each free-running
+ * or, with note-on reset or a repeat count, restarted per voice at its start phase; per voice a delay and fade in /
+ * fade out after each note-on.
  * Hard-wired modulation as on the Moog One panel: filter envelope, LFO 2, keyboard tracking (-200..+200%) and
- * audio-rate FM from a chosen oscillator to each cutoff, LFO 1 and the mod envelope to pitch. An 8-slot modulation
- * matrix (source x amount, scaled by a via source) over pitch, levels, both filters and amp; mod wheel, aftertouch,
- * pitch bend (separate up and down amounts, plus per-oscillator offsets), sustain and sostenuto pedals, HOLD. Up to 8
- * voices: a new note takes an idle voice, else one by the stealing mode (default: the quietest releasing one, else the
- * oldest held one); the same key replays its own voice. Mono (1 voice) plays legato with low, high or last-note
- * priority. Velocity curves, transpose, octave shift, key-track centre, master tune; per oscillator pitch tracking,
- * note-on phase reset and a choice of hard sync source. Glide (portamento): each voice slides from its own
+ * audio-rate FM from a chosen oscillator to each cutoff, LFO 1 and the mod envelope to pitch, LFO 3 to every
+ * oscillator's wave angle and pulse width. A 16-slot modulation matrix (src/modmatrix.h: source x amount up to
+ * +-300%, a controller with its own amount, a transform) over pitch, levels, wave shapes, both filters, amp, the
+ * hard-wired amounts, envelope times (per voice) and LFO rates, variation and times; mod wheel, aftertouch, pitch
+ * bend (separate up and down amounts, plus per-oscillator offsets), sustain and sostenuto pedals, HOLD, two
+ * expression CCs (11 and 4). Up to 8 voices: a new note takes an idle voice, else one by the stealing mode (default:
+ * the quietest releasing one, else the oldest held one); the same key replays its own voice. Mono (1 voice) plays
+ * legato with low, high or last-note priority. Velocity curves, transpose, octave shift, key-track centre, master
+ * tune; per oscillator pitch tracking, note-on phase reset and a choice of hard sync source. Glide (portamento): each
+ * voice slides from its own
  * last pitch at a constant rate (LCR), in a constant time (LCT) or exponentially (EXP); optionally only on legato
  * notes, paused while the key is up (gated), or in semitone steps (glissando). Unison stacks 2-8 voices on each note
  * (a stack is allocated and stolen as one), detuned unevenly around the centre; pitch variance gives each new note a
  * small random pitch offset. After the voices: a modulation effect (chorus,
  * flanger or phaser), a delay (free or tempo-synced, ping-pong) and a plate reverb, in stereo (src/fx.h).
  *
- * Audio runs per sample; modulation (envelopes 1 and 3, LFOs, pitch, cutoffs) every CR samples, with levels and the
+ * Audio runs per sample; modulation (envelopes 1 and 3, LFOs, the matrix, pitch, cutoffs) every CR samples, with levels and the
  * filter mix ramped across each step so no knob or mod move steps audibly.
  * Implements mpc_engine() (wrapper/engine.h): 44.1 kHz, interleaved int16 stereo, up to 128 frames per render().
  * Everything is allocated in create(); render() and midi() never allocate, lock or touch files. */
@@ -44,15 +50,18 @@
 #define MAX_VOICES 8
 #define NOSC 3
 #define NSRC 5             /* the mixer's channels: oscillators 1-3, noise, ring mod */
-#define NLFO 2
+#define NLFO 4
 #define HEADROOM 0.5f      /* one full-scale saw at full velocity and volume peaks at -6 dBFS */
 #define STATE_MAX 8192     /* the wrapper's chunk size (wrapper/vst2_wrap.c) */
 #define NOISE_FLOOR 1e-5f  /* -100 dB of noise into the filters, as in a circuit: starts self-oscillation, avoids denormals */
 #define CUT_MIN_HZ 20.0f   /* cutoff knobs: 20 Hz .. 20 kHz on a log scale (0..100) */
 #define CUT_RANGE 1000.0f
 #define ENV_RANGE 10000.0f /* envelope time knobs: 1 ms .. 10 s on a log scale (0..100) */
-#define LFO_MIN_HZ 0.05f   /* LFO rate knobs: 0.05 .. 50 Hz on a log scale (0..100) */
-#define LFO_RANGE 1000.0f
+#define LFO_RANGE 1000.0f  /* LFO rate knobs: three decades on a log scale (0..100), from the range's lowest rate */
+#define LFO_HW_ANGLE 0.5f  /* LFO 3 to wave angle at 100%: +-50% of the angle's range (a sweep across all of it) */
+#define LFO_HW_PW 0.45f    /* LFO 3 to pulse width at 100%: +-45% (5..95% from a square) */
+#define BEAT_HZ 7.0f       /* the matrix's beat frequency destinations at +-100%: +-7 Hz, the knob's range */
+#define LFO_SMOOTH_HZ 1000.0f   /* LFO smoothing: the filter's cutoff falls from 1 kHz at 1% to 0.1 Hz at 100% */
 #define ENV_CUT_OCT 5.0f   /* filter envelope amount at +-100%: +-5 octaves of cutoff */
 #define LFO_CUT_OCT 3.0f   /* LFO 2 amount at +-100%: +-3 octaves */
 #define LFO_PITCH_ST 12.0f /* LFO 1 pitch amount at +-100%: +-12 semitones */
@@ -72,7 +81,11 @@
 /* engine-side slots, matched to params.json by key (so the VST order there can grow freely). Per oscillator the
  * slots run WAVE .. LAD from P_O1_WAVE + OSC_STRIDE * n (osc 1's SYNC slot is unused);
  * the envelopes run A, D, S, R from P_ENV_A + ENV_STRIDE * n in ENV_FILTER, ENV_AMP, ENV_MOD order; the LFOs run
- * RATE, WAVE, SYNC from P_LFO1_RATE + LFO_STRIDE * n; the source routes and levels in source order. */
+ * RATE, WAVE, SYNC from lfo_base(n) (LFOs 1-2 and 3-4 in two blocks) and their extras (L_* below) from
+ * P_LFO1_RANGE + LX_STRIDE * n; the source routes and levels in source order. The matrix's slots run (source,
+ * destination, amount, via) from P_MOD_BASE and (via amount, transform, transform amount) from P_MODX_BASE. */
+enum { L_RANGE, L_VAR, L_POLARITY, L_PHASE, L_RESET, L_DELAY, L_FADE_IN, L_FADE_OUT, L_REPEATS, L_SMOOTH, L_TIMING,
+       LX_STRIDE };
 enum {
     P_O1_WAVE, P_O1_OCT, P_O1_FREQ, P_O1_BEAT, P_O1_ANGLE, P_O1_PW, P_O1_MIX, P_O1_LEVEL, P_O1_SYNC, P_O1_SVF, P_O1_LAD,
     P_O2_WAVE, P_O2_OCT, P_O2_FREQ, P_O2_BEAT, P_O2_ANGLE, P_O2_PW, P_O2_MIX, P_O2_LEVEL, P_O2_SYNC, P_O2_SVF, P_O2_LAD,
@@ -107,6 +120,10 @@ enum {
     P_O2_TRACK, P_O2_RESET, P_O2_BEND_UP_OFF, P_O2_BEND_DN_OFF,
     P_O3_TRACK, P_O3_RESET, P_O3_BEND_UP_OFF, P_O3_BEND_DN_OFF,
     P_O2_SYNC_SRC, P_O3_SYNC_SRC,
+    P_LFO3_RATE, P_LFO3_WAVE, P_LFO3_SYNC, P_LFO4_RATE, P_LFO4_WAVE, P_LFO4_SYNC,
+    P_ANGLE_LFO3, P_PW_LFO3,                                      /* LFO 3's hard-wired amounts to the wave shapes */
+    P_LFO1_RANGE, P_LFOX_END = P_LFO1_RANGE + NLFO * LX_STRIDE - 1,   /* NLFO x the L_* extras */
+    P_MODX_BASE, P_MODX_END = P_MODX_BASE + MOD_SLOTS * MOD_SLOT_EXTRA - 1,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -145,6 +162,8 @@ static const char *const KEYS[P_COUNT] = {
 #define SLOT_KEYS(n) [P_MOD_BASE + 4 * ((n) - 1)] = "mod" #n "_src", [P_MOD_BASE + 4 * ((n) - 1) + 1] = "mod" #n "_dst", \
                      [P_MOD_BASE + 4 * ((n) - 1) + 2] = "mod" #n "_amt", [P_MOD_BASE + 4 * ((n) - 1) + 3] = "mod" #n "_via"
     SLOT_KEYS(1), SLOT_KEYS(2), SLOT_KEYS(3), SLOT_KEYS(4), SLOT_KEYS(5), SLOT_KEYS(6), SLOT_KEYS(7), SLOT_KEYS(8),
+    SLOT_KEYS(9), SLOT_KEYS(10), SLOT_KEYS(11), SLOT_KEYS(12), SLOT_KEYS(13), SLOT_KEYS(14), SLOT_KEYS(15),
+    SLOT_KEYS(16),
 #undef SLOT_KEYS
     [P_VOLUME] = "volume",
     "modfx_type", "modfx_rate", "modfx_depth", "modfx_fb", "modfx_mix",
@@ -166,6 +185,18 @@ static const char *const KEYS[P_COUNT] = {
     OSC_MORE_KEYS(1), OSC_MORE_KEYS(2), OSC_MORE_KEYS(3),
 #undef OSC_MORE_KEYS
     [P_O2_SYNC_SRC] = "o2_sync_src", [P_O3_SYNC_SRC] = "o3_sync_src",
+    "lfo3_rate", "lfo3_wave", "lfo3_sync", "lfo4_rate", "lfo4_wave", "lfo4_sync",
+    "angle_lfo3", "pw_lfo3",
+#define LFO_EXTRA_KEYS(n) "lfo" #n "_range", "lfo" #n "_var", "lfo" #n "_polarity", "lfo" #n "_phase", "lfo" #n "_reset", \
+                          "lfo" #n "_delay", "lfo" #n "_fade_in", "lfo" #n "_fade_out", "lfo" #n "_repeats", \
+                          "lfo" #n "_smooth", "lfo" #n "_timing"
+    LFO_EXTRA_KEYS(1), LFO_EXTRA_KEYS(2), LFO_EXTRA_KEYS(3), LFO_EXTRA_KEYS(4),
+#undef LFO_EXTRA_KEYS
+#define SLOTX_KEYS(n) "mod" #n "_via_amt", "mod" #n "_xf", "mod" #n "_xf_amt"
+    SLOTX_KEYS(1), SLOTX_KEYS(2), SLOTX_KEYS(3), SLOTX_KEYS(4), SLOTX_KEYS(5), SLOTX_KEYS(6), SLOTX_KEYS(7),
+    SLOTX_KEYS(8), SLOTX_KEYS(9), SLOTX_KEYS(10), SLOTX_KEYS(11), SLOTX_KEYS(12), SLOTX_KEYS(13), SLOTX_KEYS(14),
+    SLOTX_KEYS(15), SLOTX_KEYS(16),
+#undef SLOTX_KEYS
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
@@ -176,6 +207,18 @@ static const struct { const char *name; float beats; } SYNC_DIV[] = {
     {"1/8T", 1.0f / 3}, {"1/16", 0.25f}, {"1/16T", 1.0f / 6}, {"1/32", 0.125f},
 };
 #define NDIV ((int)(sizeof SYNC_DIV / sizeof SYNC_DIV[0]))
+
+/* a synced LFO's divisions (the Moog One's 64 .. 1/64 quarter-note beats, named as note lengths), times its timing:
+ * straight, dotted (1.5x as long) or triplet (2/3) */
+static const struct { const char *name; float beats; } LFO_DIV[] = {
+    {"16 bars", 64}, {"8 bars", 32}, {"4 bars", 16}, {"2 bars", 8}, {"1 bar", 4}, {"1/2", 2}, {"1/4", 1},
+    {"1/8", 0.5f}, {"1/16", 0.25f}, {"1/32", 0.125f}, {"1/64", 1.0f / 16}, {"1/128", 1.0f / 32}, {"1/256", 1.0f / 64},
+};
+#define NLDIV ((int)(sizeof LFO_DIV / sizeof LFO_DIV[0]))
+static const float LFO_TIMING[] = {1.0f, 1.5f, 2.0f / 3};   /* "lfoN_timing" options */
+static const char *const LFO_TIMING_TAG[] = {"", " D", " T"};
+static const float LFO_RANGE_HZ[] = {0.001f, 0.01f, 0.1f};   /* "lfoN_range": Slow, Low, Medium (lowest rate) */
+enum { POL_BIPOLAR, POL_UNIPOLAR };                         /* "lfoN_polarity" options */
 
 typedef struct {
     osc_t osc[NOSC];
@@ -202,6 +245,17 @@ typedef struct {
     float to_lad[NSRC], to_svf[NSRC], mix_lad;   /* last control step's levels and filter mix (ramp start) */
     float tgt_lad[NSRC], tgt_svf[NSRC], tgt_mix; /* this control step's (ramp end), modulation included */
     float amp_mod;           /* the matrix's amp level factor (0..2) */
+    float rand_u;            /* this note's unipolar random value (0..1), a matrix source */
+    float beat_mod[NOSC];    /* the matrix's beat frequency per oscillator, Hz */
+    float lad_fm, svf_fm;    /* the filter FM amounts (0..1), modulation included */
+    lfo_t lfo[NLFO];         /* the LFOs as this voice runs them: its own when restarted per note or modulated */
+    float lfo_out[NLFO];     /* this control step's LFO outputs, delay and fades applied */
+    float lfo_time[NLFO];    /* samples since the note-on, for the LFO delay and fades */
+    float lfo_dm[NLFO][MDL_COUNT];   /* the matrix's LFO destinations from the last control step */
+    env_cfg_t ecfg[NENV];    /* each envelope's settings with this voice's matrix modulation (when it has any) */
+    float eq[NENV][5];       /* the stage times ecfg was worked out for, as env_q() values */
+    unsigned egen[NENV];     /* and the shared settings' generation */
+    unsigned lfo_own;        /* bit n: the voice runs LFO n itself (restarted per note or modulated) */
     int gate;                /* key down, or released while the sustain pedal is down */
     int sustained;           /* released while the pedal (or HOLD, or sostenuto) is down: let go when it comes up */
     unsigned age;            /* when its note started, for stealing the oldest */
@@ -219,8 +273,17 @@ typedef struct {
     float glide_exp;         /* EXP glide: the fraction of the remaining distance covered per control step */
     fx_t fx;                 /* effect buffers (about 1.3 MB) */
     int sustain;             /* the pedal (CC 64) is down */
-    lfo_t lfo[NLFO];
-    float lfo_val[NLFO];     /* this control step's LFO outputs */
+    lfo_t lfo[NLFO];         /* the free-running LFOs */
+    float lfo_val[NLFO];     /* this control step's free-running LFO outputs (polarity and smoothing applied) */
+    float lfo_hz[NLFO];      /* and their rates (apply_lfos) */
+    float lfo_coef[NLFO];    /* each LFO's smoothing coefficient per control step (1: none) */
+    float lfo_fade[NLFO][3]; /* each LFO's delay, fade in and fade out, samples (0: off) */
+    uint32_t bipolar;        /* bit s: matrix source s is bipolar (for the limit transforms) */
+    uint8_t mod_list[MOD_SLOTS];   /* the matrix slots in use, and how many */
+    int mod_n;
+    int mod_env, mod_lfo;    /* a slot in use goes to an envelope's / an LFO's settings */
+    unsigned env_gen;        /* counts changes to the shared envelope settings */
+    float exp1, exp2;        /* expression controllers (CC 11, CC 4), 0..1 */
     float bpm;               /* the host's tempo, for synced LFOs, delay and envelopes */
     env_cfg_t ecfg[NENV];    /* each envelope's settings (times, curves, loop, latch...), shared by the voices */
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
@@ -289,11 +352,14 @@ static float dly_ms(const one_t *s) {
  * envelope's time scale (10% .. 1000%, a log knob with 100% in the middle). Delay and hold at 0 are off. */
 static float env_scale(float knob) { return powf(10.0f, (knob - 50.0f) * 0.02f); }
 static int env_div(float knob) { return NDIV - 1 - sync_div(knob); }
-static float env_time(const one_t *s, int n, float knob, int zero_off) {
+static float env_time_scaled(const one_t *s, int n, float knob, int zero_off, float scale_knob) {
     const float *x = &s->val[P_FENV_DELAY + EX_STRIDE * n];
     if (zero_off && knob <= 0.0f) return 0.0f;
     if (x[X_SYNC] > 0.5f) return 60000.0f / s->bpm * SYNC_DIV[env_div(knob)].beats;
-    return env_ms(knob) * env_scale(x[X_SCALE]);
+    return env_ms(knob) * env_scale(scale_knob);
+}
+static float env_time(const one_t *s, int n, float knob, int zero_off) {
+    return env_time_scaled(s, n, knob, zero_off, s->val[P_FENV_SCALE + EX_STRIDE * n]);
 }
 
 /* the envelope's output at this velocity (0..1): VEL MOD AMT +100% scales it by the velocity, -100% by its inverse,
@@ -316,12 +382,53 @@ static void apply_envs(one_t *s) {
         c->multi = x[X_MULTI] > 0.5f;
         c->reset = x[X_RESET] > 0.5f;
     }
+    s->env_gen++;   /* voices with modulated envelope times start again from these */
 }
 
-static float lfo_hz(const one_t *s, int n) {
-    const float *l = &s->val[P_LFO1_RATE + LFO_STRIDE * n];
-    if (l[2] > 0.5f) return s->bpm / 60.0f / SYNC_DIV[sync_div(l[0])].beats;
-    return LFO_MIN_HZ * powf(LFO_RANGE, l[0] * 0.01f);
+/* the LFO slots: rate, wave, sync of LFO n, and its extras */
+static int lfo_base(int n) { return n < 2 ? P_LFO1_RATE + LFO_STRIDE * n : P_LFO3_RATE + LFO_STRIDE * (n - 2); }
+static const float *lfo_x(const one_t *s, int n) { return &s->val[P_LFO1_RANGE + LX_STRIDE * n]; }
+static int lfo_div(float knob) { return (int)clampf(roundf(knob * 0.01f * (NLDIV - 1)), 0, NLDIV - 1); }
+
+/* LFO n's rate at a rate knob position (0..100): three decades up from its range's lowest rate, or synced, a
+ * division of the host tempo with its timing */
+static float lfo_rate_hz(const one_t *s, int n, float knob) {
+    const float *x = lfo_x(s, n);
+    knob = clampf(knob, 0.0f, 100.0f);
+    if (s->val[lfo_base(n) + 2] > 0.5f)
+        return s->bpm / 60.0f / (LFO_DIV[lfo_div(knob)].beats * LFO_TIMING[(int)clampf(x[L_TIMING], 0, 2)]);
+    return LFO_RANGE_HZ[(int)clampf(x[L_RANGE], 0, 2)] * powf(LFO_RANGE, knob * 0.01f);
+}
+static float lfo_hz(const one_t *s, int n) { return lfo_rate_hz(s, n, s->val[lfo_base(n)]); }
+
+/* an LFO delay or fade knob (0: off, then 1 ms .. 10 s) in samples */
+static float lfo_samples(float knob) { return knob > 0.0f ? env_ms(fminf(knob, 100.0f)) * 0.001f * SR : 0.0f; }
+
+/* the LFOs' settings that don't change per voice */
+static void apply_lfos(one_t *s) {
+    s->bipolar = 1u << MS_KEY | 1u << MS_RAND | 1u << MS_BEND;
+    static const int src[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
+    for (int n = 0; n < NLFO; n++) {
+        const float *x = lfo_x(s, n);
+        float sm = x[L_SMOOTH] * 0.01f;
+        s->lfo_coef[n] = sm > 0.0f ? 1.0f - expf(-6.2831853f * LFO_SMOOTH_HZ * powf(10.0f, -4.0f * sm) * CR / SR) : 1.0f;
+        s->lfo_fade[n][0] = lfo_samples(x[L_DELAY]);
+        s->lfo_fade[n][1] = lfo_samples(x[L_FADE_IN]);
+        s->lfo_fade[n][2] = lfo_samples(x[L_FADE_OUT]);
+        s->lfo_hz[n] = lfo_hz(s, n);
+        if ((int)x[L_POLARITY] == POL_BIPOLAR) s->bipolar |= 1u << src[n];
+    }
+}
+
+/* the matrix slots in use, and whether any reaches envelope or LFO settings (else those per-voice paths are skipped) */
+static void apply_matrix(one_t *s) {
+    s->mod_n = mod_active(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->mod_list);
+    s->mod_env = s->mod_lfo = 0;
+    for (int k = 0; k < s->mod_n; k++) {
+        int d = (int)s->val[P_MOD_BASE + MOD_SLOT_PARAMS * s->mod_list[k] + 1];
+        s->mod_env |= d >= MD_FENV_DELAY && d <= MD_ENV_END;
+        s->mod_lfo |= d >= MD_LFO1_RATE && d <= MD_LFO_END;
+    }
 }
 
 /* recompute what the audio path reads from the parameter values */
@@ -331,6 +438,8 @@ static void apply(one_t *s) {
         s->ratio[n] = powf(2.0f, (o[O_OCT] - OCT_CENTRE) + o[O_FREQ] / 12.0f);
     }
     apply_envs(s);
+    apply_lfos(s);
+    apply_matrix(s);
     float t = glide_ms(s->val[P_GLIDE_TIME]) * 0.001f;
     s->glide_frac = t > 0.0f ? (float)CR / (SR * t) : 2.0f;
     s->glide_exp = 1.0f - expf(-GLIDE_EXP_K * fminf(s->glide_frac, 1.0f));
@@ -401,10 +510,12 @@ static void glide_step(const one_t *s, voice_t *v) {
     else v->pitch += copysignf(step, d);
 }
 
-/* each mixer channel's level into each filter (its two buttons), the filter mix, the oscillators' wave shapes and the
- * FM depth, with the matrix's modulation dm (MD_COUNT values) added */
-static void set_targets(const one_t *s, voice_t *v, const float *dm) {
+/* each mixer channel's level into each filter (its two buttons), the filter mix, the oscillators' wave shapes, the
+ * FM depth and the filter FM amounts, with the matrix's modulation dm (MD_COUNT values) and LFO 3's value lfo3 added */
+static void set_targets(const one_t *s, voice_t *v, const float *dm, float lfo3) {
     const float *p = s->val;
+    float angle_lfo = lfo3 * clampf(p[P_ANGLE_LFO3] * 0.01f + dm[MD_ANGLE_LFO3], -1.0f, 1.0f) * LFO_HW_ANGLE;
+    float pw_lfo = lfo3 * clampf(p[P_PW_LFO3] * 0.01f + dm[MD_PW_LFO3], -1.0f, 1.0f) * LFO_HW_PW;
     for (int k = 0; k < NSRC; k++) {
         float l = clampf(p[LEVEL_SLOT[k]] * 0.01f + dm[MD_O1_LEVEL + k], 0.0f, 1.0f);
         v->tgt_lad[k] = p[LAD_SLOT[k]] > 0.5f ? l : 0.0f;
@@ -412,11 +523,13 @@ static void set_targets(const one_t *s, voice_t *v, const float *dm) {
     }
     for (int n = 0; n < NOSC; n++) {
         const float *o = &p[P_O1_WAVE + OSC_STRIDE * n];
-        v->tgt_shape[n] = osc_shape((int)o[O_WAVE], clampf(o[O_ANGLE] * 0.01f + dm[MD_O1_ANGLE + n], 0.0f, 1.0f),
-                                    o[O_PW] * 0.01f + dm[MD_O1_PW + n] * 0.9f, o[O_MIX] * 0.01f + dm[MD_O1_MIX + n],
+        v->tgt_shape[n] = osc_shape((int)o[O_WAVE], clampf(o[O_ANGLE] * 0.01f + dm[MD_O1_ANGLE + n] + angle_lfo, 0.0f, 1.0f),
+                                    o[O_PW] * 0.01f + dm[MD_O1_PW + n] * 0.9f + pw_lfo, o[O_MIX] * 0.01f + dm[MD_O1_MIX + n],
                                     v->inc0[n]);
     }
     v->tgt_fm = clampf(p[P_FM_AMT] * 0.01f + dm[MD_FM_AMT], 0.0f, 1.0f) * FM_DEPTH;
+    v->lad_fm = clampf(p[P_LAD_FM] * 0.01f + dm[MD_LAD_FM], 0.0f, 1.0f);
+    v->svf_fm = clampf(p[P_SVF_FM] * 0.01f + dm[MD_SVF_FM], 0.0f, 1.0f);
     v->tgt_mix = clampf(p[P_FLT_MIX] * 0.01f + dm[MD_FLT_MIX], 0.0f, 1.0f);
     v->amp_mod = clampf(1.0f + dm[MD_AMP], 0.0f, 2.0f);
 }
@@ -430,13 +543,14 @@ static float bend_semis(const one_t *s, int osc) {
 }
 
 /* each oscillator's frequency: the note times its octave and frequency settings and the pitch modulation (semitones,
- * shared and per oscillator), plus its beat frequency in Hz. PITCH TRACKING scales the key's distance from the key
- * track centre (100%: as played, 0%: the centre note whatever the key) */
+ * shared and per oscillator), plus its beat frequency in Hz (the knob and the matrix). PITCH TRACKING scales the
+ * key's distance from the key track centre (100%: as played, 0%: the centre note whatever the key) */
 static void set_pitch(const one_t *s, voice_t *v, float semis, const float *osc_semis) {
     float from_centre = voice_key(s, v) - s->center;
     for (int n = 0; n < NOSC; n++) {
         float track = from_centre * s->track[n];
-        float hz = v->note_hz * s->ratio[n] * exp2f((semis + osc_semis[n] + track) / 12.0f) + s->val[P_O1_BEAT + OSC_STRIDE * n];
+        float hz = v->note_hz * s->ratio[n] * exp2f((semis + osc_semis[n] + track) / 12.0f) + s->val[P_O1_BEAT + OSC_STRIDE * n]
+                   + v->beat_mod[n];
         osc_set_freq(&v->osc[n], hz, SR);
         v->inc0[n] = v->osc[n].inc;
     }
@@ -464,6 +578,7 @@ static void *create(const char *data_dir) {
         v->amp_mod = 1.0f;
         v->uni_gain = 1.0f;
         for (int n = 0; n < NENV; n++) v->env[n].cfg = &s->ecfg[n];
+        for (int n = 0; n < NLFO; n++) lfo_init(&v->lfo[n], 0x2545f491u * (n + 1) + 0x632be5abu * (uint32_t)(i + 1));
         v->cut = s->val[P_FLT_CUT];
         v->svf_cut = s->val[P_SVF_CUT];
     }
@@ -494,7 +609,7 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
         ladder_reset(&v->lad);
         svf2_reset(&v->svf);
-        set_targets(s, v, no_mod);   /* unmodulated, until the next control step adds the matrix */
+        set_targets(s, v, no_mod, 0.0f);   /* unmodulated, until the next control step adds the matrix */
         v->mix_lad = v->tgt_mix;
         memcpy(v->shape, v->tgt_shape, sizeof v->shape);
         v->fm = v->tgt_fm;
@@ -649,6 +764,26 @@ static int mono_key(const one_t *s) {
     return key;
 }
 
+/* a note-on for the voice's LFOs: each starts from the free-running one (so a free LFO carries on where it is); with
+ * note-on reset or a repeat count it restarts at its start phase with a random value of its own; the delay and fades
+ * start again */
+static void lfo_note_on(one_t *s, voice_t *v) {
+    for (int n = 0; n < NLFO; n++) {
+        const float *x = lfo_x(s, n);
+        lfo_t *l = &v->lfo[n];
+        *l = s->lfo[n];
+        v->lfo_own &= ~(1u << n);
+        if (x[L_RESET] > 0.5f || x[L_REPEATS] >= 1.0f) {
+            l->rng = (s->lfo[n].rng ^ v->noise) | 1u;   /* never 0, and each voice its own sequence */
+            v->lfo_own |= 1u << n;   /* restarted here: the voice runs it from now */
+            l->prev = l->next;
+            l->next = lfo_rand(l);
+            lfo_reset(l, x[L_PHASE] * 0.01f);
+        }
+        v->lfo_time[n] = 0.0f;
+    }
+}
+
 static void note_on(one_t *s, int note, int vel) {
     if (s->nheld == 0) release_held(s, 0);   /* a non-legato note under HOLD (no pedal down) replaces what it latched */
     forget(s, note);              /* a repeated key moves to the top instead of being held twice */
@@ -673,10 +808,12 @@ static void note_on(one_t *s, int note, int vel) {
         v->velocity = vel_curve(s, vel / 127.0f);
         v->rand = white(&v->noise);
         v->pvar = var > 0.0f ? white(&v->noise) * var : 0.0f;   /* each voice its own, within +-the variance */
+        v->rand_u = 0.5f * (white(&v->noise) + 1.0f);
         v->age = age;
         stack_voice(v, k, stack);
         start_note(s, v, note, legato);
         gate_on(v);
+        lfo_note_on(s, v);
     }
 }
 
@@ -693,7 +830,7 @@ static void note_off(one_t *s, int note) {
                 int start = !v->gate;   /* this voice wasn't playing (a switch from poly or to unison): start it */
                 if (start) stack_voice(v, k, stack);
                 start_note(s, v, key, 1);
-                if (start) gate_on(v);
+                if (start) { gate_on(v); lfo_note_on(s, v); }
             }
         }
         return;
@@ -746,9 +883,10 @@ static void midi(void *inst, const uint8_t *m, int len) {
     else if (st == 0xb0 && d1 == 1) s->wheel = d2 / 127.0f;
     else if (st == 0xb0 && d1 == 64) sustain_pedal(s, d2 >= 64);
     else if (st == 0xb0 && d1 == 66) sostenuto_pedal(s, d2 >= 64);
-    else if (st == 0xb0 && d1 == 11) s->expression = d2 / 127.0f;
+    else if (st == 0xb0 && d1 == 11) s->exp1 = s->expression = d2 / 127.0f;   /* expression: matrix sources Exp 1, 2 */
+    else if (st == 0xb0 && d1 == 4) s->exp2 = d2 / 127.0f;
     else if (st == 0xb0 && d1 == 121) {   /* reset all controllers */
-        s->wheel = s->aftertouch = s->bend = s->expression = 0.0f;
+        s->wheel = s->aftertouch = s->bend = s->expression = s->exp1 = s->exp2 = 0.0f;
         sustain_pedal(s, 0);
         sostenuto_pedal(s, 0);
     }
@@ -792,7 +930,8 @@ static void set_param(void *inst, const char *key, const char *val) {
         float bpm = (float)atof(val);
         if (isfinite(bpm) && bpm >= 20.0f && bpm <= 400.0f && bpm != s->bpm) {
             s->bpm = bpm;
-            apply_envs(s);   /* synced envelope times follow the tempo */
+            apply_envs(s);   /* synced envelope times and LFO rates follow the tempo */
+            apply_lfos(s);
         }
         return;
     }
@@ -853,11 +992,17 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
         if (s->val[P_DLY_SYNC] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[sync_div(s->val[k])].name);
         return time_text(buf, n, dly_ms(s));
     }
-    if (k == P_LFO1_RATE || k == P_LFO2_RATE) {
-        int lfo = k == P_LFO2_RATE;
-        if (s->val[k + 2] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[sync_div(s->val[k])].name);
-        float hz = lfo_hz(s, lfo);
-        return snprintf(buf, n, hz < 1.0f ? "%.2f Hz" : "%.1f Hz", hz);
+    for (int l = 0; l < NLFO; l++) {
+        if (k == lfo_base(l)) {   /* the rate */
+            if (s->val[k + 2] > 0.5f)
+                return snprintf(buf, n, "%s%s", LFO_DIV[lfo_div(s->val[k])].name,
+                                LFO_TIMING_TAG[(int)clampf(lfo_x(s, l)[L_TIMING], 0, 2)]);
+            float hz = lfo_hz(s, l);
+            return snprintf(buf, n, hz < 0.1f ? "%.3f Hz" : hz < 1.0f ? "%.2f Hz" : hz < 100.0f ? "%.1f Hz" : "%.0f Hz", hz);
+        }
+        int x = k - (P_LFO1_RANGE + LX_STRIDE * l);
+        if (x == L_DELAY || x == L_FADE_IN || x == L_FADE_OUT)
+            return s->val[k] > 0.0f ? time_text(buf, n, env_ms(s->val[k])) : snprintf(buf, n, "Off");
     }
     return 0;
 }
@@ -887,52 +1032,183 @@ static inline float soft_limit(float x) {
     return copysignf(0.5f + 0.5f * u / (1.0f + u), x);
 }
 
-/* the shared LFOs, once per control step */
-static void control_lfos(one_t *s) {
-    for (int n = 0; n < NLFO; n++)
-        s->lfo_val[n] = lfo_next(&s->lfo[n], (int)s->val[P_LFO1_WAVE + LFO_STRIDE * n], lfo_hz(s, n), CR, SR);
+/* an LFO's wave in its polarity: bipolar -1..1 or unipolar 0..1 */
+static float lfo_polar(const one_t *s, int n, float y) {
+    return (int)lfo_x(s, n)[L_POLARITY] == POL_UNIPOLAR ? 0.5f * (y + 1.0f) : y;
 }
 
-/* one voice's modulation for the next control step: the matrix, pitch, both cutoffs and filter settings, levels */
+/* the free-running LFOs, once per control step */
+static void control_lfos(one_t *s) {
+    for (int n = 0; n < NLFO; n++) {
+        lfo_advance(&s->lfo[n], fminf(s->lfo_hz[n] * CR / SR, 0.5f));
+        float y = lfo_shape(&s->lfo[n], (int)s->val[lfo_base(n) + 1], lfo_x(s, n)[L_VAR] * 0.01f);
+        s->lfo_val[n] = lfo_smooth(&s->lfo[n], lfo_polar(s, n, y), s->lfo_coef[n]);
+    }
+}
+
+/* LFO n's intensity for this voice: 0 through its delay, rising through its fade in, then falling through its fade
+ * out (when set), from the note-on; the matrix moves the three times (dm: the voice's LFO destinations) */
+static float lfo_fade(const one_t *s, voice_t *v, int n, const float *dm, int *waiting) {
+    const float *f = s->lfo_fade[n], *x = lfo_x(s, n);
+    float t = v->lfo_time[n];
+    if (t < 1.4e6f) v->lfo_time[n] = t + CR;   /* stops counting after about 30 s, past the longest settings */
+    float d = dm[MDL_DELAY] != 0.0f ? lfo_samples(x[L_DELAY] + 100.0f * dm[MDL_DELAY]) : f[0];
+    float fi = dm[MDL_FADE_IN] != 0.0f ? lfo_samples(x[L_FADE_IN] + 100.0f * dm[MDL_FADE_IN]) : f[1];
+    float fo = dm[MDL_FADE_OUT] != 0.0f ? lfo_samples(x[L_FADE_OUT] + 100.0f * dm[MDL_FADE_OUT]) : f[2];
+    if (t < d) { *waiting = 1; return 0.0f; }
+    t -= d;
+    if (t < fi) return t / fi;
+    if (fo <= 0.0f) return 1.0f;
+    t -= fi;
+    return t < fo ? 1.0f - t / fo : 0.0f;
+}
+
+/* one voice's LFOs for this control step, with the matrix's LFO destinations from the last one. An LFO follows the
+ * free-running one unless it restarts per note (note-on reset or a repeat count) or the matrix moves its rate or
+ * variation: then the voice runs its own copy (taken over from the free-running one where it is, unless a note-on
+ * restarted it). After its repeat count it stays at 0 until the next note-on. */
+static void voice_lfos(const one_t *s, voice_t *v) {
+    for (int n = 0; n < NLFO; n++) {
+        const float *x = lfo_x(s, n), *dm = v->lfo_dm[n], *f = s->lfo_fade[n];
+        int repeats = (int)x[L_REPEATS], waiting = 0;
+        float y, g = 1.0f;
+        if (f[0] > 0.0f || f[1] > 0.0f || f[2] > 0.0f
+            || (s->mod_lfo && (dm[MDL_DELAY] != 0.0f || dm[MDL_FADE_IN] != 0.0f || dm[MDL_FADE_OUT] != 0.0f)))
+            g = lfo_fade(s, v, n, dm, &waiting);
+        int own = x[L_RESET] > 0.5f || repeats >= 1
+                  || (s->mod_lfo && (dm[MDL_RATE] != 0.0f || dm[MDL_SEMIS] != 0.0f || dm[MDL_VAR] != 0.0f));
+        if (!own) {
+            v->lfo_own &= ~(1u << n);
+            y = s->lfo_val[n];
+        } else {
+            lfo_t *l = &v->lfo[n];
+            if (!(v->lfo_own >> n & 1)) { *l = s->lfo[n]; v->lfo_own |= 1u << n; }
+            if (!waiting && (repeats < 1 || l->cycles < repeats)) {   /* a restarted LFO waits out its delay */
+                float hz = dm[MDL_RATE] != 0.0f ? lfo_rate_hz(s, n, s->val[lfo_base(n)] + 100.0f * dm[MDL_RATE]) : s->lfo_hz[n];
+                if (dm[MDL_SEMIS] != 0.0f) hz *= exp2f(dm[MDL_SEMIS] * MOD_PITCH_ST / 12.0f);
+                lfo_advance(l, fminf(hz * CR / SR, 0.5f));
+            }
+            if (repeats >= 1 && l->cycles >= repeats) y = 0.0f;
+            else y = lfo_smooth(l, lfo_polar(s, n, lfo_shape(l, (int)s->val[lfo_base(n) + 1], x[L_VAR] * 0.01f + dm[MDL_VAR])),
+                                s->lfo_coef[n]);
+        }
+        v->lfo_out[n] = y * g;
+    }
+}
+
+/* a stage time as a number that is cheap to work out and compare: log10 of the free time in ms (the knob's 1 ms .. 10 s
+ * and the time scale's 10% .. 1000%, both log), 1000 + the division when synced, or ENV_Q_OFF for a delay or hold
+ * at 0 */
+#define ENV_Q_OFF -1e9f
+static float env_q(const one_t *s, int n, float knob, int zero_off, float scale_knob) {
+    if (zero_off && knob <= 0.0f) return ENV_Q_OFF;
+    if (s->val[P_FENV_SYNC + EX_STRIDE * n] > 0.5f) return 1000.0f + (float)env_div(knob);
+    return 0.04f * knob + 0.02f * (scale_knob - 50.0f);
+}
+static float env_q_ms(const one_t *s, float q) {
+    if (q <= ENV_Q_OFF * 0.5f) return 0.0f;
+    if (q >= 999.0f) return 60000.0f / s->bpm * SYNC_DIV[(int)(q - 1000.0f)].beats;
+    return exp2f(q * 3.3219281f);   /* 10^q */
+}
+
+/* one voice's envelope settings with the matrix's envelope destinations: the stage times move on the time knobs'
+ * scale (+-100% = the whole knob, so tempo-synced times step through the divisions), the time scale on its knob,
+ * the sustain level by +-100%. An envelope without any keeps the shared settings. A stage's coefficients are worked
+ * out again only when its time moves by more than 1% (an inaudible difference), so a time swept by an LFO costs a
+ * few recalculations per cycle, not one every control step. */
+static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
+    static const int stage[5] = {ENV_DELAY, ENV_ATTACK, ENV_HOLD, ENV_DECAY, ENV_RELEASE};
+    static const int knob_md[5] = {MDE_DELAY, MDE_ATTACK, MDE_HOLD, MDE_DECAY, MDE_RELEASE};
+    if (!s->mod_env) {   /* no slot reaches an envelope: the shared settings */
+        for (int n = 0; n < NENV; n++) v->env[n].cfg = &s->ecfg[n];
+        return;
+    }
+    for (int n = 0; n < NENV; n++) {
+        const float *m = &dm[MD_FENV_DELAY + MDE_COUNT * n];
+        int any = 0;
+        for (int k = 0; k < MDE_COUNT; k++) any |= m[k] != 0.0f;
+        if (!any) { v->env[n].cfg = &s->ecfg[n]; continue; }
+        const float *e = &s->val[P_ENV_A + ENV_STRIDE * n], *x = &s->val[P_FENV_DELAY + EX_STRIDE * n];
+        const float knob[5] = {x[X_DELAY], e[0], x[X_HOLD], e[1], e[3]};
+        env_cfg_t *c = &v->ecfg[n];
+        if (v->env[n].cfg != c || v->egen[n] != s->env_gen) {   /* start from the shared settings */
+            *c = s->ecfg[n];
+            v->egen[n] = s->env_gen;
+            for (int k = 0; k < 5; k++) v->eq[n][k] = env_q(s, n, knob[k], k == 0 || k == 2, x[X_SCALE]);
+        }
+        const float bend[5] = {0.0f, -x[X_ACURVE] * 0.01f, 0.0f, x[X_DCURVE] * 0.01f, x[X_RCURVE] * 0.01f};
+        float scale = clampf(x[X_SCALE] + 100.0f * m[MDE_SCALE], 0.0f, 100.0f);
+        for (int k = 0; k < 5; k++) {
+            float q = env_q(s, n, clampf(knob[k] + 100.0f * m[knob_md[k]], 0.0f, 100.0f), k == 0 || k == 2, scale);
+            if (fabsf(q - v->eq[n][k]) < 0.0043f) continue;   /* within 1% */
+            v->eq[n][k] = q;
+            c->seg[stage[k]] = env_seg(env_q_ms(s, q), bend[k], SR);
+        }
+        c->has_delay = v->eq[n][0] > ENV_Q_OFF * 0.5f;
+        c->has_hold = v->eq[n][2] > ENV_Q_OFF * 0.5f;
+        c->sustain = clampf(e[2] * 0.01f + m[MDE_SUSTAIN], 0.0f, 1.0f);
+        v->env[n].cfg = c;
+    }
+}
+
+/* one voice's modulation for the next control step: its LFOs, the matrix, pitch, both cutoffs and filter settings,
+ * envelope settings, levels */
 static void control_voice(one_t *s, voice_t *v) {
     const float *p = s->val;
     float src[MS_COUNT], dm[MD_COUNT];
     glide_step(s, v);
     update_note_hz(s, v);
+    voice_lfos(s, v);
     float key = voice_key(s, v);   /* the glided pitch drives keyboard tracking and the Keyboard source */
     src[MS_OFF] = 0.0f;
     src[MS_FENV] = env_run(&v->env[ENV_FILTER], CR) * env_vel(s, ENV_FILTER, v->velocity);
     src[MS_AENV] = v->env[ENV_AMP].level * env_vel(s, ENV_AMP, v->velocity);
     src[MS_MENV] = env_run(&v->env[ENV_MOD], CR) * env_vel(s, ENV_MOD, v->velocity);
-    src[MS_LFO1] = s->lfo_val[0];
-    src[MS_LFO2] = s->lfo_val[1];
+    src[MS_LFO1] = v->lfo_out[0];
+    src[MS_LFO2] = v->lfo_out[1];
+    src[MS_LFO3] = v->lfo_out[2];
+    src[MS_LFO4] = v->lfo_out[3];
     src[MS_VEL] = v->velocity;
     src[MS_WHEEL] = s->wheel;
     src[MS_AT] = s->aftertouch;
     float kc = key - s->center;   /* KEY TRACK CENTER: tracking pivots on it (default middle C) */
     src[MS_KEY] = kc / 60.0f;
     src[MS_RAND] = v->rand;
-    mod_eval(&p[P_MOD_BASE], src, dm);
+    src[MS_BEND] = s->bend;
+    src[MS_GATE] = v->gate && !v->sustained ? 1.0f : 0.0f;   /* the key itself is down */
+    src[MS_SUSTAIN] = s->sustain ? 1.0f : 0.0f;
+    src[MS_EXP1] = s->exp1;
+    src[MS_EXP2] = s->exp2;
+    src[MS_RAND_UNI] = v->rand_u;
+    src[MS_CONST] = 1.0f;
+    mod_eval_list(&p[P_MOD_BASE], &p[P_MODX_BASE], s->mod_list, s->mod_n, src, s->bipolar, dm);
+    memcpy(v->lfo_dm, &dm[MD_LFO1_RATE], sizeof v->lfo_dm);   /* the LFOs read these next step */
+    voice_envs(s, v, dm);
     float fenv = src[MS_FENV], key_oct = kc / 12.0f;
 
-    float semis = s->lfo_val[0] * p[P_PITCH_LFO] * 0.01f * LFO_PITCH_ST + src[MS_MENV] * p[P_PITCH_ENV] * 0.01f * ENV_PITCH_ST
+    float semis = v->lfo_out[0] * (p[P_PITCH_LFO] * 0.01f + dm[MD_PITCH_LFO1]) * LFO_PITCH_ST
+                  + src[MS_MENV] * (p[P_PITCH_ENV] * 0.01f + dm[MD_PITCH_ENV]) * ENV_PITCH_ST
                   + bend_semis(s, -1) + dm[MD_PITCH] * MOD_PITCH_ST;
     const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0),
                                    dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1),
                                    dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2)};
+    for (int n = 0; n < NOSC; n++) v->beat_mod[n] = dm[MD_O1_BEAT + n] * BEAT_HZ;
     set_pitch(s, v, semis, osc_semis);
 
     v->cut += (p[P_FLT_CUT] - v->cut) * s->glide;
     v->svf_cut += (p[P_SVF_CUT] - v->svf_cut) * s->glide;
-    float lad_oct = fenv * p[P_LAD_ENV] * 0.01f * ENV_CUT_OCT + s->lfo_val[1] * p[P_LAD_LFO] * 0.01f * LFO_CUT_OCT
+    float lfo2 = v->lfo_out[1];
+    float lad_oct = fenv * (p[P_LAD_ENV] * 0.01f + dm[MD_LAD_ENV]) * ENV_CUT_OCT
+                    + lfo2 * (p[P_LAD_LFO] * 0.01f + dm[MD_LAD_LFO2]) * LFO_CUT_OCT
                     + key_oct * p[P_LAD_KBD] * 0.01f + dm[MD_LAD_CUT] * MOD_CUT_OCT;
-    float svf_oct = fenv * p[P_SVF_ENV] * 0.01f * ENV_CUT_OCT + s->lfo_val[1] * p[P_SVF_LFO] * 0.01f * LFO_CUT_OCT
+    float svf_oct = fenv * (p[P_SVF_ENV] * 0.01f + dm[MD_SVF_ENV]) * ENV_CUT_OCT
+                    + lfo2 * (p[P_SVF_LFO] * 0.01f + dm[MD_SVF_LFO2]) * LFO_CUT_OCT
                     + key_oct * p[P_SVF_KBD] * 0.01f + dm[MD_SVF_CUT] * MOD_CUT_OCT;
     ladder_set(&v->lad, cut_hz(v->cut) * exp2f(lad_oct), clampf(p[P_FLT_RES] * 0.01f + dm[MD_LAD_RES], 0.0f, 1.0f),
                clampf(p[P_FLT_DRIVE] * 0.01f + dm[MD_LAD_DRIVE], 0.0f, 1.0f), (int)p[P_FLT_MODE], (int)p[P_FLT_SLOPE], SR);
-    svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), p[P_SVF_SPACE] * 0.01f,
+    svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), clampf(p[P_SVF_SPACE] * 0.01f + dm[MD_SVF_SPACE], -1.0f, 1.0f),
              clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES], 0.0f, 1.0f), (int)p[P_SVF_MODE], (int)p[P_SVF_PAIR], SR);
-    set_targets(s, v, dm);
+    set_targets(s, v, dm, v->lfo_out[2]);
 }
 
 /* 2^x for the filter FM's few octaves: a 5th-order polynomial on the fraction (within 0.0002, a third of a cent) and
@@ -990,8 +1266,8 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
     int run_lad = series || ml != 0.0f || v->mix_lad != 0.0f;
     /* filter FM (octaves at a full-scale sample) from oscillator lad_src / svf_src; off costs nothing per sample */
     int lad_src = (int)p[P_LAD_FM_SRC], svf_src = (int)p[P_SVF_FM_SRC];
-    float lad_fm = run_lad ? p[P_LAD_FM] * 0.01f * FILTER_FM_OCT : 0.0f;
-    float svf_fm = any_svf ? p[P_SVF_FM] * 0.01f * FILTER_FM_OCT : 0.0f;
+    float lad_fm = run_lad ? v->lad_fm * FILTER_FM_OCT : 0.0f;
+    float svf_fm = any_svf ? v->svf_fm * FILTER_FM_OCT : 0.0f;
     /* oscillators 2 and 3 run only when heard or feeding the ring modulator, FM or filter FM (osc 1 always runs: it is
      * the sync master); osc 2 is in both ring pairs */
     int run2 = heard[1] || heard[RING] || (lad_fm > 0.0f && lad_src == 1) || (svf_fm > 0.0f && svf_src == 1);

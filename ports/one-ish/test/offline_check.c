@@ -18,6 +18,10 @@
  *             pitch envelope, a soft note after a loud one starts at its own level
  *   matrix    amounts and via scaling add up; mod wheel vibrato (the default slot 1); velocity to cutoff; aftertouch
  *             to a level; pitch bend
+ *   lfo/matrix  LFO shapes and variation, S&H vs smooth noise, polarity, start phase and note-on reset, delay, fade in,
+ *             repeats, smoothing, ranges and synced divisions with dotted / triplet timing; LFO 3 to wave angle and
+ *             pulse width; matrix amounts to 300%, controller amount and inversion, controller alone, transforms;
+ *             slots 9-16, Constant and Exp 1 sources, LFO rate and envelope time / time scale destinations
  *   voices    chords; with 4 voices six held keys keep the newest four; a repeated key doesn't double up; the
  *             sustain pedal holds and lets go; mono plays only the newest key
  *   effects   delay echoes on time (free and synced), ping-pong alternates, reverb tail grows with decay, chorus is
@@ -818,8 +822,8 @@ static void modulation(void) {
     for (int synced = 0; synced < 2; synced++) {   /* vibrato: a square LFO 1 at 1 Hz, +-12 semitones */
         e = patch(SAW, 0, 1, 100, 10);
         set(e, "lfo1_wave", LFO_SQUARE); set(e, "pitch_lfo", 100);
-        if (synced) { E->set_param(e, "lfo_bpm", "120"); set(e, "lfo1_sync", 1); set(e, "lfo1_rate", 30); }
-        else set(e, "lfo1_rate", 100 * log(1 / 0.05) / log(1000));
+        if (synced) { E->set_param(e, "lfo_bpm", "120"); set(e, "lfo1_sync", 1); set(e, "lfo1_rate", 500 / 12.0); }
+        else set(e, "lfo1_rate", 100 * log10(1 / 0.01) / 3);   /* the Low range: 0.01 .. 10 Hz */
         E->get_param(e, "lfo1_rate_display", txt, sizeof txt);
         note(e, 1, 57, 127);
         render_f(e, x, SR);
@@ -862,18 +866,19 @@ static void midi3(void *e, int st, int d1, int d2) {
 static void matrix(void) {
     static float x[SR];
     char what[200];
-    float slots[MOD_SLOTS * MOD_SLOT_PARAMS] = {0}, src[MS_COUNT] = {0}, dst[MD_COUNT];
+    float slots[MOD_SLOTS * MOD_SLOT_PARAMS] = {0}, extra[MOD_SLOTS * MOD_SLOT_EXTRA] = {0}, src[MS_COUNT] = {0}, dst[MD_COUNT];
     float a[] = {MS_VEL, MD_PITCH, 50, MS_OFF}, b[] = {MS_VEL, MD_PITCH, 50, MS_WHEEL}, c[] = {MS_LFO1, MD_AMP, -100, MS_OFF};
     memcpy(slots, a, sizeof a); memcpy(slots + 4, b, sizeof b); memcpy(slots + 8, c, sizeof c);
+    for (int i = 0; i < MOD_SLOTS; i++) extra[i * MOD_SLOT_EXTRA] = 100;   /* via amount at its default, +100% */
     src[MS_VEL] = 1; src[MS_WHEEL] = 0.5f; src[MS_LFO1] = 0.25f;
-    mod_eval(slots, src, dst);
+    mod_eval(slots, extra, src, 0, dst);
     snprintf(what, sizeof what, "matrix: two velocity slots, one via the half-up wheel, sum to %.3f (want 0.750); LFO to amp %.3f",
              dst[MD_PITCH], dst[MD_AMP]);
     check(fabsf(dst[MD_PITCH] - 0.75f) < 1e-6f && fabsf(dst[MD_AMP] + 0.25f) < 1e-6f, what);
 
     for (int wheel = 0; wheel < 2; wheel++) {   /* the default slot 1 (LFO 1 -> pitch via mod wheel), at full amount */
         void *e = patch(SAW, 0, 1, 100, 10);
-        set(e, "mod1_amt", 100); set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log(1 / 0.05) / log(1000));
+        set(e, "mod1_amt", 100); set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log10(1 / 0.01) / 3);
         midi3(e, 0xb0, 1, wheel ? 127 : 0);
         note(e, 1, 57, 127);
         render_f(e, x, SR);
@@ -2117,6 +2122,44 @@ static void bench(void) {
                fm ? "on " : "off", us, us / 8);
         E->destroy(e);
     }
+    {   /* 8 voices of the busy patch with deep modulation: four per-voice LFOs (note reset, sine morphs, fades), all 16
+         * slots busy, including per-voice envelope times and LFO rates moved by an LFO every control step */
+        void *e = patch(SAW, 5, 300, 70, 250);
+        set(e, "voices", 7); set(e, "o2_level", 80); set(e, "o3_level", 60);
+        route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
+        static const char *const lk[] = {"lfo1", "lfo2", "lfo3", "lfo4"};
+        char k[32];
+        for (int n = 0; n < 4; n++) {
+            snprintf(k, sizeof k, "%s_reset", lk[n]); set(e, k, 1);
+            snprintf(k, sizeof k, "%s_wave", lk[n]); set(e, k, LFO_SINE);
+            snprintf(k, sizeof k, "%s_var", lk[n]); set(e, k, 40);
+            snprintf(k, sizeof k, "%s_fade_in", lk[n]); set(e, k, 80);
+            snprintf(k, sizeof k, "%s_smooth", lk[n]); set(e, k, 20);
+        }
+        set(e, "angle_lfo3", 30); set(e, "pw_lfo3", 30);
+        static const int dst[16] = {MD_PITCH, MD_LAD_CUT, MD_SVF_CUT, MD_O1_PW, MD_O2_ANGLE, MD_AMP, MD_FLT_MIX, MD_O3_LEVEL,
+                                    MD_FENV_DELAY + MDE_ATTACK, MD_FENV_DELAY + MDE_COUNT + MDE_DECAY,
+                                    MD_FENV_DELAY + 2 * MDE_COUNT + MDE_SCALE, MD_LFO1_RATE + MDL_RATE,
+                                    MD_LFO1_RATE + MDL_COUNT + MDL_SEMIS, MD_LFO1_RATE + 2 * MDL_COUNT + MDL_VAR,
+                                    MD_LAD_ENV, MD_O1_BEAT};
+        static const int src[4] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
+        for (int s = 0; s < 16; s++) {
+            snprintf(k, sizeof k, "mod%d_src", s + 1); set(e, k, src[s % 4]);
+            snprintf(k, sizeof k, "mod%d_dst", s + 1); set(e, k, dst[s]);
+            snprintf(k, sizeof k, "mod%d_amt", s + 1); set(e, k, 5);
+            snprintf(k, sizeof k, "mod%d_via", s + 1); set(e, k, MS_VEL);
+            snprintf(k, sizeof k, "mod%d_xf", s + 1); set(e, k, s % 5);
+        }
+        for (int n = 0; n < 8; n++) note(e, 1, 48 + 3 * n, 100);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        printf("bench: 8 voices, deep modulation (4 per-voice LFOs, 16 slots, envelope times and LFO rates moving): "
+               "%6.2f us per 128-frame block (%.2f per voice)\n", us, us / 8);
+        E->destroy(e);
+    }
     void *e = patch(SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
     set(e, "voices", 7); set(e, "modfx_type", 1); set(e, "modfx_mix", 50); set(e, "dly_mix", 30); set(e, "rev_mix", 30);
     for (int k = 0; k < 8; k++) note(e, 1, 48 + 3 * k, 100);
@@ -2127,6 +2170,241 @@ static void bench(void) {
     double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
     printf("bench: 4 voices + chorus, delay, reverb %6.2f us per 128-frame block on this PC\n", us);
     E->destroy(e);
+}
+
+/* a triangle (near a sine, so zero crossings track its pitch) through the open ladder, for pitch modulation */
+static void *pitch_patch(void) {
+    void *e = patch(TRI, 0, 1, 100, 10);
+    set(e, "flt_cut", 100);
+    return e;
+}
+
+/* play note 57 (220 Hz) for ms after `idle_ms` of silence; the tracked pitch (MIDI note numbers) from the note-on */
+static int pitch_run(void *e, int idle_ms, int ms, double *t, double *st) {
+    static float x[SR * 3];
+    render_f(e, x, SR * idle_ms / 1000);
+    note(e, 1, 57, 127);
+    render_f(e, x, SR * ms / 1000);
+    return track(x, SR * ms / 1000, t, st);
+}
+
+/* the LFO options and the deep matrix: wave shapes and variation, polarity, start phase and note-on reset, delay and
+ * fades, repeats, smoothing, ranges, synced divisions with dotted / triplet timing; LFO 3's hard-wires to wave angle
+ * and pulse width; source amounts past 100%, controller amount and inversion, a controller alone, the transforms;
+ * slots 9-16, the new sources and destinations (envelope times and time scale, LFO rate in semitones) */
+static void lfo_matrix(void) {
+    static double t[MAXPTS], st[MAXPTS];
+    static float x[SR * 2];
+    char what[240], txt[32];
+
+    /* lfo.h wave shapes at a few phases */
+    lfo_t l;
+    lfo_init(&l, 1);
+    const struct { int wave; float var, phase, want; const char *what; } w[] = {
+        {LFO_TRI, 0, 0, -1, "triangle starts at -1"}, {LFO_TRI, 0, 0.25f, 0, "triangle crosses 0 at a quarter"},
+        {LFO_TRI, 1, 0.125f, -0.70711f, "triangle at variation 100% is a sine"},
+        {LFO_SINE, 0, 0.25f, 1, "sine peaks at a quarter"}, {LFO_SINE, 1, 0.125f, 0.5f, "sine at 100% is a triangle"},
+        {LFO_SAW, 0, 0.25f, 0.5f, "saw falls"}, {LFO_SAW, 0.5f, 0.25f, 0, "saw at 50% is a triangle"},
+        {LFO_RAMP, 0, 0.25f, -0.5f, "ramp rises"}, {LFO_SQUARE, 0, 0.4f, 1, "square high in its first half"},
+        {LFO_SQUARE, 0.6f, 0.3f, -1, "square at 60% is a 20% pulse"}, {LFO_SQUARE, 1, 0.01f, -1, "square at 100% is always low"},
+    };
+    int ok = 1;
+    for (unsigned i = 0; i < sizeof w / sizeof w[0]; i++) {
+        l.phase = w[i].phase;
+        float y = lfo_shape(&l, w[i].wave, w[i].var);
+        if (fabsf(y - w[i].want) > 1e-4f) { printf("     %s: %.4f, want %.4f\n", w[i].what, y, w[i].want); ok = 0; }
+    }
+    check(ok, "LFO shapes: triangle/sine, saw/ramp morphs, square width from the variation");
+    lfo_init(&l, 7);
+    float sh_step = 0, nz_step = 0, sh_last = 0, nz_last = 0;
+    for (int i = 0; i < 4000; i++) {   /* 100 steps per cycle */
+        lfo_advance(&l, 0.01f);
+        float a = lfo_shape(&l, LFO_SH, 0), b = lfo_shape(&l, LFO_NOISE, 0);
+        if (i) { sh_step = fmaxf(sh_step, fabsf(a - sh_last)); nz_step = fmaxf(nz_step, fabsf(b - nz_last)); }
+        sh_last = a; nz_last = b;
+    }
+    snprintf(what, sizeof what, "S&H jumps (largest step %.2f), smooth noise glides (largest step %.3f)", sh_step, nz_step);
+    check(sh_step > 0.5f && nz_step < 0.05f, what);
+
+    /* the matrix's arithmetic */
+    float slots[MOD_SLOTS * MOD_SLOT_PARAMS] = {0}, extra[MOD_SLOTS * MOD_SLOT_EXTRA] = {0}, src[MS_COUNT] = {0}, dst[MD_COUNT];
+    src[MS_VEL] = 0.5f; src[MS_WHEEL] = 0.5f; src[MS_LFO1] = -0.8f; src[MS_AT] = 0.9f; src[MS_CONST] = 1;
+    const struct { float s, d, amt, via, via_amt, xf, xf_amt, want; const char *what; } m[] = {
+        {MS_VEL, MD_PITCH, 300, MS_OFF, 100, MX_NONE, 0, 1.5f, "source amount 300%"},
+        {MS_VEL, MD_PITCH, 100, MS_WHEEL, -100, MX_NONE, 0, 0.25f, "controller amount -100% inverts the controller"},
+        {MS_VEL, MD_PITCH, 100, MS_WHEEL, 0, MX_NONE, 0, 0.5f, "controller amount 0 ignores the controller"},
+        {MS_VEL, MD_PITCH, 100, MS_WHEEL, 50, MX_NONE, 0, 0.375f, "controller amount 50%"},
+        {MS_OFF, MD_PITCH, 0, MS_WHEEL, -80, MX_NONE, 0, -0.4f, "a controller alone is the source"},
+        {MS_LFO1, MD_PITCH, 100, MS_OFF, 100, MX_LIMIT_LOW, 50, 0, "limit low 50% of a bipolar LFO: 0"},
+        {MS_AT, MD_PITCH, 100, MS_OFF, 100, MX_LIMIT_HIGH, 25, 0.25f, "limit high 25% of aftertouch"},
+        {MS_LFO1, MD_PITCH, 200, MS_OFF, 100, MX_SQUARED, 0, 1.28f, "squared, then the amount"},
+        {MS_LFO1, MD_PITCH, 100, MS_OFF, 100, MX_CUBED, 0, -0.512f, "cubed keeps the sign"},
+        {MS_CONST, MD_LFO1_RATE + MDL_SEMIS, -50, MS_OFF, 100, MX_NONE, 0, -0.5f, "constant to a new destination"},
+    };
+    ok = 1;
+    for (unsigned i = 0; i < sizeof m / sizeof m[0]; i++) {
+        float sl[] = {m[i].s, m[i].d, m[i].amt, m[i].via}, ex[] = {m[i].via_amt, m[i].xf, m[i].xf_amt};
+        memset(slots, 0, sizeof slots);
+        memcpy(slots + (MOD_SLOTS - 1) * MOD_SLOT_PARAMS, sl, sizeof sl);   /* in the last slot: all 16 are read */
+        memcpy(extra + (MOD_SLOTS - 1) * MOD_SLOT_EXTRA, ex, sizeof ex);
+        mod_eval(slots, extra, src, 1u << MS_LFO1, dst);
+        float got = dst[(int)m[i].d];
+        if (fabsf(got - m[i].want) > 1e-5f) { printf("     %s: %.4f, want %.4f\n", m[i].what, got, m[i].want); ok = 0; }
+    }
+    check(ok, "matrix: amounts to 300%, controller amount and inversion, controller alone, limit/squared/cubed");
+
+    /* LFO 3 to wave angle (unipolar square: angle 50% -> 100%, triangle -> saw) and to pulse width (bipolar square:
+     * a square's width swings 5% / 95%); measured by the 2nd harmonic, which the symmetric shapes lack */
+    for (int k = 0; k < 2; k++) {
+        double h2[2];
+        for (int on = 0; on < 2; on++) {
+            void *e = patch(k ? SQUARE : TRI, 0, 1, 100, 10);
+            set(e, "flt_cut", 100); set(e, "lfo3_wave", LFO_SQUARE); set(e, "lfo3_rate", 100 * log10(0.5 / 0.01) / 3);
+            set(e, "lfo3_reset", 1);
+            if (!k) set(e, "lfo3_polarity", 1);
+            set(e, k ? "pw_lfo3" : "angle_lfo3", on ? 100 : 0);
+            note(e, 1, 57, 127);
+            render_f(e, x, N + 2205);   /* the first second is LFO 3's high half */
+            h2[on] = band_db(x + 2205, 440) - band_db(x + 2205, 220);
+            E->destroy(e);
+        }
+        snprintf(what, sizeof what, "LFO 3 to %s at 0 / 100%%: 2nd harmonic %.1f / %.1f dB against the 1st",
+                 k ? "pulse width" : "wave angle", h2[0], h2[1]);
+        check(h2[0] < -40 && h2[1] > -12, what);
+    }
+
+    /* note-on reset and start phase: a 1 Hz square vibrato of +-12 st starts high at phase 0, low at 50% */
+    for (int ph = 0; ph < 2; ph++) {
+        void *e = pitch_patch();
+        set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log10(1 / 0.01) / 3); set(e, "pitch_lfo", 100);
+        set(e, "lfo1_reset", 1); set(e, "lfo1_phase", ph ? 50 : 0);
+        int k = pitch_run(e, 333, 1000, t, st);
+        double a = pitch_at(t, st, k, 250), b = pitch_at(t, st, k, 750);
+        snprintf(what, sizeof what, "note-on reset, start phase %d%%: note %.2f at 250 ms, %.2f at 750 ms (want %s)",
+                 ph ? 50 : 0, a, b, ph ? "45 then 69" : "69 then 45");
+        check(fabs(a - (ph ? 45 : 69)) < 0.3 && fabs(b - (ph ? 69 : 45)) < 0.3, what);
+        E->destroy(e);
+    }
+
+    /* delay (the restarted LFO waits, then starts at its start phase), fade in, repeats and smoothing */
+    {
+        void *e = pitch_patch();
+        set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log10(1 / 0.01) / 3); set(e, "pitch_lfo", 100);
+        set(e, "lfo1_reset", 1); set(e, "lfo1_delay", knob_ms(500));
+        E->get_param(e, "lfo1_delay_display", txt, sizeof txt);
+        int k = pitch_run(e, 100, 1600, t, st);
+        double a = pitch_at(t, st, k, 300), b = pitch_at(t, st, k, 800), c = pitch_at(t, st, k, 1300);
+        snprintf(what, sizeof what, "LFO delay \"%s\": note %.2f at 300 ms, %.2f at 800 ms, %.2f at 1300 ms (want 57, 69, 45)",
+                 txt, a, b, c);
+        check(!strcmp(txt, "500 ms") && fabs(a - 57) < 0.3 && fabs(b - 69) < 0.3 && fabs(c - 45) < 0.3, what);
+        E->destroy(e);
+
+        e = pitch_patch();
+        set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log10(0.5 / 0.01) / 3); set(e, "pitch_lfo", 100);
+        set(e, "lfo1_reset", 1); set(e, "lfo1_fade_in", knob_ms(1000));
+        k = pitch_run(e, 0, 900, t, st);
+        a = pitch_at(t, st, k, 250); b = pitch_at(t, st, k, 750);
+        snprintf(what, sizeof what, "LFO fade in over 1 s: +%.2f st at 250 ms, +%.2f st at 750 ms (want about 3 and 9)",
+                 a - 57, b - 57);
+        check(fabs(a - 60) < 0.6 && fabs(b - 66) < 0.6, what);
+        E->destroy(e);
+
+        e = pitch_patch();
+        set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log10(2 / 0.01) / 3); set(e, "pitch_lfo", 100);
+        set(e, "lfo1_repeats", 1);
+        k = pitch_run(e, 77, 1000, t, st);
+        a = pitch_at(t, st, k, 120); b = pitch_at(t, st, k, 380); c = pitch_at(t, st, k, 800);
+        snprintf(what, sizeof what, "LFO repeats 1 at 2 Hz: note %.2f, %.2f, then %.2f after its cycle (want 69, 45, 57)", a, b, c);
+        check(fabs(a - 69) < 0.3 && fabs(b - 45) < 0.3 && fabs(c - 57) < 0.3, what);
+        E->destroy(e);
+
+        e = pitch_patch();
+        set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log10(2 / 0.01) / 3); set(e, "pitch_lfo", 100);
+        set(e, "lfo1_smooth", 100);
+        k = pitch_run(e, 0, 1000, t, st);
+        double lo = 1e9, hi = -1e9;
+        for (int i = 0; i < k; i++) if (t[i] > 100) { lo = fmin(lo, st[i]); hi = fmax(hi, st[i]); }
+        snprintf(what, sizeof what, "LFO smoothing 100%% (0.1 Hz) on a 2 Hz square of +-12 st: the pitch stays within "
+                 "%.2f .. %.2f (want inside 57 +-2.5)", lo, hi);
+        check(lo > 54.5 && hi < 59.5, what);
+        E->destroy(e);
+    }
+
+    /* ranges and synced divisions with their timing, as the rate knob reads them */
+    {
+        void *e = E->create(NULL);
+        static const struct { const char *k; double v; const char *want; } d[] = {
+            {"lfo1_range", 0, "1.0 Hz"}, {"lfo1_range", 2, "100 Hz"}, {"lfo1_sync", 1, "1/256"},
+            {"lfo1_timing", 1, "1/256 D"}, {"lfo1_rate", 50, "1/4 D"}, {"lfo1_timing", 2, "1/4 T"},
+        };
+        set(e, "lfo1_rate", 100);
+        ok = 1;
+        for (unsigned i = 0; i < sizeof d / sizeof d[0]; i++) {
+            set(e, d[i].k, d[i].v);
+            E->get_param(e, "lfo1_rate_display", txt, sizeof txt);
+            if (strcmp(txt, d[i].want)) { printf("     %s = %g: \"%s\", want \"%s\"\n", d[i].k, d[i].v, txt, d[i].want); ok = 0; }
+        }
+        check(ok, "LFO rate text: Slow tops out at 1 Hz, Medium at 100 Hz; synced 16 bars .. 1/256, dotted, triplet");
+        E->destroy(e);
+    }
+
+    /* slot 9 (the new slots), the constant source, controller inversion by the mod wheel */
+    for (int wheel = 0; wheel < 2; wheel++) {
+        void *e = pitch_patch();
+        set(e, "mod9_src", MS_CONST); set(e, "mod9_dst", MD_PITCH); set(e, "mod9_amt", 50);
+        set(e, "mod9_via", MS_WHEEL); set(e, "mod9_via_amt", -100); set(e, "mod1_amt", 0);   /* no wheel vibrato */
+        midi3(e, 0xb0, 1, wheel ? 127 : 0);
+        int k = pitch_run(e, 0, 300, t, st);
+        double a = pitch_at(t, st, k, 200);
+        snprintf(what, sizeof what, "slot 9: Constant -> Pitch 50%% via the mod wheel at -100%%, wheel %s: note %.2f (want %d)",
+                 wheel ? "up" : "down", a, wheel ? 57 : 69);
+        check(fabs(a - (wheel ? 57 : 69)) < 0.3, what);
+        E->destroy(e);
+    }
+
+    /* expression (CC 11) as a source; LFO 1 rate +12 st from the matrix doubles a 1 Hz square vibrato */
+    {
+        void *e = pitch_patch();
+        set(e, "mod10_src", MS_EXP1); set(e, "mod10_dst", MD_PITCH); set(e, "mod10_amt", -25);
+        midi3(e, 0xb0, 11, 127);
+        int k = pitch_run(e, 0, 300, t, st);
+        double a = pitch_at(t, st, k, 200);
+        snprintf(what, sizeof what, "Exp 1 (CC 11) full -> Pitch -25%%: note %.2f (want 51)", a);
+        check(fabs(a - 51) < 0.3, what);
+        E->destroy(e);
+
+        e = pitch_patch();
+        set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log10(1 / 0.01) / 3); set(e, "pitch_lfo", 100);
+        set(e, "lfo1_reset", 1);
+        set(e, "mod16_src", MS_CONST); set(e, "mod16_dst", MD_LFO1_RATE + MDL_SEMIS); set(e, "mod16_amt", 50);
+        k = pitch_run(e, 0, 1000, t, st);
+        a = pitch_at(t, st, k, 150);
+        double b = pitch_at(t, st, k, 380), c = pitch_at(t, st, k, 650);
+        snprintf(what, sizeof what, "matrix LFO 1 Rate (st) +12: the 1 Hz square runs at 2 Hz: notes %.2f, %.2f, %.2f (want 69, 45, 69)",
+                 a, b, c);
+        check(fabs(a - 69) < 0.3 && fabs(b - 45) < 0.3 && fabs(c - 69) < 0.3, what);
+        E->destroy(e);
+    }
+
+    /* envelope times per voice: velocity -> amp attack (+25% of the knob = x10 at full velocity), and the time scale */
+    {
+        double ms[3];
+        for (int k = 0; k < 3; k++) {
+            void *e = patch(SAW, 100, 1000, 100, 100);
+            if (k < 2) { set(e, "mod11_src", MS_VEL); set(e, "mod11_dst", MD_FENV_DELAY + MDE_COUNT * 1 + MDE_ATTACK);
+                         set(e, "mod11_amt", 25); }
+            else { set(e, "mod11_src", MS_CONST); set(e, "mod11_dst", MD_FENV_DELAY + MDE_COUNT * 1 + MDE_SCALE);
+                   set(e, "mod11_amt", -50); }
+            set(e, "amp_vel", 0);
+            note(e, 1, 69, k == 0 ? 1 : 127);
+            render_f(e, x, SR * 3 / 2);
+            ms[k] = time_to(x, SR * 3 / 2, 0.95f) / 44.1;
+            E->destroy(e);
+        }
+        snprintf(what, sizeof what, "matrix to amp attack (100 ms knob): 95%% after %.0f ms at velocity 1, %.0f ms at 127 "
+                 "(want about 100 / 1000); time scale -50%%: %.0f ms (want about 10)", ms[0], ms[1], ms[2]);
+        check(ms[0] > 85 && ms[0] < 115 && ms[1] > 850 && ms[1] < 1100 && ms[2] < 20, what);
+    }
 }
 
 int main(int argc, char **argv) {
@@ -2146,6 +2424,7 @@ int main(int argc, char **argv) {
     routing();
     modulation();
     matrix();
+    lfo_matrix();
     voices();
     effects();
     envelope();
