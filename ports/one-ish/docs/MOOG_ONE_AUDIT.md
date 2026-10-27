@@ -761,31 +761,31 @@ which are not build candidates for an MPC plugin.
 | 0. Architecture and overview | 1 | 6 | 3 | 0 |
 | 1. Front panel, centre console, keyboard | 2 | 4 | 9 | 7 |
 | 2. Rear panel | 0 | 3 | 3 | 3 |
-| 3. Oscillators | 4 | 4 | 12 | 1 |
-| 4. Oscillator common (pitch mod, ring mod, wave mod, FM) | 2 | 0 | 6 | 0 |
+| 3. Oscillators | 12 | 2 | 6 | 1 |
+| 4. Oscillator common (pitch mod, ring mod, wave mod, FM) | 6 | 0 | 2 | 0 |
 | 5. Noise | 1 | 1 | 7 | 0 |
-| 6. Mixer | 3 | 1 | 5 | 4 |
-| 7. Filters | 12 | 4 | 8 | 1 |
+| 6. Mixer | 4 | 1 | 4 | 4 |
+| 7. Filters | 22 | 1 | 1 | 1 |
 | 8. Envelopes | 15 | 3 | 3 | 2 |
 | 9. LFOs | 2 | 9 | 11 | 1 |
 | 10. VCA | 1 | 0 | 4 | 1 |
 | 11. Output | 0 | 0 | 6 | 5 |
 | 12. Performance Sets | 0 | 2 | 3 | 3 |
 | 13. Master Clock | 0 | 3 | 4 | 2 |
-| 14. Voice allocation (Hold, Chord, Polyphony) | 1 | 4 | 7 | 1 |
-| 15. Modulation (structure, sources, controllers, transforms, destinations) | 22 | 9 | 57 | 10 |
+| 14. Voice allocation (Hold, Chord, Polyphony) | 4 | 4 | 4 | 1 |
+| 15. Modulation (structure, sources, controllers, transforms, destinations) | 27 | 10 | 51 | 10 |
 | 16. Arpeggiator | 0 | 0 | 17 | 0 |
 | 17. Sequencer | 0 | 0 | 31 | 5 |
-| 18. Effects (architecture, every type, Eventide) | 20 | 17 | 50 | 3 |
-| 19. Left Hand Controller (glide, bend, pad, curves) | 3 | 2 | 14 | 3 |
+| 18. Effects (architecture, every type, Eventide) | 20 | 17 | 50 | 1 |
+| 19. Left Hand Controller (glide, bend, pad, curves) | 9 | 2 | 8 | 3 |
 | 20. Browser, presets and timbres | 0 | 3 | 4 | 3 |
 | 21. Editing and saving | 0 | 0 | 4 | 3 |
 | 22. Settings (global, MIDI, CV, utilities, library, tuning) | 0 | 3 | 23 | 18 |
 | 24. Appendices A and B (USB keyboard, MIDI learn, NRPN) | 0 | 2 | 4 | 2 |
-| **Total** | **89** | **80** | **295** | **78** |
+| **Total** | **126** | **76** | **262** | **76** |
 
 Rows are features or parameters, so the totals weigh a 30-row sequencer the same as 30 oscillator parameters; read
-them per module, not as one score. Leaving out [HW]/[UI] rows, 217 sound or behaviour items are missing.
+them per module, not as one score. Leaving out [HW]/[UI] rows, 186 sound or behaviour items are missing.
 
 ## Prioritised build order
 
