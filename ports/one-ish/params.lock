@@ -381,3 +381,12 @@ rev_lowdamp
 rev_mod
 rev_early
 rev_freeze
+noise_color_pair
+noise_color_mix
+noise_env
+noise_a
+noise_r
+noise_sus
+pan
+spread
+drift

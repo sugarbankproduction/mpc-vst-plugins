@@ -45,6 +45,10 @@
  *             non-legato replaces, with the pedal it adds, off lets go); sostenuto; pitch bend up/down ranges and
  *             per-oscillator offsets, the retired bend_range; velocity curves; transpose, octave shift, master and fine
  *             tune; the key-track centre moves tracking; pitch tracking 0/100/200%; note-on reset; hard sync sources
+ *   noise/stereo/drift  red, white and purple noise slopes and levels, the colour mix, the noise EG (attack, sustain,
+ *             release, sustain off as a decay, off by default); the pan law (equal power, centre exact, hard left
+ *             silences the right), spread places voices apart (mono stays put, a unison stack fans out), the mod
+ *             effect's mono input; drift 0 changes nothing, 100% stays within +-4 cents
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine; NOT the
@@ -1032,7 +1036,7 @@ static void fx_run(const fx_params_t *p, const float *in, float *l, float *r, in
     for (int i = 0; i < n; i++) x[i] = in ? in[i] : (i == IMP);
     for (int at = 0; at < n; at += 128) {
         int m = n - at < 128 ? n - at : 128;
-        fx_process(&fxs, p, x + at, x + at, l + at, r + at, m);
+        fx_process(&fxs, p, NULL, x + at, x + at, l + at, r + at, m);
     }
 }
 
@@ -1130,7 +1134,7 @@ static void effects(void) {
         memset(&fxs, 0, sizeof fxs);
         for (int at2 = 0; at2 < SR * 5; at2 += 128) {
             p.rev_freeze = at2 >= SR;
-            fx_process(&fxs, &p, saw + at2, saw + at2, l + at2, r + at2, 128);
+            fx_process(&fxs, &p, NULL, saw + at2, saw + at2, l + at2, r + at2, 128);
         }
         for (int i = 0; i < SR * 5; i++) { l[i] -= saw[i]; r[i] -= saw[i]; }   /* the reverb alone */
         double e2 = energy_db(l, r, SR * 2, SR * 2 + SR / 2), e4 = energy_db(l, r, SR * 4, SR * 4 + SR / 2);
@@ -2183,6 +2187,243 @@ static void voice_keyboard_options(void) {
     E->destroy(e);
 }
 
+/* render `frames` of both channels as floats */
+static void render_lr(void *s, float *l, float *r, int frames) {
+    int16_t buf[256];
+    for (int at = 0; at < frames; at += 128) {
+        int n = frames - at < 128 ? frames - at : 128;
+        E->render(s, buf, n);
+        for (int i = 0; i < n; i++) { l[at + i] = buf[2 * i] / 32768.0f; r[at + i] = buf[2 * i + 1] / 32768.0f; }
+    }
+}
+
+/* a noise-only patch: the noise channel into the open ladder, amp envelope 1 ms / full sustain / 10 ms */
+static void *noise_patch(int pair, double mix) {
+    void *e = patch(SAW, 0, 1, 100, 10);
+    set(e, "o1_level", 0); set(e, "noise_level", 100); set(e, "volume", 30);
+    set(e, "noise_color_pair", pair); set(e, "noise_color_mix", mix);
+    return e;
+}
+
+/* octave-band slope (dB per octave, least squares over the bands at 250 Hz .. 4 kHz) and total RMS of a noise patch,
+ * from 8 averaged spectra */
+static double noise_slope(void *e, double *rms) {
+    enum { K = 8 };
+    static float x[N * K + 4096];
+    static double avg[N / 2];
+    note(e, 1, 60, 127);
+    render_f(e, x, N * K + 4096);
+    memset(avg, 0, sizeof avg);
+    double sq = 0;
+    for (int k = 0; k < K; k++) {
+        const float *w = x + 4096 + k * N;
+        for (int i = 0; i < N; i++) sq += w[i] * w[i];
+        const double *pw = spectrum(w);
+        for (int b = 0; b < N / 2; b++) avg[b] += pw[b];
+    }
+    *rms = sqrt(sq / (N * K));
+    double sx = 0, sy = 0, sxx = 0, sxy = 0, bin = (double)SR / N;
+    for (int o = 0; o < 5; o++) {
+        double f = 250.0 * (1 << o), p = 0;
+        for (int b = (int)(f / M_SQRT2 / bin); b <= (int)(f * M_SQRT2 / bin); b++) p += avg[b];
+        double y = 10 * log10(p / (f * M_SQRT2 - f / M_SQRT2) + 1e-30);   /* power per Hz */
+        sx += o; sy += y; sxx += o * o; sxy += o * y;
+    }
+    return (5 * sxy - sx * sy) / (5 * sxx - sx * sx);
+}
+
+/* RMS of x in 5 ms windows (env[i]: window i) */
+static void rms_env(const float *x, int n, double *env) {
+    enum { W = SR / 200 };
+    for (int i = 0; i < n / W; i++) {
+        double sq = 0;
+        for (int j = 0; j < W; j++) sq += x[i * W + j] * x[i * W + j];
+        env[i] = sqrt(sq / W);
+    }
+}
+
+static double env_mean(const double *env, int from_ms, int to_ms) {
+    double m = 0;
+    for (int i = from_ms / 5; i < to_ms / 5; i++) m += env[i];
+    return m / (to_ms / 5 - from_ms / 5);
+}
+
+static double db(double a, double b) { return 20 * log10((a + 1e-12) / (b + 1e-12)); }
+
+/* noise colours, colour mix and the noise EG; synth pan and voice spread; analog drift */
+static void noise_stereo_drift(void) {
+    static float x[SR * 2], l[SR], r[SR], m[SR];
+    static double env[SR * 2 / (SR / 200)];
+    char what[220];
+    enum { RW = 0, RP = 1, WP = 2 };   /* the "noise_color_pair" options */
+
+    /* colours: red falls 6 dB per octave, purple rises 6, white is flat; each at about the same level (the same RMS
+     * before the filter; the open ladder still trims the top octave, where purple has the most and red the least) */
+    double rms[3], slope[3];
+    void *e = noise_patch(RW, 0); slope[0] = noise_slope(e, &rms[0]); E->destroy(e);     /* red */
+    e = noise_patch(RW, 100); slope[1] = noise_slope(e, &rms[1]); E->destroy(e);         /* white */
+    e = noise_patch(WP, 100); slope[2] = noise_slope(e, &rms[2]); E->destroy(e);         /* purple */
+    snprintf(what, sizeof what, "noise colours over 250 Hz-4 kHz: red %+.2f, white %+.2f, purple %+.2f dB/oct (want -6, 0, +6)",
+             slope[0], slope[1], slope[2]);
+    check(fabs(slope[0] + 6) < 0.6 && fabs(slope[1]) < 0.6 && fabs(slope[2] - 6) < 0.6, what);
+    snprintf(what, sizeof what, "noise colours at about one level: red %+.1f dB, purple %+.1f dB against white",
+             db(rms[0], rms[1]), db(rms[2], rms[1]));
+    check(fabs(db(rms[0], rms[1])) < 2 && fabs(db(rms[2], rms[1])) < 2, what);
+
+    /* colour mix: Red+Purple at 0 / 100 is the pure colour; Red+White halfway is in between (pink-ish), equal power */
+    double s_rp0, s_rp100, s_pink, r_pink, dummy;
+    e = noise_patch(RP, 0); s_rp0 = noise_slope(e, &dummy); E->destroy(e);
+    e = noise_patch(RP, 100); s_rp100 = noise_slope(e, &dummy); E->destroy(e);
+    e = noise_patch(RW, 50); s_pink = noise_slope(e, &r_pink); E->destroy(e);
+    snprintf(what, sizeof what, "colour mix: Red+Purple at 0%% %+.1f, at 100%% %+.1f dB/oct; Red+White at 50%% %+.1f dB/oct "
+             "(between), %+.1f dB against white", s_rp0, s_rp100, s_pink, db(r_pink, rms[1]));
+    check(fabs(s_rp0 + 6) < 0.6 && fabs(s_rp100 - 6) < 0.6 && s_pink < -1 && s_pink > -5.5 && fabs(db(r_pink, rms[1])) < 1.5,
+          what);
+
+    /* the noise EG: attack 100 ms (linear), sustain on holds, release 100 ms after key up; sustain off decays */
+    for (int sus = 1; sus >= 0; sus--) {
+        e = noise_patch(RW, 100);
+        set(e, "amp_r", knob_ms(2000));   /* the amp stays open after key up: what fades is the noise EG */
+        set(e, "noise_env", 1); set(e, "noise_a", knob_ms(100)); set(e, "noise_r", knob_ms(100)); set(e, "noise_sus", sus);
+        note(e, 1, 60, 127);
+        render_f(e, x, SR / 2);
+        note(e, 0, 60, 0);
+        render_f(e, x + SR / 2, SR / 2);
+        rms_env(x, SR, env);
+        double top = env_mean(env, 150, 250);
+        if (sus) {
+            int t70 = 0;
+            while (t70 < 200 && env[t70] < 0.7 * top) t70++;
+            double early = env_mean(env, 0, 20), held = env_mean(env, 350, 500), after = env_mean(env, 750, 1000);
+            snprintf(what, sizeof what, "noise EG, attack 100 ms: 70%% at %d ms, first 20 ms %.0f dB; sustain on holds "
+                     "(%+.1f dB at 350-500 ms); release 100 ms: %.0f dB 250 ms after key up", t70 * 5, db(early, top),
+                     db(held, top), db(after, top));
+            check(t70 * 5 >= 55 && t70 * 5 <= 90 && db(early, top) < -12 && fabs(db(held, top)) < 1 && db(after, top) < -40,
+                  what);
+        } else {
+            double peak = env_mean(env, 95, 115), late = env_mean(env, 350, 500);
+            snprintf(what, sizeof what, "noise EG, sustain off: peaks after the attack, then the release acts as a decay "
+                     "with the key down (%.0f dB at 350-500 ms)", db(late, peak));
+            check(db(late, peak) < -40, what);
+        }
+        E->destroy(e);
+    }
+    e = noise_patch(RW, 100);   /* the noise EG off: the noise follows the amp envelope only */
+    set(e, "noise_a", knob_ms(2000)); set(e, "noise_sus", 0);
+    note(e, 1, 60, 127);
+    render_f(e, x, SR / 2);
+    rms_env(x, SR / 2, env);
+    snprintf(what, sizeof what, "noise EG off (the default) leaves the noise alone: %+.1f dB at 10-50 ms against 300-500 ms",
+             db(env_mean(env, 10, 50), env_mean(env, 300, 500)));
+    check(fabs(db(env_mean(env, 10, 50), env_mean(env, 300, 500))) < 1, what);
+    char ta[32], tr[32];
+    set(e, "noise_a", 0); set(e, "noise_r", 50);
+    E->get_param(e, "noise_a_display", ta, sizeof ta); E->get_param(e, "noise_r_display", tr, sizeof tr);
+    snprintf(what, sizeof what, "noise EG knobs read \"%s\" at 0 and \"%s\" at 50", ta, tr);
+    check(!strcmp(ta, "1.0 ms") && !strcmp(tr, "100 ms"), what);
+    E->destroy(e);
+
+    /* pan: equal power, the centre exactly as mono, hard left silences the right */
+    static const int pans[] = {-100, -50, 0, 50, 100};
+    double pw[5], lr[5][2];
+    for (int k = 0; k < 5; k++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "volume", 30); set(e, "pan", pans[k]);
+        note(e, 1, 48, 127);
+        render_lr(e, l, r, SR / 2);
+        double sl = 0, sr = 0;
+        int same = 1;
+        for (int i = SR / 4; i < SR / 2; i++) { sl += l[i] * l[i]; sr += r[i] * r[i]; }
+        for (int i = 0; i < SR / 2; i++) same = same && l[i] == r[i];
+        lr[k][0] = sl; lr[k][1] = sr; pw[k] = sl + sr;
+        if (pans[k] == 0) check(same, "pan centre: left and right are the same samples");
+        if (pans[k] == -100) {
+            int silent = 1;
+            for (int i = 0; i < SR / 2; i++) silent = silent && r[i] == 0;
+            check(silent, "pan hard left: the right channel is silent");
+        }
+        E->destroy(e);
+    }
+    double lo = pw[0], hi = pw[0];
+    for (int k = 1; k < 5; k++) { lo = fmin(lo, pw[k]); hi = fmax(hi, pw[k]); }
+    snprintf(what, sizeof what, "pan law: total power within %.2f dB from hard left to hard right; hard left's left %+.2f dB "
+             "against the centre's (want +3.01); pan +50%% leans right by %.1f dB", 10 * log10(hi / lo),
+             10 * log10(lr[0][0] / lr[2][0]), 10 * log10(lr[3][1] / lr[3][0]));
+    check(10 * log10(hi / lo) < 0.1 && fabs(10 * log10(lr[0][0] / lr[2][0]) - 3.01) < 0.1 && 10 * log10(lr[3][1] / lr[3][0]) > 3,
+          what);
+
+    /* spread: two voices move apart as spread goes up; one voice (mono) stays on the pan; a unison stack fans out */
+    double side[3];
+    static const int spreads[] = {0, 50, 100};
+    for (int k = 0; k < 3; k++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "volume", 30); set(e, "voices", 1); set(e, "spread", spreads[k]);   /* 2 voices */
+        note(e, 1, 48, 127); note(e, 1, 55, 127);
+        render_lr(e, l, r, SR / 2);
+        double d = 0, s = 0;
+        for (int i = SR / 4; i < SR / 2; i++) { d += (l[i] - r[i]) * (l[i] - r[i]); s += (l[i] + r[i]) * (l[i] + r[i]); }
+        side[k] = d / s;
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "spread places two voices apart: side/mid power %.3f, %.3f, %.3f at 0, 50, 100%%",
+             side[0], side[1], side[2]);
+    check(side[0] == 0 && side[1] > 0.01 && side[2] > side[1] * 2, what);
+    for (int uni = 0; uni < 2; uni++) {
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "volume", 30); set(e, "voices", 0); set(e, "spread", 100);   /* mono */
+        if (uni) { set(e, "unison", 1); set(e, "uni_count", 0); set(e, "uni_detune", 30); }   /* a stack of 2 */
+        note(e, 1, 48, 127); note(e, 0, 48, 0); note(e, 1, 50, 127);
+        render_lr(e, l, r, SR / 2);
+        double d = 0, s = 0;
+        for (int i = 0; i < SR / 2; i++) { d += (l[i] - r[i]) * (l[i] - r[i]); s += l[i] * l[i]; }
+        snprintf(what, sizeof what, uni ? "spread 100%%, mono with a unison stack of 2: the stack fans out (side %.3f)"
+                                        : "spread 100%%, mono: the one voice stays on the pan (side %.3f)", d / s);
+        check(uni ? d / s > 0.5 : d == 0, what);
+        E->destroy(e);
+    }
+
+    /* the mod effect: its input is the unpanned mono sum, so a hard-left voice's chorus wet sits at the pan (centre) */
+    e = patch(SAW, 0, 1, 100, 10);
+    set(e, "volume", 30); set(e, "voices", 1); set(e, "spread", 100);
+    set(e, "modfx_on", 1); set(e, "modfx_type", SFX_CHORUS); set(e, "modfx_mix", 100);
+    note(e, 1, 48, 127);   /* the first note's place is the right (ORDER[1]) */
+    render_lr(e, l, r, SR / 2);
+    double sl = 0, sr = 0;
+    for (int i = SR / 4; i < SR / 2; i++) { sl += l[i] * l[i]; sr += r[i] * r[i]; }
+    snprintf(what, sizeof what, "chorus at full mix on a voice spread hard right: the wet reaches the left too (%+.1f dB L/R)",
+             10 * log10(sl / sr));
+    check(sl > sr * 0.1, what);
+    E->destroy(e);
+
+    /* drift: 0 changes nothing at all; 100% wanders within +-4 cents */
+    void *a = patch(TRI, 0, 1, 100, 10), *b = patch(TRI, 0, 1, 100, 10);
+    set(b, "drift", 100); set(b, "drift", 0);
+    note(a, 1, 60, 127); note(b, 1, 60, 127);
+    render_lr(a, l, r, SR / 2);
+    render_lr(b, m, x, SR / 2);
+    int same = 1;
+    for (int i = 0; i < SR / 2; i++) same = same && l[i] == m[i] && r[i] == x[i];
+    check(same, "drift 0: the same samples as without it");
+    E->destroy(a); E->destroy(b);
+    for (int amt = 0; amt <= 100; amt += 100) {
+        enum { WIN = 12 };
+        static float y[N * WIN + 4096];
+        e = patch(TRI, 0, 1, 100, 10);
+        set(e, "volume", 30); set(e, "drift", amt);
+        note(e, 1, 81, 127);   /* 880 Hz */
+        render_f(e, y, N * WIN + 4096);
+        double lo_c = 1e9, hi_c = -1e9;
+        for (int k = 0; k < WIN; k++) {
+            double c = cents(peak_hz(y + 4096 + k * N), 880);
+            lo_c = fmin(lo_c, c); hi_c = fmax(hi_c, c);
+        }
+        snprintf(what, sizeof what, "drift %d%%: pitch over %.1f s stays within %+.2f .. %+.2f cents", amt,
+                 WIN * (double)N / SR, lo_c, hi_c);
+        check(amt ? lo_c > -4.3 && hi_c < 4.3 && hi_c - lo_c > 0.5 : hi_c - lo_c < 0.05, what);
+        E->destroy(e);
+    }
+}
+
 static void put32(FILE *f, uint32_t v) { fwrite(&v, 4, 1, f); }
 static void put16(FILE *f, uint16_t v) { fwrite(&v, 2, 1, f); }
 
@@ -2301,7 +2542,7 @@ static double fx_time(const fx_params_t *p) {
     memset(&fxs, 0, sizeof fxs);
     struct timespec t0, t1;
     clock_gettime(CLOCK_MONOTONIC, &t0);
-    for (int b = 0; b < BLOCKS; b++) fx_process(&fxs, p, x, x, l, r, 128);
+    for (int b = 0; b < BLOCKS; b++) fx_process(&fxs, p, NULL, x, x, l, r, 128);
     clock_gettime(CLOCK_MONOTONIC, &t1);
     return ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
 }
@@ -2465,6 +2706,23 @@ static void bench(void) {
         double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
         printf("bench: 8 voices, deep modulation (4 per-voice LFOs, 16 slots, envelope times and LFO rates moving): "
                "%6.2f us per 128-frame block (%.2f per voice)\n", us, us / 8);
+        E->destroy(e);
+    }
+    for (int k = 0; k < 2; k++) {   /* 8 voices of the busy patch: spread and drift; then also coloured noise with its EG */
+        void *e = patch(SAW, 5, 300, 70, 250);
+        set(e, "voices", 7); set(e, "o2_level", 80); set(e, "o3_level", 60);
+        route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
+        set(e, "mod2_src", 6); set(e, "mod2_dst", 9); set(e, "mod2_amt", 30);
+        set(e, "spread", 100); set(e, "pan", -20); set(e, "drift", 100);
+        if (k) { set(e, "noise_level", 40); set(e, "noise_color_mix", 50); set(e, "noise_env", 1); }
+        for (int j = 0; j < 8; j++) note(e, 1, 48 + 3 * j, 100);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double us = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        printf("bench: 8 voices, spread + drift%s: %6.2f us per 128-frame block (%.2f per voice)\n",
+               k ? " + red/white noise with its EG" : "", us, us / 8);
         E->destroy(e);
     }
     void *e = patch(SAW, 5, 300, 70, 250);   /* the effects on top of 8 voices */
@@ -2743,6 +3001,7 @@ int main(int argc, char **argv) {
     state();
     glide_unison();
     voice_keyboard_options();
+    noise_stereo_drift();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);

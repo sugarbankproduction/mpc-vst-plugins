@@ -34,7 +34,10 @@ static inline void fx_init(fx_t *f) {
 
 static inline void fx_copy(float *dst, const float *src, int n) { if (dst != src) memmove(dst, src, sizeof(float) * n); }
 
-static void fx_synth(fx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *outL, float *outR, int n) {
+/* the synth effect, as on the instrument: its input is the voices' mono sum (mono, or NULL: inL/inR as they are), its
+ * wet signal sits at the synth pan, and the dry signal keeps each voice's place (inL, inR) */
+static void fx_synth(fx_t *f, const fx_params_t *p, const float *mono, const float *inL, const float *inR, float *outL,
+                     float *outR, int n) {
     int run = p->sfx_on && (p->mix > 0.0f || (f->sfx_run && f->mix > 0.0f));
     if (run && (!f->sfx_run || f->sfx_type != p->sfx_type)) {
         sfx_reset(&f->sfx, p);
@@ -45,12 +48,13 @@ static void fx_synth(fx_t *f, const fx_params_t *p, const float *inL, const floa
     f->sfx_type = p->sfx_type;
     if (!run) { fx_copy(outL, inL, n); fx_copy(outR, inR, n); return; }
     float wl[FX_BLOCK], wr[FX_BLOCK], dm, dg;
-    sfx_process(&f->sfx, p, inL, inR, wl, wr, n);
+    sfx_process(&f->sfx, p, mono ? mono : inL, mono ? mono : inR, wl, wr, n);
     float m = fx_ramp(&f->mix, p->mix, n, &dm), g = fx_ramp(&f->gain, p->gain, n, &dg);
+    float pl = sqrtf(1.0f - p->wet_pan), pr = sqrtf(1.0f + p->wet_pan);   /* equal power, 1 and 1 at the centre */
     for (int i = 0; i < n; i++) {
         float dry = 1.0f - m, wet = m * g;
-        outL[i] = inL[i] * dry + wl[i] * wet;
-        outR[i] = inR[i] * dry + wr[i] * wet;
+        outL[i] = inL[i] * dry + wl[i] * wet * pl;
+        outR[i] = inR[i] * dry + wr[i] * wet * pr;
         m += dm; g += dg;
     }
 }
@@ -101,10 +105,12 @@ static void fx_master(fx_t *f, const fx_params_t *p, float *l, float *r, int n) 
 
 /* in: the voices (stereo; pass the same buffer twice for a mono sum); out: stereo. In and out may be the same buffers.
  * Any n: worked through in blocks of up to 128. */
-static void fx_process(fx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *outL, float *outR, int n) {
+/* mono: the voices' mono sum for the synth effect's input (NULL: inL/inR); inL, inR: the voices in stereo */
+static void fx_process(fx_t *f, const fx_params_t *p, const float *mono, const float *inL, const float *inR, float *outL,
+                       float *outR, int n) {
     for (int at = 0; at < n; at += FX_BLOCK) {
         int m = n - at < FX_BLOCK ? n - at : FX_BLOCK;
-        fx_synth(f, p, inL + at, inR + at, outL + at, outR + at, m);
+        fx_synth(f, p, mono ? mono + at : NULL, inL + at, inR + at, outL + at, outR + at, m);
         fx_master(f, p, outL + at, outR + at, m);
     }
 }

@@ -383,7 +383,16 @@
   {"key": "rev_lowdamp", "name": "Reverb Low Damp", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "rev_mod", "name": "Reverb Mod Level", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
   {"key": "rev_early", "name": "Reverb Early/Late", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
-  {"key": "rev_freeze", "name": "Reverb Freeze", "options": ["Off", "On"], "default": "Off"}
+  {"key": "rev_freeze", "name": "Reverb Freeze", "options": ["Off", "On"], "default": "Off"},
+  {"key": "noise_color_pair", "name": "Noise Color", "options": ["Red+White", "Red+Purple", "White+Purple"], "default": "Red+White"},
+  {"key": "noise_color_mix", "name": "Noise Color Mix", "min": 0, "max": 100, "unit": "%", "default": 100, "display": "int"},
+  {"key": "noise_env", "name": "Noise Env", "options": ["Off", "On"], "default": "Off"},
+  {"key": "noise_a", "name": "Noise Env Attack", "min": 0, "max": 100, "default": 0, "dynamic_display": true},
+  {"key": "noise_r", "name": "Noise Env Release", "min": 0, "max": 100, "default": 50, "dynamic_display": true},
+  {"key": "noise_sus", "name": "Noise Env Sustain", "options": ["Off", "On"], "default": "On"},
+  {"key": "pan", "name": "Pan", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "spread", "name": "Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "drift", "name": "Analog Drift", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -448,6 +457,9 @@
   {"label": "SYNTH FX CRUSH/RESON", "keys": ["modfx_bits", "modfx_srate", "modfx_reso", "modfx_ftype", "modfx_cut1", "modfx_cut2", "modfx_cut3", "modfx_lvl1", "modfx_lvl2", "modfx_lvl3"]},
   {"label": "MASTER FX", "keys": ["mfx_on", "mfx_send1", "mfx_send2", "mfx_series", "mfx_width"]},
   {"label": "DELAY", "keys": ["dly_time", "dly_time_r", "dly_sync", "dly_fb", "dly_tone", "dly_pp", "dly_offset"]},
-  {"label": "REVERB", "keys": ["rev_type", "rev_decay", "rev_size", "rev_pre", "rev_damp", "rev_lowdamp", "rev_diff", "rev_tone", "rev_mod", "rev_early", "rev_freeze"]}
+  {"label": "REVERB", "keys": ["rev_type", "rev_decay", "rev_size", "rev_pre", "rev_damp", "rev_lowdamp", "rev_diff", "rev_tone", "rev_mod", "rev_early", "rev_freeze"]},
+  {"label": "NOISE", "keys": ["noise_color_pair", "noise_color_mix", "noise_env", "noise_a", "noise_r", "noise_sus"]},
+  {"label": "VCA", "keys": ["pan", "spread"]},
+  {"label": "ANALOG", "keys": ["drift"]}
  ]
 }

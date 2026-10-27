@@ -55,6 +55,7 @@ typedef struct {   /* what the effects read; worked out by the engine (fx_params
     int rev_type, rev_freeze;
     float rev_rt60, rev_size;             /* decay time (s) and size (0.5..2) */
     float rev_damp, rev_lowdamp, rev_pre_ms, rev_diff, rev_tone, rev_mod, rev_early;   /* 0..1 except pre and mod (0..2) */
+    float wet_pan;                        /* the synth pan, -1..1: where the synth effect's wet signal sits */
 } fx_params_t;
 
 /* ---- knob (0..100, or the param's own range) to units, shared by fx_params() and the display text ---- */

@@ -102,7 +102,7 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 | BEND UP OFFSET per oscillator | -24 to +24 st (p26) | Have | `oN_bend_up_off`, whole semitones, added to `bend_up` (2026-10-27, offline) | - | none |
 | BEND DOWN OFFSET per oscillator | -24 to +24 st (p26) | Have | `oN_bend_dn_off`, added to `bend_down` (2026-10-27, offline) | - | none |
 | MORE page wave image and values [UI] | p25 | Missing | - | M | none |
-| Analog VCO character: slight drift and warm-up instability [ANALOG] | p7 (warm-up note) | Missing | Ideal digital oscillators | S-M (slow per-oscillator random pitch wander) | low |
+| Analog VCO character: slight drift and warm-up instability [ANALOG] | p7 (warm-up note) | Partial | `drift` 0-100%: each oscillator wanders at random within +-4 cents (and each voice's cutoffs within +-0.04 octave), a new target every 0.3-1.5 s, at control rate; 0 is exactly off (2026-10-27, offline). No warm-up | - | low |
 | Clean top end under sync and FM | implied (analog) | Partial | PolyBLEP; no oversampling | M-L | medium-high (2x oversampling) |
 
 ## 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28)
@@ -123,14 +123,14 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | Noise as a mixer source | p29 | Have | `noise_level`, per-voice xorshift white noise | - | - |
-| Noise EG: ATTACK | 1 ms to 10 s (p29) | Missing | Noise follows the amp envelope only | S | low |
-| Noise EG: RELEASE | 1 ms to 10 s (p29) | Missing | - | S | low |
-| Noise EG: SUSTAIN button (off: release acts as decay after the attack) | on/off (p29) | Missing | - | S | none |
-| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Missing | - | S | low |
-| Colours: white, red (-6 dB/oct), purple (+6 dB/oct) | p30 | Partial | White only | S (one-pole lowpass, first difference) | low |
-| COLOR pair select | Red+White, Red+Purple, White+Purple (p30) | Missing | - | S | none |
-| COLOR MIX between the two selected colours (also a matrix destination) | knob (p30, p76) | Missing | - | S | low |
-| Pink noise by mixing red and white | p30 | Missing | Follows from the above | - | - |
+| Noise EG: ATTACK | 1 ms to 10 s (p29) | Have | `noise_a` 1 ms-10 s (linear), shaping the noise when `noise_env` is On (default Off) (2026-10-27, offline) | - | low |
+| Noise EG: RELEASE | 1 ms to 10 s (p29) | Have | `noise_r` 1 ms-10 s | - | low |
+| Noise EG: SUSTAIN button (off: release acts as decay after the attack) | on/off (p29) | Have | `noise_sus` | - | none |
+| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Partial | Its level is kept per voice (`noise_env`, 0..1) for the matrix; not wired yet | S | low |
+| Colours: white, red (-6 dB/oct), purple (+6 dB/oct) | p30 | Have | Red: white through a 40 Hz one-pole low-pass; purple: its first difference; same RMS as white. Measured -6.1 / +5.8 dB/oct over 250 Hz-4 kHz (2026-10-27, offline) | - | low |
+| COLOR pair select | Red+White, Red+Purple, White+Purple (p30) | Have | `noise_color_pair` | - | none |
+| COLOR MIX between the two selected colours (also a matrix destination) | knob (p30, p76) | Partial | `noise_color_mix` 0-100%, equal-power crossfade (default Red+White at 100% = white, as before); not a matrix destination yet | S | low |
+| Pink noise by mixing red and white | p30 | Have | Red+White near 50% (about -2.5 dB/oct) | - | - |
 
 ## 6. Mixer (p31-32)
 
@@ -233,10 +233,10 @@ matrix destinations, the effects' CTRL 1/2 as offsets on their targets.
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | LEVEL of the active Synth | 0 to 10 (p51) | Have | `volume` | - | - |
-| PAN of the active Synth | Left to Right (p51) | Missing | Centre only | S | none |
+| PAN of the active Synth | Left to Right (p51) | Have | `pan` -100..100%, equal power (centre exactly as the old mono sum, hard left +3 dB on the left); the mod effect's wet sits at the pan (2026-10-27, offline) | - | none |
 | VCA MORE: level and pan of all three Synths on one page [MULTI][UI] | 0-100%, 100% L to 100% R (p52) | Missing | - | S (with parts) | none |
-| SPREAD: per-voice stereo placement around the pan | 0% to 100% (p52) | Missing | Voices sum to mono | M (stereo voice bus) | low |
-| Per-voice pan as a matrix destination | p76, p96 | Missing | - | M | low |
+| SPREAD: per-voice stereo placement around the pan | 0% to 100% (p52) | Have | `spread`: each new note takes the next place in an alternating pattern (+-1, +-0.5, +-0.75, +-0.25) around the pan; a unison stack fans out by its place in the stack; mono stays on the pan. Stereo voice bus: voices off the centre add their difference to a side bus, centred voices cost nothing extra (2026-10-27, offline) | - | low |
+| Per-voice pan as a matrix destination | p76, p96 | Partial | The voice bus is stereo and `pan_targets()` takes a per-voice offset; not wired to the matrix yet | S | low |
 
 ## 11. Output (p53-56)
 
@@ -483,7 +483,7 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 | EFFECT 1 -> 2 SERIES (parallel to series blend) | 0% to 100% (p100) | Have | `mfx_series`: the delay's return moves from the output into the reverb | - | none |
 | Only one Eventide effect at a time [LIC] | p99 | Have | One reverb slot, original designs | - | - |
 | SYNC per effect: time parameters become divisions | 1/64T..1/64., 1/32T.., 1/16T.., 1/8T.., 1/4T.., 1/2T.., 1, 2, 4 (21 values, p103) | Have | `modfx_sync`, `dly_sync`: the 21 divisions for delay times and LFO/vibrato rates (chorus/flanger times stay in ms) | - | none |
-| Per-voice pan kept in the stereo master bus, lost in mono buses | p96, p99 | Partial | `fx_process()` takes stereo in; the voices are still a mono sum | (with section 10) | low |
+| Per-voice pan kept in the stereo master bus, lost in mono buses | p96, p99 | Have | Voices are stereo (pan, spread); the synth effect, delay and reverb take the panned voices (2026-10-27, offline) | - | low |
 
 ### 18b. Effect types (Synth Effects and Master Effects share the list, p103-109)
 
