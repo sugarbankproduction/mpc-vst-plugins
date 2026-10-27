@@ -132,6 +132,25 @@ static void editor(AEffect *fx, const char *bmp) {
     intptr_t ok = fx->dispatcher(fx, 14 /* effEditOpen */, 0, 0, parent, 0);
     HWND child = GetWindow(parent, GW_CHILD);
     check(ok && child, "the editor window opens inside the host's window");
+    if (child) {   /* play the on-screen keyboard: a click on a white key must sound, letting go must stop it */
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
+        play(fx, 700, 512);   /* let the last preset's tails die away */
+        double quiet = play(fx, 20, 512);
+        RECT cr;
+        GetClientRect(child, &cr);
+        LPARAM at = MAKELPARAM(cr.right * 6 / 10, cr.bottom * 95 / 100);   /* low on a white key, near middle C */
+        SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);
+        double held = play(fx, 40, 512);
+        snprintf(what, sizeof what, "a click on the window's keyboard plays a note (rms %.3f, before %.4f)", held, quiet);
+        check(held > 0.01 && held > quiet * 4, what);
+        SendMessageA(child, WM_LBUTTONUP, 0, at);
+        play(fx, 400, 512);
+        double after = play(fx, 20, 512);
+        snprintf(what, sizeof what, "letting go of the key stops it (rms %.4f)", after);
+        check(after < held / 10, what);
+        SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);   /* held again for the picture */
+        play(fx, 4, 512);
+    }
     if (child && bmp) {
         HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
         HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
@@ -152,6 +171,7 @@ static void editor(AEffect *fx, const char *bmp) {
         }
         SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
     }
+    if (child) SendMessageA(child, WM_LBUTTONUP, 0, 0);
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
     DestroyWindow(parent);
