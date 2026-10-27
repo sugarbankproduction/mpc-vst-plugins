@@ -496,25 +496,25 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | Effects can all be switched off for a pure dry path | p96 | Have | `modfx_on` and `mfx_on` Off; sends at 0 or mix 0 are exactly dry (tested) | - | none |
-| SYNTH EFFECT per Synth: one chosen type, mono in, stereo out, MIX always first | p96 | Have | `modfx_type` (20 types: 15 after the manual's list, 5 open-source), `modfx_mix`; mono in (the voices' sum), the wet at the synth pan, the dry keeps each voice's place | - | none/voice; shared 1.5-73 us per block by type |
+| SYNTH EFFECT per Synth: one chosen type, mono in, stereo out, MIX always first | p96 | Have | `modfx_type` (22 types: 17 after the manual's list, 5 open-source), `modfx_mix`; mono in (the voices' sum), the wet at the synth pan, the dry keeps each voice's place | - | none/voice; shared 1.5-73 us per block by type |
 | Synth Effect ON button | on/off (p96) | Have | `modfx_on` | - | none |
 | CTRL 1 and CTRL 2 knobs, re-assignable to any effect parameter | p96-97 | Have | `modfx_ctrl1`/`modfx_ctrl2`: +-100% of the target's range on top of its knob; target `modfx_c1_dst`/`modfx_c2_dst`, Auto = the manual's pre-assignment per type | - | none |
 | Effect presets per type: load, save, initialise to the type's defaults [UI] | p97-98, p101 | Missing | - | M | none |
-| Up to 5 effects at once (3 synth + 2 master) | p96 | Partial | 3 at once: one synth effect (one part) plus master delay and reverb | (with parts) | shared medium |
-| MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Have | One part: `mfx_send1` into the delay, `mfx_send2` into the reverb; returns added to the dry signal | - | shared |
+| Up to 5 effects at once (3 synth + 2 master) | p96 | Partial | 3 at once: one synth effect (one part) plus the two master effects | (with parts) | shared medium |
+| MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Have | One part: `mfx_send1` into master effect 1, `mfx_send2` into master effect 2; returns added to the dry signal | - | shared |
 | Master Effects ON button | on/off (p99) | Have | `mfx_on` | - | none |
-| MASTER EFFECT 1 / 2 TYPE: any type from the synth-effect list, plus the Eventide reverbs (synth effect presets usable as master effects and back) | p96, p101 | Partial | Fixed slots: effect 1 is the stereo / ping-pong delay, effect 2 a reverb (Plate, Room, Hall, Space); none of the 20 synth types can sit on the master bus | M-L (a second effect slot's buffers, about 1 MB) | none/voice; shared low-medium |
-| MASTER BUSS MODE | Dual Mono (two effects), Stereo (one effect) (p100) | Partial | Fixed: effect 1 then effect 2, each with stereo input (closest to Dual Mono with the panning kept) | S (with the row above) | shared |
+| MASTER EFFECT 1 / 2 TYPE: any type from the synth-effect list, plus the Eventide reverbs (synth effect presets usable as master effects and back) | p96, p101 | Have | `dly_type` / `rev_type`: 23 types in either slot (Plate, Room, Hall, Space, Shimmer, Blackhole, Stereo Delay, Ping Pong and the manual's 15 synth types; the 5 open-source synth types stay synth-only); each slot has its own controls (slot 1 the `dly_*` params, slot 2 the `rev_*`), MIX and GAIN; switching a type fades the old one out, clears its memory a block at a time and fades the new one in (2026-10-27, offline). Effect presets: package 12c | - | none/voice; shared, by type |
+| MASTER BUSS MODE | Dual Mono (two effects), Stereo (one effect) (p100) | Have | `mfx_buss`: Dual Mono (both effects, on SEND 1 and SEND 2) or Stereo (effect 1 alone on SEND 1, stereo in). ONE-ish keeps each voice's place in Dual Mono's inputs too (the instrument's mono buss loses it), so the earlier sounds are unchanged | - | shared |
 | STEREO WIDTH at the end of the master chain | 0% to 100% to 200% (p100) | Have | `mfx_width` 0-200%, mid/side on the returns (the dry path stays exact) | - | none/voice; shared low |
-| EFFECT 1 -> 2 SERIES (parallel to series blend) | 0% to 100% (p100) | Have | `mfx_series`: the delay's return moves from the output into the reverb | - | none |
-| Only one Eventide effect at a time [LIC] | p99 | Have | One reverb slot, original designs | - | - |
+| EFFECT 1 -> 2 SERIES (parallel to series blend) | 0% to 100% (p100) | Have | `mfx_series`: effect 1's return moves from the output into effect 2 (Dual Mono only) | - | none |
+| Only one Eventide effect at a time [LIC] | p99 | Have | Not needed: the reverbs are original designs, any of them in either slot | - | - |
 | SYNC per effect: time parameters become divisions | 1/64T..1/64., 1/32T.., 1/16T.., 1/8T.., 1/4T.., 1/2T.., 1, 2, 4 (21 values, p103) | Have | `modfx_sync`, `dly_sync`: the 21 divisions for delay times and LFO/vibrato rates (chorus/flanger times stay in ms) | - | none |
 | Per-voice pan kept in the stereo master bus, lost in mono buses | p96, p99 | Have | Voices are stereo (pan, spread); the synth effect takes the mono sum with its wet at the synth pan (as the manual), the master effects take the panned voices (2026-10-27, offline) | - | low |
 
 ### 18b. Effect types (Synth Effects and Master Effects share the list, p103-109)
 
-ONE-ish's synth effect offers every type below except the vocoders; the master delay is the Stereo Delay and Ping
-Pong (`dly_pp`). Shared knobs: `modfx_mix`, `modfx_fb` (and `_r`), `modfx_time` (and `_r`, chorus/flanger ms, range per
+ONE-ish's synth effect offers every type below except the vocoders (Stereo Delay and Ping Pong since 2026-10-27), and
+either master effect any of them; master effect 1 is a Stereo Delay by default. Shared knobs: `modfx_mix`, `modfx_fb` (and `_r`), `modfx_time` (and `_r`, chorus/flanger ms, range per
 type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20 Hz), `modfx_depth`, `modfx_tone`,
 `modfx_spread`, `modfx_gain` (silent to +6 dB, 50% unity), `modfx_noise`, `modfx_sync`.
 
@@ -534,10 +534,10 @@ type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20
 |---|---|---|---|---|---|
 | MIX (CTRL 1), FEEDBACK (CTRL 2) | 0% to 100% | Have | `mfx_send1`, `dly_fb` | - | none/voice |
 | TIME LEFT, TIME RIGHT | 0.1 ms to 2000 ms each | Have | `dly_time`, `dly_time_r` | - | none/voice |
-| FEEDBACK LEFT, FEEDBACK RIGHT | 0% to 100% | Missing | One feedback for both | S | none/voice |
-| MOD RATE LEFT/RIGHT, MOD DEPTH LEFT/RIGHT | 0% to 100% | Missing | - | S | none/voice; shared low |
+| FEEDBACK LEFT, FEEDBACK RIGHT | 0% to 100% | Have | `dly_fbl`, `dly_fbr` (synth: `modfx_fbl`, `modfx_fbr`): each side's share of FEEDBACK, 100% by default | - | none/voice |
+| MOD RATE LEFT/RIGHT, MOD DEPTH LEFT/RIGHT | 0% to 100% | Have | `dly_rate`, `dly_rate_r`, `dly_depth`, `dly_depth_r`: a sine swing of each side's read, up to +-5 ms | - | none/voice; shared low |
 | TONE (lowpass) | 0% to 100% | Have | `dly_tone` | - | none/voice |
-| GAIN | 0% to 100% | Partial | The send level | S | none/voice |
+| GAIN | 0% to 100% | Have | `dly_gain` (each master slot's return level, 50% = unity), as the synth effect's | - | none/voice |
 | SYNC | on/off | Have | `dly_sync` (both times) | - | none/voice |
 
 **Ping Pong** (alternating stereo taps, p104): the master delay with `dly_pp` On
@@ -548,7 +548,7 @@ type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20
 | TIME LEFT, TIME RIGHT | 0.1 ms to 2000 ms | Have | `dly_time`, `dly_time_r` | - | none/voice |
 | OFFSET between left and right | 0% to 100% | Have | `dly_offset`: the right side's repeats later by up to half the left time | - | none/voice |
 | TONE | 0% to 100% | Have | `dly_tone` | - | none/voice |
-| GAIN | 0% to 100% | Partial | The send level | S | none/voice |
+| GAIN | 0% to 100% | Have | `dly_gain` | - | none/voice |
 | SYNC | on/off | Have | `dly_sync` | - | none/voice |
 
 **Other delay types**
@@ -611,7 +611,7 @@ type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20
 | SWEEP (zero point) | 0% to 100% | Have | `modfx_sweep`: the lowest point 40 Hz-4 kHz; depth sweeps up to 5 octaves above | - | none/voice |
 | RATE | 0.01 Hz to 20 Hz | Have | `modfx_rate` | - | none/voice |
 | DEPTH | 0% to 100% | Have | `modfx_depth` | - | none/voice |
-| TONE (lowpass on the mix) | 0% to 100% | Partial | `modfx_tone` on the wet signal, not on the mix | S | none/voice |
+| TONE (lowpass on the mix) | 0% to 100% | Have | `modfx_tone` filters the mixed signal (all of it from mix 50% up, fading out below so mix 0 stays dry), 6/12-stage and Time Phaser | - | none/voice |
 | NOISE | 0% to 100% | Have | `modfx_noise` | - | none/voice |
 | GAIN | 0% to 100% | Have | `modfx_gain` | - | none/voice |
 | SYNC | on/off | Have | `modfx_sync` | - | none/voice |
@@ -622,7 +622,7 @@ type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20
 |---|---|---|---|---|---|
 | 12 STAGE PHASER (p107): same parameters as the 6-stage | as 6-stage | Have | Synth type 12-Stage Phaser | - | none/voice; shared low (4.6 us) |
 | TIME PHASER (four-stage phaser into a delay, p108): MIX (CTRL 1), PHASER FEEDBACK (CTRL 2), SWEEP, RATE, DEPTH, TONE, NOISE, DELAY FEEDBACK, TIME, GAIN, SYNC | 0-100%; rate 0.01-20 Hz; time 0.1-2000 ms | Have | Synth type Time Phaser: `modfx_dtime`, `modfx_dfb` for the delay | - | none/voice; shared low (4.4 us) |
-| BIT CRUSHER (crossover filter, dual crushing, p108): MIX (CTRL 1), DEPTH (CTRL 2), RATE, GAIN | depth 2-24 bit; rate 128 Hz-48 kHz | Partial | Synth type Bit Crusher: `modfx_bits` 2-24, `modfx_srate` 128 Hz-44.1 kHz; one band (no crossover) | S | none/voice; shared low (1.5 us) |
+| BIT CRUSHER (crossover filter, dual crushing, p108): MIX (CTRL 1), DEPTH (CTRL 2), RATE, GAIN | depth 2-24 bit; rate 128 Hz-48 kHz | Have | Synth type Bit Crusher: `modfx_bits` 2-24, `modfx_srate` 128 Hz-44.1 kHz; `modfx_xover` (Off, 50 Hz-5 kHz): two crushers on a second-order split, the lows losing only bits, the highs bits and sample rate | - | none/voice; shared low (1.5 us) |
 | RESONATOR (three-filter bank, p108): MIX (CTRL 1), RESONANCE (CTRL 2), CUTOFF LOW/MID/HIGH, LEVEL LOW/MID/HIGH, FILTER TYPE, MOD RATE, MOD DEPTH, GAIN | cutoffs 10 Hz-22 kHz (defaults 500 Hz, 1 kHz, 5 kHz); type LP/BP/HP; mod rate 0.01-10 Hz | Have | Synth type Resonator: three state-variable filters, `modfx_cut1-3`, `modfx_lvl1-3`, `modfx_ftype`, `modfx_reso`, `modfx_rate`/`modfx_depth` sweep | - | none/voice; shared low (2.4 us) |
 | 10 BAND VOCODER (p109): MIX (CTRL 1), SIBILANCE (CTRL 2), SENSITIVITY (mic gate), TONE, NOISE | 0-100% | Missing | Needs an audio input (the modulator); on the desktop the host can supply one | L (with the input) | none/voice; shared medium |
 | 16 BAND VOCODER (p109): same parameters | 0-100% | Missing | - | (with the 10-band) | none/voice; shared medium-high |
@@ -641,8 +641,10 @@ host's generic editor reaches them).
 ### 18c. Eventide Master Effects (master bus only, one at a time) [LIC]
 
 These are licensed algorithms. Only original reverbs in the same spirit can be built; none can match them. ONE-ish's
-master reverb (`rev_type`: Plate, Room, Hall, Space) shares one set of knobs; decay is a time (`rev_decay`, 0.25-10 s at
-size 100%, scaled by size). Space (2026-10-27, offline) is Airwindows Galactic ported to C (MIT): DECAY sets how much of
+reverbs (Plate, Room, Hall, Space, Shimmer, Blackhole) run in either master slot (`dly_type` / `rev_type`) on that
+slot's knobs (slot 2's below as `rev_*`, slot 1's the same as `dly_*`); decay is a time (`rev_decay`: plate and room
+0.25-10 s, hall and shimmer 0.1-20 s at size 100%, scaled by size); `rev_freeze` holds: Freeze, Infinite (no decay,
+input open, a soft limiter in the loops) or Pitch Freeze (the shimmer's). Space (2026-10-27, offline) is Airwindows Galactic ported to C (MIT): DECAY sets how much of
 the space each new sound replaces (100% or FREEZE: it holds), TONE its brightness, MOD LEVEL its detune, SIZE its
 bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us per block on the PC).
 
@@ -651,7 +653,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Parameter | Range | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | (the reverb itself) [LIC] | - | Have | Dattorro plate, `rev_type` Plate on `mfx_send2` | - | none/voice; shared medium (8.4 us) |
-| DISTANCE (early-reflection delay) | 0 to 100 | Missing | - | S | none/voice |
+| DISTANCE (early-reflection delay) | 0 to 100 | Have | `rev_distance`: early reflections off the pre-delay line, spread out up to 3x as it rises (0: none, the plate as before) | - | none/voice |
 | DIFFUSION (early network feedback) | 0 to 100 | Have | `rev_diff` scales the input diffusers (100% = the paper's values) | - | none/voice |
 | MOD LEVEL | 0 to 100 | Have | `rev_mod` (50% = the paper's excursion) | - | none/voice |
 | TONE (input lowpass) | -100 to 100 | Have | `rev_tone` 0-100% (open at 100) | - | none/voice |
@@ -659,16 +661,16 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | LOW DAMP | 100 to 0 | Have | `rev_lowdamp`: a low cut (below about 250 Hz) in the loop | - | none/voice |
 | PRE DELAY | 0 ms to 1500 ms | Have | `rev_pre` 0-1500 ms | - | none/voice |
 | SIZE | 0 to 100 | Have | `rev_size` 50-200%: tank lengths and the decay time | - | none/voice |
-| DECAY | 0.25 s to 10 s, Infinite, Freeze | Partial | `rev_decay` 0.25-10 s, `rev_freeze` (holds, input shut); no Infinite (input open, no decay) | S | none/voice |
+| DECAY | 0.25 s to 10 s, Infinite, Freeze | Have | `rev_decay` 0.25-10 s; `rev_freeze` Freeze (holds, input shut) or Infinite (no decay, input open) | - | none/voice |
 
 **Other Eventide reverbs**
 
 | Effect type and parameters | Ranges | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| EVENTIDE ROOM [LIC] (p109): early/late balance (unnamed first row, 20 detents from all-early to all-late), DIFFUSION, MOD LEVEL, HIGH FREQ (post-crossover lowpass), HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, DECAY | 0-100; high freq 1-5 kHz; high level -100 to 100; low level 0-1; pre-delay 0-500 ms | Partial | `rev_type` Room (original): early reflections and a 4-line feedback delay network; `rev_early` balance, diffusion, size, decay, pre-delay; damping instead of the band levels; no modulation | S | none/voice; shared medium (6.2 us) |
-| EVENTIDE HALL [LIC] (p110): LOW DECAY, HIGH DECAY, MOD LEVEL, MID LEVEL, HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, DECAY | low/high decay 0.1-5.0x, Infinite, Freeze; levels -100 to 100; pre-delay 0-1500 ms; decay 0-20 s, Infinite, Freeze | Partial | `rev_type` Hall (original): early reflections, four diffusers, an 8-line network with four modulated lines; high/low damping instead of band decays and levels; decay to 10 s | M | none/voice; shared medium-high (17.5 us) |
-| EVENTIDE SHIMMER [LIC] (p111): A PITCH, B PITCH, PITCH DECAY (with Pitch Freeze, Pitch+Reverb Freeze), MID DECAY, LOW DECAY, HIGH DECAY, DELAY, SIZE, DECAY | pitches about +-24 semitones in cents (printed "-2410C - +2410"); 0-100; delay 50-1000 ms | Missing | Deferred: pitch shifters in the loop (CPU) | L (pitch shifters in the feedback loop) | none/voice; shared high |
-| EVENTIDE BLACKHOLE [LIC] (p111): MOD DEPTH, MOD RATE, FEEDBACK, RESONANCE, HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, GRAVITY | 0-100; feedback 0-100, Infinite, Freeze; levels -100 to 100; pre-delay 0-2000 ms; gravity -100 to 100 | Missing | Deferred (CPU) | L (very large modulated tank) | none/voice; shared high |
+| EVENTIDE ROOM [LIC] (p109): early/late balance (unnamed first row, 20 detents from all-early to all-late), DIFFUSION, MOD LEVEL, HIGH FREQ (post-crossover lowpass), HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, DECAY | 0-100; high freq 1-5 kHz; high level -100 to 100; low level 0-1; pre-delay 0-500 ms | Have | `rev_type` Room (original): early reflections and a 4-line feedback delay network; `rev_early` on the manual's 21 detents, diffusion, `rev_mod` (two lines swing), `rev_hifreq` 1-5 kHz with `rev_hlevel` / `rev_llevel` above and below it, pre-delay (to 2 s), size, decay (a time, not 0-100) | - | none/voice; shared medium (6.2 us) |
+| EVENTIDE HALL [LIC] (p110): LOW DECAY, HIGH DECAY, MOD LEVEL, MID LEVEL, HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, DECAY | low/high decay 0.1-5.0x, Infinite, Freeze; levels -100 to 100; pre-delay 0-1500 ms; decay 0-20 s, Infinite, Freeze | Have | `rev_type` Hall (original): early reflections, four diffusers, an 8-line network with four modulated lines; `rev_ldecay` / `rev_hdecay` x0.1-5 below 250 Hz and above HIGH FREQ, `rev_llevel` / `rev_mlevel` / `rev_hlevel`, decay 0.1-20 s, Infinite and Freeze | - | none/voice; shared medium-high (17.5 us) |
+| EVENTIDE SHIMMER [LIC] (p111): A PITCH, B PITCH, PITCH DECAY (with Pitch Freeze, Pitch+Reverb Freeze), MID DECAY, LOW DECAY, HIGH DECAY, DELAY, SIZE, DECAY | pitches about +-24 semitones in cents (printed "-2410C - +2410"); 0-100; delay 50-1000 ms | Have | `rev_type` Shimmer (original): the hall's network fed by a 0.1-0.4 s pitch loop through two delay-line pitch shifters at `rev_pitch` / `rev_pitch_b` (+-2400 cents), climbing again each pass by `rev_pdecay`; `rev_freeze` Pitch Freeze (the loop holds, the reverb carries on) or Freeze (both); `rev_ldecay` / `rev_hdecay`, pre-delay, size, decay 0.1-20 s (MID DECAY is DECAY) | - | none/voice; shared high (see the bench) |
+| EVENTIDE BLACKHOLE [LIC] (p111): MOD DEPTH, MOD RATE, FEEDBACK, RESONANCE, HIGH LEVEL, LOW LEVEL, PRE DELAY, SIZE, GRAVITY | 0-100; feedback 0-100, Infinite, Freeze; levels -100 to 100; pre-delay 0-2000 ms; gravity -100 to 100 | Have | `rev_type` Blackhole (original): four long modulated diffusers into an 8-line network of 0.06-0.57 s lines, all swinging (`rev_mod`, `rev_rate`); `rev_fb` a 1-100 s decay with Infinite / Freeze; `rev_gravity` below 0 swells in, above 0 pulls the tail down; `rev_reso` a peak at its 700 Hz crossover, `rev_llevel` / `rev_hlevel`; pre-delay to 2 s, size | - | none/voice; shared high (see the bench) |
 
 ## 19. Left Hand Controller (p17-18, p112-117)
 
@@ -850,13 +852,13 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 15. Modulation (p67-77) | 71 | 3 | 14 | 2 | 3 |
 | 16. Arpeggiator (p78-81) | 16 | 1 | 0 | 0 | 0 |
 | 17. Sequencer (p82-95) | 0 | 0 | 33 | 0 | 6 |
-| 18. Effects (p96-111) | 70 | 10 | 8 | 0 | 1 |
+| 18. Effects (p96-111) | 84 | 1 | 3 | 0 | 1 |
 | 19. Left Hand Controller (p17-18, p112-117) | 14 | 2 | 3 | 1 | 0 |
 | 20. Browser, presets and timbres (p118-121) | 2 | 2 | 3 | 0 | 2 |
 | 21. Editing and saving (p122-123) | 1 | 0 | 3 | 0 | 2 |
 | 22. Settings (p124-139) | 3 | 5 | 23 | 11 | 7 |
 | 24. Appendices A and B (p143-158) | 0 | 3 | 3 | 1 | 0 |
-| **Total** | **296** | **54** | **125** | **27** | **34** |
+| **Total** | **310** | **45** | **120** | **27** | **34** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -1002,6 +1004,8 @@ about twice what 8 do; fine on the desktop, the MPC keeps its benched default).
 - 10c Shimmer and blackhole style reverbs (original designs). L; CPU shared high.
 - Depends on: nothing (10a before package 13 if the per-Synth effects reuse its slot design).
 - Files: `src/fx.h`, `src/fx/*`, the effect parts of `src/engine.c` (`fx_field`, `fx_params`), `params.json`.
+- Done 2026-10-27 (offline and the desktop build): 10a, 10b and 10c as above (section 18). Left: the desktop window's
+  pages for the slots' new controls (they are on its OTHER page for now), effect presets (12c), the vocoders (11).
 
 **11. Audio input and vocoders** (sections 0, 6, 15e, 18). Effort M for the input, L for the vocoders. CPU: low per
 voice for the EXT channel; shared medium (10-band) to medium-high (16-band) for the vocoders.

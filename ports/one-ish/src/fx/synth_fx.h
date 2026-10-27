@@ -1,7 +1,8 @@
-/* ONE-ish synth effect: one type at a time on the voices' sum, stereo in, wet stereo out (fx.h mixes it with the dry
- * signal). Original designs from textbook parts: modulated delay lines read with 4-point Hermite interpolation,
- * first-order all-pass phasers, a one-pole/saturator BBD and tape model, a diffusing spring-style echo tank, a sample
- * and hold bit crusher and a bank of three state-variable filters (Zavalishin's trapezoidal "TPT" form).
+/* ONE-ish synth effect types: one type at a time in a slot (the synth effect on the voices' sum, or a master effect on
+ * its send), stereo in, wet stereo out (fx.h mixes it with the dry signal). Original designs from textbook parts:
+ * modulated delay lines read with 4-point Hermite interpolation, a stereo and a ping-pong delay, first-order all-pass
+ * phasers, a one-pole/saturator BBD and tape model, a diffusing spring-style echo tank, a sample and hold bit crusher
+ * (with a crossover for dual crushing) and a bank of three state-variable filters (Zavalishin's trapezoidal "TPT").
  * Each channel runs its own line, so a mono input (both channels equal) and a panned stereo input both work.
  * The open-source types: Mutable Instruments Rings and Clouds (mi_effects.h, C++ behind a C interface) and the
  * Airwindows ToTape6, Density and Console7 (airwindows.h). Only one type runs at a time, so they are built over the
@@ -38,6 +39,7 @@ typedef struct {
     DL(e1r, 512); DL(e2r, 512); DL(e3r, 512); DL(etr, 2048);   /* and right */
     float edl, edr;                   /* echo tank damping */
     float hold_l, hold_r, acc;        /* bit crusher sample and hold */
+    float xo[2][4];                   /* bit crusher crossover, per channel: two low-passes, two high-passes */
     float rs[2][3][2];                /* resonator filter states: channel, filter, (ic1, ic2) */
     uint32_t rng;
     int cnt;                          /* samples to the next control step (phasers, resonator, BBD wobble) */
@@ -51,9 +53,9 @@ static inline void sfx_write(sfx_t *f, float xl, float xr) {
 static inline float sfx_clamp_dist(float d) { return fx_clamp(d, 2.0f, SFX_SIZE - 8.0f); }
 
 /* ---- chorus, flanger, their stereo versions, dual chorus, ensemble: modulated lines ---- */
-static void sfx_mod_lines(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr,
+static void sfx_mod_lines(sfx_t *f, const fxs_params_t *p, const float *inL, const float *inR, float *wl, float *wr,
                           int n) {
-    const int type = p->sfx_type, stereo = type == SFX_SFLANGER || type == SFX_SCHORUS;
+    const int type = p->type, stereo = type == SFX_SFLANGER || type == SFX_SCHORUS;
     const int flanger = type == SFX_FLANGER || type == SFX_SFLANGER;
     const float ms = 0.001f * FX_SR;
     const float incl = p->rate_hz / FX_SR, incr = (stereo ? p->rate_r_hz : p->rate_hz) / FX_SR, vinc = p->vib_hz / FX_SR;
@@ -105,16 +107,16 @@ static void sfx_mod_lines(sfx_t *f, const fx_params_t *p, const float *inL, cons
 
 /* ---- phasers: 6 or 12 first-order all-pass stages per channel, swept up from the SWEEP point; the Time Phaser is
  * 4 stages into a delay line ---- */
-static inline float sfx_ap_coef(const fx_params_t *p, float ph) {
+static inline float sfx_ap_coef(const fxs_params_t *p, float ph) {
     float hz = 40.0f * powf(100.0f, p->sweep) * exp2f(5.0f * p->depth * (0.5f + 0.5f * fx_tri(ph)));
     float t = tanf(FX_PI * fminf(hz, 16000.0f) / FX_SR);
     return (t - 1.0f) / (t + 1.0f);
 }
 
-static void sfx_phaser(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
-    const int stages = p->sfx_type == SFX_PHASER12 ? 12 : p->sfx_type == SFX_PHASER6 ? 6 : 4;
-    const int tphase = p->sfx_type == SFX_TPHASER;
-    const float incl = p->rate_hz / FX_SR, off = 0.5f * p->spread, nz = p->noise * 0.03f, tc = fx_tone_coef(p->tone);
+static void sfx_phaser(sfx_t *f, const fxs_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
+    const int stages = p->type == SFX_PHASER12 ? 12 : p->type == SFX_PHASER6 ? 6 : 4;
+    const int tphase = p->type == SFX_TPHASER;
+    const float incl = p->rate_hz / FX_SR, off = 0.5f * p->spread, nz = p->noise * 0.03f;
     const float dt = sfx_clamp_dist(p->dtime_ms * 0.001f * FX_SR);
     for (int i = 0; i < n; i++) {
         if (f->cnt <= 0) {   /* every 8 samples: the coefficients 8 samples on, ramped to */
@@ -140,16 +142,14 @@ static void sfx_phaser(sfx_t *f, const fx_params_t *p, const float *inL, const f
             sl = 0.7f * (sl + el);
             sr = 0.7f * (sr + er);
         }
-        f->lpl += (sl - f->lpl) * tc;
-        f->lpr += (sr - f->lpr) * tc;
-        wl[i] = f->lpl; wr[i] = f->lpr;
+        wl[i] = sl; wr[i] = sr;   /* (TONE filters the mix, as the manual has it: fx.h) */
         f->ph = fx_wrap(f->ph + incl);
     }
 }
 
 /* ---- delays: clean, BBD, tape and echo; one tap per channel at the delay time ---- */
-static void sfx_delays(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
-    const int type = p->sfx_type;
+static void sfx_delays(sfx_t *f, const fxs_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
+    const int type = p->type;
     const float ms = 0.001f * FX_SR, target = sfx_clamp_dist(p->dtime_ms * ms), tc = fx_tone_coef(p->tone);
     /* BBD: the bandwidth falls as the delay grows (a 4096-stage line clocked slower), about 680 Hz/s of delay */
     float bc = fx_lp_coef(fx_clamp(682.7f * FX_SR / fmaxf(f->dl, 1.0f), 400.0f, 15000.0f));
@@ -214,9 +214,76 @@ static void sfx_delays(sfx_t *f, const fx_params_t *p, const float *inL, const f
     }
 }
 
-/* ---- bit crusher: sample and hold at the set rate, then quantised to the bit depth ---- */
-static void sfx_crush(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
+/* ---- stereo delay and ping pong (the master delay before the slots): a line per side with its own time; ping pong's
+ * input enters on the left and each repeat crosses sides, the right side's repeats later by OFFSET (up to half the
+ * left time). Times glide when changed, a tone low-pass in the feedback; the stereo delay's FEEDBACK LEFT / RIGHT
+ * share out FEEDBACK, and its reads swing with MOD RATE / DEPTH per side (up to +-5 ms) ---- */
+#define SD_MOD_MS 5.0f
+static inline float sfx_sd_target_l(const fxs_params_t *p) { return fx_clamp(p->dtime_ms * 0.001f * FX_SR, 3.0f, SFX_SIZE - 8.0f); }
+static inline float sfx_sd_target_r(const fxs_params_t *p) {
+    float ms = p->dtime_r_ms + (p->type == SFX_PINGPONG ? p->offset * 0.5f * p->dtime_ms : 0.0f);
+    return fx_clamp(ms * 0.001f * FX_SR, 3.0f, SFX_SIZE - 8.0f);
+}
+
+static void sfx_sdelay(sfx_t *f, const fxs_params_t *p, const float *inL, const float *inR, float *wl, float *wr,
+                       int n) {
+    const int pp = p->type == SFX_PINGPONG, mod = !pp && (p->depth > 0.0f || p->depth_r > 0.0f);
+    const float tl = sfx_sd_target_l(p), tr = sfx_sd_target_r(p);
+    const float tone = 0.05f + 0.95f * p->tone * p->tone, fb = p->fb;
+    const float fbl = pp ? fb : fb * p->fbl, fbr = pp ? fb : fb * p->fbr;
+    const float ml = p->depth * SD_MOD_MS * 0.001f * FX_SR, mr = p->depth_r * SD_MOD_MS * 0.001f * FX_SR;
+    const float incl = p->rate_hz / FX_SR, incr = p->rate_r_hz / FX_SR;
+    for (int i = 0; i < n; i++) {
+        f->dl += (tl - f->dl) * 0.0005f;   /* about 45 ms to glide to a new time */
+        f->dr += (tr - f->dr) * 0.0005f;
+        float dl = f->dl - 1.0f, dr = f->dr - 1.0f;   /* read before this sample is written: one less */
+        if (mod) {
+            dl = sfx_clamp_dist(dl + ml * fx_sin(f->ph));
+            dr = sfx_clamp_dist(dr + mr * fx_sin(f->ph_r));
+            f->ph = fx_wrap(f->ph + incl);
+            f->ph_r = fx_wrap(f->ph_r + incr);
+        }
+        float el = fx_hermite(f->l, SFX_MASK, f->w, dl), er = fx_hermite(f->r, SFX_MASK, f->w, dr);
+        f->lpl += (el - f->lpl) * tone;
+        f->lpr += (er - f->lpr) * tone;
+        if (pp) {
+            f->l[f->w] = 0.5f * (inL[i] + inR[i]) + fb * f->lpr + FX_DENORM;
+            f->r[f->w] = fb * f->lpl + FX_DENORM;
+        } else {
+            f->l[f->w] = inL[i] + fbl * f->lpl + FX_DENORM;
+            f->r[f->w] = inR[i] + fbr * f->lpr + FX_DENORM;
+        }
+        f->w = (f->w + 1) & SFX_MASK;
+        wl[i] = el;
+        wr[i] = er;
+    }
+}
+
+/* ---- bit crusher: sample and hold at the set rate, then quantised to the bit depth; with a CROSSOVER, two crushers:
+ * the band below it loses only bits, the band above loses bits and sample rate (dual crushing, manual p108) ---- */
+static void sfx_crush(sfx_t *f, const fxs_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
     const float inc = p->srate_hz / FX_SR, steps = exp2f(fx_clamp(p->bits, 2.0f, 24.0f) - 1.0f), inv = 1.0f / steps;
+    if (p->xover_hz > 0.0f) {   /* dual: the lows only lose bits, the highs lose bits and sample rate too */
+        const float c = fx_lp_coef(p->xover_hz);
+        float lo[2], hi[2];
+        for (int i = 0; i < n; i++) {
+            const float x[2] = {fx_clamp(inL[i], -1.0f, 1.0f), fx_clamp(inR[i], -1.0f, 1.0f)};
+            for (int ch = 0; ch < 2; ch++) {   /* second-order split: lows - highs is an all-pass of the input */
+                float *z = f->xo[ch];
+                z[0] += (x[ch] - z[0]) * c; z[1] += (z[0] - z[1]) * c; lo[ch] = z[1];
+                z[2] += (x[ch] - z[2]) * c; float h = x[ch] - z[2]; z[3] += (h - z[3]) * c; hi[ch] = h - z[3];
+            }
+            f->acc += inc;
+            if (f->acc >= 1.0f) {
+                f->acc -= floorf(f->acc);
+                f->hold_l = floorf(hi[0] * steps + 0.5f) * inv;
+                f->hold_r = floorf(hi[1] * steps + 0.5f) * inv;
+            }
+            wl[i] = floorf(lo[0] * steps + 0.5f) * inv - f->hold_l;
+            wr[i] = floorf(lo[1] * steps + 0.5f) * inv - f->hold_r;
+        }
+        return;
+    }
     for (int i = 0; i < n; i++) {
         f->acc += inc;
         if (f->acc >= 1.0f) {
@@ -229,7 +296,7 @@ static void sfx_crush(sfx_t *f, const fx_params_t *p, const float *inL, const fl
 }
 
 /* ---- resonator: three state-variable filters (low, mid, high) in parallel, cutoffs swept together by an LFO ---- */
-static void sfx_reson(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
+static void sfx_reson(sfx_t *f, const fxs_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
     const float k = 2.0f - 1.98f * fx_clamp(p->reso, 0.0f, 1.0f);   /* damping: Q 0.5 .. 50 */
     const float norm = p->ftype == RES_BP ? k : sqrtf(0.5f * k);    /* a resonant peak about as loud as the input */
     float a1[3], a2[3], a3[3];
@@ -261,8 +328,8 @@ static void sfx_reson(sfx_t *f, const fx_params_t *p, const float *inL, const fl
 }
 
 /* ---- the open-source types ---- */
-static void sfx_oss(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
-    switch (p->sfx_type) {
+static void sfx_oss(sfx_t *f, const fxs_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
+    switch (p->type) {
     case SFX_RINGS: {   /* brightness on TONE, damping on DECAY */
         mi_rings_in_t q = {p->model, p->note, p->strum, p->structure, p->tone, p->decay, p->position};
         mi_rings_process(f->mi, &q, inL, inR, wl, wr, n);
@@ -287,8 +354,8 @@ static void sfx_oss(sfx_t *f, const fx_params_t *p, const float *inL, const floa
 }
 
 /* the synth effect's wet signal for n samples */
-static void sfx_process(sfx_t *f, const fx_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
-    switch (p->sfx_type) {
+static void sfx_process(sfx_t *f, const fxs_params_t *p, const float *inL, const float *inR, float *wl, float *wr, int n) {
+    switch (p->type) {
     case SFX_DELAY: case SFX_BBD: case SFX_TAPE: case SFX_ECHO: sfx_delays(f, p, inL, inR, wl, wr, n); break;
     case SFX_PHASER6: case SFX_PHASER12: case SFX_TPHASER: sfx_phaser(f, p, inL, inR, wl, wr, n); break;
     case SFX_CRUSH: sfx_crush(f, p, inL, inR, wl, wr, n); break;
@@ -296,19 +363,21 @@ static void sfx_process(sfx_t *f, const fx_params_t *p, const float *inL, const 
     case SFX_RINGS: case SFX_CLOUDS: case SFX_AWTAPE: case SFX_DENSITY: case SFX_CONSOLE:
         sfx_oss(f, p, inL, inR, wl, wr, n);
         break;
+    case SFX_SDELAY: case SFX_PINGPONG: sfx_sdelay(f, p, inL, inR, wl, wr, n); break;
     default: sfx_mod_lines(f, p, inL, inR, wl, wr, n); break;
     }
 }
 
-/* a fresh start (switched on, or another type): silence, and the times start where they are set */
-static void sfx_reset(sfx_t *f, const fx_params_t *p) {
-    memset(f, 0, sizeof *f);
+/* a fresh start (switched on, or another type) in zeroed memory (fx.h clears it): silence, and the times start where
+ * they are set */
+static void sfx_init(sfx_t *f, const fxs_params_t *p) {
     f->rng = 0x1234567u;
-    f->dl = p->sfx_type <= SFX_ECHO || p->sfx_type == SFX_TPHASER ? sfx_clamp_dist(p->dtime_ms * 0.001f * FX_SR)
+    f->dl = p->type <= SFX_ECHO || p->type == SFX_TPHASER ? sfx_clamp_dist(p->dtime_ms * 0.001f * FX_SR)
                                                                    : p->time_ms * 0.001f * FX_SR;
-    f->dr = (p->sfx_type == SFX_SFLANGER || p->sfx_type == SFX_SCHORUS ? p->time_r_ms : p->time_ms) * 0.001f * FX_SR;
+    f->dr = (p->type == SFX_SFLANGER || p->type == SFX_SCHORUS ? p->time_r_ms : p->time_ms) * 0.001f * FX_SR;
+    if (p->type == SFX_SDELAY || p->type == SFX_PINGPONG) { f->dl = sfx_sd_target_l(p); f->dr = sfx_sd_target_r(p); }
     f->al = f->ar = sfx_ap_coef(p, 0.0f);
-    switch (p->sfx_type) {   /* the open-source types, built over the delay lines (zeroed above) */
+    switch (p->type) {   /* the open-source types, built over the delay lines (zeroed above) */
     case SFX_RINGS: mi_rings_init(f->mi); break;
     case SFX_CLOUDS: mi_clouds_init(f->mi); break;
     case SFX_AWTAPE: aw_totape6_init(&f->tape); break;

@@ -15,18 +15,23 @@ enum { SFX_DELAY, SFX_BBD, SFX_TAPE, SFX_ECHO, SFX_FLANGER, SFX_SFLANGER, SFX_CH
        SFX_SCHORUS, SFX_PHASER6, SFX_PHASER12, SFX_TPHASER, SFX_CRUSH, SFX_RESON,
        /* the open-source ones: Mutable Instruments Rings and Clouds (mi_effects.h), Airwindows ToTape6, Density and
         * Console7 (airwindows.h) */
-       SFX_RINGS, SFX_CLOUDS, SFX_AWTAPE, SFX_DENSITY, SFX_CONSOLE, SFX_NTYPES };
+       SFX_RINGS, SFX_CLOUDS, SFX_AWTAPE, SFX_DENSITY, SFX_CONSOLE,
+       /* the manual's two-tap delays (once the master delay alone; now any slot's) */
+       SFX_SDELAY, SFX_PINGPONG, SFX_NTYPES };
+#define SFX_IS_PHASER(t) ((t) == SFX_PHASER6 || (t) == SFX_PHASER12 || (t) == SFX_TPHASER)
 
 /* what CTRL 1 and CTRL 2 can move: "modfx_c1_dst" / "modfx_c2_dst" options (FXD_AUTO: the type's own pick) */
 enum { FXD_AUTO, FXD_MIX, FXD_FB, FXD_FB_R, FXD_TIME, FXD_TIME_R, FXD_DTIME, FXD_DFB, FXD_RATE, FXD_RATE_R, FXD_DEPTH,
        FXD_TONE, FXD_SPREAD, FXD_GAIN, FXD_SWEEP, FXD_NOISE, FXD_VRATE, FXD_VDEPTH, FXD_FLUTTER, FXD_WOW, FXD_BIAS,
        FXD_ROOM, FXD_DECAY, FXD_BITS, FXD_SRATE, FXD_RESO, FXD_CUT1, FXD_CUT2, FXD_CUT3,
-       FXD_PITCH, FXD_STRUCT, FXD_POS, FXD_SIZE, FXD_DENSITY, FXD_TEXTURE, FXD_DRIVE, FXD_BUMP, FXD_LOWCUT, FXD_COUNT };
+       FXD_PITCH, FXD_STRUCT, FXD_POS, FXD_SIZE, FXD_DENSITY, FXD_TEXTURE, FXD_DRIVE, FXD_BUMP, FXD_LOWCUT,
+       FXD_DTIME_R, FXD_DEPTH_R, FXD_OFFSET, FXD_FBL, FXD_FBR, FXD_XOVER, FXD_COUNT };
 static const char *const FXD_NAME[FXD_COUNT] = {
     "Auto", "Mix", "Feedback", "Feedback R", "Time", "Time R", "Delay Time", "Delay FB", "Rate", "Rate R", "Depth",
     "Tone", "Spread", "Gain", "Sweep", "Noise", "Vib Rate", "Vib Depth", "Flutter", "Wow", "Bias", "Room", "Decay",
     "Bits", "Sample Rate", "Resonance", "Cutoff Low", "Cutoff Mid", "Cutoff High",
-    "Pitch", "Structure", "Position", "Size", "Density", "Texture", "Drive", "Head Bump", "Low Cut"};
+    "Pitch", "Structure", "Position", "Size", "Density", "Texture", "Drive", "Head Bump", "Low Cut",
+    "Delay Time R", "Depth R", "Offset", "Feedback Left", "Feedback Right", "Crossover"};
 /* each type's CTRL 1 and CTRL 2 when set to Auto (the manual's pre-assignments, p103-108) */
 static const unsigned char FX_AUTO_CTRL[SFX_NTYPES][2] = {
     [SFX_DELAY] = {FXD_MIX, FXD_DTIME},   [SFX_BBD] = {FXD_MIX, FXD_FB},        [SFX_TAPE] = {FXD_MIX, FXD_FB},
@@ -36,23 +41,38 @@ static const unsigned char FX_AUTO_CTRL[SFX_NTYPES][2] = {
     [SFX_TPHASER] = {FXD_MIX, FXD_FB},    [SFX_CRUSH] = {FXD_MIX, FXD_BITS},    [SFX_RESON] = {FXD_MIX, FXD_RESO},
     /* (not in the manual: the controls each is played by) */
     [SFX_RINGS] = {FXD_STRUCT, FXD_POS},  [SFX_CLOUDS] = {FXD_POS, FXD_DENSITY}, [SFX_AWTAPE] = {FXD_DRIVE, FXD_FLUTTER},
-    [SFX_DENSITY] = {FXD_DRIVE, FXD_MIX}, [SFX_CONSOLE] = {FXD_DRIVE, FXD_MIX}};
+    [SFX_DENSITY] = {FXD_DRIVE, FXD_MIX}, [SFX_CONSOLE] = {FXD_DRIVE, FXD_MIX},
+    [SFX_SDELAY] = {FXD_MIX, FXD_FB},     [SFX_PINGPONG] = {FXD_MIX, FXD_FB}};
 
-enum { REV_PLATE, REV_ROOM, REV_HALL, REV_SPACE };   /* "rev_type" options (SPACE: Airwindows Galactic) */
+/* the master reverbs (original designs; SPACE is Airwindows Galactic) */
+enum { REV_PLATE, REV_ROOM, REV_HALL, REV_SPACE, REV_SHIMMER, REV_BLACKHOLE, REV_NTYPES };
+/* MASTER EFFECT 1 / 2 types ("dly_type" / "rev_type" options): the reverbs first (so "rev_type" kept its first four
+ * values), then every type of the manual's list the synth effect has (the open-source ones stay synth-only) */
+enum { MFX_PLATE, MFX_ROOM, MFX_HALL, MFX_SPACE, MFX_SHIMMER, MFX_BLACKHOLE, MFX_SDELAY, MFX_PINGPONG, MFX_DELAY,
+       MFX_BBD, MFX_TAPE, MFX_ECHO, MFX_FLANGER, MFX_SFLANGER, MFX_CHORUS, MFX_DCHORUS, MFX_ENSEMBLE, MFX_SCHORUS,
+       MFX_PHASER6, MFX_PHASER12, MFX_TPHASER, MFX_CRUSH, MFX_RESON, MFX_NTYPES };
+/* a master type's synth effect type (-1: a reverb, REV_* = MFX_*) */
+static const signed char MFX_SFX[MFX_NTYPES] = {
+    -1, -1, -1, -1, -1, -1, SFX_SDELAY, SFX_PINGPONG, SFX_DELAY, SFX_BBD, SFX_TAPE, SFX_ECHO, SFX_FLANGER,
+    SFX_SFLANGER, SFX_CHORUS, SFX_DCHORUS, SFX_ENSEMBLE, SFX_SCHORUS, SFX_PHASER6, SFX_PHASER12, SFX_TPHASER,
+    SFX_CRUSH, SFX_RESON};
+enum { HOLD_OFF, HOLD_FREEZE, HOLD_INFINITE, HOLD_PITCH };   /* "rev_freeze" / "dly_freeze" options */
+enum { MB_DUAL, MB_STEREO };              /* "mfx_buss" options: two effects, or one with a stereo input */
 enum { RES_LP, RES_BP, RES_HP };          /* "modfx_ftype" options */
 
-typedef struct {   /* what the effects read; worked out by the engine (fx_params() in engine.c) from the knobs */
-    /* the synth effect: one type at a time, mono or stereo in, stereo out */
-    int sfx_on, sfx_type;
+typedef struct {   /* one effect slot's settings: the synth effect's, or a master effect's */
+    int type;                             /* SFX_* (the synth effect, a master slot's non-reverb type) or REV_* */
+    int mtype;                            /* a master slot: its MFX_* type (the synth effect: unused) */
     float mix, gain;                      /* 0..1 dry/wet; wet gain 0..2 (1 = unity) */
     float fb, fb_r, dfb;                  /* feedback -0.95..0.95; dfb: the Time Phaser's delay feedback 0..0.95 */
+    float fbl, fbr;                       /* the stereo delay's FEEDBACK LEFT / RIGHT: shares of FEEDBACK, 0..1 */
     float time_ms, time_r_ms;             /* chorus/flanger delay times (left, right) */
-    float dtime_ms;                       /* delay-type time (free or synced) */
+    float dtime_ms, dtime_r_ms;           /* delay-type times (free or synced; right: the two-tap delays) */
     float rate_hz, rate_r_hz;             /* LFO rates (left, right) */
-    float depth, tone, spread, sweep, noise;   /* 0..1 */
+    float depth, depth_r, tone, spread, sweep, noise, offset;   /* 0..1 (depth_r: the stereo delay's right side) */
     float vib_hz, vib_depth;              /* the choruses' vibrato */
     float flutter, wow, bias, room, decay;     /* 0..1: tape and echo */
-    float bits, srate_hz;                 /* bit crusher */
+    float bits, srate_hz, xover_hz;       /* bit crusher; xover: its crossover (0: one band) */
     float reso, cut_hz[3], lvl[3];        /* resonator: 0..1, Hz, 0..1 */
     int ftype;
     /* the open-source types: Rings (resonator), Clouds (granular), Airwindows tape, Density and Console */
@@ -62,15 +82,26 @@ typedef struct {   /* what the effects read; worked out by the engine (fx_params
     int model, follow, gmode, quality, freeze;   /* Rings model, key follow; Clouds mode, quality, freeze */
     float note;                           /* Rings: the note it rings at (follow: the newest voice's, plus pitch_st) */
     int strum;                            /* Rings: a new note started since the last block */
-    /* the master effects: delay (send 1) and reverb (send 2), their returns added to the dry signal */
-    int mfx_on;
-    float send1, send2, series, width;    /* 0..1, 0..1, 0..1 (delay into reverb), 0..2 */
-    float dly_l_ms, dly_r_ms, dly_fb, dly_tone, dly_offset;   /* fb 0..0.95; tone, offset 0..1 */
-    int dly_pp;
-    int rev_type, rev_freeze;
+    /* the reverbs (master effects) */
+    int hold;                             /* HOLD_*: freeze (input shut, no decay), infinite (no decay), pitch freeze */
     float rev_rt60, rev_size;             /* decay time (s) and size (0.5..2) */
     float rev_damp, rev_lowdamp, rev_pre_ms, rev_diff, rev_tone, rev_mod, rev_early;   /* 0..1 except pre and mod (0..2) */
     float rev_decay_k, rev_size_k;        /* the decay and size knobs, 0..1 (SPACE uses them as they are) */
+    float distance;                       /* plate: the early reflections' spread, 0..1 (0: none) */
+    float hifreq_hz;                      /* room HIGH FREQ: the high band's crossover (hall and shimmer too) */
+    float lvl_lo, lvl_mid, lvl_hi;        /* band levels as gains, 0..2 (1: as it is) */
+    float dec_lo, dec_hi;                 /* hall and shimmer LOW / HIGH DECAY: the bands' decay times x0.1..5 */
+    float pitch_a, pitch_b, pdecay;       /* shimmer: A and B pitch (cents), how much of the pitched sound goes round */
+    float gravity;                        /* blackhole: -1 (blooms, swells in) .. +1 (pulled down, shorter) */
+} fxs_params_t;
+
+typedef struct {   /* what the effects read; worked out by the engine (fx_params() in engine.c) from the knobs */
+    int sfx_on;
+    fxs_params_t sfx;                     /* the synth effect: one type at a time, mono or stereo in, stereo out */
+    /* the master effects: two slots on two sends, their returns added to the dry signal */
+    int mfx_on, buss;                     /* buss: MB_DUAL (slot 1 on SEND 1, slot 2 on SEND 2) or MB_STEREO */
+    float send1, send2, series, width;    /* 0..1, 0..1, 0..1 (effect 1 into 2), 0..2 */
+    fxs_params_t mfx[2];
     float wet_pan;                        /* the synth pan, -1..1: where the synth effect's wet signal sits */
     int ramp;                             /* samples to the settings' next change (0: the block): the gains' ramp length */
 } fx_params_t;
@@ -101,6 +132,12 @@ static inline float fx_cut_hz(float k) { return fx_logk(10.0f, 22000.0f, k); }  
 static inline float fx_gain_x(float k) { return fx_clamp(k, 0, 100) * 0.02f; }      /* 0 .. 2x, 50% = unity */
 static inline float fx_rev_rt60(float k) { return fx_logk(0.25f, 10.0f, k); }       /* 0.25 .. 10 s at size 100% */
 static inline float fx_rev_size(float k) { return fx_logk(0.5f, 2.0f, k); }         /* 50% .. 200%, 100% centred */
+static inline float fx_hall_rt60(float k) { return fx_logk(0.1f, 20.0f, k); }      /* hall, shimmer: 0.1 .. 20 s at 100% */
+/* the blackhole's FEEDBACK (0..100) as a decay time: 1 s .. 100 s at size 100% */
+static inline float fx_bh_rt60(float k) { return fx_logk(1.0f, 100.0f, k); }
+static inline float fx_xover_hz(float k) { return k <= 0.0f ? 0.0f : fx_logk(50.0f, 5000.0f, k); }   /* 0: off */
+static inline float fx_hifreq_hz(float k) { return fx_logk(1000.0f, 5000.0f, k); }  /* room HIGH FREQ 1 .. 5 kHz */
+static inline float fx_level(float v) { return fx_clamp(1.0f + v * 0.01f, 0.0f, 2.0f); }   /* -100..100: x0 .. x2 */
 
 /* a chorus/flanger time knob's range per type (manual p105-107), in ms; right: the right-channel knob */
 static inline float fx_mod_time_ms(int type, float k) {

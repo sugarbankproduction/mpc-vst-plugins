@@ -35,8 +35,9 @@
  * Each voice is placed in stereo (equal power) at the pan, spread around it note by note (or across a unison stack).
  * After the voices, in stereo (src/fx.h): a synth effect of a chosen type (delays, chorus, flanger, phaser, bit
  * crusher, resonator...; and open-source ones: Mutable Instruments Rings and Clouds, Airwindows tape, Density and
- * console) with CTRL 1/2, taking the panned voices, then the master effects on two sends: a stereo or ping-pong delay
- * and a plate, room, hall or space (Airwindows Galactic) reverb.
+ * console) with CTRL 1/2, taking the panned voices, then the master effects: two slots on two sends (or one, stereo),
+ * each any type of the master list: the delays, choruses, flangers, phasers, bit crusher and resonator, or a plate,
+ * room, hall, space (Airwindows Galactic), shimmer or blackhole-style reverb (by default a stereo delay and a plate).
  * Before the voices, a performance section (all off by default: then keys reach the voices exactly as before): an
  * arpeggiator after the Moog One's (Up, Down, Order, Random; 1-4 octaves up/down; octave order; pendulum; synced
  * divisions 1/1-1/128 straight, dotted or triplet, or a free rate; gate, swing, latch, note reset), chord memory (a
@@ -186,6 +187,21 @@ enum {
      * Airwindows ones */
     P_MODFX_PITCH, P_MODFX_FOLLOW, P_MODFX_STRUCT, P_MODFX_POS, P_MODFX_MODEL, P_MODFX_SIZE, P_MODFX_DENSITY,
     P_MODFX_TEXTURE, P_MODFX_FREEZE, P_MODFX_GMODE, P_MODFX_QUALITY, P_MODFX_DRIVE, P_MODFX_BUMP, P_MODFX_LOWCUT,
+    /* the master effect slots (src/fx.h): the synth effect's two-tap delays and crossover, the buss mode, then
+     * each slot's controls beyond what it held before (slot 1: dly_*, slot 2: rev_*; BANK below) */
+    P_MODFX_DTIME_R, P_MODFX_DEPTH_R, P_MODFX_OFFSET, P_MODFX_FBL, P_MODFX_FBR, P_MODFX_XOVER, P_MFX_BUSS, P_DLY_TYPE,
+    P_DLY_MIX, P_DLY_GAIN, P_DLY_FB_R, P_DLY_FBL, P_DLY_FBR, P_DLY_RATE, P_DLY_RATE_R, P_DLY_DEPTH,
+    P_DLY_DEPTH_R, P_DLY_SPREAD, P_DLY_NOISE, P_DLY_SWEEP, P_DLY_DFB, P_DLY_VRATE, P_DLY_VDEPTH, P_DLY_FLUTTER,
+    P_DLY_WOW, P_DLY_BIAS, P_DLY_ROOM, P_DLY_DECAY, P_DLY_SIZE, P_DLY_PRE, P_DLY_DAMP, P_DLY_LOWDAMP,
+    P_DLY_DIFF, P_DLY_MOD, P_DLY_EARLY, P_DLY_FREEZE, P_DLY_DISTANCE, P_DLY_HIFREQ, P_DLY_HLEVEL, P_DLY_MLEVEL,
+    P_DLY_LLEVEL, P_DLY_LDECAY, P_DLY_HDECAY, P_DLY_PITCH, P_DLY_PITCH_B, P_DLY_PDECAY, P_DLY_GRAVITY, P_DLY_XOVER,
+    P_DLY_BITS, P_DLY_SRATE, P_DLY_RESO, P_DLY_CUT1, P_DLY_CUT2, P_DLY_CUT3, P_DLY_LVL1, P_DLY_LVL2,
+    P_DLY_LVL3, P_DLY_FTYPE, P_REV_MIX, P_REV_GAIN, P_REV_SYNC, P_REV_TIME, P_REV_TIME_R, P_REV_FB,
+    P_REV_FB_R, P_REV_FBL, P_REV_FBR, P_REV_RATE, P_REV_RATE_R, P_REV_DEPTH, P_REV_DEPTH_R, P_REV_OFFSET,
+    P_REV_SPREAD, P_REV_NOISE, P_REV_SWEEP, P_REV_DFB, P_REV_VRATE, P_REV_VDEPTH, P_REV_FLUTTER, P_REV_WOW,
+    P_REV_BIAS, P_REV_ROOM, P_REV_DISTANCE, P_REV_HIFREQ, P_REV_HLEVEL, P_REV_MLEVEL, P_REV_LLEVEL, P_REV_LDECAY,
+    P_REV_HDECAY, P_REV_PITCH, P_REV_PITCH_B, P_REV_PDECAY, P_REV_GRAVITY, P_REV_XOVER, P_REV_BITS, P_REV_SRATE,
+    P_REV_RESO, P_REV_CUT1, P_REV_CUT2, P_REV_CUT3, P_REV_LVL1, P_REV_LVL2, P_REV_LVL3, P_REV_FTYPE,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -237,7 +253,8 @@ static const char *const KEYS[P_COUNT] = {
 #undef SLOT_KEYS
     [P_VOLUME] = "volume",
     "modfx_type", "modfx_rate", "modfx_depth", "modfx_fb", "modfx_mix",
-    "dly_time", "dly_sync", "dly_fb", "dly_tone", "dly_pp", "mfx_send1",
+    "dly_time", "dly_sync", "dly_fb", "dly_tone", "" /* the retired "dly_pp": store() maps it onto dly_type */,
+    "mfx_send1",
     "rev_decay", "rev_damp", "rev_pre", "mfx_send2",
     "glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando",
     "unison", "uni_count", "uni_detune", "pitch_var",
@@ -288,11 +305,25 @@ static const char *const KEYS[P_COUNT] = {
     "mac_lad",
     "modfx_pitch", "modfx_follow", "modfx_struct", "modfx_pos", "modfx_model", "modfx_size", "modfx_density",
     "modfx_texture", "modfx_freeze", "modfx_gmode", "modfx_quality", "modfx_drive", "modfx_bump", "modfx_lowcut",
+    [P_MODFX_DTIME_R] = "modfx_dtime_r",
+    "modfx_depth_r", "modfx_offset", "modfx_fbl", "modfx_fbr", "modfx_xover", "mfx_buss", "dly_type", "dly_mix",
+    "dly_gain", "dly_fb_r", "dly_fbl", "dly_fbr", "dly_rate", "dly_rate_r", "dly_depth", "dly_depth_r",
+    "dly_spread", "dly_noise", "dly_sweep", "dly_dfb", "dly_vrate", "dly_vdepth", "dly_flutter", "dly_wow",
+    "dly_bias", "dly_room", "dly_decay", "dly_size", "dly_pre", "dly_damp", "dly_lowdamp", "dly_diff", "dly_mod",
+    "dly_early", "dly_freeze", "dly_distance", "dly_hifreq", "dly_hlevel", "dly_mlevel", "dly_llevel", "dly_ldecay",
+    "dly_hdecay", "dly_pitch", "dly_pitch_b", "dly_pdecay", "dly_gravity", "dly_xover", "dly_bits", "dly_srate",
+    "dly_reso", "dly_cut1", "dly_cut2", "dly_cut3", "dly_lvl1", "dly_lvl2", "dly_lvl3", "dly_ftype", "rev_mix",
+    "rev_gain", "rev_sync", "rev_time", "rev_time_r", "rev_fb", "rev_fb_r", "rev_fbl", "rev_fbr", "rev_rate",
+    "rev_rate_r", "rev_depth", "rev_depth_r", "rev_offset", "rev_spread", "rev_noise", "rev_sweep", "rev_dfb",
+    "rev_vrate", "rev_vdepth", "rev_flutter", "rev_wow", "rev_bias", "rev_room", "rev_distance", "rev_hifreq",
+    "rev_hlevel", "rev_mlevel", "rev_llevel", "rev_ldecay", "rev_hdecay", "rev_pitch", "rev_pitch_b", "rev_pdecay",
+    "rev_gravity", "rev_xover", "rev_bits", "rev_srate", "rev_reso", "rev_cut1", "rev_cut2", "rev_cut3", "rev_lvl1",
+    "rev_lvl2", "rev_lvl3", "rev_ftype",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
 /* the effect destinations (modmatrix.h's MDF_* order): each one's slot */
-static const short FXMD_SLOT[MDF_COUNT] = {
+static const short FXMD_SLOT[] = {
     P_MODFX_MIX, P_MODFX_GAIN, P_MODFX_CTRL1, P_MODFX_CTRL2, P_MODFX_RATE, P_MODFX_RATE_R, P_MODFX_DEPTH, P_MODFX_FB,
     P_MODFX_FB_R, P_MODFX_TIME, P_MODFX_TIME_R, P_MODFX_DTIME, P_MODFX_DFB, P_MODFX_TONE, P_MODFX_SPREAD, P_MODFX_SWEEP,
     P_MODFX_NOISE, P_MODFX_VRATE, P_MODFX_VDEPTH, P_MODFX_FLUTTER, P_MODFX_WOW, P_MODFX_BIAS, P_MODFX_ROOM,
@@ -302,8 +333,48 @@ static const short FXMD_SLOT[MDF_COUNT] = {
     P_REV_MOD, P_REV_EARLY,
     P_MODFX_PITCH, P_MODFX_STRUCT, P_MODFX_POS, P_MODFX_SIZE, P_MODFX_DENSITY, P_MODFX_TEXTURE, P_MODFX_DRIVE,
     P_MODFX_BUMP, P_MODFX_LOWCUT,
+    P_MODFX_DTIME_R, P_MODFX_DEPTH_R, P_MODFX_OFFSET, P_MODFX_FBL, P_MODFX_FBR, P_MODFX_XOVER, P_DLY_MIX,
+    P_DLY_GAIN, P_DLY_FB_R, P_DLY_FBL, P_DLY_FBR, P_DLY_RATE, P_DLY_RATE_R, P_DLY_DEPTH,
+    P_DLY_DEPTH_R, P_DLY_SPREAD, P_DLY_NOISE, P_DLY_SWEEP, P_DLY_DFB, P_DLY_VRATE, P_DLY_VDEPTH,
+    P_DLY_FLUTTER, P_DLY_WOW, P_DLY_BIAS, P_DLY_ROOM, P_DLY_DECAY, P_DLY_SIZE, P_DLY_PRE,
+    P_DLY_DAMP, P_DLY_LOWDAMP, P_DLY_DIFF, P_DLY_MOD, P_DLY_EARLY, P_DLY_DISTANCE, P_DLY_HIFREQ,
+    P_DLY_HLEVEL, P_DLY_MLEVEL, P_DLY_LLEVEL, P_DLY_LDECAY, P_DLY_HDECAY, P_DLY_PITCH, P_DLY_PITCH_B,
+    P_DLY_PDECAY, P_DLY_GRAVITY, P_DLY_XOVER, P_DLY_BITS, P_DLY_SRATE, P_DLY_RESO, P_DLY_CUT1,
+    P_DLY_CUT2, P_DLY_CUT3, P_DLY_LVL1, P_DLY_LVL2, P_DLY_LVL3, P_REV_MIX, P_REV_GAIN,
+    P_REV_TIME, P_REV_TIME_R, P_REV_FB, P_REV_FB_R, P_REV_FBL, P_REV_FBR, P_REV_RATE,
+    P_REV_RATE_R, P_REV_DEPTH, P_REV_DEPTH_R, P_REV_OFFSET, P_REV_SPREAD, P_REV_NOISE, P_REV_SWEEP,
+    P_REV_DFB, P_REV_VRATE, P_REV_VDEPTH, P_REV_FLUTTER, P_REV_WOW, P_REV_BIAS, P_REV_ROOM,
+    P_REV_DISTANCE, P_REV_HIFREQ, P_REV_HLEVEL, P_REV_MLEVEL, P_REV_LLEVEL, P_REV_LDECAY, P_REV_HDECAY,
+    P_REV_PITCH, P_REV_PITCH_B, P_REV_PDECAY, P_REV_GRAVITY, P_REV_XOVER, P_REV_BITS, P_REV_SRATE,
+    P_REV_RESO, P_REV_CUT1, P_REV_CUT2, P_REV_CUT3, P_REV_LVL1, P_REV_LVL2, P_REV_LVL3,
 };
-_Static_assert(MDF_COUNT <= 64, "the effect destinations are kept as the bits of a 64-bit word (fx_dst, fx_was)");
+_Static_assert(sizeof FXMD_SLOT / sizeof FXMD_SLOT[0] == MDF_COUNT, "an effect destination per MDF_* entry");
+/* each master effect slot's controls (fx.h; slot 1's were the delay's dly_* params, slot 2's the reverb's rev_*), in
+ * the field order fx_bank_field() reads them */
+enum {
+    BK_TYPE, BK_MIX, BK_GAIN, BK_SYNC, BK_TIME, BK_TIME_R, BK_FB, BK_FB_R, BK_FBL, BK_FBR, BK_RATE, BK_RATE_R,
+    BK_DEPTH, BK_DEPTH_R, BK_TONE, BK_OFFSET, BK_SPREAD, BK_NOISE, BK_SWEEP, BK_DFB, BK_VRATE, BK_VDEPTH, BK_FLUTTER,
+    BK_WOW, BK_BIAS, BK_ROOM, BK_DECAY, BK_SIZE, BK_PRE, BK_DAMP, BK_LOWDAMP, BK_DIFF, BK_MOD, BK_EARLY, BK_FREEZE,
+    BK_DISTANCE, BK_HIFREQ, BK_HLEVEL, BK_MLEVEL, BK_LLEVEL, BK_LDECAY, BK_HDECAY, BK_PITCH, BK_PITCH_B, BK_PDECAY,
+    BK_GRAVITY, BK_XOVER, BK_BITS, BK_SRATE, BK_RESO, BK_CUT1, BK_CUT2, BK_CUT3, BK_LVL1, BK_LVL2, BK_LVL3, BK_FTYPE,
+    BK_COUNT };
+static const short BANK[2][BK_COUNT] = {
+    {P_DLY_TYPE, P_DLY_MIX, P_DLY_GAIN, P_DLY_SYNC, P_DLY_TIME, P_DLY_TIME_R, P_DLY_FB, P_DLY_FB_R, P_DLY_FBL,
+     P_DLY_FBR, P_DLY_RATE, P_DLY_RATE_R, P_DLY_DEPTH, P_DLY_DEPTH_R, P_DLY_TONE, P_DLY_OFFSET, P_DLY_SPREAD,
+     P_DLY_NOISE, P_DLY_SWEEP, P_DLY_DFB, P_DLY_VRATE, P_DLY_VDEPTH, P_DLY_FLUTTER, P_DLY_WOW, P_DLY_BIAS, P_DLY_ROOM,
+     P_DLY_DECAY, P_DLY_SIZE, P_DLY_PRE, P_DLY_DAMP, P_DLY_LOWDAMP, P_DLY_DIFF, P_DLY_MOD, P_DLY_EARLY, P_DLY_FREEZE,
+     P_DLY_DISTANCE, P_DLY_HIFREQ, P_DLY_HLEVEL, P_DLY_MLEVEL, P_DLY_LLEVEL, P_DLY_LDECAY, P_DLY_HDECAY, P_DLY_PITCH,
+     P_DLY_PITCH_B, P_DLY_PDECAY, P_DLY_GRAVITY, P_DLY_XOVER, P_DLY_BITS, P_DLY_SRATE, P_DLY_RESO, P_DLY_CUT1,
+     P_DLY_CUT2, P_DLY_CUT3, P_DLY_LVL1, P_DLY_LVL2, P_DLY_LVL3, P_DLY_FTYPE},
+    {P_REV_TYPE, P_REV_MIX, P_REV_GAIN, P_REV_SYNC, P_REV_TIME, P_REV_TIME_R, P_REV_FB, P_REV_FB_R, P_REV_FBL,
+     P_REV_FBR, P_REV_RATE, P_REV_RATE_R, P_REV_DEPTH, P_REV_DEPTH_R, P_REV_TONE, P_REV_OFFSET, P_REV_SPREAD,
+     P_REV_NOISE, P_REV_SWEEP, P_REV_DFB, P_REV_VRATE, P_REV_VDEPTH, P_REV_FLUTTER, P_REV_WOW, P_REV_BIAS, P_REV_ROOM,
+     P_REV_DECAY, P_REV_SIZE, P_REV_PRE, P_REV_DAMP, P_REV_LOWDAMP, P_REV_DIFF, P_REV_MOD, P_REV_EARLY, P_REV_FREEZE,
+     P_REV_DISTANCE, P_REV_HIFREQ, P_REV_HLEVEL, P_REV_MLEVEL, P_REV_LLEVEL, P_REV_LDECAY, P_REV_HDECAY, P_REV_PITCH,
+     P_REV_PITCH_B, P_REV_PDECAY, P_REV_GRAVITY, P_REV_XOVER, P_REV_BITS, P_REV_SRATE, P_REV_RESO, P_REV_CUT1,
+     P_REV_CUT2, P_REV_CUT3, P_REV_LVL1, P_REV_LVL2, P_REV_LVL3, P_REV_FTYPE},
+};
+
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
 
@@ -401,7 +472,7 @@ typedef struct {
     int voices;              /* the voices in use last applied (a change lets go of voices past it) */
     float glide_frac;        /* one control step as a fraction of the glide time (>= 1: no glide) */
     float glide_exp;         /* EXP glide: the fraction of the remaining distance covered per control step */
-    fx_t fx;                 /* effect buffers (about 3.1 MB) */
+    fx_t fx;                 /* effect buffers (about 4.4 MB) */
     int sustain;             /* the pedal (CC 64) is down */
     lfo_t lfo[NLFO];         /* the free-running LFOs */
     float lfo_val[NLFO];     /* this control step's free-running LFO outputs (polarity and smoothing applied) */
@@ -418,9 +489,10 @@ typedef struct {
     int fx_live;             /* the smoothed effect modulation is not all 0 yet */
     float fxm[MDF_COUNT];    /* the effect destinations' modulation, smoothed (+-1 = +-the control's range) */
     float fx_lo[MDF_COUNT], fx_hi[MDF_COUNT];   /* each effect destination's range (its param's) */
-    signed char fx_of[P_COUNT];   /* each slot's effect destination (MDF_*), or -1 */
-    uint64_t fx_was;         /* bit k: effect destination k was modulated (not 0) at the last control step */
-    uint64_t fx_dst;         /* bit k: a slot in use or the ribbon reaches effect destination k */
+    short fx_of[P_COUNT];    /* each slot's effect destination (MDF_*), or -1 */
+    signed char fx_bank[P_COUNT], fx_bankf[P_COUNT];   /* a master slot's control: its slot (or -1) and BK_* field */
+    uint64_t fx_was[MDF_WORDS];   /* bit k: effect destination k was modulated (not 0) at the last control step */
+    uint64_t fx_dst[MDF_WORDS];   /* bit k: a slot in use or the ribbon reaches effect destination k */
     fx_params_t fxp;         /* the effect settings as fx.h reads them, kept between renders */
     int fx_stale;            /* a setting changed since fxp was worked out */
     float fx_key;            /* the Rings effect's key: the newest sounding voice's, kept while nothing sounds */
@@ -502,6 +574,10 @@ static inline float white(uint32_t *x) {   /* xorshift32: -1..1 */
 static void store(one_t *s, const char *key, const char *text) {
     int k = slot(key);
     float v = (float)atof(text);
+    if (!strcmp(key, "dly_pp") && isfinite(v)) {   /* retired: the ping-pong switch is now master effect 1's type */
+        s->val[P_DLY_TYPE] = v >= 0.5f ? MFX_PINGPONG : MFX_SDELAY;
+        return;
+    }
     if (!strcmp(key, "bend_range") && isfinite(v)) {   /* retired: an older project's one range, both ways */
         s->val[P_BEND_UP] = clampf(v, 0.0f, 24.0f);
         s->val[P_BEND_DOWN] = -s->val[P_BEND_UP];
@@ -611,19 +687,21 @@ static void apply_matrix(one_t *s) {
     s->mod_n = s->fx_n = 0;
     s->mod_env = rd >= MD_FENV_DELAY && rd <= MD_ENV_END;
     s->mod_lfo = rd >= MD_LFO1_RATE && rd <= MD_LFO_END;
-    s->fx_dst = rd >= MD_FX_FIRST && rd <= MD_FX_END ? 1ull << (rd - MD_FX_FIRST) : 0;
+    memset(s->fx_dst, 0, sizeof s->fx_dst);
+    if (rd >= MD_FX_FIRST && rd <= MD_FX_END) s->fx_dst[(rd - MD_FX_FIRST) >> 6] |= 1ull << ((rd - MD_FX_FIRST) & 63);
     for (int k = 0; k < n; k++) {
         int d = (int)s->val[P_MOD_BASE + MOD_SLOT_PARAMS * all[k] + 1];
         if (d >= MD_FX_FIRST && d <= MD_FX_END) {   /* (the MACRO destinations, past the effects, are the voices') */
             s->fx_list[s->fx_n++] = all[k];
-            s->fx_dst |= 1ull << (d - MD_FX_FIRST);
+            s->fx_dst[(d - MD_FX_FIRST) >> 6] |= 1ull << ((d - MD_FX_FIRST) & 63);
             continue;
         }
         s->mod_list[s->mod_n++] = all[k];
         s->mod_env |= d >= MD_FENV_DELAY && d <= MD_ENV_END;
         s->mod_lfo |= d >= MD_LFO1_RATE && d <= MD_LFO_END;
     }
-    s->fx_mod = s->fx_dst != 0;
+    s->fx_mod = 0;
+    for (int w = 0; w < MDF_WORDS; w++) s->fx_mod |= s->fx_dst[w] != 0;
 }
 
 /* ANALOG CHARACTER: each voice card's parts times the knobs, in the units the voice reads them in */
@@ -940,9 +1018,11 @@ static void *create(const char *data_dir) {
     s->drift_coef = 1.0f - expf(-(float)CR / (DRIFT_TAU_S * SR));
     s->fx_coef = 1.0f - expf(-(float)CR / (FX_MOD_MS * 0.001f * SR));
     s->rib_coef = 1.0f - expf(-3.0f * CR / (RIBBON_RETURN_MS * 0.001f * SR));   /* 95% back in that time */
-    memset(s->fx_of, -1, sizeof s->fx_of);
+    for (int k = 0; k < P_COUNT; k++) s->fx_of[k] = s->fx_bank[k] = -1;
+    for (int b = 0; b < 2; b++)
+        for (int f = 0; f < BK_COUNT; f++) { s->fx_bank[BANK[b][f]] = (signed char)b; s->fx_bankf[BANK[b][f]] = (signed char)f; }
     for (int k = 0; k < MDF_COUNT; k++) {
-        s->fx_of[FXMD_SLOT[k]] = (signed char)k;
+        s->fx_of[FXMD_SLOT[k]] = (short)k;
         for (int i = 0; i < NPARAMS; i++)
             if (!strcmp(PARAMS[i].key, KEYS[FXMD_SLOT[k]])) { s->fx_lo[k] = PARAMS[i].min; s->fx_hi[k] = PARAMS[i].max; }
     }
@@ -1665,21 +1745,45 @@ static void set_state(one_t *s, const char *str) {
     if (strlen(str) >= sizeof s->state_buf) return;   /* never restore half a state */
     strcpy(buf, str);
     load_defaults(s);   /* a state saved before a param existed leaves that param at its default */
-    char *save = NULL;
+    char *save = NULL, key[64] = "";
     for (char *kv = strtok_r(buf, ";", &save); kv; kv = strtok_r(NULL, ";", &save)) {
         char *eq = strchr(kv, '=');
         if (!eq) continue;
         *eq = 0;
-        store(s, kv, eq + 1);
+        if (kv[0] == '~') {   /* "v=2": the previous key's prefix (up to its first '_') and this suffix */
+            char *u = strchr(key, '_');
+            if (!u || (size_t)(u + 1 - key) + strlen(kv + 1) >= sizeof key) continue;
+            strcpy(u + 1, kv + 1);
+        } else if (strlen(kv) < sizeof key) {
+            strcpy(key, kv);
+        } else {
+            continue;
+        }
+        store(s, key, eq + 1);
     }
 }
 
 /* only the values that differ from their defaults (set_state starts from the defaults), so a state of hundreds of
- * params fits the wrapper's 8 KB chunk; "v=1" first keeps it non-empty (an empty state would be no chunk at all) */
+ * params fits the wrapper's 8 KB chunk; "v=1" first keeps it non-empty (an empty state would be no chunk at all).
+ * When that would not fit (hundreds of params off their defaults at once), "v=2" writes a key that shares the previous
+ * one's prefix (up to its first '_') as "~" and the rest: about a fifth smaller */
 static int get_state(const one_t *s, char *buf, int n) {
     int used = snprintf(buf, n, "v=1");
     for (int i = 0; i < P_COUNT && used < n; i++)
         if (KEYS[i][0] && s->val[i] != s->def[i]) used += snprintf(buf + used, n - used, ";%s=%g", KEYS[i], s->val[i]);
+    if (used < n) return used;
+    used = snprintf(buf, n, "v=2");
+    const char *prev = NULL;
+    for (int i = 0; i < P_COUNT && used < n; i++) {
+        if (!KEYS[i][0] || s->val[i] == s->def[i]) continue;
+        const char *u = strchr(KEYS[i], '_');
+        size_t pl = u ? (size_t)(u + 1 - KEYS[i]) : 0;
+        if (pl && prev && !strncmp(prev, KEYS[i], pl) && strchr(prev, '_') == prev + pl - 1)
+            used += snprintf(buf + used, n - used, ";~%s=%g", KEYS[i] + pl, s->val[i]);
+        else
+            used += snprintf(buf + used, n - used, ";%s=%g", KEYS[i], s->val[i]);
+        prev = KEYS[i];
+    }
     return used < n ? used : 0;
 }
 
@@ -1747,6 +1851,39 @@ static int time_text(char *buf, int n, float ms) {
     return snprintf(buf, n, "%.2f s", ms * 0.001f);
 }
 
+/* a master slot's control (field f of BANK[b], at v) as text, in the terms of the type it runs */
+static int fx_bank_text(const one_t *s, int b, int f, float v, char *buf, int n) {
+    const short *K = BANK[b];
+    int mt = (int)clampf(s->val[K[BK_TYPE]], 0, MFX_NTYPES - 1), st = MFX_SFX[mt], sync = s->val[K[BK_SYNC]] > 0.5f;
+    switch (f) {
+    case BK_GAIN: {
+        float g = fx_gain_x(v);
+        return g > 0.0f ? snprintf(buf, n, "%+.1f dB", 20.0f * log10f(g)) : snprintf(buf, n, "-inf dB");
+    }
+    case BK_TIME: case BK_TIME_R:   /* the delay types' time, or the chorus or flanger time */
+        if (st < 0 || st <= SFX_ECHO || st == SFX_TPHASER || st == SFX_SDELAY || st == SFX_PINGPONG) {
+            if (sync) return snprintf(buf, n, "%s", FX_DIV[fx_div(v)].name);
+            return time_text(buf, n, fx_delay_ms(v));
+        }
+        return time_text(buf, n, fx_mod_time_ms(st, v));
+    case BK_RATE: case BK_RATE_R: case BK_VRATE:
+        if (sync) return snprintf(buf, n, "%s", fx_div_rate_name(v));
+        return hz_text(buf, n, f == BK_VRATE ? fx_vib_hz(v) : fx_rate_hz(v));
+    case BK_DECAY: {   /* the decay time at this size */
+        float sz = fx_rev_size(s->val[K[BK_SIZE]]);
+        if (mt == MFX_PLATE || mt == MFX_ROOM) return snprintf(buf, n, "%.2f s", fx_rev_rt60(v) * sz);
+        if (mt == MFX_HALL || mt == MFX_SHIMMER) return snprintf(buf, n, "%.2f s", fx_hall_rt60(v) * sz);
+        return snprintf(buf, n, "%.0f%%", v);
+    }
+    case BK_SIZE: return snprintf(buf, n, "%.0f%%", fx_rev_size(v) * 100.0f);
+    case BK_HIFREQ: return hz_text(buf, n, fx_hifreq_hz(v));
+    case BK_XOVER: return v > 0.0f ? hz_text(buf, n, fx_xover_hz(v)) : snprintf(buf, n, "Off");
+    case BK_SRATE: return hz_text(buf, n, fx_srate_hz(v));
+    case BK_CUT1: case BK_CUT2: case BK_CUT3: return hz_text(buf, n, fx_cut_hz(v));
+    default: return 0;
+    }
+}
+
 /* "<key>_display": the text MPC shows for a knob whose 0..100 position is a log scale or a tempo division */
 static int display_text(const one_t *s, int k, char *buf, int n) {
     if (k == P_FLT_CUT || k == P_SVF_CUT) {
@@ -1778,10 +1915,12 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
         return hz_text(buf, n, k == P_MODFX_VRATE ? fx_vib_hz(s->val[k]) : fx_rate_hz(s->val[k]));
     }
     if (k == P_MODFX_TIME || k == P_MODFX_TIME_R) return time_text(buf, n, fx_mod_time_ms((int)s->val[P_MODFX_TYPE], s->val[k]));
-    if (k == P_MODFX_DTIME || k == P_DLY_TIME || k == P_DLY_TIME_R) {
-        if (s->val[k == P_MODFX_DTIME ? P_MODFX_SYNC : P_DLY_SYNC] > 0.5f) return snprintf(buf, n, "%s", FX_DIV[fx_div(s->val[k])].name);
+    if (k == P_MODFX_DTIME || k == P_MODFX_DTIME_R) {
+        if (s->val[P_MODFX_SYNC] > 0.5f) return snprintf(buf, n, "%s", FX_DIV[fx_div(s->val[k])].name);
         return time_text(buf, n, fx_delay_ms(s->val[k]));
     }
+    if (k == P_MODFX_XOVER) return s->val[k] > 0.0f ? hz_text(buf, n, fx_xover_hz(s->val[k])) : snprintf(buf, n, "Off");
+    if (s->fx_bank[k] >= 0) return fx_bank_text(s, s->fx_bank[k], s->fx_bankf[k], s->val[k], buf, n);
     if (k == P_MODFX_GAIN) {
         float g = fx_gain_x(s->val[k]);
         return g > 0.0f ? snprintf(buf, n, "%+.1f dB", 20.0f * log10f(g)) : snprintf(buf, n, "-inf dB");
@@ -1790,9 +1929,6 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
     if (k >= P_MODFX_CUT1 && k <= P_MODFX_CUT3) return hz_text(buf, n, fx_cut_hz(s->val[k]));
     if (k == P_MODFX_CTRL1 || k == P_MODFX_CTRL2)   /* the parameter it moves, and by how much */
         return snprintf(buf, n, "%s %+.0f%%", FXD_NAME[fx_ctrl_dst(s, k - P_MODFX_CTRL1)], s->val[k]);
-    if (k == P_REV_DECAY)   /* the decay time at this size */
-        return snprintf(buf, n, "%.2f s", fx_rev_rt60(s->val[k]) * fx_rev_size(s->val[P_REV_SIZE]));
-    if (k == P_REV_SIZE) return snprintf(buf, n, "%.0f%%", fx_rev_size(s->val[k]) * 100.0f);
     if (k == P_MODFX_DRIVE) {   /* in each Airwindows type's own terms */
         float d = s->val[k] * 0.01f;
         switch ((int)s->val[P_MODFX_TYPE]) {
@@ -2283,7 +2419,12 @@ static const struct { short slot; float lo, hi; } FXD_SLOT[FXD_COUNT] = {
     [FXD_SIZE] = {P_MODFX_SIZE, 0, 100}, [FXD_DENSITY] = {P_MODFX_DENSITY, 0, 100},
     [FXD_TEXTURE] = {P_MODFX_TEXTURE, 0, 100}, [FXD_DRIVE] = {P_MODFX_DRIVE, 0, 100}, [FXD_BUMP] = {P_MODFX_BUMP, 0, 100},
     [FXD_LOWCUT] = {P_MODFX_LOWCUT, 0, 100},
+    [FXD_DTIME_R] = {P_MODFX_DTIME_R, 0, 100}, [FXD_DEPTH_R] = {P_MODFX_DEPTH_R, 0, 100},
+    [FXD_OFFSET] = {P_MODFX_OFFSET, 0, 100}, [FXD_FBL] = {P_MODFX_FBL, 0, 100}, [FXD_FBR] = {P_MODFX_FBR, 0, 100},
+    [FXD_XOVER] = {P_MODFX_XOVER, 0, 100},
 };
+
+static inline int fx_bit(const uint64_t *w, int k) { return (int)(w[k >> 6] >> (k & 63)) & 1; }
 
 /* THE EFFECT PASS, once per control step while a matrix slot or the ribbon reaches an effect (else skipped, once its
  * modulation has settled at 0). The effects run once for all voices, so these slots are evaluated a second time
@@ -2291,9 +2432,9 @@ static const struct { short slot; float lo, hi; } FXD_SLOT[FXD_COUNT] = {
  * constant; the per-voice sources (envelopes, velocity, keyboard, random, noise EG, gate) are the most recently
  * started sounding voice's, or 0 when nothing sounds. Each destination's sum is smoothed (a one-pole, FX_MOD_MS), so
  * a stepped source (S&H, a gate, the CC-driven ones) never zippers; the effects' gains then ramp across each step.
- * Returns the effect destinations whose settings need working out again (bit k: MDF_* k; fx_params_mod): those
- * modulated now or at the last step, and CTRL 1/2's targets when they are. */
-static uint64_t fx_mod_step(one_t *s) {
+ * Sets `dirty` to the effect destinations whose settings need working out again (bit k: MDF_* k; fx_params_mod): those
+ * modulated now or at the last step, and CTRL 1/2's targets when they are; returns whether there are any. */
+static int fx_mod_step(one_t *s, uint64_t *dirty) {
     if (!s->fx_mod && !s->fx_live) return 0;
     float dm[MD_COUNT];
     const float *fx = dm + MD_FX_FIRST;
@@ -2322,22 +2463,27 @@ static uint64_t fx_mod_step(one_t *s) {
         int rd = (int)s->val[P_RIBBON_DST];
         if (rd >= MD_FX_FIRST && rd <= MD_FX_END) dm[rd] += src[MS_RIBBON] * s->val[P_RIBBON_AMT] * 0.01f;
     }
-    uint64_t now = 0;
-    for (uint64_t m = s->fx_dst | s->fx_was; m; m &= m - 1) {   /* the destinations reached now or still settling */
-        int k = __builtin_ctzll(m);
-        float d = fx[k] - s->fxm[k];
-        s->fxm[k] = fabsf(d) < 1e-6f ? fx[k] : s->fxm[k] + d * s->fx_coef;
-        now |= (uint64_t)(s->fxm[k] != 0.0f) << k;
-    }
-    uint64_t dirty = now | s->fx_was;
-    s->fx_was = now;
-    s->fx_live = now != 0;
-    for (int c = 0; c < 2; c++)   /* a modulated CTRL moves its target */
-        if (dirty >> (MDF_CTRL1 + c) & 1) {
-            int k = FXD_SLOT[fx_ctrl_dst(s, c)].slot;
-            if (k >= 0) dirty |= 1ull << s->fx_of[k];
+    int live = 0, any = 0;
+    for (int w = 0; w < MDF_WORDS; w++) {
+        uint64_t now = 0;
+        for (uint64_t m = s->fx_dst[w] | s->fx_was[w]; m; m &= m - 1) {   /* reached now or still settling */
+            int b = __builtin_ctzll(m), k = 64 * w + b;
+            float d = fx[k] - s->fxm[k];
+            s->fxm[k] = fabsf(d) < 1e-6f ? fx[k] : s->fxm[k] + d * s->fx_coef;
+            now |= (uint64_t)(s->fxm[k] != 0.0f) << b;
         }
-    return dirty;
+        dirty[w] = now | s->fx_was[w];
+        s->fx_was[w] = now;
+        live |= now != 0;
+    }
+    s->fx_live = live;
+    for (int c = 0; c < 2; c++)   /* a modulated CTRL moves its target */
+        if (fx_bit(dirty, MDF_CTRL1 + c)) {
+            int k = FXD_SLOT[fx_ctrl_dst(s, c)].slot;
+            if (k >= 0) dirty[s->fx_of[k] >> 6] |= 1ull << (s->fx_of[k] & 63);
+        }
+    for (int w = 0; w < MDF_WORDS; w++) any |= dirty[w] != 0;
+    return any;
 }
 
 /* an effect control's value as the effects use it: the knob, moved by the matrix's effect modulation by up to +-100%
@@ -2361,69 +2507,142 @@ static void fx_ctrl_slots(const one_t *s, int *ctrl) {
     for (int c = 0; c < 2; c++) ctrl[c] = FXD_SLOT[fx_ctrl_dst(s, c)].slot;
 }
 
+/* a master slot's type (MFX_*) and whether its time and rate knobs are synced */
+static int fx_bank_type(const one_t *s, int b) { return (int)clampf(s->val[BANK[b][BK_TYPE]], 0, MFX_NTYPES - 1); }
+
+/* a master slot's decay time: its DECAY knob as the type reads it (plate and room 0.25-10 s, hall and shimmer
+ * 0.1-20 s; the blackhole's from FEEDBACK, 1-100 s), times SIZE (a bigger space rings longer) */
+static void fx_bank_rt(const one_t *s, int b, const int *ctrl, fxs_params_t *q) {
+    const short *K = BANK[b];
+    int mt = fx_bank_type(s, b);
+    float dk = fx_eff(s, K[BK_DECAY], ctrl), sk = fx_eff(s, K[BK_SIZE], ctrl);
+    q->rev_size = fx_rev_size(sk);
+    q->rev_decay_k = dk * 0.01f;
+    q->rev_size_k = sk * 0.01f;
+    q->decay = dk * 0.01f;   /* (the echo's DECAY) */
+    float rt = mt == MFX_HALL || mt == MFX_SHIMMER ? fx_hall_rt60(dk)
+             : mt == MFX_BLACKHOLE ? fx_bh_rt60(clampf(fx_eff(s, K[BK_FB], ctrl), 0.0f, 100.0f)) : fx_rev_rt60(dk);
+    q->rev_rt60 = rt * q->rev_size;
+}
+
+/* the setting a master slot's control gives (field f of BANK[b], value v), in the units fx.h reads */
+static void fx_bank_field(const one_t *s, int b, int f, float v, const int *ctrl, fxs_params_t *q) {
+    const int st = MFX_SFX[fx_bank_type(s, b)], sync = s->val[BANK[b][BK_SYNC]] > 0.5f;
+    switch (f) {
+    case BK_MIX: q->mix = v * 0.01f; break;
+    case BK_GAIN: q->gain = fx_gain_x(v); break;
+    case BK_TIME:   /* one knob for the delay types' times and the choruses' and flangers' */
+        q->dtime_ms = sync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v);
+        q->time_ms = fx_mod_time_ms(st, v);
+        break;
+    case BK_TIME_R:
+        q->dtime_r_ms = sync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v);
+        q->time_r_ms = fx_mod_time_ms(st, v);
+        break;
+    case BK_FB: q->fb = v * 0.0095f; fx_bank_rt(s, b, ctrl, q); break;   /* (the blackhole's decay) */
+    case BK_FB_R: q->fb_r = v * 0.0095f; break;
+    case BK_FBL: q->fbl = v * 0.01f; break;
+    case BK_FBR: q->fbr = v * 0.01f; break;
+    case BK_RATE: q->rate_hz = sync ? fx_div_hz(v, s->bpm) : fx_rate_hz(v); break;
+    case BK_RATE_R: q->rate_r_hz = sync ? fx_div_hz(v, s->bpm) : fx_rate_hz(v); break;
+    case BK_VRATE: q->vib_hz = sync ? fx_div_hz(v, s->bpm) : fx_vib_hz(v); break;
+    case BK_DEPTH: q->depth = v * 0.01f; break;
+    case BK_DEPTH_R: q->depth_r = v * 0.01f; break;
+    case BK_TONE: q->tone = q->rev_tone = v * 0.01f; break;
+    case BK_OFFSET: q->offset = v * 0.01f; break;
+    case BK_SPREAD: q->spread = v * 0.01f; break;
+    case BK_NOISE: q->noise = v * 0.01f; break;
+    case BK_SWEEP: q->sweep = v * 0.01f; break;
+    case BK_DFB: q->dfb = v * 0.0095f; break;
+    case BK_VDEPTH: q->vib_depth = v * 0.01f; break;
+    case BK_FLUTTER: q->flutter = v * 0.01f; break;
+    case BK_WOW: q->wow = v * 0.01f; break;
+    case BK_BIAS: q->bias = v * 0.01f; break;
+    case BK_ROOM: q->room = v * 0.01f; break;
+    case BK_DECAY: case BK_SIZE: fx_bank_rt(s, b, ctrl, q); break;
+    case BK_PRE: q->rev_pre_ms = v; break;
+    case BK_DAMP: q->rev_damp = v * 0.009f; break;
+    case BK_LOWDAMP: q->rev_lowdamp = v * 0.01f; break;
+    case BK_DIFF: q->rev_diff = v * 0.01f; break;
+    case BK_MOD: q->rev_mod = v * 0.02f; break;
+    case BK_EARLY: q->rev_early = v * 0.01f; break;
+    case BK_DISTANCE: q->distance = v * 0.01f; break;
+    case BK_HIFREQ: q->hifreq_hz = fx_hifreq_hz(v); break;
+    case BK_HLEVEL: q->lvl_hi = fx_level(v); break;
+    case BK_MLEVEL: q->lvl_mid = fx_level(v); break;
+    case BK_LLEVEL: q->lvl_lo = fx_level(v); break;
+    case BK_LDECAY: q->dec_lo = v; break;
+    case BK_HDECAY: q->dec_hi = v; break;
+    case BK_PITCH: q->pitch_a = v; break;
+    case BK_PITCH_B: q->pitch_b = v; break;
+    case BK_PDECAY: q->pdecay = v * 0.01f; break;
+    case BK_GRAVITY: q->gravity = v * 0.01f; break;
+    case BK_XOVER: q->xover_hz = fx_xover_hz(v); break;
+    case BK_BITS: q->bits = v; break;
+    case BK_SRATE: q->srate_hz = fx_srate_hz(v); break;
+    case BK_RESO: q->reso = v * 0.01f; break;
+    case BK_CUT1: case BK_CUT2: case BK_CUT3: q->cut_hz[f - BK_CUT1] = fx_cut_hz(v); break;
+    case BK_LVL1: case BK_LVL2: case BK_LVL3: q->lvl[f - BK_LVL1] = v * 0.01f; break;
+    default: break;   /* the options: fx_params() */
+    }
+}
+
 /* the setting(s) effect control j (an FXMD_SLOT) gives, in the units fx.h reads */
 static void fx_field(const one_t *s, int j, const int *ctrl, fx_params_t *f) {
-    int type = (int)s->val[P_MODFX_TYPE], sync = s->val[P_MODFX_SYNC] > 0.5f, dsync = s->val[P_DLY_SYNC] > 0.5f;
+    int type = (int)s->val[P_MODFX_TYPE], sync = s->val[P_MODFX_SYNC] > 0.5f;
     float v = fx_eff(s, j, ctrl);
+    fxs_params_t *q = &f->sfx;
+    if (s->fx_bank[j] >= 0) {
+        fx_bank_field(s, s->fx_bank[j], s->fx_bankf[j], v, ctrl, &f->mfx[s->fx_bank[j]]);
+        return;
+    }
     switch (j) {
-    case P_MODFX_MIX: f->mix = v * 0.01f; break;
-    case P_MODFX_GAIN: f->gain = fx_gain_x(v); break;
-    case P_MODFX_FB: f->fb = v * 0.0095f; break;   /* +-95% */
-    case P_MODFX_FB_R: f->fb_r = v * 0.0095f; break;
-    case P_MODFX_DFB: f->dfb = v * 0.0095f; break;
-    case P_MODFX_TIME: f->time_ms = fx_mod_time_ms(type, v); break;
-    case P_MODFX_TIME_R: f->time_r_ms = fx_mod_time_ms(type, v); break;
-    case P_MODFX_DTIME: f->dtime_ms = sync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v); break;
-    case P_MODFX_RATE: f->rate_hz = sync ? fx_div_hz(v, s->bpm) : fx_rate_hz(v); break;
-    case P_MODFX_RATE_R: f->rate_r_hz = sync ? fx_div_hz(v, s->bpm) : fx_rate_hz(v); break;
-    case P_MODFX_VRATE: f->vib_hz = sync ? fx_div_hz(v, s->bpm) : fx_vib_hz(v); break;
-    case P_MODFX_DEPTH: f->depth = v * 0.01f; break;
-    case P_MODFX_TONE: f->tone = v * 0.01f; break;
-    case P_MODFX_SPREAD: f->spread = v * 0.01f; break;
-    case P_MODFX_SWEEP: f->sweep = v * 0.01f; break;
-    case P_MODFX_NOISE: f->noise = v * 0.01f; break;
-    case P_MODFX_VDEPTH: f->vib_depth = v * 0.01f; break;
-    case P_MODFX_FLUTTER: f->flutter = v * 0.01f; break;
-    case P_MODFX_WOW: f->wow = v * 0.01f; break;
-    case P_MODFX_BIAS: f->bias = v * 0.01f; break;
-    case P_MODFX_ROOM: f->room = v * 0.01f; break;
-    case P_MODFX_DECAY: f->decay = v * 0.01f; break;
-    case P_MODFX_BITS: f->bits = v; break;
-    case P_MODFX_SRATE: f->srate_hz = fx_srate_hz(v); break;
-    case P_MODFX_RESO: f->reso = v * 0.01f; break;
-    case P_MODFX_CUT1: case P_MODFX_CUT2: case P_MODFX_CUT3: f->cut_hz[j - P_MODFX_CUT1] = fx_cut_hz(v); break;
-    case P_MODFX_LVL1: case P_MODFX_LVL2: case P_MODFX_LVL3: f->lvl[j - P_MODFX_LVL1] = v * 0.01f; break;
+    case P_MODFX_MIX: q->mix = v * 0.01f; break;
+    case P_MODFX_GAIN: q->gain = fx_gain_x(v); break;
+    case P_MODFX_FB: q->fb = v * 0.0095f; break;   /* +-95% */
+    case P_MODFX_FB_R: q->fb_r = v * 0.0095f; break;
+    case P_MODFX_FBL: q->fbl = v * 0.01f; break;
+    case P_MODFX_FBR: q->fbr = v * 0.01f; break;
+    case P_MODFX_DFB: q->dfb = v * 0.0095f; break;
+    case P_MODFX_TIME: q->time_ms = fx_mod_time_ms(type, v); break;
+    case P_MODFX_TIME_R: q->time_r_ms = fx_mod_time_ms(type, v); break;
+    case P_MODFX_DTIME: q->dtime_ms = sync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v); break;
+    case P_MODFX_DTIME_R: q->dtime_r_ms = sync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v); break;
+    case P_MODFX_RATE: q->rate_hz = sync ? fx_div_hz(v, s->bpm) : fx_rate_hz(v); break;
+    case P_MODFX_RATE_R: q->rate_r_hz = sync ? fx_div_hz(v, s->bpm) : fx_rate_hz(v); break;
+    case P_MODFX_VRATE: q->vib_hz = sync ? fx_div_hz(v, s->bpm) : fx_vib_hz(v); break;
+    case P_MODFX_DEPTH: q->depth = v * 0.01f; break;
+    case P_MODFX_DEPTH_R: q->depth_r = v * 0.01f; break;
+    case P_MODFX_TONE: q->tone = v * 0.01f; break;
+    case P_MODFX_OFFSET: q->offset = v * 0.01f; break;
+    case P_MODFX_SPREAD: q->spread = v * 0.01f; break;
+    case P_MODFX_SWEEP: q->sweep = v * 0.01f; break;
+    case P_MODFX_NOISE: q->noise = v * 0.01f; break;
+    case P_MODFX_VDEPTH: q->vib_depth = v * 0.01f; break;
+    case P_MODFX_FLUTTER: q->flutter = v * 0.01f; break;
+    case P_MODFX_WOW: q->wow = v * 0.01f; break;
+    case P_MODFX_BIAS: q->bias = v * 0.01f; break;
+    case P_MODFX_ROOM: q->room = v * 0.01f; break;
+    case P_MODFX_DECAY: q->decay = v * 0.01f; break;
+    case P_MODFX_BITS: q->bits = v; break;
+    case P_MODFX_SRATE: q->srate_hz = fx_srate_hz(v); break;
+    case P_MODFX_XOVER: q->xover_hz = fx_xover_hz(v); break;
+    case P_MODFX_RESO: q->reso = v * 0.01f; break;
+    case P_MODFX_CUT1: case P_MODFX_CUT2: case P_MODFX_CUT3: q->cut_hz[j - P_MODFX_CUT1] = fx_cut_hz(v); break;
+    case P_MODFX_LVL1: case P_MODFX_LVL2: case P_MODFX_LVL3: q->lvl[j - P_MODFX_LVL1] = v * 0.01f; break;
+    case P_MODFX_PITCH: q->pitch_st = v; break;
+    case P_MODFX_STRUCT: q->structure = v * 0.01f; break;
+    case P_MODFX_POS: q->position = v * 0.01f; break;
+    case P_MODFX_SIZE: q->size = v * 0.01f; break;
+    case P_MODFX_DENSITY: q->density = v * 0.01f; break;
+    case P_MODFX_TEXTURE: q->texture = v * 0.01f; break;
+    case P_MODFX_DRIVE: q->drive = v * 0.01f; break;
+    case P_MODFX_BUMP: q->bump = v * 0.01f; break;
+    case P_MODFX_LOWCUT: q->lowcut = v * 0.01f; break;
     case P_MFX_SEND1: f->send1 = v * 0.01f; break;
     case P_MFX_SEND2: f->send2 = v * 0.01f; break;
     case P_MFX_SERIES: f->series = v * 0.01f; break;
     case P_MFX_WIDTH: f->width = v * 0.01f; break;
-    case P_DLY_TIME: f->dly_l_ms = dsync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v); break;
-    case P_DLY_TIME_R: f->dly_r_ms = dsync ? fx_div_ms(v, s->bpm) : fx_delay_ms(v); break;
-    case P_DLY_FB: f->dly_fb = v * 0.0095f; break;
-    case P_DLY_TONE: f->dly_tone = v * 0.01f; break;
-    case P_DLY_OFFSET: f->dly_offset = v * 0.01f; break;
-    case P_REV_DECAY: case P_REV_SIZE:   /* a bigger space rings longer: decay and size make the decay time together */
-        f->rev_size = fx_rev_size(fx_eff(s, P_REV_SIZE, ctrl));
-        f->rev_rt60 = fx_rev_rt60(fx_eff(s, P_REV_DECAY, ctrl)) * f->rev_size;
-        f->rev_decay_k = fx_eff(s, P_REV_DECAY, ctrl) * 0.01f;
-        f->rev_size_k = fx_eff(s, P_REV_SIZE, ctrl) * 0.01f;
-        break;
-    case P_REV_DAMP: f->rev_damp = v * 0.009f; break;
-    case P_REV_LOWDAMP: f->rev_lowdamp = v * 0.01f; break;
-    case P_REV_PRE: f->rev_pre_ms = v; break;
-    case P_REV_DIFF: f->rev_diff = v * 0.01f; break;
-    case P_REV_TONE: f->rev_tone = v * 0.01f; break;
-    case P_REV_MOD: f->rev_mod = v * 0.02f; break;
-    case P_REV_EARLY: f->rev_early = v * 0.01f; break;
-    case P_MODFX_PITCH: f->pitch_st = v; break;
-    case P_MODFX_STRUCT: f->structure = v * 0.01f; break;
-    case P_MODFX_POS: f->position = v * 0.01f; break;
-    case P_MODFX_SIZE: f->size = v * 0.01f; break;
-    case P_MODFX_DENSITY: f->density = v * 0.01f; break;
-    case P_MODFX_TEXTURE: f->texture = v * 0.01f; break;
-    case P_MODFX_DRIVE: f->drive = v * 0.01f; break;
-    case P_MODFX_BUMP: f->bump = v * 0.01f; break;
-    case P_MODFX_LOWCUT: f->lowcut = v * 0.01f; break;
     default: break;   /* CTRL 1/2: only through their targets */
     }
 }
@@ -2431,37 +2650,43 @@ static void fx_field(const one_t *s, int j, const int *ctrl, fx_params_t *f) {
 /* every effect setting (once per render: the knobs may have moved) */
 static void fx_params(const one_t *s, fx_params_t *f) {
     const float *p = s->val;
+    fxs_params_t *q = &f->sfx;
     f->sfx_on = p[P_MODFX_ON] > 0.5f;
-    f->sfx_type = (int)p[P_MODFX_TYPE];
-    f->ftype = (int)p[P_MODFX_FTYPE];
+    q->type = (int)p[P_MODFX_TYPE];
+    q->ftype = (int)p[P_MODFX_FTYPE];
+    q->model = (int)p[P_MODFX_MODEL];
+    q->follow = p[P_MODFX_FOLLOW] > 0.5f;
+    q->gmode = (int)p[P_MODFX_GMODE];
+    q->quality = (int)p[P_MODFX_QUALITY];
+    q->freeze = p[P_MODFX_FREEZE] > 0.5f;
     f->mfx_on = p[P_MFX_ON] > 0.5f;
-    f->dly_pp = p[P_DLY_PP] > 0.5f;
-    f->rev_type = (int)p[P_REV_TYPE];
-    f->rev_freeze = p[P_REV_FREEZE] > 0.5f;
+    f->buss = (int)p[P_MFX_BUSS];
     f->wet_pan = p[P_PAN] * 0.01f;
-    f->model = (int)p[P_MODFX_MODEL];
-    f->follow = p[P_MODFX_FOLLOW] > 0.5f;
-    f->gmode = (int)p[P_MODFX_GMODE];
-    f->quality = (int)p[P_MODFX_QUALITY];
-    f->freeze = p[P_MODFX_FREEZE] > 0.5f;
+    for (int b = 0; b < 2; b++) {   /* each master slot's type and options */
+        fxs_params_t *m = &f->mfx[b];
+        m->mtype = fx_bank_type(s, b);
+        m->type = MFX_SFX[m->mtype] < 0 ? m->mtype : MFX_SFX[m->mtype];
+        m->hold = (int)p[BANK[b][BK_FREEZE]];
+        m->ftype = (int)p[BANK[b][BK_FTYPE]];
+    }
     int ctrl[2];
     fx_ctrl_slots(s, ctrl);
     for (int k = 0; k < MDF_COUNT; k++) fx_field(s, FXMD_SLOT[k], ctrl, f);
 }
 
 /* the effect pass's settings (bit k of `dirty`: MDF_* k), the others as they are: each control step, only what moves */
-static void fx_params_mod(const one_t *s, fx_params_t *f, uint64_t dirty) {
+static void fx_params_mod(const one_t *s, fx_params_t *f, const uint64_t *dirty) {
     int ctrl[2];
     fx_ctrl_slots(s, ctrl);
     for (int k = 0; k < MDF_COUNT; k++)
-        if (dirty >> k & 1) fx_field(s, FXMD_SLOT[k], ctrl, f);
+        if (fx_bit(dirty, k)) fx_field(s, FXMD_SLOT[k], ctrl, f);
 }
 
 /* the Rings effect's note, each control step: the newest sounding voice's key (its glide, transpose and master tune;
  * not pitch bend or pitch modulation) or, with KEY FOLLOW off, middle C; plus PITCH. A new note strums it (it jumps
  * there instead of gliding); with nothing sounding it keeps the last key, so the tail rings on at its pitch. */
 static void fx_note_step(one_t *s, fx_params_t *f) {
-    if (f->sfx_type != SFX_RINGS) return;
+    if (f->sfx.type != SFX_RINGS) return;
     const voice_t *nv = NULL;
     for (int i = 0; i < MAX_VOICES; i++) {
         const voice_t *v = &s->voice[i];
@@ -2469,9 +2694,9 @@ static void fx_note_step(one_t *s, fx_params_t *f) {
     }
     if (nv) {
         s->fx_key = voice_key(s, nv) + 12.0f * log2f(s->tune_hz / 440.0f);
-        if (nv->age != s->fx_age) { f->strum = 1; s->fx_age = nv->age; }
+        if (nv->age != s->fx_age) { f->sfx.strum = 1; s->fx_age = nv->age; }
     }
-    f->note = (f->follow ? (s->fx_age ? s->fx_key : 60.0f) : 60.0f) + f->pitch_st;
+    f->sfx.note = (f->sfx.follow ? (s->fx_age ? s->fx_key : 60.0f) : 60.0f) + f->sfx.pitch_st;
 }
 
 /* one block into out (int16, the MPC's format) or, when out is NULL, into fout (float, the same samples before the
@@ -2511,13 +2736,13 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         if (side)   /* the dry path in stereo: every voice at its place */
             for (int i = 0; i < n; i++) { xl[i] += acc[i]; xr[i] += acc[i]; }
         if (first) {   /* the effect pass, after the voices' sources: only the settings it moves */
-            uint64_t dirty = fx_mod_step(s);
-            if (dirty) fx_params_mod(s, fxp, dirty);
+            uint64_t dirty[MDF_WORDS];
+            if (fx_mod_step(s, dirty)) fx_params_mod(s, fxp, dirty);
             fx_note_step(s, fxp);
         }
         fxp->ramp = CR - s->phase;   /* the effect gains ramp across the whole control step, however the host splits it */
         fx_process(&s->fx, fxp, acc, side ? xl : acc, side ? xr : acc, l, r, n);   /* synth effect: mono in */
-        fxp->strum = 0;
+        fxp->sfx.strum = 0;
         for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host */
             float yl = isfinite(l[i]) ? soft_limit(l[i]) : 0.0f, yr = isfinite(r[i]) ? soft_limit(r[i]) : 0.0f;
             if (out) {
