@@ -29,7 +29,8 @@ static inline void svf_set(svf_t *f, float hz, float reso, int mode, float sr) {
     f->a2 = g * f->a1;
     f->a3 = g * f->a2;
     switch (mode) {
-    case SVF_BP:    f->m0 = 0; f->m1 = 2.0f;   f->m2 = 0;     break;   /* x2: a 0 dB peak at no resonance */
+    case SVF_BP:    f->m0 = 0; f->m1 = 1.0f + 0.5f * k; f->m2 = 0; break;   /* peak (1 + k/2)/k: 0 dB at no resonance,
+                                                                          +20 dB at full, like LP and HP */
     case SVF_HP:    f->m0 = 1; f->m1 = -k;     f->m2 = -1.0f; break;
     case SVF_NOTCH: f->m0 = 1; f->m1 = -k;     f->m2 = 0;     break;
     default:        f->m0 = 0; f->m1 = 0;      f->m2 = 1.0f;  break;

@@ -8,6 +8,8 @@
  *             and slope at full resonance and drive; LP/HP slopes measure 24/18/12/6 dB; the cutoff knob reads in Hz
  *   svf       LP/BP/HP/notch shapes, the resonance peak, stability at full resonance
  *   routing   parallel/series, the filter mix and each source's SVF/ladder buttons send the sound where they say
+ *   mod       envelope timing and knob text, filter envelope, keyboard tracking, LFO vibrato free and tempo-synced,
+ *             pitch envelope, a soft note after a loud one starts at its own level
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
  *   state     save/restore round trip; damaged or oversized states don't break the instance
@@ -25,6 +27,7 @@
 #include "osc.h"
 #include "ladder.h"
 #include "svf.h"
+#include "lfo.h"
 
 #define SR 44100
 #define N 16384   /* FFT length: 2.7 Hz per bin */
@@ -125,9 +128,13 @@ static void naive(float *x, int n, double f0, int wave) {
     }
 }
 
+static double knob_ms(double ms) { return ms <= 1 ? 0 : 25 * log10(ms); }   /* envelope knobs: 1 ms .. 10 s */
+
+/* amp envelope in ms (attack, decay, release) and % (sustain) */
 static void *patch(int wave, double a, double d, double s, double r) {
     void *e = E->create(NULL);
-    set(e, "o1_wave", wave); set(e, "amp_a", a); set(e, "amp_d", d); set(e, "amp_s", s); set(e, "amp_r", r);
+    set(e, "o1_wave", wave); set(e, "amp_a", knob_ms(a)); set(e, "amp_d", knob_ms(d)); set(e, "amp_s", s);
+    set(e, "amp_r", knob_ms(r));
     set(e, "volume", 100);
     return e;
 }
@@ -396,6 +403,102 @@ static void routing(void) {
     E->destroy(e);
 }
 
+/* window peak of |x| every ms */
+static int time_to(const float *x, int n, float frac) {
+    float top = 0;
+    for (int i = 0; i < n; i++) top = fmaxf(top, fabsf(x[i]));
+    for (int w = 0; w + 44 <= n; w += 44) {
+        float pk = 0;
+        for (int i = w; i < w + 44; i++) pk = fmaxf(pk, fabsf(x[i]));
+        if (pk >= frac * top) return w;
+    }
+    return n;
+}
+
+/* rms of the second difference against the rms: grows with the square of frequency, so high harmonics dominate */
+static double brightness(const float *x, int n) {
+    double d = 0, a = 0;
+    for (int i = 2; i < n; i++) {
+        double c = x[i] - 2 * x[i - 1] + x[i - 2];
+        d += c * c;
+        a += x[i] * x[i];
+    }
+    return sqrt(d / (a + 1e-30));
+}
+
+static void modulation(void) {
+    static float x[SR * 3];
+    char what[200], txt[32];
+    void *e = patch(WAVE_SAW, 100, 1000, 100, 100);
+    E->get_param(e, "amp_a_display", txt, sizeof txt);
+    note(e, 1, 69, 127);
+    render_f(e, x, SR / 2);
+    double ms = time_to(x, SR / 2, 0.95f) / 44.1;
+    snprintf(what, sizeof what, "amp attack knob reads \"%s\" and the note reaches 95%% after %.0f ms", txt, ms);
+    check(!strcmp(txt, "100 ms") && ms > 85 && ms < 105, what);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 0, 1000, 100, 100);   /* filter envelope: a pluck that opens the ladder and closes it */
+    set(e, "flt_cut", 20); set(e, "lad_env", 100); set(e, "fenv_d", knob_ms(500)); set(e, "fenv_s", 0);
+    note(e, 1, 48, 127);
+    render_f(e, x, SR);
+    /* the envelope moves the cutoff in octaves, so it falls fast at first: compare the first 20 ms with later */
+    double early = brightness(x + 44, 838), late = brightness(x + SR - 4410, 4410);
+    snprintf(what, sizeof what, "filter envelope: brightness %.4f in the first 20 ms, %.4f after a second", early, late);
+    check(early > 3 * late, what);
+    E->destroy(e);
+
+    double f[2];   /* keyboard tracking: a self-oscillating ladder at 100% tracking plays the keys in tune */
+    for (int k = 0; k < 2; k++) {
+        e = patch(WAVE_SAW, 0, 1, 100, 10);
+        set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(440)); set(e, "lad_kbd", 100);
+        note(e, 1, 60 + 12 * k, 127);
+        render_f(e, x, SR * 2);
+        f[k] = peak_hz(x + SR * 2 - N);
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "ladder keyboard tracking 100%%: C4 rings at %.1f Hz, C5 at %.1f Hz (ratio %.3f)", f[0], f[1], f[1] / f[0]);
+    check(fabs(f[1] / f[0] - 2) < 0.02, what);
+
+    for (int synced = 0; synced < 2; synced++) {   /* vibrato: a square LFO 1 at 1 Hz, +-12 semitones */
+        e = patch(WAVE_SAW, 0, 1, 100, 10);
+        set(e, "lfo1_wave", LFO_SQUARE); set(e, "pitch_lfo", 100);
+        if (synced) { E->set_param(e, "lfo_bpm", "120"); set(e, "lfo1_sync", 1); set(e, "lfo1_rate", 30); }
+        else set(e, "lfo1_rate", 100 * log(1 / 0.05) / log(1000));
+        E->get_param(e, "lfo1_rate_display", txt, sizeof txt);
+        note(e, 1, 57, 127);
+        render_f(e, x, SR);
+        double hi = peak_hz(x + 2205), lo = peak_hz(x + SR / 2 + 2205);
+        snprintf(what, sizeof what, "LFO 1 %s (\"%s\"): pitch %.1f Hz in the first half second, %.1f Hz in the second (want 440 / 110: A3 +-12 st)",
+                 synced ? "synced to 1/2 at 120 BPM" : "free at 1 Hz", txt, hi, lo);
+        check(fabs(cents(hi, 440)) < 30 && fabs(cents(lo, 110)) < 30 && !strcmp(txt, synced ? "1/2" : "1.0 Hz"), what);
+        E->destroy(e);
+    }
+
+    e = patch(WAVE_SAW, 0, 1, 100, 10);   /* pitch envelope: a 2 s rise of two octaves */
+    set(e, "menv_a", knob_ms(2000)); set(e, "menv_s", 100); set(e, "pitch_env", 100);
+    note(e, 1, 45, 127);
+    render_f(e, x, SR * 3);
+    double start = peak_hz(x), end = peak_hz(x + SR * 3 - N);
+    snprintf(what, sizeof what, "mod envelope to pitch: %.1f Hz at the start, %.1f Hz after its 2 s attack (want 440)", start, end);
+    check(start < 200 && fabs(cents(end, 440)) < 30, what);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 0, 1000, 100, 20);   /* a soft note after a loud one starts at its own level */
+    note(e, 1, 60, 127);
+    render_f(e, x, SR / 4);
+    note(e, 0, 60, 0);
+    render_f(e, x, SR / 2);
+    note(e, 1, 60, 20);
+    render_f(e, x, SR / 10);
+    double head = 0, body = 0;
+    for (int i = 0; i < 132; i++) head = fmax(head, fabs(x[i]));
+    for (int i = 2205; i < 4410; i++) body = fmax(body, fabs(x[i]));
+    snprintf(what, sizeof what, "a velocity-20 note after a velocity-127 one: first 3 ms peak %.3f, settled peak %.3f", head, body);
+    check(head < 1.3 * body, what);
+    E->destroy(e);
+}
+
 static void cutoff_text(void) {
     void *e = E->create(NULL);
     char a[32], b[32], c[32];
@@ -477,7 +580,7 @@ static void keys(void) {
     note(e, 1, 60, 100);
     render_f(e, (float[128]){0}, 128);
     E->midi(e, cc120, 3);
-    check(silent_after(e, 3), "All Sound Off (CC 120) is silent at once");
+    check(silent_after(e, 10), "All Sound Off (CC 120) is silent within 10 ms (a 2 ms fade, no click)");
     E->destroy(e);
 }
 
@@ -498,7 +601,7 @@ static void state(void) {
 
     E->set_param(b, "state", "amp_s=nan;volume=inf;amp_a=-50;o1_wave=7;bogus;=3;amp_r=");
     check(get(b, "amp_s") == 78 && get(b, "volume") == 42, "a damaged state's NaN and infinite values are ignored");
-    check(get(b, "amp_a") == 0 && get(b, "o1_wave") == 1 && get(b, "amp_r") == 1,
+    check(get(b, "amp_a") == 0 && get(b, "o1_wave") == 1 && get(b, "amp_r") == 0,
           "a damaged state's out-of-range values are clamped to the param's range");
     memset(st, 'x', sizeof st - 1);
     st[sizeof st - 1] = 0;
@@ -526,11 +629,12 @@ static int16_t *rest(void *e, int16_t *o, int blocks) {
 
 /* 1: one saw (the Phase 2 sound); 2: three oscillators, osc 2 detuned and osc 3 a square an octave down; then a
  * resonant ladder sweep, plain and driven; an SVF band-pass sweep, then SVF high-pass into the ladder;
+ * an envelope pluck, a tempo-synced LFO wobble and a vibrato lead;
  * 3: a sync lead, osc 2 synced to 1 and rising a semitone per note; 4: noise hits; 5: a run to the top of the keyboard */
 static void demo_wav(const char *path) {
     enum { STEP = 86, RUN = 43, TAIL = 172 };   /* in 128-frame blocks: 0.25 s, 0.125 s, 0.5 s */
     static const int riff[] = {36, 48, 43, 46, 36, 48, 51, 50};
-    static int16_t pcm[(8 * 8 * STEP + 13 * RUN + 6 * TAIL) * 256];
+    static int16_t pcm[(11 * 8 * STEP + 13 * RUN + 7 * TAIL) * 256];
     int16_t *o = pcm;
     void *e = patch(WAVE_SAW, 5, 400, 40, 150);
     for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
@@ -568,6 +672,19 @@ static void demo_wav(const char *path) {
         set(e, "svf_cut", 25 + 50 * (k % 8) / 7.0);
         o = play(e, o, riff[k % 8], STEP);
     }
+    o = rest(e, o, TAIL);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 1, 600, 0, 150);   /* modulation: an envelope pluck, a synced LFO wobble, a vibrato lead */
+    set(e, "o2_level", 70); set(e, "o2_oct", 1); set(e, "flt_cut", 25); set(e, "flt_res", 55);
+    set(e, "lad_env", 70); set(e, "fenv_d", knob_ms(250)); set(e, "fenv_s", 0);
+    for (int k = 0; k < 8; k++) o = play(e, o, riff[k], STEP);
+    set(e, "amp_s", 100); set(e, "lad_env", 0); set(e, "flt_cut", 35); set(e, "lad_lfo", 60);
+    set(e, "lfo2_wave", LFO_SINE); set(e, "lfo2_sync", 1); set(e, "lfo2_rate", 60);   /* 1/8 at 120 BPM */
+    for (int k = 0; k < 4; k++) o = play(e, o, riff[2 * k], 2 * STEP);
+    set(e, "lad_lfo", 0); set(e, "flt_cut", 80); set(e, "o2_oct", 2); set(e, "o2_fine", 6);
+    set(e, "pitch_lfo", 3); set(e, "lfo1_wave", LFO_SINE);
+    for (int k = 0; k < 4; k++) o = play(e, o, riff[k] + 24, 2 * STEP);
     o = rest(e, o, TAIL);
     E->destroy(e);
 
@@ -618,6 +735,7 @@ int main(int argc, char **argv) {
     cutoff_text();
     svf_shapes();
     routing();
+    modulation();
     envelope();
     keys();
     state();

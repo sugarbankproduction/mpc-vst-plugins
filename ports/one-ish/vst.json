@@ -5,6 +5,21 @@
   "version": 1000,
   "so": "one_ish.so",
   "params": "params.json",
-  "build": {"root": "../..", "sources": ["ports/one-ish/src/engine.c"], "cflags": [], "libs": ["-lm"]},
-  "targets": ["armv7", "aarch64"]
+  "build": {
+    "root": "../..",
+    "sources": [
+      "ports/one-ish/src/engine.c"
+    ],
+    "cflags": [],
+    "libs": [
+      "-lm"
+    ]
+  },
+  "targets": [
+    "armv7",
+    "aarch64"
+  ],
+  "defines": {
+    "HAS_LFO_BPM": 1
+  }
 }
