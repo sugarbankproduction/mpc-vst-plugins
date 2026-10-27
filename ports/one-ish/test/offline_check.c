@@ -10,6 +10,8 @@
  *   routing   parallel/series, the filter mix and each source's SVF/ladder buttons send the sound where they say
  *   mod       envelope timing and knob text, filter envelope, keyboard tracking, LFO vibrato free and tempo-synced,
  *             pitch envelope, a soft note after a loud one starts at its own level
+ *   matrix    amounts and via scaling add up; mod wheel vibrato (the default slot 1); velocity to cutoff; aftertouch
+ *             to a level; pitch bend
  *   envelope  a released note reaches silence; full velocity and volume do not clip
  *   keys      repeated keys, mono fallback to a held key, All Notes Off / All Sound Off
  *   state     save/restore round trip; damaged or oversized states don't break the instance
@@ -28,6 +30,7 @@
 #include "ladder.h"
 #include "svf.h"
 #include "lfo.h"
+#include "modmatrix.h"
 
 #define SR 44100
 #define N 16384   /* FFT length: 2.7 Hz per bin */
@@ -499,6 +502,70 @@ static void modulation(void) {
     E->destroy(e);
 }
 
+static void midi3(void *e, int st, int d1, int d2) {
+    uint8_t m[3] = {(uint8_t)st, (uint8_t)d1, (uint8_t)d2};
+    E->midi(e, m, 3);
+}
+
+static void matrix(void) {
+    static float x[SR];
+    char what[200];
+    float slots[MOD_SLOTS * MOD_SLOT_PARAMS] = {0}, src[MS_COUNT] = {0}, dst[MD_COUNT];
+    float a[] = {MS_VEL, MD_PITCH, 50, MS_OFF}, b[] = {MS_VEL, MD_PITCH, 50, MS_WHEEL}, c[] = {MS_LFO1, MD_AMP, -100, MS_OFF};
+    memcpy(slots, a, sizeof a); memcpy(slots + 4, b, sizeof b); memcpy(slots + 8, c, sizeof c);
+    src[MS_VEL] = 1; src[MS_WHEEL] = 0.5f; src[MS_LFO1] = 0.25f;
+    mod_eval(slots, src, dst);
+    snprintf(what, sizeof what, "matrix: two velocity slots, one via the half-up wheel, sum to %.3f (want 0.750); LFO to amp %.3f",
+             dst[MD_PITCH], dst[MD_AMP]);
+    check(fabsf(dst[MD_PITCH] - 0.75f) < 1e-6f && fabsf(dst[MD_AMP] + 0.25f) < 1e-6f, what);
+
+    for (int wheel = 0; wheel < 2; wheel++) {   /* the default slot 1 (LFO 1 -> pitch via mod wheel), at full amount */
+        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        set(e, "mod1_amt", 100); set(e, "lfo1_wave", LFO_SQUARE); set(e, "lfo1_rate", 100 * log(1 / 0.05) / log(1000));
+        midi3(e, 0xb0, 1, wheel ? 127 : 0);
+        note(e, 1, 57, 127);
+        render_f(e, x, SR);
+        double hi = peak_hz(x + 2205), lo = peak_hz(x + SR / 2 + 2205);
+        snprintf(what, sizeof what, "mod wheel %s: %.1f Hz then %.1f Hz (want %s)", wheel ? "up" : "down", hi, lo,
+                 wheel ? "880 / 55: +-24 st" : "220 / 220");
+        check(wheel ? fabs(cents(hi, 880)) < 30 && fabs(cents(lo, 55)) < 30 : fabs(cents(hi, 220)) < 5 && fabs(cents(lo, 220)) < 5, what);
+        E->destroy(e);
+    }
+
+    double br[2];   /* velocity -> ladder cutoff */
+    for (int k = 0; k < 2; k++) {
+        void *e = patch(WAVE_SAW, 0, 1, 100, 10);
+        set(e, "flt_cut", 30); set(e, "mod2_src", MS_VEL); set(e, "mod2_dst", MD_LAD_CUT); set(e, "mod2_amt", 60);
+        note(e, 1, 48, k ? 127 : 20);
+        render_f(e, x, SR / 4);
+        br[k] = brightness(x + SR / 8, SR / 8);
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "velocity to ladder cutoff: brightness %.4f at velocity 20, %.4f at 127", br[0], br[1]);
+    /* cutoff about 220 Hz vs 1.3 kHz here; this measure reads 0.0029 for a fixed 1.28 kHz ladder on this saw */
+    check(br[1] > 2 * br[0], what);
+
+    void *e = patch(WAVE_SAW, 0, 1, 100, 10);   /* aftertouch -> osc 1 level, from a level of 0 */
+    set(e, "o1_level", 0); set(e, "mod3_src", MS_AT); set(e, "mod3_dst", MD_O1_LEVEL); set(e, "mod3_amt", 100);
+    note(e, 1, 48, 127);
+    double before = rms_of(e, SR / 4);
+    uint8_t at[2] = {0xd0, 127};
+    E->midi(e, at, 2);
+    double after = rms_of(e, SR / 4);
+    snprintf(what, sizeof what, "aftertouch to osc 1 level: rms %.3f before pressing, %.3f with full pressure", before, after);
+    check(before < 0.001 && after > 0.05, what);
+    E->destroy(e);
+
+    e = patch(WAVE_SAW, 0, 1, 100, 10);   /* pitch bend, default range 2 semitones */
+    midi3(e, 0xe0, 0x7f, 0x7f);
+    note(e, 1, 57, 127);
+    render_f(e, x, N + 4096);
+    double up = peak_hz(x + 4096);
+    snprintf(what, sizeof what, "pitch bend fully up: %.1f Hz (want %.1f, +2 st)", up, 220 * pow(2, 2 / 12.0));
+    check(fabs(cents(up, 220 * pow(2, 2 / 12.0))) < 3, what);
+    E->destroy(e);
+}
+
 static void cutoff_text(void) {
     void *e = E->create(NULL);
     char a[32], b[32], c[32];
@@ -736,6 +803,7 @@ int main(int argc, char **argv) {
     svf_shapes();
     routing();
     modulation();
+    matrix();
     envelope();
     keys();
     state();
