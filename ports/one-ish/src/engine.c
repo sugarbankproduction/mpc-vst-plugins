@@ -1,7 +1,8 @@
 /* ONE-ish engine. Per voice: three band-limited dual-wave oscillators (src/osc.h: a triangle/saw with a wave angle
  * blended with a pulse of any width; octave, frequency +-7 semitones, beat frequency +-7 Hz; 2 and 3 can hard-sync
  * to 1), linear FM (1 to 2, 1 to 3 or 3 to 1), a ring modulator (1 x 2 or 2 x 3, from the triangle/saw waves) and
- * white noise, each sent to the SVF, the ladder, both or neither by its own two buttons; a state-variable filter
+ * noise (two of white, red and purple, blended by a colour mix, optionally shaped by its own attack/release envelope
+ * with a sustain button), each sent to the SVF, the ladder, both or neither by its own two buttons; a state-variable filter
  * (LP/BP/HP/notch; a pair of elements with spacing, in series or parallel: src/svf.h) and a ladder filter (cutoff,
  * resonance, drive, LP/HP, 24-6 dB) in parallel or in series (SVF into ladder) with a mix between them, their cutoff
  * knobs optionally linked; three DAHDSR envelopes (filter, amp, mod: src/env.h, with stage curves, loop, latch, tempo
@@ -15,8 +16,11 @@
  * last pitch at a constant rate (LCR), in a constant time (LCT) or exponentially (EXP); optionally only on legato
  * notes, paused while the key is up (gated), or in semitone steps (glissando). Unison stacks 2-8 voices on each note
  * (a stack is allocated and stolen as one), detuned unevenly around the centre; pitch variance gives each new note a
- * small random pitch offset. After the voices: a modulation effect (chorus,
- * flanger or phaser), a delay (free or tempo-synced, ping-pong) and a plate reverb, in stereo (src/fx.h).
+ * small random pitch offset. Analog drift: each oscillator's pitch (and each voice's cutoffs) wanders slowly at random.
+ * Each voice is placed in stereo (equal power) at the pan, spread around it note by note (or across a unison stack).
+ * After the voices: a modulation effect (chorus, flanger or phaser; mono in from the unpanned voices, its wet signal at
+ * the pan, the dry signal keeping each voice's place), a delay (free or tempo-synced, ping-pong) and a plate reverb, in
+ * stereo (src/fx.h).
  *
  * Audio runs per sample; modulation (envelopes 1 and 3, LFOs, pitch, cutoffs) every CR samples, with levels and the
  * filter mix ramped across each step so no knob or mod move steps audibly.
@@ -66,6 +70,16 @@
 #define DLY_RANGE 200.0f
 #define UNI_DETUNE_ST 0.5f /* unison detune at 100%: the outermost stacked voices sit +-50 cents from the note */
 #define GLIDE_EXP_K 3.0f   /* EXP glide: the remaining distance shrinks by e every third of the glide time (95% there) */
+/* noise colours from the one white source: red is white through a one-pole low-pass at 40 Hz (-6 dB/oct above it),
+ * purple its first difference (+6 dB/oct); each scaled to white's RMS level */
+#define RED_C 0.0056827f   /* 1 - e^(-2 pi 40 / 44100) */
+#define RED_GAIN 18.734f   /* sqrt((2 - c) / c): the low-pass's RMS gain on white noise, undone */
+#define PURPLE_GAIN 0.70710678f   /* a first difference doubles white noise's power */
+#define DRIFT_ST 0.04f     /* analog drift at 100%: each oscillator wanders within +-4 cents */
+#define DRIFT_CUT_OCT 0.04f   /* and each voice's cutoffs within +-0.04 octave (about +-3%) */
+#define DRIFT_TAU_S 0.5f   /* the wander follows a new random target with this time constant ... */
+#define DRIFT_MIN_S 0.3f   /* ... picked every 0.3 .. 1.5 s, at random */
+#define DRIFT_VAR_S 1.2f
 
 /* engine-side slots, matched to params.json by key (so the VST order there can grow freely). Per oscillator the
  * slots run WAVE .. LAD from P_O1_WAVE + OSC_STRIDE * n (osc 1's SYNC slot is unused);
@@ -97,8 +111,14 @@ enum {
     P_AMP_MULTI, P_AMP_RESET, P_AMP_SCALE, P_AMP_VEL,
     P_MENV_DELAY, P_MENV_HOLD, P_MENV_ACURVE, P_MENV_DCURVE, P_MENV_RCURVE, P_MENV_LOOP, P_MENV_LATCH, P_MENV_SYNC,
     P_MENV_MULTI, P_MENV_RESET, P_MENV_SCALE, P_MENV_VEL,
+    P_NOISE_COLOR_PAIR, P_NOISE_COLOR_MIX, P_NOISE_ENV, P_NOISE_A, P_NOISE_R, P_NOISE_SUS,   /* noise colours and EG */
+    P_PAN, P_SPREAD, P_DRIFT,
     P_COUNT
 };
+enum { NC_RED, NC_WHITE, NC_PURPLE };           /* noise colours */
+/* the two colours of each "noise_color_pair" option: COLOR MIX at 0% is the first, at 100% the second */
+static const int NOISE_PAIR[3][2] = {{NC_RED, NC_WHITE}, {NC_RED, NC_PURPLE}, {NC_WHITE, NC_PURPLE}};
+#define NDRIFT (NOSC + 1)                       /* drift: one wander per oscillator, one for the voice's cutoffs */
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
 /* each mixer channel's level and filter buttons, in channel order (osc 1-3, noise, ring mod: the matrix's order) */
@@ -140,8 +160,10 @@ static const char *const KEYS[P_COUNT] = {
     "svf_space", "svf_pair", "flt_link", "lad_fm", "svf_fm", "lad_fm_src", "svf_fm_src",
 #define ENV_EXTRA_KEYS(e) e "_delay", e "_hold", e "_acurve", e "_dcurve", e "_rcurve", e "_loop", e "_latch", e "_sync", \
                           e "_multi", e "_reset", e "_scale", e "_vel"
-    ENV_EXTRA_KEYS("fenv"), ENV_EXTRA_KEYS("amp"), ENV_EXTRA_KEYS("menv")
+    ENV_EXTRA_KEYS("fenv"), ENV_EXTRA_KEYS("amp"), ENV_EXTRA_KEYS("menv"),
 #undef ENV_EXTRA_KEYS
+    "noise_color_pair", "noise_color_mix", "noise_env", "noise_a", "noise_r", "noise_sus",
+    "pan", "spread", "drift",
 };
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
 enum { FLT_PARALLEL, FLT_SERIES };
@@ -181,6 +203,16 @@ typedef struct {
     int gate;                /* key down, or released while the sustain pedal is down */
     int sustained;           /* released while the pedal is down: let go when it comes up */
     unsigned age;            /* when its note started, for stealing the oldest */
+    env_t nenv;              /* the noise EG (attack, release, sustain button) */
+    float noise_env;         /* its level at the last control step, 0..1 (a matrix source) */
+    float red, wprev;        /* red noise's low-pass state; the last white sample, for purple */
+    float nz[2], tgt_nz[2];  /* the two noise colours' gains (colour mix x noise EG): ramp start, end */
+    float nz_m, nz_e;        /* the colour mix and noise EG level they were worked out for */
+    float pan_pos;           /* where the voice sits, -1 (left) .. 1 (right): pan, spread place and modulation, smoothed */
+    float pl, pr, tgt_pl, tgt_pr;   /* its left and right gains (ramp start, end): equal power, 1 and 1 at the centre */
+    float drift[NDRIFT], drift_tgt[NDRIFT];   /* analog drift: each wander, -1..1, and the target it is heading for */
+    int drift_left[NDRIFT];  /* control steps until a new target */
+    uint32_t drift_rng;      /* drift's own random numbers (the noise's sequence stays as it was) */
 } voice_t;
 
 typedef struct {
@@ -197,6 +229,8 @@ typedef struct {
     float lfo_val[NLFO];     /* this control step's LFO outputs */
     float bpm;               /* the host's tempo, for synced LFOs, delay and envelopes */
     env_cfg_t ecfg[NENV];    /* each envelope's settings (times, curves, loop, latch...), shared by the voices */
+    env_cfg_t ncfg;          /* the noise EG's */
+    float drift_coef;        /* drift's smoothing per control step */
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
     float gain_coef, glide;  /* per sample / per control step */
     int phase;               /* samples into the current control step */
@@ -278,6 +312,11 @@ static void apply_envs(one_t *s) {
         c->multi = x[X_MULTI] > 0.5f;
         c->reset = x[X_RESET] > 0.5f;
     }
+    /* the noise EG: attack and release (1 ms .. 10 s); with SUSTAIN off the release time runs as a decay to silence as
+     * soon as the attack is done (the key's release then just continues it) */
+    float na = env_ms(s->val[P_NOISE_A]), nr = env_ms(s->val[P_NOISE_R]);
+    int sus = s->val[P_NOISE_SUS] > 0.5f;
+    env_config(&s->ncfg, (const float[5]){0.0f, na, 0.0f, nr, nr}, sus ? 1.0f : 0.0f, 0.0f, 0.5f, 0.5f, SR);
 }
 
 static float lfo_hz(const one_t *s, int n) {
@@ -382,6 +421,54 @@ static void set_pitch(const one_t *s, voice_t *v, float semis, const float *osc_
     }
 }
 
+/* the two noise colours' gains: COLOR MIX (plus `mix_mod`, 0..1 units) crossfades them at equal power, so an even mix
+ * of two independent noises is as loud as either; with NOISE ENV on the noise EG shapes both */
+static void noise_targets(const one_t *s, voice_t *v, float mix_mod) {
+    float m = clampf(s->val[P_NOISE_COLOR_MIX] * 0.01f + mix_mod, 0.0f, 1.0f);
+    float e = s->val[P_NOISE_ENV] > 0.5f ? v->noise_env : 1.0f;
+    if (m == v->nz_m && e == v->nz_e) return;   /* unchanged (the usual case): no square roots */
+    v->nz_m = m;
+    v->nz_e = e;
+    v->tgt_nz[0] = sqrtf(1.0f - m) * e;
+    v->tgt_nz[1] = sqrtf(m) * e;
+}
+
+/* SPREAD: where each note sits around the pan, -1..1. A unison stack fans out by its place in the stack; otherwise
+ * each new note takes the next place in a pattern that alternates sides and varies the width. One voice (mono, no
+ * unison) has nothing to spread and stays on the pan. */
+static float spread_place(const one_t *s, const voice_t *v) {
+    static const float ORDER[8] = {-1.0f, 1.0f, -0.5f, 0.5f, -0.75f, 0.75f, -0.25f, 0.25f};
+    if (s->val[P_UNISON] > 0.5f) return v->uni_pos;
+    return is_mono(s) ? 0.0f : ORDER[v->age % 8];
+}
+
+/* the voice's left and right gains: PAN plus its spread place (plus `pan_mod`, -1..1 units), equal power with both at
+ * 1 in the centre (so a centred voice sounds exactly as a mono one did); hard left is sqrt 2 and 0. The place glides
+ * over about 10 ms (a stolen voice moving sides doesn't click); `snap` puts it there at once (a note from silence). */
+static void pan_targets(const one_t *s, voice_t *v, float pan_mod, int snap) {
+    float to = clampf((s->val[P_PAN] + s->val[P_SPREAD] * spread_place(s, v)) * 0.01f + pan_mod, -1.0f, 1.0f);
+    if (!snap && to == v->pan_pos) return;   /* in place (the usual case): no square roots */
+    v->pan_pos = snap || fabsf(to - v->pan_pos) < 1e-5f ? to : v->pan_pos + (to - v->pan_pos) * s->glide;
+    v->tgt_pl = sqrtf(1.0f - v->pan_pos);
+    v->tgt_pr = sqrtf(1.0f + v->pan_pos);
+    if (snap) { v->pl = v->tgt_pl; v->pr = v->tgt_pr; }
+}
+
+/* ANALOG DRIFT, once per control step while it is up: each wander eases (a one-pole, DRIFT_TAU_S) towards a random
+ * target in -1..1 and picks a new one every 0.3-1.5 s, so it stays within -1..1. out: the wanders times the amount. */
+static void drift_step(const one_t *s, voice_t *v, float *out) {
+    float amt = s->val[P_DRIFT] * 0.01f;
+    for (int k = 0; k < NDRIFT; k++) {
+        if (--v->drift_left[k] <= 0) {
+            v->drift_tgt[k] = white(&v->drift_rng);
+            float u = 0.5f + 0.5f * white(&v->drift_rng);
+            v->drift_left[k] = (int)((DRIFT_MIN_S + DRIFT_VAR_S * u) * SR / CR);
+        }
+        v->drift[k] += (v->drift_tgt[k] - v->drift[k]) * s->drift_coef;
+        out[k] = v->drift[k] * amt;
+    }
+}
+
 static void load_defaults(one_t *s) {
     for (int i = 0; i < NPARAMS; i++) {
         const param_t *p = &PARAMS[i];
@@ -404,6 +491,10 @@ static void *create(const char *data_dir) {
         v->amp_mod = 1.0f;
         v->uni_gain = 1.0f;
         for (int n = 0; n < NENV; n++) v->env[n].cfg = &s->ecfg[n];
+        v->nenv.cfg = &s->ncfg;
+        v->drift_rng = 0x85ebca6bu + 0x27d4eb2fu * (uint32_t)i;   /* never 0: xorshift would stick */
+        v->pl = v->pr = v->tgt_pl = v->tgt_pr = 1.0f;
+        v->nz_m = -1.0f;   /* nothing worked out yet */
         v->cut = s->val[P_FLT_CUT];
         v->svf_cut = s->val[P_SVF_CUT];
     }
@@ -413,6 +504,7 @@ static void *create(const char *data_dir) {
     s->link_off = s->val[P_SVF_CUT] - s->val[P_FLT_CUT];
     s->gain_coef = env_coef(5.0f, SR);
     s->glide = 1.0f - expf(-(float)CR / (GLIDE_MS * 0.001f * SR));
+    s->drift_coef = 1.0f - expf(-(float)CR / (DRIFT_TAU_S * SR));
     apply(s);
     return s;
 }
@@ -440,6 +532,11 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
         v->fm = v->tgt_fm;
         v->fm_prev = 0.0f;
         for (int n = 0; n < NENV; n++) { v->env[n].level = 0.0f; v->env[n].stage = ENV_IDLE; }
+        v->nenv.level = v->noise_env = 0.0f;   /* the noise EG and its colours, and the voice's place in the stereo field */
+        v->nenv.stage = ENV_IDLE;
+        noise_targets(s, v, 0.0f);
+        memcpy(v->nz, v->tgt_nz, sizeof v->nz);
+        pan_targets(s, v, 0.0f, 1);
         v->gain = gain_target(s, v);
         v->cut = s->val[P_FLT_CUT];
         v->svf_cut = s->val[P_SVF_CUT];
@@ -467,12 +564,14 @@ static void gate_on(voice_t *v) {
     int legato = v->gate && !v->sustained && v->env[ENV_AMP].stage != ENV_IDLE;
     for (int n = 0; n < NENV; n++)
         if (!legato || v->env[n].cfg->multi) env_gate_on(&v->env[n]);
+    if (!legato || v->env[ENV_AMP].cfg->multi) env_gate_on(&v->nenv);   /* the noise EG retriggers with the amp's */
     v->gate = 1;
     v->sustained = 0;
 }
 
 static void gate_off(voice_t *v) {
     for (int n = 0; n < NENV; n++) env_gate_off(&v->env[n]);
+    env_gate_off(&v->nenv);
     v->gate = 0;
     v->sustained = 0;
 }
@@ -586,10 +685,13 @@ static void all_off(one_t *s, int hard) {
     s->nheld = 0;
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
-        if (hard)   /* All Sound Off: silent within a few ms, without a click */
+        if (hard) {   /* All Sound Off: silent within a few ms, without a click */
             for (int n = 0; n < NENV; n++) env_kill(&v->env[n]);
-        else   /* latched envelopes too */
+            env_kill(&v->nenv);
+        } else {   /* latched envelopes too */
             for (int n = 0; n < NENV; n++) env_release(&v->env[n]);
+            env_release(&v->nenv);
+        }
         v->gate = 0;
         v->sustained = 0;
     }
@@ -695,6 +797,7 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
         if (s->val[P_FENV_SYNC + EX_STRIDE * e] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[env_div(s->val[k])].name);
         return time_text(buf, n, env_ms(s->val[k]));
     }
+    if (k == P_NOISE_A || k == P_NOISE_R) return time_text(buf, n, env_ms(s->val[k]));
     if (k == P_GLIDE_TIME) return s->val[k] > 0.0f ? time_text(buf, n, glide_ms(s->val[k])) : snprintf(buf, n, "0 ms");
     if (k == P_MODFX_RATE) {
         float hz = modfx_hz(s->val[k]);
@@ -751,6 +854,7 @@ static void control_voice(one_t *s, voice_t *v) {
     glide_step(s, v);
     update_note_hz(s, v);
     float key = voice_key(s, v);   /* the glided pitch drives keyboard tracking and the Keyboard source */
+    v->noise_env = env_run(&v->nenv, CR);   /* the noise EG runs whether or not it shapes the noise (a source too) */
     src[MS_OFF] = 0.0f;
     src[MS_FENV] = env_run(&v->env[ENV_FILTER], CR) * env_vel(s, ENV_FILTER, v->velocity);
     src[MS_AENV] = v->env[ENV_AMP].level * env_vel(s, ENV_AMP, v->velocity);
@@ -767,20 +871,26 @@ static void control_voice(one_t *s, voice_t *v) {
 
     float semis = s->lfo_val[0] * p[P_PITCH_LFO] * 0.01f * LFO_PITCH_ST + src[MS_MENV] * p[P_PITCH_ENV] * 0.01f * ENV_PITCH_ST
                   + s->bend * p[P_BEND_RANGE] + dm[MD_PITCH] * MOD_PITCH_ST;
-    const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST, dm[MD_O2_PITCH] * MOD_PITCH_ST, dm[MD_O3_PITCH] * MOD_PITCH_ST};
+    float dr[NDRIFT] = {0};   /* analog drift, -1..1 x the amount per oscillator and for the cutoffs; off: none at all */
+    if (p[P_DRIFT] > 0.0f) drift_step(s, v, dr);
+    const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + dr[0] * DRIFT_ST,
+                                   dm[MD_O2_PITCH] * MOD_PITCH_ST + dr[1] * DRIFT_ST,
+                                   dm[MD_O3_PITCH] * MOD_PITCH_ST + dr[2] * DRIFT_ST};
     set_pitch(s, v, semis, osc_semis);
 
     v->cut += (p[P_FLT_CUT] - v->cut) * s->glide;
     v->svf_cut += (p[P_SVF_CUT] - v->svf_cut) * s->glide;
     float lad_oct = fenv * p[P_LAD_ENV] * 0.01f * ENV_CUT_OCT + s->lfo_val[1] * p[P_LAD_LFO] * 0.01f * LFO_CUT_OCT
-                    + key_oct * p[P_LAD_KBD] * 0.01f + dm[MD_LAD_CUT] * MOD_CUT_OCT;
+                    + key_oct * p[P_LAD_KBD] * 0.01f + dm[MD_LAD_CUT] * MOD_CUT_OCT + dr[NOSC] * DRIFT_CUT_OCT;
     float svf_oct = fenv * p[P_SVF_ENV] * 0.01f * ENV_CUT_OCT + s->lfo_val[1] * p[P_SVF_LFO] * 0.01f * LFO_CUT_OCT
-                    + key_oct * p[P_SVF_KBD] * 0.01f + dm[MD_SVF_CUT] * MOD_CUT_OCT;
+                    + key_oct * p[P_SVF_KBD] * 0.01f + dm[MD_SVF_CUT] * MOD_CUT_OCT + dr[NOSC] * DRIFT_CUT_OCT;
     ladder_set(&v->lad, cut_hz(v->cut) * exp2f(lad_oct), clampf(p[P_FLT_RES] * 0.01f + dm[MD_LAD_RES], 0.0f, 1.0f),
                clampf(p[P_FLT_DRIVE] * 0.01f + dm[MD_LAD_DRIVE], 0.0f, 1.0f), (int)p[P_FLT_MODE], (int)p[P_FLT_SLOPE], SR);
     svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), p[P_SVF_SPACE] * 0.01f,
              clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES], 0.0f, 1.0f), (int)p[P_SVF_MODE], (int)p[P_SVF_PAIR], SR);
     set_targets(s, v, dm);
+    noise_targets(s, v, 0.0f);   /* colour mix modulation: for the matrix (later) */
+    pan_targets(s, v, 0.0f, 0);  /* pan modulation: for the matrix (later) */
 }
 
 /* 2^x for the filter FM's few octaves: a 5th-order polynomial on the fraction (within 0.0002, a third of a cent) and
@@ -797,15 +907,56 @@ static inline float ramp_from(float from, float to, int first, float inv, float 
     return first ? from : to;
 }
 
-/* render n (<= CR) samples of one voice, adding into acc; levels, wave shapes, FM depth and the filter mix ramp from
- * the last control step's values to this one's */
-static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
+/* one sample of a noise colour from this sample's white noise w (purple also reads v->wprev, the one before) */
+static inline float noise_colour(voice_t *v, int c, float w) {
+    if (c == NC_WHITE) return w;
+    if (c == NC_RED) return (v->red += (w - v->red) * RED_C) * RED_GAIN;
+    return (w - v->wprev) * PURPLE_GAIN;
+}
+
+/* the noise channel for n samples of white noise wn: the pair's two colours at gains ga, gb (ramped by dga, dgb per
+ * sample; a colour at gain 0 throughout is not worked out). Kept out of line: only a voice whose noise is heard calls
+ * it, and inlined it would slow every voice's sample loop. */
+__attribute__((noinline)) static void noise_block(voice_t *v, int ca, int cb, float ga, float gb, float dga, float dgb,
+                                                  const float *wn, float *cn, int n) {
+    int use_a = ga != 0.0f || dga != 0.0f, use_b = gb != 0.0f || dgb != 0.0f;
+    for (int i = 0; i < n; i++) {
+        float w = wn[i];
+        cn[i] = (use_a ? noise_colour(v, ca, w) * ga : 0.0f) + (use_b ? noise_colour(v, cb, w) * gb : 0.0f);
+        v->wprev = w;
+        ga += dga;
+        gb += dgb;
+    }
+}
+
+/* this step's white noise (wn: the -100 dB floor, and the noise channel's source) and the noise channel (the returned
+ * pointer: cn, coloured, while the channel is heard; else wn, as its levels are 0). Called before anything else in
+ * render_voice, so the out-of-line call leaves the sample loop's registers alone. */
+static inline const float *noise_channel(const one_t *s, voice_t *v, int first, float inv, int n, float *wn, float *cn) {
+    for (int i = 0; i < n; i++) wn[i] = white(&v->noise);
+    int heard = v->tgt_lad[NOISE] != 0.0f || v->tgt_svf[NOISE] != 0.0f
+                || (first && (v->to_lad[NOISE] != 0.0f || v->to_svf[NOISE] != 0.0f));
+    float dna, dnb;
+    float na = ramp_from(v->nz[0], v->tgt_nz[0], first, inv, &dna), nb = ramp_from(v->nz[1], v->tgt_nz[1], first, inv, &dnb);
+    memcpy(v->nz, v->tgt_nz, sizeof v->nz);
+    if (!heard) return wn;
+    const int *pair = NOISE_PAIR[(int)s->val[P_NOISE_COLOR_PAIR]];
+    noise_block(v, pair[0], pair[1], na, nb, dna, dnb, wn, cn, n);
+    return cn;
+}
+
+/* render n (<= CR) samples of one voice, adding into acc (the mono sum: the mod effect's input, and the dry path of
+ * every centred voice) and, for a voice off the centre, its difference from the centre into xl, xr (so the dry path
+ * is acc + xl, acc + xr, and centred voices cost nothing extra); returns whether it did. Levels, wave shapes, FM
+ * depth, the filter mix, the noise colours and the pan gains ramp from the last control step's values to this one's. */
+static int render_voice(one_t *s, voice_t *v, float *acc, float *xl, float *xr, int n, int first) {
     const float *p = s->val;
+    float inv = 1.0f / (float)n, out[CR], wn[CR], cn[CR];   /* the voice's output; white noise; the noise channel */
+    const float *ncp = noise_channel(s, v, first, inv, n, wn, cn);
     float lad[NSRC], svf[NSRC], dlad[NSRC], dsvf[NSRC];
     int sync2 = p[P_O2_SYNC] > 0.5f, sync3 = p[P_O3_SYNC] > 0.5f;
     int series = (int)p[P_FLT_ROUTE] == FLT_SERIES, any_svf = 0;
     int ring23 = (int)p[P_RING_SRC] == RING_2X3, route = (int)p[P_FM_ROUTE];
-    float inv = 1.0f / (float)n;
     int heard[NSRC], fading = 0;   /* fading: a level changes during this step */
     for (int k = 0; k < NSRC; k++) {
         lad[k] = ramp_from(v->to_lad[k], v->tgt_lad[k], first, inv, &dlad[k]);
@@ -835,6 +986,10 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
     v->mix_lad = v->tgt_mix;
     v->fm = v->tgt_fm;
     int run_lad = series || ml != 0.0f || v->mix_lad != 0.0f;
+    float dpl, dpr;   /* the pan gains */
+    float pl = ramp_from(v->pl, v->tgt_pl, first, inv, &dpl), pr = ramp_from(v->pr, v->tgt_pr, first, inv, &dpr);
+    v->pl = v->tgt_pl;
+    v->pr = v->tgt_pr;
     /* filter FM (octaves at a full-scale sample) from oscillator lad_src / svf_src; off costs nothing per sample */
     int lad_src = (int)p[P_LAD_FM_SRC], svf_src = (int)p[P_SVF_FM_SRC];
     float lad_fm = run_lad ? p[P_LAD_FM] * 0.01f * FILTER_FM_OCT : 0.0f;
@@ -858,11 +1013,11 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
         float c = run3 ? osc_next(o3, &sh[2], sync3 ? wrap : -1.0f) : 0.0f;
         v->fm_prev = c;
         float rm = heard[RING] ? o2->tri_out * (ring23 ? o3->tri_out : o1->tri_out) : 0.0f;
-        float nz = white(&v->noise);
-        float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nz * lad[NOISE] + rm * lad[RING];
+        float nz = wn[i], nc = ncp[i];
+        float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nc * lad[NOISE] + rm * lad[RING];
         float svf_out = 0.0f, lad_out = 0.0f;
         if (any_svf) {
-            float in = a * svf[0] + b * svf[1] + c * svf[2] + nz * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
+            float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
             svf_out = svf_fm > 0.0f ? svf2_next_fm(&v->svf, in, exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)))
                                     : svf2_next(&v->svf, in);
             if (series) lad_in += svf_out;
@@ -874,7 +1029,9 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
         float f = lad_out * ml + svf_out * (1.0f - ml);
         v->gain += (target - v->gain) * s->gain_coef;
         if (fabsf(v->gain - target) < 1e-7f) v->gain = target;   /* settle exactly: no denormal tail */
-        acc[i] += f * env_next(&v->env[ENV_AMP]) * v->gain;
+        float y = f * env_next(&v->env[ENV_AMP]) * v->gain;
+        acc[i] += y;
+        out[i] = y;
         if (fading)
             for (int k = 0; k < NSRC; k++) { lad[k] += dlad[k]; svf[k] += dsvf[k]; }
         for (int k = 0; k < NOSC && moving; k++) {
@@ -885,6 +1042,14 @@ static void render_voice(one_t *s, voice_t *v, float *acc, int n, int first) {
         ml += dml;
         fm += dfm;
     }
+    if (pl == 1.0f && pr == 1.0f && dpl == 0.0f && dpr == 0.0f) return 0;   /* in the centre */
+    pl -= 1.0f;
+    pr -= 1.0f;
+    for (int i = 0; i < n; i++) {   /* apart from the loop above, so this part vectorises */
+        xl[i] += out[i] * (pl + dpl * (float)i);
+        xr[i] += out[i] * (pr + dpr * (float)i);
+    }
+    return 1;
 }
 
 /* the effect settings in the units fx.h reads */
@@ -904,11 +1069,12 @@ static void fx_params(const one_t *s, fx_params_t *f) {
     f->rev_damp = p[P_REV_DAMP] * 0.009f;
     f->rev_predelay_ms = p[P_REV_PRE];
     f->rev_mix = p[P_REV_MIX] * 0.01f;
+    f->wet_pan = p[P_PAN] * 0.01f;
 }
 
 static void render(void *inst, int16_t *out, int frames) {
     one_t *s = inst;
-    float acc[128], l[128], r[128];
+    float acc[128], xl[128], xr[128], l[128], r[128];   /* the voices: mono sum, panned voices' offsets; the output */
     fx_params_t fxp;
     fx_params(s, &fxp);
     int done = 0;
@@ -919,13 +1085,18 @@ static void render(void *inst, int16_t *out, int frames) {
         if (first) control_lfos(s);
         if (n > 128) n = 128;
         memset(acc, 0, sizeof(float) * n);
+        memset(xl, 0, sizeof(float) * n);
+        memset(xr, 0, sizeof(float) * n);
+        int side = 0;   /* a voice is off the centre */
         for (int k = 0; k < MAX_VOICES; k++) {   /* voices past the current count still finish their release */
             voice_t *v = &s->voice[k];
             if (v->env[ENV_AMP].stage == ENV_IDLE) continue;
             if (first) control_voice(s, v);
-            render_voice(s, v, acc, n, first);
+            side |= render_voice(s, v, acc, xl, xr, n, first);
         }
-        fx_process(&s->fx, &fxp, acc, l, r, n);
+        if (side)   /* the dry path in stereo: every voice at its place */
+            for (int i = 0; i < n; i++) { xl[i] += acc[i]; xr[i] += acc[i]; }
+        fx_process(&s->fx, &fxp, acc, side ? xl : acc, side ? xr : acc, l, r, n);
         for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host */
             float yl = isfinite(l[i]) ? soft_limit(l[i]) : 0.0f, yr = isfinite(r[i]) ? soft_limit(r[i]) : 0.0f;
             out[2 * (done + i)] = (int16_t)(yl * 32767.0f);

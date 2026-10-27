@@ -22,6 +22,8 @@ typedef struct {   /* what the effects read; worked out by the engine from the k
     float dly_ms, dly_fb, dly_tone, dly_mix;         /* tone 0..1 (dark..bright) */
     int dly_pingpong;
     float rev_decay, rev_damp, rev_predelay_ms, rev_mix;
+    float wet_pan;                                   /* the synth pan, -1 (left) .. 1 (right): where the mod effect's
+                                                      * wet signal sits (its input is the voices' mono sum) */
 } fx_params_t;
 
 /* fixed-length delay line over a power-of-two buffer */
@@ -85,8 +87,10 @@ static inline void fx_clear_reverb(fx_t *f) {
 
 static inline float fx_tri(float ph) { return ph < 0.5f ? 4.0f * ph - 1.0f : 3.0f - 4.0f * ph; }
 
-static void fx_mod(fx_t *f, const fx_params_t *p, const float *in, float *l, float *r, int n) {
+static void fx_mod(fx_t *f, const fx_params_t *p, const float *in, const float *dry_l, const float *dry_r, float *l,
+                   float *r, int n) {
     float inc = p->mod_rate_hz / FX_SR, wet = p->mod_mix, dry = 1.0f - 0.5f * p->mod_mix;
+    float wet_l = wet * sqrtf(1.0f - p->wet_pan), wet_r = wet * sqrtf(1.0f + p->wet_pan);   /* equal power, 1 at centre */
     for (int i = 0; i < n; i++) {
         float ph = f->mod_phase, ph2 = ph + 0.25f;   /* the right channel a quarter cycle on: stereo width */
         if (ph2 >= 1.0f) ph2 -= 1.0f;
@@ -117,8 +121,8 @@ static void fx_mod(fx_t *f, const fx_params_t *p, const float *in, float *l, flo
             yr = fx_hermite(f->mod_r, MOD_SIZE - 1, f->mod_w, dr);
             f->mod_fb_l = yl; f->mod_fb_r = yr;
         }
-        l[i] = x * dry + yl * wet;
-        r[i] = x * dry + yr * wet;
+        l[i] = dry_l[i] * dry + yl * wet_l;
+        r[i] = dry_r[i] * dry + yr * wet_r;
         f->mod_phase = ph + inc >= 1.0f ? ph + inc - 1.0f : ph + inc;
     }
 }
@@ -190,16 +194,18 @@ static void fx_reverb(fx_t *f, const fx_params_t *p, float *l, float *r, int n) 
     }
 }
 
-/* in: the voices' mono sum; out: l, r. Effects with their mix at 0 are skipped; one switched back on starts clean. */
-static void fx_process(fx_t *f, const fx_params_t *p, const float *in, float *l, float *r, int n) {
+/* in: the voices' mono sum (the mod effect's input, as on the instrument: mono in, stereo out); dry_l, dry_r: the
+ * voices panned, the dry path; out: l, r. Effects with their mix at 0 are skipped; one switched back on starts clean. */
+static void fx_process(fx_t *f, const fx_params_t *p, const float *in, const float *dry_l, const float *dry_r, float *l,
+                       float *r, int n) {
     int mod_on = p->mod_type != MODFX_OFF && p->mod_mix > 0.0f;
     int dly_on = p->dly_mix > 0.0f, rev_on = p->rev_mix > 0.0f;
     if (mod_on && !f->mod_on) fx_clear_mod(f);
     if (dly_on && !f->dly_on) { fx_clear_delay(f); f->dly_pos = p->dly_ms * 0.001f * FX_SR; }
     if (rev_on && !f->rev_on) fx_clear_reverb(f);
     f->mod_on = mod_on; f->dly_on = dly_on; f->rev_on = rev_on;
-    if (mod_on) fx_mod(f, p, in, l, r, n);
-    else for (int i = 0; i < n; i++) l[i] = r[i] = in[i];
+    if (mod_on) fx_mod(f, p, in, dry_l, dry_r, l, r, n);
+    else for (int i = 0; i < n; i++) { l[i] = dry_l[i]; r[i] = dry_r[i]; }
     if (dly_on) fx_delay(f, p, l, r, n);
     if (rev_on) fx_reverb(f, p, l, r, n);
 }

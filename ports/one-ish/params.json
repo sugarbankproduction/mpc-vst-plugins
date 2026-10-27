@@ -180,7 +180,16 @@
   {"key": "menv_multi", "name": "Mod Env Multi Trig", "options": ["Off", "On"], "default": "On"},
   {"key": "menv_reset", "name": "Mod Env Reset", "options": ["Off", "On"], "default": "Off"},
   {"key": "menv_scale", "name": "Mod Env Time Scale", "min": 0, "max": 100, "default": 50, "dynamic_display": true},
-  {"key": "menv_vel", "name": "Mod Env Vel Amount", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"}
+  {"key": "menv_vel", "name": "Mod Env Vel Amount", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "noise_color_pair", "name": "Noise Color", "options": ["Red+White", "Red+Purple", "White+Purple"], "default": "Red+White"},
+  {"key": "noise_color_mix", "name": "Noise Color Mix", "min": 0, "max": 100, "unit": "%", "default": 100, "display": "int"},
+  {"key": "noise_env", "name": "Noise Env", "options": ["Off", "On"], "default": "Off"},
+  {"key": "noise_a", "name": "Noise Env Attack", "min": 0, "max": 100, "default": 0, "dynamic_display": true},
+  {"key": "noise_r", "name": "Noise Env Release", "min": 0, "max": 100, "default": 50, "dynamic_display": true},
+  {"key": "noise_sus", "name": "Noise Env Sustain", "options": ["Off", "On"], "default": "On"},
+  {"key": "pan", "name": "Pan", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "spread", "name": "Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "drift", "name": "Analog Drift", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -220,6 +229,9 @@
   {"label": "FILTER FM", "keys": ["lad_fm", "lad_fm_src", "svf_fm", "svf_fm_src"]},
   {"label": "FILTER ENV MORE", "keys": ["fenv_delay", "fenv_hold", "fenv_acurve", "fenv_dcurve", "fenv_rcurve", "fenv_loop", "fenv_latch", "fenv_sync", "fenv_multi", "fenv_reset", "fenv_scale", "fenv_vel"]},
   {"label": "AMP ENV MORE", "keys": ["amp_delay", "amp_hold", "amp_acurve", "amp_dcurve", "amp_rcurve", "amp_loop", "amp_latch", "amp_sync", "amp_multi", "amp_reset", "amp_scale", "amp_vel"]},
-  {"label": "MOD ENV MORE", "keys": ["menv_delay", "menv_hold", "menv_acurve", "menv_dcurve", "menv_rcurve", "menv_loop", "menv_latch", "menv_sync", "menv_multi", "menv_reset", "menv_scale", "menv_vel"]}
+  {"label": "MOD ENV MORE", "keys": ["menv_delay", "menv_hold", "menv_acurve", "menv_dcurve", "menv_rcurve", "menv_loop", "menv_latch", "menv_sync", "menv_multi", "menv_reset", "menv_scale", "menv_vel"]},
+  {"label": "NOISE", "keys": ["noise_color_pair", "noise_color_mix", "noise_env", "noise_a", "noise_r", "noise_sus"]},
+  {"label": "VCA", "keys": ["pan", "spread"]},
+  {"label": "ANALOG", "keys": ["drift"]}
  ]
 }
