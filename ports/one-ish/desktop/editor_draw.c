@@ -1,10 +1,13 @@
 /* Drawing for the desktop editor (see editor.c): the panels and their MORE triangles, knobs, LED lists, buttons, the
  * oscillators' wave screens, the GENERATIVE section's Euclidean ring, the centre console's screen (mod matrix, MORE
- * pages), the left-hand controller, the ribbon and the keyboard. All drawn from scratch: GDI for text, GDI+ (gfx.h) for anti-aliased shapes. UI thread only. */
+ * pages), the left-hand controller, the ribbon and the keyboard. All drawn from scratch: GDI for text, GDI+ (gfx.h) for
+ * anti-aliased shapes, skin.c for the materials and the 3D knobs, buttons, LEDs, keys and wheels. UI thread only. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "editor.h"
 #include "gfx.h"
+#include "skin.h"
 #include "../src/randomize.h"
 #pragma GCC diagnostic push   /* only euclid() is used here; its neighbours' tables would warn as unused */
 #pragma GCC diagnostic ignored "-Wunused-const-variable"
@@ -229,7 +232,11 @@ static const char *zone_help(ed_t *e, int z) {
     return NULL;
 }
 
-/* ---- drawing ---- */
+/* ---- drawing ----
+ * Two layers. The static one (bake, below: wood, metal frames, black panels, titles, knob scales, display glass, the
+ * keyboard at rest) is made once per window size by skin.c and copied in at each paint; everything that moves or
+ * lights up is drawn over it, only where the window needs repainting (the clip box). Knobs, buttons and LEDs are 3D
+ * sprites (skin.c), their pointers and value arcs GDI+ lines, the text GDI. */
 #define C_PANEL_BG 0xFF1E1E20
 #define C_LINE 0xFF6A6A6E
 #define C_STRIP 0xFFC8C9CB
@@ -241,7 +248,15 @@ static const char *zone_help(ed_t *e, int z) {
 #define T_LCD RGB(150, 215, 232)
 #define T_LCD_DIM RGB(90, 130, 145)
 
+static RECT clipr;   /* what this paint redraws */
+static int vis(const RECT *r, int pad) {   /* r (grown by pad) needs drawing */
+    RECT a = *r, o;
+    InflateRect(&a, pad, pad);
+    return IntersectRect(&o, &a, &clipr);
+}
+
 static void text(HDC dc, const RECT *r, const char *s, HFONT f, COLORREF c, UINT fmt) {
+    if (skin_text(r, s, f, c, fmt)) return;   /* kept as a mask after its first time (skin.c) */
     SelectObject(dc, f);
     SetTextColor(dc, c);
     SetBkMode(dc, TRANSPARENT);
@@ -253,27 +268,15 @@ static void text_c(HDC dc, int cx, int top, int w, int h, const char *s, HFONT f
     text(dc, &r, s, f, c, DT_CENTER | DT_TOP | DT_SINGLELINE);
 }
 
-static void wood(int x, int y, int w, int h, int vertical) {   /* grain along the board */
-    int n = vertical ? w : h;
-    for (int t = 0; t < n; t++) {
-        float g = 12.0f * sinf(t * 0.31f + 2.3f * sinf(t * 0.043f)) + 7.0f * sinf(t * 1.73f) + 4.0f * sinf(t * 4.1f);
-        int r = 188 + (int)g, gg = 112 + (int)(g * 0.75f), b = 48 + (int)(g * 0.4f);
-        DWORD c = 0xFF000000u | (DWORD)(r << 16) | (DWORD)(gg << 8) | (DWORD)b;
-        if (vertical) gfx_rect((float)(x + t), (float)y, 1.0f, (float)h, c);
-        else gfx_rect((float)x, (float)(y + t), (float)w, 1.0f, c);
-    }
-}
-
-static void draw_panels(HDC dc) {
+static void draw_panels(HDC dc) {   /* static: drawn once into the static layer */
     for (int p = 0; p < NPANELS; p++) {
         const lay_panel_t *q = &PANELS[p];
         float x = (float)sc(q->x), y = (float)sc(q->y), w = (float)sc(q->w), h = (float)sc(q->h);
-        if (q->style == 0) {   /* a silver-edged block */
-            gfx_rect_grad(x, y, w, h, 0xFFC4C6C9, 0xFF8E9094, 0);
-            float b = (float)sc(6);
-            gfx_rect(x + b, y + b, w - 2 * b, h - 2 * b, C_PANEL_BG);
-            gfx_frame(x + b, y + b, w - 2 * b, h - 2 * b, 1.0f, 0xFF0C0C0C);
-        } else if (q->style == 1) {   /* a module: hairline frame and a light title strip */
+        if (q->style == 0) {   /* a black panel in a raised, bevelled aluminium frame */
+            int b = sc(6);
+            skin_metal_frame((int)x, (int)y, (int)w, (int)h, b);
+            skin_panel((int)x + b, (int)y + b, (int)w - 2 * b, (int)h - 2 * b);
+        } else if (q->style == 1) {   /* a module: printed hairline frame and a light title strip */
             gfx_frame(x + 0.5f, y + 0.5f, w - 1, h - 1, 1.0f, C_LINE);
             float sh = (float)sc(13);
             const char *bar = strchr(q->title, '|');
@@ -298,78 +301,89 @@ static void draw_panels(HDC dc) {
     }
 }
 
-/* the MORE triangles in the modules' corners: black, rimmed; lit while their page is on the screen */
+/* the MORE triangles in the modules' corners: small black wedges with a bevelled edge; lit while their page is on the
+ * screen */
 static void draw_mores(ed_t *e) {
     for (int k = 0; k < NMORES; k++) {
         const RECT *r = &L.more[k];
+        if (!vis(r, sc(4))) continue;
         int open = e->screen == MORES[k].page, hot = e->hover == Z_PAGE + MORES[k].page;
         gpt_t t[3] = {{(float)r->left, (float)r->top}, {(float)r->right, (float)r->top}, {(float)r->right, (float)r->bottom}};
+        gpt_t s[3] = {{t[0].x + 1, t[0].y + 1.5f}, {t[1].x + 1, t[1].y + 1.5f}, {t[2].x + 1, t[2].y + 1.5f}};
+        gfx_poly(s, 3, 0x90000000);   /* its shadow */
         if (open) {
             gpt_t g[3] = {{t[0].x - 3, t[0].y - 2}, {t[1].x + 2, t[1].y - 2}, {t[2].x + 2, t[2].y + 3}};
-            gfx_poly(g, 3, 0x40FFFFF0);
+            gfx_poly(g, 3, 0x40FFF0D8);
         }
-        gfx_poly(t, 3, open ? 0xFFF4F4EE : 0xFF050506);
-        gfx_line(t[0].x, t[0].y, t[1].x, t[1].y, 1.0f, hot ? 0xFFD0D0D4 : 0xFF5A5A5E);
-        gfx_line(t[0].x, t[0].y, t[2].x, t[2].y, 1.0f, hot ? 0xFFD0D0D4 : 0xFF3A3A3E);
+        gfx_poly(t, 3, open ? 0xFFF6F2E8 : hot ? 0xFF2A2A2E : 0xFF0A0A0B);
+        gfx_line(t[0].x, t[0].y, t[1].x, t[1].y, 1.0f, open ? 0xFFFFFFFF : hot ? 0xFFD8D8DC : 0xFF8A8A8E);   /* lit top edge */
+        gfx_line(t[1].x, t[1].y, t[2].x, t[2].y, 1.0f, open ? 0xFFB8B4AA : 0xFF3A3A3E);
+        gfx_line(t[0].x, t[0].y, t[2].x, t[2].y, 1.0f, open ? 0xFFD8D4CA : 0xFF242426);
     }
 }
 
-static void knob(float cx, float cy, float r, float v, int bipolar) {   /* a black skirt with a silver cap */
+/* the big knobs (cutoffs, the preset knob) get the larger style */
+static int big_knob(float r) { return r > 20.0f * L.s; }
+
+/* a knob's printed scale and the dark groove its value arc lights: static */
+static void knob_scale(float cx, float cy, float r) {
     for (int t = 0; t <= 10 && r > 10 * L.s; t++) {   /* a scale, except on the smallest knobs */
         gpt_t a = gfx_polar(cx, cy, r + 3.0f * L.s + 1, -135.0f + 27.0f * t), b = gfx_polar(cx, cy, r + 6.5f * L.s + 1, -135.0f + 27.0f * t);
-        gfx_line(a.x, a.y, b.x, b.y, 1.0f, 0xFF77777B);
+        gfx_line(a.x, a.y, b.x, b.y, 1.0f, (t == 0 || t == 10 || t == 5) ? 0xFFA4A4A8 : 0xFF707074);
     }
+    float ra = r + 1.8f * L.s + 0.5f;
+    gfx_arc(cx, cy, ra, -135.0f, 135.0f, 2.6f * L.s, 0xFF040404);
+}
+
+/* a knob: the lit 3D body (skin.c), a value arc lit in its groove, the pointer: a line engraved in the cap and a white
+ * mark on the skirt */
+static void knob(float cx, float cy, float r, float v, int bipolar) {
     float a = -135.0f + 270.0f * v;
-    gfx_arc(cx, cy, r + 1.8f * L.s + 0.5f, bipolar ? 0.0f : -135.0f, a, 1.6f, 0xC0E8E8E8);
-    gpt_t sk[60];
-    for (int k = 0; k < 60; k++) {   /* knurled skirt */
-        float ang = k * 6.0f, rr = r * (0.955f + 0.045f * cosf(ang * 12.0f * 3.14159265f / 180.0f));
-        sk[k] = gfx_polar(cx, cy, rr, ang);
-    }
-    gfx_poly(sk, 60, 0xFF0D0D0D);
-    gfx_circle(cx, cy, r * 0.97f, 1.0f, 0xFF333336);
-    float cr = r * 0.66f;
-    gfx_disc(cx, cy + 1, cr + 1.2f, 0x90000000);
-    gfx_disc_grad(cx, cy, cr, 0xFFF3F3F3, 0xFF707074);
-    for (int k = 1; k <= 3; k++) gfx_circle(cx, cy, cr * k / 4.0f, 0.6f, 0x22FFFFFF);   /* brushed rings */
-    gfx_circle(cx, cy, cr, 1.0f, 0xFF3A3A3C);
-    gpt_t p0 = gfx_polar(cx, cy, cr * 0.25f, a), p1 = gfx_polar(cx, cy, cr * 0.92f, a);
-    gfx_line(p0.x, p0.y, p1.x, p1.y, r > 20 ? 2.4f : 1.8f, 0xFF2A2A2C);
-    gpt_t d = gfx_polar(cx, cy, r * 0.83f, a);
-    gfx_disc(d.x, d.y, r > 20 ? 2.4f : 1.7f, 0xFFF4F4F4);
+    int big = big_knob(r);
+    skin_knob(cx, cy, r, a, big);
+    float ra = r + 1.8f * L.s + 0.5f, from = bipolar ? 0.0f : -135.0f;
+    gfx_arc(cx, cy, ra, from, a, 3.6f * L.s, 0x30FFD8A0);
+    gfx_arc(cx, cy, ra, from, a, 1.5f * L.s, 0xFFF6EAD2);
+    float cr = r * (big ? 0.56f : 0.62f), lw = r * 0.075f;
+    lw = lw < 1.3f ? 1.3f : lw > 2.6f ? 2.6f : lw;
+    gpt_t p0 = gfx_polar(cx, cy, cr * 0.20f, a), p1 = gfx_polar(cx, cy, cr * 0.90f, a);
+    gfx_line(p0.x + 0.6f, p0.y + 0.6f, p1.x + 0.6f, p1.y + 0.6f, lw, 0x60FFFFFF);   /* the engraving's lit lower edge */
+    gfx_line(p0.x, p0.y, p1.x, p1.y, lw, 0xFF19191B);
+    gpt_t s0 = gfx_polar(cx, cy, cr * 1.14f, a), s1 = gfx_polar(cx, cy, r * 0.93f, a);
+    gfx_line(s0.x, s0.y, s1.x, s1.y, lw * 0.85f, 0xFFF0EEE8);
+}
+
+static void knob_geom(int i, float *cx, float *cy, float *r, int *label_y) {   /* where a panel knob sits */
+    const RECT *b = &L.ctl[i];
+    int d = L.size[i], small = L.kind[i] == K_SMALL, lh = sc(12), vh = small ? 0 : sc(11);
+    int content = d + sc(9) + lh + vh, top = b->top + (rh(b) - content) / 2;
+    *cx = (float)((b->left + b->right) / 2);
+    *cy = top + d / 2.0f + sc(4);
+    *r = d / 2.0f;
+    if (label_y) *label_y = top + d + sc(10);
 }
 
 static void draw_knob(HDC dc, ed_t *e, int i) {
     const RECT *b = &L.ctl[i];
-    int d = L.size[i], small = L.kind[i] == K_SMALL, lh = sc(12), vh = small ? 0 : sc(11);
-    int content = d + sc(9) + lh + vh, top = b->top + (rh(b) - content) / 2, cx = (b->left + b->right) / 2;
+    int small = L.kind[i] == K_SMALL, lh = sc(12), vh = small ? 0 : sc(11), ly;
+    float cx, cy, r;
+    knob_geom(i, &cx, &cy, &r, &ly);
     float v = e->fx->getParameter(e->fx, i);
-    knob((float)cx, top + d / 2.0f + sc(4), d / 2.0f, v, PARAMS[i].min < 0 && PARAMS[i].max > 0);
-    int tw = rw(b) > sc(76) ? rw(b) : sc(76), ly = top + d + sc(10);
-    text_c(dc, cx, ly, tw, lh + 2, L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
+    knob(cx, cy, r, v, PARAMS[i].min < 0 && PARAMS[i].max > 0);
+    int tw = rw(b) > sc(76) ? rw(b) : sc(76);
+    text_c(dc, (int)cx, ly, tw, lh + 2, L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
     if (!small) {   /* the value no wider than its cell (and a little), so neighbours' values don't run together */
         char val[64];
         param_text(e, i, val, sizeof val);
-        RECT vr = {cx - (rw(b) + sc(8)) / 2, ly + lh, cx + (rw(b) + sc(8)) / 2, ly + lh + vh + 2};
+        RECT vr = {(int)cx - (rw(b) + sc(8)) / 2, ly + lh, (int)cx + (rw(b) + sc(8)) / 2, ly + lh + vh + 2};
         text(dc, &vr, val, font_value, T_VALUE, DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
 }
 
-static void led(float cx, float cy, int on) {
-    float r = 2.8f * L.s + 0.4f;
-    if (on) {
-        gfx_disc(cx, cy, r * 2.6f, 0x30FFE6B0);
-        gfx_disc(cx, cy, r * 1.7f, 0x50FFEBC0);
-        gfx_disc(cx, cy, r, 0xFFFFF8E8);
-    } else {
-        gfx_disc(cx, cy, r, 0xFF2A2A2C);
-        gfx_circle(cx, cy, r, 0.8f, 0xFF4E4E52);
-    }
-}
+static void led(float cx, float cy, int on) { skin_led(cx, cy, 3.0f * L.s + 0.5f, on); }
 
 static void red_button(const RECT *r, int hot) {
-    gfx_rect_grad((float)r->left, (float)r->top, (float)rw(r), (float)rh(r), hot ? 0xFFF04040 : 0xFFD42A26, 0xFF8A1210, 0);
-    gfx_line((float)r->left + 1, (float)r->top + 0.5f, (float)r->right - 1, (float)r->top + 0.5f, 1.0f, 0x60FFFFFF);
+    skin_button((float)r->left, (float)r->top, (float)rw(r), (float)rh(r), SK_RED, hot ? SK_HOT : SK_UP);
 }
 
 /* an LED list: one lit LED beside each option, a red button under it that steps through them */
@@ -399,19 +413,13 @@ static void draw_leds(HDC dc, ed_t *e, int i) {
     text_c(dc, cx, bt.bottom + sc(3), sc(76), sc(14), L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
 }
 
-static void draw_toggle(HDC dc, ed_t *e, int i) {   /* a black button that lights up white when on */
+static void draw_toggle(HDC dc, ed_t *e, int i) {   /* a black push button: latched in and lit white when on */
     const RECT *b = &L.ctl[i];
     int side = L.size[i] == 1;   /* the label beside the button (rows of envelope options) or under it */
     int cx = (b->left + b->right) / 2, bw = sc(side ? 18 : 22), bh = sc(side ? 10 : 11), content = side ? bh : bh + sc(4) + sc(12);
     int top = b->top + (rh(b) - content) / 2, on = option_of(e, i) == 1;
     float x = side ? b->left + 1.0f : cx - bw / 2.0f, y = (float)top;
-    if (on) {
-        gfx_rect(x - 3, y - 3, bw + 6.0f, bh + 6.0f, 0x30FFFFF0);
-        gfx_rect_grad(x, y, (float)bw, (float)bh, 0xFFFFFFFA, 0xFFD8D8D0, 0);
-    } else {
-        gfx_rect_grad(x, y, (float)bw, (float)bh, 0xFF2C2C2E, 0xFF101012, 0);
-    }
-    gfx_frame(x, y, (float)bw, (float)bh, 1.0f, i == e->hover ? 0xFFB0B0B4 : 0xFF4A4A4E);
+    skin_button(x, y, (float)bw, (float)bh, SK_BLACK, on ? SK_ON : i == e->hover ? SK_HOT : SK_UP);
     if (side) {
         RECT r = {(int)x + bw + sc(5), b->top, b->right + sc(6), b->bottom};
         text(dc, &r, L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
@@ -420,36 +428,59 @@ static void draw_toggle(HDC dc, ed_t *e, int i) {   /* a black button that light
     }
 }
 
-static void draw_button(HDC dc, ed_t *e, int i) {   /* a long option list: its value in a little window, a red button */
+/* a small display: dark glass sunk into the panel, the value in it, the glass's sheen over it */
+static void small_lcd_glass(const RECT *w) {   /* static: the glass, sunk into the panel */
+    skin_lcd(w->left, w->top, rw(w), rh(w));
+    skin_recess(w->left, w->top, rw(w), rh(w), 2.0f * L.s);
+}
+static void small_lcd(HDC dc, const RECT *w, const char *s, HFONT f) {   /* the value on it, the glass's sheen over it */
+    text(dc, w, s, f, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    skin_glare(w->left, w->top, rw(w), rh(w));
+}
+
+static RECT button_win(int i) {   /* a long option list's little window */
     const RECT *b = &L.ctl[i];
     int cx = (b->left + b->right) / 2, ww = rw(b) - sc(4), content = sc(15) + sc(4) + sc(12) + sc(3) + sc(12);
     int top = b->top + (rh(b) - content) / 2;
     RECT win = {cx - ww / 2, top, cx + ww / 2, top + sc(15)};
-    gfx_rect((float)win.left, (float)win.top, (float)rw(&win), (float)rh(&win), C_SCREEN);
+    return win;
+}
+
+static void draw_button(HDC dc, ed_t *e, int i) {   /* a long option list: its value in a little window, a red button */
+    const RECT *b = &L.ctl[i];
+    int cx = (b->left + b->right) / 2;
+    RECT win = button_win(i);
     char val[64];
     param_text(e, i, val, sizeof val);
-    text(dc, &win, val, font_tiny, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    small_lcd(dc, &win, val, font_tiny);
     RECT bt = {cx - sc(13), win.bottom + sc(4), cx + sc(13), win.bottom + sc(16)};
     red_button(&bt, i == e->hover);
     text_c(dc, cx, bt.bottom + sc(3), sc(76), sc(14), L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
 }
 
-static void draw_octave(HDC dc, ed_t *e, int i) {   /* a rotary switch with its footages around it */
+static void octave_geom(int i, float *cx, float *cy, float *r) {
     const RECT *b = &L.ctl[i];
-    int n = PARAMS[i].nopts, cur = option_of(e, i), d = L.size[i], cx = (b->left + b->right) / 2;
-    float r = d / 2.0f, cy = b->top + sc(14) + r, spread = 150.0f;
+    *r = L.size[i] / 2.0f;
+    *cx = (float)((b->left + b->right) / 2);
+    *cy = b->top + sc(14) + *r;
+}
+
+static void draw_octave(HDC dc, ed_t *e, int i) {   /* a rotary switch with its footages around it */
+    int n = PARAMS[i].nopts, cur = option_of(e, i);
+    float cx, cy, r, spread = 150.0f;
+    octave_geom(i, &cx, &cy, &r);
     float a = n > 1 ? -spread / 2 + spread * cur / (n - 1) : 0;
     for (int k = 0; k < n; k++) {
         float ak = n > 1 ? -spread / 2 + spread * k / (n - 1) : 0;
-        gpt_t p = gfx_polar((float)cx, cy, r + sc(11), ak);
+        gpt_t p = gfx_polar(cx, cy, r + sc(11), ak);
         RECT tr = {(int)p.x - sc(14), (int)p.y - sc(7), (int)p.x + sc(14), (int)p.y + sc(7)};
         text(dc, &tr, PARAMS[i].opts[k], font_tiny, k == cur ? T_HOT : T_VALUE, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
-    knob((float)cx, cy, r, (a + 135.0f) / 270.0f, 0);
-    text_c(dc, cx, (int)(cy + r + sc(8)), sc(76), sc(14), L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
+    knob(cx, cy, r, (a + 135.0f) / 270.0f, 0);
+    text_c(dc, (int)cx, (int)(cy + r + sc(8)), sc(76), sc(14), L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
 }
 
-/* the GENERATIVE section's Euclidean pattern as a ring of dots, step 1 at the top and on clockwise: lit = a hit. It is
+/* the GENERATIVE section's Euclidean pattern as a ring of LEDs, step 1 at the top and on clockwise: lit = a hit. It is
  * worked out here from STEPS / HITS / ROTATION with the engine's own function (src/seq.h), so it is the very pattern
  * that plays (the engine doesn't tell the window which step it is on, so no step is marked). Dim while EUCLID is off. */
 static void draw_euclid(HDC dc, ed_t *e) {
@@ -471,17 +502,9 @@ static void draw_euclid(HDC dc, ed_t *e) {
     gfx_line(t0.x, t0.y, t1.x, t1.y, 1.2f, 0xFF9A9A9E);   /* where the cycle starts */
     for (int k = 0; k < n; k++) {
         gpt_t p = gfx_polar(cx, cy, R, 360.0f * k / n);
-        if (pat[(k - rot + n) % n]) {   /* rotated as the engine does it (engine.c apply_perf) */
-            if (on) {
-                gfx_disc(p.x, p.y, dot * 2.2f, 0x30FFE6B0);
-                gfx_disc(p.x, p.y, dot, 0xFFFFF8E8);
-            } else {
-                gfx_disc(p.x, p.y, dot, 0xFF8A8A8E);
-            }
-        } else {
-            gfx_disc(p.x, p.y, dot, 0xFF1A1A1C);
-            gfx_circle(p.x, p.y, dot, 0.8f, 0xFF4E4E52);
-        }
+        int hit = pat[(k - rot + n) % n];   /* rotated as the engine does it (engine.c apply_perf) */
+        skin_led(p.x, p.y, dot, hit && on);
+        if (hit && !on) gfx_disc(p.x, p.y, dot * 0.45f, 0xFF8A8A8E);
     }
     char t[16];
     snprintf(t, sizeof t, "%d/%d", hits, n);
@@ -491,29 +514,35 @@ static void draw_euclid(HDC dc, ed_t *e) {
            e->hover == Z_EUCLID ? T_HOT : T_LABEL);
 }
 
+static RECT wave_rect(const lay_wave_t *w) {
+    RECT r = {sc(w->x), sc(w->y), sc(w->x + w->w), sc(w->y + w->h)};
+    return r;
+}
+
 static void draw_wave(ed_t *e, const lay_wave_t *w) {   /* the oscillator's wave, from its wave/angle/pw/mix */
     float x = (float)sc(w->x), y = (float)sc(w->y), ww = (float)sc(w->w), hh = (float)sc(w->h);
-    gfx_rect(x, y, ww, hh, 0xFF08121C);
-    gfx_frame(x, y, ww, hh, 1.2f, 0xFFB9C6CE);
-    if (w->param[0] < 0 || w->param[1] < 0 || w->param[2] < 0 || w->param[3] < 0) return;
-    int saw = option_of(e, w->param[0]) == 1;
-    float angle = real_of(e, w->param[1]) / 100.0f, pw = real_of(e, w->param[2]) / 100.0f, mix = real_of(e, w->param[3]) / 100.0f;
-    float a = saw ? 1.0f - (0.03f + 0.25f * angle) : 1.0f - angle;
-    a = a < 0.02f ? 0.02f : a > 0.98f ? 0.98f : a;
-    enum { N = 160 };
-    gpt_t pts[N + 1];
-    float px = x + 4, pw_ = ww - 8, mid = y + hh / 2, amp = hh / 2 - 5;
-    for (int k = 0; k <= N; k++) {
-        float t = fmodf(2.0f * k / N, 1.0f);
-        if (k == N) t = 1.0f;
-        float tri = t < a ? -1.0f + 2.0f * t / a : 1.0f - 2.0f * (t - a) / (1.0f - a);
-        float pul = t < pw ? 1.0f : -1.0f;
-        float vv = tri + mix * (pul - tri);
-        pts[k].x = px + pw_ * k / N;
-        pts[k].y = mid - vv * amp;
+    if (w->param[0] >= 0 && w->param[1] >= 0 && w->param[2] >= 0 && w->param[3] >= 0) {
+        int saw = option_of(e, w->param[0]) == 1;
+        float angle = real_of(e, w->param[1]) / 100.0f, pw = real_of(e, w->param[2]) / 100.0f, mix = real_of(e, w->param[3]) / 100.0f;
+        float a = saw ? 1.0f - (0.03f + 0.25f * angle) : 1.0f - angle;
+        a = a < 0.02f ? 0.02f : a > 0.98f ? 0.98f : a;
+        enum { N = 160 };
+        gpt_t pts[N + 1];
+        float px = x + 4, pw_ = ww - 8, mid = y + hh / 2, amp = hh / 2 - 5;
+        for (int k = 0; k <= N; k++) {
+            float t = fmodf(2.0f * k / N, 1.0f);
+            if (k == N) t = 1.0f;
+            float tri = t < a ? -1.0f + 2.0f * t / a : 1.0f - 2.0f * (t - a) / (1.0f - a);
+            float pul = t < pw ? 1.0f : -1.0f;
+            float vv = tri + mix * (pul - tri);
+            vv = vv < -1.0f ? -1.0f : vv > 1.0f ? 1.0f : vv;
+            pts[k].x = px + pw_ * k / N;
+            pts[k].y = mid - vv * amp;
+        }
+        gfx_lines(pts, N + 1, 3.6f, 0x3887DFFF);
+        gfx_lines(pts, N + 1, 1.3f, 0xFFA8ECFF);
     }
-    gfx_lines(pts, N + 1, 3.2f, 0x4087DFFF);
-    gfx_lines(pts, N + 1, 1.3f, 0xFFA8ECFF);
+    skin_glare((int)x + 2, (int)y + 2, (int)ww - 4, (int)hh - 4);
 }
 
 /* ---- the centre screen ---- */
@@ -667,25 +696,38 @@ static void draw_random(HDC dc, ed_t *e) {
     screen_button(dc, rnd_rect(Z_RND_REDO), "REDO", 0, e->hover == Z_RND_REDO && e->hist_pos < e->hist_n - 1, font_cell);
 }
 
-static void draw_screen(HDC dc, ed_t *e) {
+/* the screen's glass, bezel, stripes and rules: static */
+static void screen_static(void) {
     RECT *s = &L.screen;
-    gfx_rect((float)s->left - 3, (float)s->top - 3, (float)rw(s) + 6, (float)rh(s) + 6, 0xFF050505);
-    gfx_rect((float)s->left, (float)s->top, (float)rw(s), (float)rh(s), C_SCREEN);
+    int b = sc(4);
+    skin_shadow((float)s->left - b, (float)s->top - b + sc(2), (float)rw(s) + 2 * b, (float)rh(s) + 2 * b, 4.0f * L.s, 0.6f);
+    gfx_rect((float)s->left - b, (float)s->top - b, (float)rw(s) + 2 * b, (float)rh(s) + 2 * b, 0xFF050506);
+    skin_lcd(s->left, s->top, rw(s), rh(s));
+    skin_recess(s->left, s->top, rw(s), rh(s), 5.0f * L.s);
+    gfx_frame((float)L.name.left, (float)L.name.top, (float)rw(&L.name), (float)rh(&L.name), 1.2f, 0xFFDCE6EE);
+}
+
+static void draw_screen(HDC dc, ed_t *e) {
     char title[96];
     patches_title(e, title, sizeof title);   /* "F 001  Init", "U  Bright Pad *" (patches.c) */
-    gfx_frame((float)L.name.left, (float)L.name.top, (float)rw(&L.name), (float)rh(&L.name), 1.2f, 0xFFDCE6EE);
     text(dc, &L.name, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     text(dc, &L.prev, "<", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     text(dc, &L.next, ">", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
     int subs = screen_subs(e);
     if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
-    for (int r = 0; r < ROWS && e->screen != SCR_SEQ; r++)
-        if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0xFF0F1E2A);
+    for (int r = 0; r < ROWS && e->screen != SCR_SEQ; r++)   /* (the step editor has its own rows) */
+        if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0x109CC8E6);
     if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
     else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
     else if (e->screen == SCR_RANDOM) draw_random(dc, e);
-    else if (e->screen == SCR_SEQ) { gfx_end(); seq_draw(dc, e); gfx_begin(dc); }   /* (its own surface: seq_page.c) */
+    else if (e->screen == SCR_SEQ) {   /* (its own surface: seq_page.c) */
+        gfx_end();
+        skin_bind(NULL);
+        seq_draw(dc, e);
+        gfx_begin(dc);
+        skin_bind(gfx_g);
+    }
     else if (e->screen == SCR_PATCHES) {
         title_line(dc, e, "PATCHES:  factory presets and your own sounds", subs);
         patches_draw(dc, e);
@@ -724,23 +766,25 @@ static void draw_screen(HDC dc, ed_t *e) {
     if (e->screen == SCR_SEQ && seq_message(e) && !pm) snprintf(help, sizeof help, "%s", seq_message(e));
     gfx_line((float)hr.left, hr.top - 4.0f, (float)hr.right, hr.top - 4.0f, 1.0f, 0xFF27404E);
     text(dc, &hr, help, e->screen == SCR_SEQ ? font_cell : font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
+    skin_glare(L.screen.left, L.screen.top, rw(&L.screen), rh(&L.screen));
 }
 
 static void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot) {   /* console buttons */
+    if (!vis(r, sc(8))) return;
     int bw = sc(30), bh = sc(13), cx = (r->left + r->right) / 2;
     float x = cx - bw / 2.0f, y = (float)(r->top + sc(6));
-    if (lit) {
-        gfx_rect(x - 3, y - 3, bw + 6.0f, bh + 6.0f, 0x30FFFFF0);
-        gfx_rect_grad(x, y, (float)bw, (float)bh, 0xFFFFFFFA, 0xFFD8D8D0, 0);
-    } else {
-        gfx_rect_grad(x, y, (float)bw, (float)bh, 0xFF2C2C2E, 0xFF101012, 0);
-    }
-    gfx_frame(x, y, (float)bw, (float)bh, 1.0f, hot ? 0xFFB0B0B4 : 0xFF4A4A4E);
+    skin_button(x, y, (float)bw, (float)bh, SK_CONSOLE, lit ? SK_ON : hot ? SK_HOT : SK_UP);
     text_c(dc, cx, (int)y + bh + sc(5), rw(r) + sc(10), sc(14), label, font_label, hot ? T_HOT : T_LABEL);
 }
 
+static void encoder_geom(float *cx, float *cy, float *r) {
+    *r = (float)sc(31);
+    *cx = (float)((L.encoder.left + L.encoder.right) / 2);
+    *cy = (float)L.encoder.top + sc(8) + *r;
+}
+
 static void draw_console(HDC dc, ed_t *e) {
-    draw_screen(dc, e);
+    if (vis(&L.screen, sc(2))) draw_screen(dc, e);
     panel_button(dc, &L.tab_matrix, "MATRIX", e->screen == SCR_MATRIX, e->hover == Z_TAB_MATRIX);
     panel_button(dc, &L.tab_more, "MORE", e->screen >= 0 && e->screen != PG_ANALOG ? 1 : e->screen == SCR_INDEX,
                  e->hover == Z_TAB_MORE);
@@ -749,74 +793,98 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.tab_seq, "SEQ", e->screen == SCR_SEQ, e->hover == Z_TAB_SEQ);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
-    int cx = (L.encoder.left + L.encoder.right) / 2, r = sc(31);
-    int pos = patches_pos(e), np = patches_total(e);   /* factory presets, then user patches */
-    knob((float)cx, (float)(L.encoder.top + sc(8) + r), (float)r, np > 1 && pos > 0 ? (float)pos / (np - 1) : 0.0f, 0);
-    text_c(dc, cx, L.encoder.top + sc(14) + 2 * r, sc(80), sc(14), "PRESET", font_label, e->hover == Z_ENCODER ? T_HOT : T_LABEL);
-    text(dc, &L.brand, "ONE-ish", font_brand, RGB(170, 172, 176), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    gfx_end();   /* the page LEDs draw on their own surface (seq_page.c) */
-    seq_panel_draw(dc, e);
-    gfx_begin(dc);
+    if (vis(&L.encoder, sc(12))) {
+        float cx, cy, r;
+        encoder_geom(&cx, &cy, &r);
+        int pos = patches_pos(e), np = patches_total(e);   /* factory presets, then user patches */
+        knob(cx, cy, r, np > 1 && pos > 0 ? (float)pos / (np - 1) : 0.0f, 0);
+        text_c(dc, (int)cx, L.encoder.top + sc(14) + 2 * (int)r, sc(80), sc(14), "PRESET", font_label,
+               e->hover == Z_ENCODER ? T_HOT : T_LABEL);
+    }
+    if (vis(&L.seq_leds, sc(8))) {
+        gfx_end();   /* the page LEDs draw on their own surface (seq_page.c) */
+        skin_bind(NULL);
+        seq_panel_draw(dc, e);
+        gfx_begin(dc);
+        skin_bind(gfx_g);
+    }
 }
 
-static void wheel(HDC dc, const RECT *r, float pos, int centred, const char *label, int hot) {   /* pos -1..1 */
-    float x = (float)r->left, y = (float)r->top, w = (float)rw(r), h = (float)rh(r);
-    gfx_rect(x - 3, y - 3, w + 6, h + 6, 0xFF050506);
-    gfx_rect_grad(x, y, w / 2, h, 0xFF4A4A4E, 0xFFD6D6DA, 1);
-    gfx_rect_grad(x + w / 2, y, w / 2, h, 0xFFD6D6DA, 0xFF505054, 1);
-    float gy = y + h / 2 - pos * (h / 2 - 10 * L.s);   /* the grip moves with the wheel */
-    for (int k = -3; k <= 3; k++) {
-        float yy = gy + k * 3.2f * L.s;
-        if (yy > y + 2 && yy < y + h - 2) gfx_line(x + 2, yy, x + w - 2, yy, 1.0f, 0x90202022);
-    }
-    gfx_rect(x, gy - 1.2f * L.s, w, 2.4f * L.s, 0xFF1A1A1C);
-    if (centred) gfx_line(x - 5, y + h / 2, x - 2, y + h / 2, 1.0f, 0xFF9A9A9E);
+static void wheel(HDC dc, const RECT *r, float pos, const char *label, int hot) {   /* pos -1..1 */
+    if (!vis(r, sc(18))) return;
+    skin_wheel(r->left + sc(2), r->top + sc(1), rw(r) - sc(4), rh(r) - sc(2), pos);
     text_c(dc, r->left + rw(r) / 2, r->bottom + sc(4), sc(60), sc(14), label, font_label, hot ? T_HOT : T_LABEL);
+}
+static void wheel_static(const RECT *r, int centred) {   /* the slot the wheel turns in */
+    int m = sc(3);
+    gfx_rect((float)r->left - m, (float)r->top - m, (float)rw(r) + 2 * m, (float)rh(r) + 2 * m, 0xFF060607);
+    skin_recess(r->left - m, r->top - m, rw(r) + 2 * m, rh(r) + 2 * m, 6.0f * L.s);
+    if (centred) gfx_line(r->left - 7.0f * L.s, r->top + rh(r) / 2.0f, r->left - 4.0f * L.s, r->top + rh(r) / 2.0f, 1.2f, 0xFFB0B0B4);
 }
 
 static void draw_controller(HDC dc, ed_t *e) {
+    if (vis(&L.oct_leds, sc(8)))
+        for (int k = 0; k < 5; k++) {
+            float x = L.oct_leds.left + rw(&L.oct_leds) * (k + 0.5f) / 5;
+            led(x, (float)(L.oct_leds.top + sc(5)), e->oct == k - 2);
+        }
+    if (vis(&L.oct_down, sc(6))) red_button(&L.oct_down, e->hover == Z_OCT_DOWN);
+    if (vis(&L.oct_up, sc(6))) red_button(&L.oct_up, e->hover == Z_OCT_UP);
+    wheel(dc, &L.pitch, e->bend, "PITCH", e->hover == Z_PITCH);
+    wheel(dc, &L.modw, e->wheel * 2 - 1, "MOD", e->hover == Z_MODW);
+    RECT *p = &L.pad;
+    if (vis(p, sc(4))) {
+        if (e->hover == Z_PAD) gfx_frame((float)p->left, (float)p->top, (float)rw(p), (float)rh(p), 1.0f, 0xFF8A8A8E);
+        float px = p->left + e->pad_x * rw(p), py = p->bottom - e->pad_y * rh(p);
+        gfx_line(px, (float)p->top + 1, px, (float)p->bottom - 1, 0.8f, e->pad_on ? 0x80A8ECFF : 0x30A8ECFF);
+        gfx_line((float)p->left + 1, py, (float)p->right - 1, py, 0.8f, e->pad_on ? 0x80A8ECFF : 0x30A8ECFF);
+        if (e->pad_on) gfx_disc(px, py, 9.0f * L.s, 0x2890E4FF);
+        gfx_disc(px, py, 4.0f * L.s, e->pad_on ? 0xFFDDF6FF : 0x6088A8B4);
+    }
+}
+static void controller_static(HDC dc) {
     for (int k = 0; k < 5; k++) {
         float x = L.oct_leds.left + rw(&L.oct_leds) * (k + 0.5f) / 5;
-        led(x, (float)(L.oct_leds.top + sc(5)), e->oct == k - 2);
         static const char *const lab[] = {"-2", "-1", "0", "+1", "+2"};
         text_c(dc, (int)x, L.oct_leds.top + sc(10), sc(22), sc(13), lab[k], font_tiny, T_VALUE);
     }
-    red_button(&L.oct_down, e->hover == Z_OCT_DOWN);
-    red_button(&L.oct_up, e->hover == Z_OCT_UP);
     float ty = (L.oct_down.top + L.oct_down.bottom) / 2.0f, t = 3.5f * L.s;
     gpt_t l[3] = {{L.oct_down.left - 5 * L.s - t, ty}, {L.oct_down.left - 5 * L.s, ty - t}, {L.oct_down.left - 5 * L.s, ty + t}};
     gpt_t g[3] = {{L.oct_up.right + 5 * L.s + t, ty}, {L.oct_up.right + 5 * L.s, ty - t}, {L.oct_up.right + 5 * L.s, ty + t}};
     gfx_poly(l, 3, 0xFFB4B4B8);
     gfx_poly(g, 3, 0xFFB4B4B8);
     text_c(dc, (L.oct_down.left + L.oct_up.right) / 2, L.oct_down.bottom + sc(3), sc(80), sc(14), "OCTAVE", font_label, T_LABEL);
-    wheel(dc, &L.pitch, e->bend, 1, "PITCH", e->hover == Z_PITCH);
-    wheel(dc, &L.modw, e->wheel * 2 - 1, 0, "MOD", e->hover == Z_MODW);
-    RECT *p = &L.pad;
-    gfx_rect((float)p->left, (float)p->top, (float)rw(p), (float)rh(p), 0xFF0B0B0C);
-    gfx_frame((float)p->left, (float)p->top, (float)rw(p), (float)rh(p), 1.0f, e->hover == Z_PAD ? 0xFF8A8A8E : 0xFF48484C);
+    wheel_static(&L.pitch, 1);
+    wheel_static(&L.modw, 0);
+    RECT *p = &L.pad;   /* the X/Y pad: a matte touch surface sunk into the panel, a faint printed grid */
+    gfx_rect((float)p->left - 1, (float)p->top - 1, (float)rw(p) + 2, (float)rh(p) + 2, 0xFF2A2A2D);
+    skin_touch(p->left, p->top, rw(p), rh(p));
+    skin_recess(p->left, p->top, rw(p), rh(p), 5.0f * L.s);
     for (int k = 1; k < 4; k++) {
         float gx = p->left + rw(p) * k / 4.0f, gy = p->top + rh(p) * k / 4.0f;
-        gfx_line(gx, p->top + 2.0f, gx, p->bottom - 2.0f, 0.8f, 0x20FFFFFF);
-        gfx_line(p->left + 2.0f, gy, p->right - 2.0f, gy, 0.8f, 0x20FFFFFF);
+        gfx_line(gx, p->top + 2.0f, gx, p->bottom - 2.0f, 0.8f, 0x18FFFFFF);
+        gfx_line(p->left + 2.0f, gy, p->right - 2.0f, gy, 0.8f, 0x18FFFFFF);
     }
-    float px = p->left + e->pad_x * rw(p), py = p->bottom - e->pad_y * rh(p);
-    gfx_line(px, (float)p->top + 1, px, (float)p->bottom - 1, 0.8f, e->pad_on ? 0x80A8ECFF : 0x30A8ECFF);
-    gfx_line((float)p->left + 1, py, (float)p->right - 1, py, 0.8f, e->pad_on ? 0x80A8ECFF : 0x30A8ECFF);
-    gfx_disc(px, py, 4.0f * L.s, e->pad_on ? 0xFFDDF6FF : 0x6088A8B4);
     text_c(dc, (p->left + p->right) / 2, p->bottom + sc(4), sc(80), sc(14), "X/Y PAD", font_label, T_LABEL);
 }
 
-/* the ribbon: a slim black strip in a brushed-silver rim over the keys, a glowing marker where it is touched */
-static void draw_ribbon(HDC dc, ed_t *e) {
+/* the ribbon: a matte black touch strip in a brushed aluminium rim over the keys, a glowing marker where it is touched */
+static void ribbon_static(void) {
     RECT *r = &L.ribbon;
-    float x = (float)r->left, y = (float)r->top, w = (float)rw(r), h = (float)rh(r), b = 2.5f * L.s;
-    gfx_rect(x - 2, y - 2, w + 4, h + 4, 0xFF0A0A0A);
-    gfx_rect_grad(x, y, w, h, 0xFFE2E3E5, 0xFF8C8E92, 0);
-    gfx_rect_grad(x + b, y + b, w - 2 * b, h - 2 * b, 0xFF050506, 0xFF1C1C1E, 0);
+    int b = (int)lroundf(2.5f * L.s);
+    skin_shadow((float)r->left, (float)r->top + sc(2), (float)rw(r), (float)rh(r), 3.0f * L.s, 0.6f);
+    skin_metal_plate(r->left, r->top, rw(r), rh(r));
+    skin_touch(r->left + b, r->top + b, rw(r) - 2 * b, rh(r) - 2 * b);
+    skin_recess(r->left + b, r->top + b, rw(r) - 2 * b, rh(r) - 2 * b, 3.0f * L.s);
+    float x = (float)r->left, y = (float)r->top, w = (float)rw(r), h = (float)rh(r);
     for (int k = 1; k < 24; k++) {   /* faint tick marks along it, a longer one at the centre */
         float tx = x + b + (w - 2 * b) * k / 24.0f, th = k == 12 ? h - 2 * b - 2 : (h - 2 * b) * 0.3f;
         gfx_line(tx, y + h - b - 1, tx, y + h - b - 1 - th, 1.0f, k == 12 ? 0x50FFFFFF : 0x26FFFFFF);
     }
+}
+static void draw_ribbon(HDC dc, ed_t *e) {
+    RECT *r = &L.ribbon;
+    float x = (float)r->left, y = (float)r->top, w = (float)rw(r), h = (float)rh(r), b = 2.5f * L.s;
     RECT lr = {(int)(x + b + sc(6)), (int)y, (int)(x + sc(80)), (int)(y + h)};
     text(dc, &lr, "RIBBON", font_tiny, e->hover == Z_RIBBON ? T_LABEL : RGB(96, 96, 100), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     float mx = x + b + e->ribbon * (w - 2 * b), my = y + h / 2;
@@ -830,55 +898,146 @@ static void draw_ribbon(HDC dc, ed_t *e) {
     }
 }
 
+/* the keyboard: white keys with a front lip, glossy black keys casting soft shadows, all in the shade of the strip
+ * behind them. At rest it is part of the static layer; a key held down is drawn again, pressed. */
+static const int HAS_BLACK[] = {1, 1, 0, 1, 1, 1, 0};
+static float key_w(void) { return rw(&L.keys) / (float)KEYS_WHITE; }
+static void black_x(int j, float *x0, float *x1) {   /* the black key to the right of white key j */
+    float kw = key_w(), bw = kw * 0.58f, x = L.keys.left + (j + 1) * kw - bw / 2;
+    *x0 = x;
+    *x1 = x + bw;
+}
+static void keys_static(void) {
+    RECT *k = &L.keys;
+    float kw = key_w();
+    int top = k->top, h = rh(k), bh = (int)lroundf(h * 0.62f);
+    gfx_rect((float)k->left - 2, top - 4.0f, (float)rw(k) + 4, h + 4.0f, 0xFF070707);
+    for (int j = 0; j < KEYS_WHITE; j++) skin_white_key(k->left + j * kw, k->left + (j + 1) * kw, top, h, 0);
+    for (int j = 0; j < KEYS_WHITE - 1; j++) {
+        if (!HAS_BLACK[j % 7]) continue;
+        float x0, x1;
+        black_x(j, &x0, &x1);
+        skin_key_shadow(x0, x1, top, bh);
+    }
+    for (int j = 0; j < KEYS_WHITE - 1; j++) {
+        if (!HAS_BLACK[j % 7]) continue;
+        float x0, x1;
+        black_x(j, &x0, &x1);
+        skin_black_key(x0, x1, top, bh, 0);
+    }
+}
 static void draw_keys(HDC dc, ed_t *e) {
     RECT *k = &L.keys;
-    float kw = rw(k) / (float)KEYS_WHITE, top = (float)k->top, h = (float)rh(k);
-    int base = KEY_BASE + 12 * e->oct;
-    gfx_rect((float)k->left - 2, top - 4, (float)rw(k) + 4, h + 6, 0xFF0A0A0A);
-    for (int j = 0; j < KEYS_WHITE; j++) {
-        float x = k->left + j * kw;
-        int n = note_of_white(j, base), down = e->key == n;
-        gfx_rect_grad(x + 0.5f, top, kw - 1.5f, h, down ? 0xFFB8C0C6 : 0xFFF6F6F3, down ? 0xFFA6AEB4 : 0xFFDADAD6, 0);
-        gfx_rect(x + 0.5f, top + h - 5 * L.s, kw - 1.5f, 5 * L.s, down ? 0xFF9AA2A8 : 0xFFC8C8C4);
-        if (j % 7 == 0) {
-            char lab[8];
-            snprintf(lab, sizeof lab, "C%d", n / 12 - 1);
-            text_c(dc, (int)(x + kw / 2), (int)(top + h - sc(22)), (int)kw, sc(13), lab, font_tiny, RGB(150, 150, 150));
+    float kw = key_w();
+    int top = k->top, h = rh(k), bh = (int)lroundf(h * 0.62f), base = KEY_BASE + 12 * e->oct;
+    for (int j = 0; j < KEYS_WHITE; j++) {   /* a held white key: down, with the black keys beside it on top again */
+        if (note_of_white(j, base) != e->key) continue;
+        RECT kr = {(int)floorf(k->left + j * kw), top, (int)ceilf(k->left + (j + 1) * kw), top + h};
+        skin_clip_push(&kr);
+        skin_white_key(k->left + j * kw, k->left + (j + 1) * kw, top, h, 1);
+        for (int b = j - 1; b <= j; b++) {
+            if (b < 0 || b >= KEYS_WHITE - 1 || !HAS_BLACK[b % 7]) continue;
+            float x0, x1;
+            black_x(b, &x0, &x1);
+            skin_key_shadow(x0, x1, top, bh);
+            skin_black_key(x0, x1, top, bh, 0);
         }
+        skin_clip_pop();
     }
-    static const int has_black[] = {1, 1, 0, 1, 1, 1, 0};
-    for (int j = 0; j < KEYS_WHITE - 1; j++) {
-        if (!has_black[j % 7]) continue;
-        float bw = kw * 0.58f, x = k->left + (j + 1) * kw - bw / 2;
-        int n = note_of_white(j, base) + 1, down = e->key == n;
-        gfx_rect(x, top, bw, h * 0.62f, 0xFF050505);
-        gfx_rect_grad(x + 1.5f, top, bw - 3, h * 0.62f - 5 * L.s, down ? 0xFF505054 : 0xFF2A2A2C, down ? 0xFF38383C : 0xFF121214, 0);
-        gfx_rect(x + 2.5f, top + h * 0.62f - 7 * L.s, bw - 5, 3 * L.s, down ? 0xFF606064 : 0xFF3A3A3E);
+    for (int j = 0; j < KEYS_WHITE - 1; j++) {   /* a held black key */
+        if (!HAS_BLACK[j % 7] || note_of_white(j, base) + 1 != e->key) continue;
+        float x0, x1;
+        black_x(j, &x0, &x1);
+        skin_black_key(x0, x1, top, bh, 1);
     }
-    gfx_rect_grad((float)k->left, top, (float)rw(k), 7 * L.s, 0xC0000000, 0x00000000, 0);   /* shadow under the lip */
+    for (int j = 0; j < KEYS_WHITE; j += 7) {
+        float x = k->left + j * kw;
+        char lab[8];
+        snprintf(lab, sizeof lab, "C%d", note_of_white(j, base) / 12 - 1);
+        text_c(dc, (int)(x + kw / 2), (int)(top + h - sc(24)), (int)kw, sc(13), lab, font_tiny, RGB(150, 150, 150));
+    }
 }
 
-void paint(ed_t *e, HDC out) {
-    HDC dc = CreateCompatibleDC(out);
-    HBITMAP bm = CreateCompatibleBitmap(out, L.w, L.h);
-    HGDIOBJ obm = SelectObject(dc, bm);
+/* the static layer: the case, wood, frames and panels, everything printed, glass, slots, the keyboard at rest */
+static void bake(HDC dc) {
     gfx_begin(dc);
-    gfx_rect(0, 0, (float)L.w, (float)L.h, 0xFF111112);
-    int cheek = sc(26);
-    wood(0, 0, cheek, L.h, 1);
-    wood(L.w - cheek, 0, cheek, L.h, 1);
-    wood(cheek, sc(550), L.w - 2 * cheek, L.h - sc(550), 0);
-    gfx_rect((float)cheek, (float)sc(550), (float)(L.w - 2 * cheek), 3 * L.s, 0x70000000);
-    for (int side = 0; side < 2; side++) {   /* the cheeks' inner edges */
-        float x = side ? (float)(L.w - cheek) : (float)cheek;
-        gfx_line(x, 0, x, (float)L.h, 1.0f, 0x80301808);
-    }
+    skin_bind(gfx_g);
+    int cheek = sc(26), strip = sc(550);
+    skin_chassis(0, 0, L.w, L.h);
+    skin_wood(cheek, strip, L.w - 2 * cheek, L.h - strip, 0, 3);   /* the strip over the keys and the front rail */
+    for (int p = 0; p < NPANELS; p++)   /* the frames' shadows on the case and the wood */
+        if (PANELS[p].style == 0)
+            skin_shadow((float)sc(PANELS[p].x), (float)sc(PANELS[p].y) + 3 * L.s, (float)sc(PANELS[p].w),
+                        (float)sc(PANELS[p].h), 6.0f * L.s, 0.65f);
+    skin_shadow(-(float)sc(10), 0, (float)cheek + sc(10) + 2 * L.s, (float)L.h, 6.0f * L.s, 0.7f);   /* the cheeks' */
+    skin_shadow((float)(L.w - cheek) - 2 * L.s, 0, (float)cheek + sc(10), (float)L.h, 6.0f * L.s, 0.7f);
+    skin_wood(0, 0, cheek, L.h, 1, 5);
+    skin_wood(L.w - cheek, 0, cheek, L.h, 1, 6);
     draw_panels(dc);
+    for (int c = 0; c < NCTLS; c++) {   /* knob scales */
+        int i = CTLS[c].param;
+        float cx, cy, r;
+        if (L.kind[i] == K_KNOB || L.kind[i] == K_SMALL || L.kind[i] == K_BIG) knob_geom(i, &cx, &cy, &r, NULL);
+        else if (L.kind[i] == K_OCT) octave_geom(i, &cx, &cy, &r);
+        else {
+            if (L.kind[i] != K_LEDS && L.kind[i] != K_TOGGLE) {   /* an option list's window */
+                RECT w = button_win(i);
+                small_lcd_glass(&w);
+            }
+            continue;
+        }
+        knob_scale(cx, cy, r);
+    }
+    {
+        float cx, cy, r;
+        encoder_geom(&cx, &cy, &r);
+        knob_scale(cx, cy, r);
+    }
+    for (int w = 0; w < NWAVES; w++) {   /* the oscillators' little screens */
+        RECT r = wave_rect(&WAVES[w]);
+        skin_lcd(r.left, r.top, rw(&r), rh(&r));
+        skin_recess(r.left, r.top, rw(&r), rh(&r), 3.0f * L.s);
+        gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.2f, 0xFFB9C6CE);
+    }
+    screen_static();
+    {   /* our name, printed on the console with a faint shadow */
+        RECT b1 = L.brand;
+        OffsetRect(&b1, 0, 1);
+        text(dc, &b1, "ONE-ish", font_brand, RGB(8, 8, 9), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &L.brand, "ONE-ish", font_brand, RGB(196, 198, 202), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    controller_static(dc);
+    ribbon_static();
+    keys_static();
+    {   /* our name, burnt into the front rail under the keys */
+        RECT r = {L.keys.right - sc(150), L.keys.bottom + sc(1), L.keys.right - sc(10), L.h - sc(1)};
+        RECT r1 = r;
+        OffsetRect(&r1, 0, 1);
+        text(dc, &r1, "ONE-ish", font_title, RGB(232, 190, 130), DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &r, "ONE-ish", font_title, RGB(74, 40, 18), DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
+    gfx_end();
+    skin_bind(NULL);
+}
+
+static void paint_rect(ed_t *e, HDC out, const RECT *r) {   /* everything that shows in r */
+    clipr = *r;
+    HDC dc = skin_frame(L.w, L.h, L.s, &clipr, bake);
+    if (!dc) return;
+    int saved = SaveDC(dc);
+    IntersectClipRect(dc, clipr.left, clipr.top, clipr.right, clipr.bottom);
+    gfx_begin(dc);
+    skin_bind(gfx_g);
     draw_mores(e);
-    for (int w = 0; w < NWAVES; w++) draw_wave(e, &WAVES[w]);
-    draw_euclid(dc, e);
+    for (int w = 0; w < NWAVES; w++) {
+        RECT wr = wave_rect(&WAVES[w]);
+        if (vis(&wr, 0)) draw_wave(e, &WAVES[w]);
+    }
+    if (vis(&L.euclid, sc(4))) draw_euclid(dc, e);
+    int pad = sc(16);
     for (int c = 0; c < NCTLS; c++) {
         int i = CTLS[c].param;
+        if (!vis(&L.ctl[i], pad)) continue;
         switch (L.kind[i]) {
         case K_KNOB: case K_SMALL: case K_BIG: draw_knob(dc, e, i); break;
         case K_OCT: draw_octave(dc, e, i); break;
@@ -889,11 +1048,50 @@ void paint(ed_t *e, HDC out) {
     }
     draw_console(dc, e);
     draw_controller(dc, e);
-    draw_ribbon(dc, e);
-    draw_keys(dc, e);
+    if (vis(&L.ribbon, sc(4))) draw_ribbon(dc, e);
+    if (vis(&L.keys, 0)) draw_keys(dc, e);
     gfx_end();
-    BitBlt(out, 0, 0, L.w, L.h, dc, 0, 0, SRCCOPY);
-    SelectObject(dc, obm);
-    DeleteObject(bm);
-    DeleteDC(dc);
+    skin_bind(NULL);
+    RestoreDC(dc, saved);
+    skin_present(out, &clipr);
+}
+
+/* the part of the window to paint: the DC's clip region (WM_PRINTCLIENT), else its system region (WM_PAINT: what is
+ * visible and needs painting, in screen coordinates), as rectangles; 0 for "all of it" */
+static int paint_rects(HDC out, RECT *rs, int max) {
+    HRGN rgn = CreateRectRgn(0, 0, 0, 0);
+    int n = 0, got = rgn ? GetClipRgn(out, rgn) : -1;
+    if (got == 0 && GetRandomRgn(out, rgn, SYSRGN) == 1) {
+        POINT o = {0, 0};
+        HWND w = WindowFromDC(out);
+        if (w) {
+            ClientToScreen(w, &o);
+            OffsetRgn(rgn, -o.x, -o.y);
+            got = 1;
+        }
+    }
+    if (got == 1) {
+        DWORD size = GetRegionData(rgn, 0, NULL);
+        RGNDATA *d = size ? malloc(size) : NULL;
+        if (d && GetRegionData(rgn, size, d) && d->rdh.nCount > 0 && (int)d->rdh.nCount <= max) {
+            const RECT *r = (const RECT *)d->Buffer;
+            for (DWORD k = 0; k < d->rdh.nCount; k++) rs[n++] = r[k];
+        } else if (d && d->rdh.nCount > (DWORD)max) {
+            rs[n++] = d->rdh.rcBound;   /* many pieces: their bounds */
+        }
+        free(d);
+    }
+    if (rgn) DeleteObject(rgn);
+    return n;
+}
+
+void paint(ed_t *e, HDC out) {
+    RECT all = {0, 0, L.w, L.h}, rs[16];
+    int n = paint_rects(out, rs, 16);
+    if (n == 0) {   /* no region: the clip box, or everything */
+        if (GetClipBox(out, &rs[0]) == ERROR || IsRectEmpty(&rs[0])) rs[0] = all;
+        n = 1;
+    }
+    for (int k = 0; k < n; k++)
+        if (IntersectRect(&rs[k], &rs[k], &all)) paint_rect(e, out, &rs[k]);
 }

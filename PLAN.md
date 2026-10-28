@@ -119,6 +119,13 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      presets.
   2. The front-panel window, laid out from the photos, with the keyboard, wheels and X/Y pad: done 2026-10-27, with
      per-module MORE pages on the centre screen, a 16-row matrix and a ribbon strip (CC 16 position, CC 17 touch).
+     A photographed-instrument look added 2026-10-28 (desktop, offline pictures only): `desktop/skin.c` shades brushed
+     aluminium frames, black anodised panels, ash wood, display glass, lit 3D knobs, push buttons, LEDs, keys and wheels
+     per pixel (no image files); the static layer is made once per window size, text and sprites are cached, and only
+     what changed is repainted. On the PC (with the sequencer strip): full repaint 10-12 ms, a knob turned about
+     0.5 ms, the first paint about 0.5 s (making the static layer); GDI handles stable over 20 opens. The SEQ page and
+     the SEQUENCER strip use the same parts (`skin_led` has a red LED for the playing page). Not yet seen in Carla by
+     the owner.
   3. Tier 2: done 2026-10-27 (offline): LFOs 3-4 and their options, 16-slot matrix with transforms and the missing
      sources/destinations (every effect control too, from global sources), noise colours and noise envelope,
      voice/keyboard options, stereo voices and pan, analog drift, the assignable ribbon. 402 params, 27 presets.

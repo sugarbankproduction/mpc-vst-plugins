@@ -60,7 +60,7 @@ static void gfx_disc(float cx, float cy, float r, DWORD c) {
     GdipFillEllipse(gfx_g, b, cx - r, cy - r, 2 * r, 2 * r);
     GdipDeleteBrush(b);
 }
-static void gfx_disc_grad(float cx, float cy, float r, DWORD c1, DWORD c2) {   /* c1 top-left .. c2 bottom-right */
+static __attribute__((unused)) void gfx_disc_grad(float cx, float cy, float r, DWORD c1, DWORD c2) {   /* c1 top-left .. c2 bottom-right */
     gpt_t a = {cx - r, cy - r}, z = {cx + r, cy + r};
     void *b = NULL;
     if (!gfx_g || GdipCreateLineBrush(&a, &z, c1, c2, 0, &b)) return;
@@ -80,7 +80,7 @@ static void gfx_rect(float x, float y, float w, float h, DWORD c) {
     GdipFillRectangle(gfx_g, b, x, y, w, h);
     GdipDeleteBrush(b);
 }
-static void gfx_rect_grad(float x, float y, float w, float h, DWORD c1, DWORD c2, int horizontal) {
+static __attribute__((unused)) void gfx_rect_grad(float x, float y, float w, float h, DWORD c1, DWORD c2, int horizontal) {
     gpt_t a = {x, y}, z = {horizontal ? x + w : x, horizontal ? y : y + h};
     void *b = NULL;
     if (!gfx_g || GdipCreateLineBrush(&a, &z, c1, c2, 0, &b)) return;
