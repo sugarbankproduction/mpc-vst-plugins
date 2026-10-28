@@ -1922,7 +1922,7 @@ static void glide_unison(void) {
              "%.0f%% at 100%%; %.1f%% of it within 66 cents", inner[0] * 100, inner[1] * 100, outer * 100);
     check(inner[0] > 0.97 && inner[1] < 0.7 && outer > 0.97, what);
 
-    static const int keys3[] = {48, 52, 55};   /* 8 voices, count 4: two notes, a third steals a whole stack */
+    static const int keys3[] = {48, 52, 55};   /* 8 voices, count 4: two notes; a third re-divides the voices 3/3/2 */
     double hz3[3] = {note_hz(48), note_hz(52), note_hz(55)}, db2[3], db3[3];
     e = patch(SAW, 0, 1, 100, 10);
     set(e, "voices", 7); set(e, "unison", 1); set(e, "uni_count", 2); set(e, "uni_detune", 0);
@@ -1933,12 +1933,32 @@ static void glide_unison(void) {
     note(e, 1, keys3[2], 100);
     render_f(e, x, N + 8192);
     powers_db(x + 8192, hz3, 3, db3);
-    snprintf(what, sizeof what, "unison 4 of 8 voices: C3 + E3 held both sound (%.0f, %.0f dB); adding G3 steals C3's "
-             "stack (C3 %.0f | E3 %.0f, G3 %.0f dB)", db2[0], db2[1], db3[0], db3[1], db3[2]);
-    check(db2[0] > -6 && db2[1] > -6 && db3[0] < -25 && db3[1] > -6 && db3[2] > -6, what);
-    note(e, 0, 52, 0); note(e, 0, 55, 0);
+    snprintf(what, sizeof what, "unison 4 of 8 voices: C3 + E3 held both sound (%.0f, %.0f dB); adding G3 shares the "
+             "voices out, all three sound (C3 %.0f | E3 %.0f, G3 %.0f dB)", db2[0], db2[1], db3[0], db3[1], db3[2]);
+    check(db2[0] > -6 && db2[1] > -6 && db3[0] > -9 && db3[1] > -9 && db3[2] > -9, what);
+    note(e, 0, 48, 0); note(e, 0, 52, 0); note(e, 0, 55, 0);
     check(silent_after(e, 1000), "releasing the keys lets go of every voice in their stacks");
     E->destroy(e);
+
+    {   /* the manual's example: count = voices = 16: one key gets all 16, four keys 4 each; never over 16 */
+        static const int k4[] = {48, 55, 60, 64};
+        double all4[4], h4[4] = {note_hz(48), note_hz(55), note_hz(60), note_hz(64)};
+        char v1[16], v4[16];
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "voices", 15); set(e, "unison", 1); set(e, "uni_count", 14); set(e, "uni_detune", 0);
+        set(e, "flt_cut", knob_for_hz(600)); set(e, "volume", 10);
+        note(e, 1, 48, 100);
+        render_f(e, x, 2048);
+        E->get_param(e, "voices_sounding", v1, sizeof v1);
+        for (int k = 1; k < 4; k++) note(e, 1, k4[k], 100);
+        render_f(e, x, N + 8192);
+        powers_db(x + 8192, h4, 4, all4);
+        E->get_param(e, "voices_sounding", v4, sizeof v4);
+        snprintf(what, sizeof what, "unison 16 of 16 voices: one key sounds %s voices (want 16); four keys all sound "
+                 "(%.0f %.0f %.0f %.0f dB) on %s voices (want 16)", v1, all4[0], all4[1], all4[2], all4[3], v4);
+        check(atoi(v1) == 16 && all4[0] > -12 && all4[1] > -12 && all4[2] > -12 && all4[3] > -12 && atoi(v4) == 16, what);
+        E->destroy(e);
+    }
 
     double mono_lvl[2];   /* mono + unison: one note stacked; a second key moves the whole stack */
     for (int u = 0; u < 2; u++) {
@@ -3013,8 +3033,8 @@ static void fx2_bench(void);
 static void bench(void) {
     enum { BLOCKS = 50000 };
     int16_t buf[256];
-    static const int counts[] = {1, 4, 8}, opt[] = {0, 3, 7};
-    for (int c = 0; c < 3; c++) {
+    static const int counts[] = {1, 4, 8, 16}, opt[] = {0, 3, 7, 15};
+    for (int c = 0; c < 4; c++) {
         void *e = patch(SAW, 5, 300, 70, 250);
         set(e, "voices", opt[c]); set(e, "o2_level", 80); set(e, "o3_level", 60);
         route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);

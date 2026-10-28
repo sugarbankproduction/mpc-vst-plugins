@@ -20,15 +20,17 @@
  * spread, and every continuous effect control (a second pass per control step, from the global sources: see
  * fx_mod_step); mod wheel, aftertouch, pitch bend (separate up and down amounts, plus per-oscillator offsets), sustain
  * and sostenuto pedals, HOLD, two expression CCs (11 and 4), a ribbon (CC 16 position, CC 17 touch: spring or hold,
- * centre or left origin, with a quick assignment of its own), an X/Y pad (CC 2 X, CC 3 Y, CC 18 touch). Up to 8
+ * centre or left origin, with a quick assignment of its own), an X/Y pad (CC 2 X, CC 3 Y, CC 18 touch). Up to 16
  * voices: a new note takes an idle voice, else one by the stealing mode (default: the quietest releasing one, else
  * the oldest held one); the same key replays its own voice. Mono (1 voice) plays
  * legato with low, high or last-note priority. Velocity curves, transpose, octave shift, key-track centre, master
  * tune; per oscillator pitch tracking, note-on phase reset and a choice of hard sync source. Glide (portamento): each
  * voice slides from its own
  * last pitch at a constant rate (LCR), in a constant time (LCT) or exponentially (EXP); optionally only on legato
- * notes, paused while the key is up (gated), or in semitone steps (glissando). Unison stacks 2-8 voices on each note
- * (a stack is allocated and stolen as one), detuned unevenly around the centre; pitch variance gives each new note a
+ * notes, paused while the key is up (gated), or in semitone steps (glissando). Unison stacks 2-16 voices on each note
+ * (a stack is allocated and stolen as one; when the keys held need more voices than whole stacks leave, the voice count
+ * is shared out among them, as on the instrument: 8 voices, count 8, one key 8, two keys 4 each), detuned unevenly
+ * around the centre; pitch variance gives each new note a
  * small random pitch offset. Analog character (all off at 0): drift, each oscillator's pitch (and each voice's
  * cutoffs) wandering slowly at random; each voice slot a "voice card" with its own fixed tolerances in cutoff,
  * resonance, envelope times, level and oscillator tuning, scaled by a knob each; and a non-linear ladder (src/ladder.h).
@@ -69,8 +71,9 @@
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
 #define MAX_HELD 16
-#define MAX_VOICES 8
+#define MAX_VOICES 16       /* the instrument's 16-voice model (the "voices" list: Mono, 2 .. 16) */
 #define NOSC 3
+#define CARD_SET 8         /* voice cards are made in sets of eight (create()) */
 #define NSRC 6             /* the mixer's channels: oscillators 1-3, noise, ring mod, MACRO (Plaits: src/macro.h) */
 #define NLFO 4
 #define HEADROOM 0.5f      /* one full-scale saw at full velocity and volume peaks at -6 dBFS */
@@ -553,7 +556,7 @@ typedef struct {
     uint8_t tm_reg[TM_MAX];  /* the Turing machine's loop */
     int tm_pos;
     uint32_t grng;           /* the generative choices' random numbers */
-    struct { int64_t at; int note; } pend[64];   /* generated notes' releases, by sample */
+    struct { int64_t at; int note; } pend[128];  /* generated notes' releases, by sample */
     int npend;
     int64_t now;             /* samples rendered since create() */
     /* the step clock: beat position pos0 + clk * bps; steps fall on k * step (+ swing on odd k) */
@@ -788,8 +791,8 @@ static void apply(one_t *s) {
     s->mac_st = 12.0f * (s->val[P_MAC_OCT] - OCT_CENTRE) + s->val[P_MAC_FREQ];
 }
 
-static const int VOICE_COUNTS[] = {1, 2, 3, 4, 5, 6, 7, 8};   /* the "voices" options */
-static int voice_count(const one_t *s) { return VOICE_COUNTS[(int)clampf(s->val[P_VOICES], 0, 7)]; }
+/* the "voices" options: Mono, then 2 .. 16 (index i: i + 1 voices) */
+static int voice_count(const one_t *s) { return (int)clampf(s->val[P_VOICES], 0, MAX_VOICES - 1) + 1; }
 static int is_mono(const one_t *s) { return voice_count(s) == 1; }
 
 /* voices stacked on each note: 1 without unison; the unison count, at most the voice count except in mono (mono +
@@ -1020,20 +1023,27 @@ static void *create(const char *data_dir) {
             return NULL;
         }
     }
-    /* the voice cards, as in an analog polysynth where no two voices match: for each part, the eight cards take the
-     * eight evenly spaced values -1 .. 1 in an order shuffled per part (so at 100% the whole range is in use, and a
-     * card's parts don't follow each other). A fixed seed: every instance, and every session, has the same cards. */
-    uint32_t rng = 0x3c6ef372u;
+    /* the voice cards, as in an analog polysynth where no two voices match: for each part, the first eight cards take
+     * the eight evenly spaced values -1 .. 1 in an order shuffled per part (so at 100% the whole range is in use, and a
+     * card's parts don't follow each other); cards 9-16 take the eight values -0.875 .. 0.875 (between those), shuffled
+     * with a second seed, so the first eight are exactly the cards of the
+     * 8-voice version (old sounds keep their voices). A fixed seed: every instance, and every session, has the same cards. */
+    uint32_t rng = 0x3c6ef372u, rng2 = 0x9b05688cu;
     for (int c = 0; c < AC_COUNT; c++) {
-        int order[MAX_VOICES];
-        for (int i = 0; i < MAX_VOICES; i++) order[i] = i;
-        for (int i = MAX_VOICES - 1; i > 0; i--) {   /* Fisher-Yates */
-            white(&rng);
-            int j = (int)(rng % (uint32_t)(i + 1)), t = order[i];
-            order[i] = order[j];
-            order[j] = t;
+        for (int half = 0; half < 2; half++) {
+            int order[CARD_SET];
+            uint32_t *r = half ? &rng2 : &rng;
+            for (int i = 0; i < CARD_SET; i++) order[i] = i;
+            for (int i = CARD_SET - 1; i > 0; i--) {   /* Fisher-Yates */
+                white(r);
+                int j = (int)(*r % (uint32_t)(i + 1)), t = order[i];
+                order[i] = order[j];
+                order[j] = t;
+            }
+            for (int i = 0; i < CARD_SET; i++)
+                s->voice[half * CARD_SET + i].card[c] =
+                    half ? (2.0f * order[i] + 1.0f) / CARD_SET - 1.0f : 2.0f * order[i] / (CARD_SET - 1) - 1.0f;
         }
-        for (int i = 0; i < MAX_VOICES; i++) s->voice[i].card[c] = 2.0f * order[i] / (MAX_VOICES - 1) - 1.0f;
     }
     for (int n = 0; n < NLFO; n++) lfo_init(&s->lfo[n], 0x2545f491u * (n + 1));
     s->bpm = 120.0f;
@@ -1276,24 +1286,96 @@ static void lfo_note_on(one_t *s, voice_t *v) {
     }
 }
 
+/* UNISON in poly, when the keys held need more voices than whole stacks leave: the voice count shared out among the
+ * held keys and the new one (each at most the unison count), as the manual has it (8 voices, count 8: one key 8, two
+ * keys 4 each, three keys 2 each and the rest as they fall). The new note takes idle voices first, then released ones
+ * (quietest first), then the outermost voices of the stacks bigger than its share (biggest stack first); a stack that
+ * gives voices up is spread again over what it keeps. Fills idx with the new note's voices and returns how many (0:
+ * none to take), or -1 when whole stacks fit (the usual allocation, pick_stack, then applies). */
+static int uni_take(one_t *s, int note, int *idx) {
+    int unit = stack_size(s), pool = voice_count(s), nst = 0, per, n = 0;
+    unsigned ages[MAX_VOICES];
+    for (int i = 0; i < pool; i++) {   /* the stacks of held keys (another key than this one) */
+        const voice_t *v = &s->voice[i];
+        if (!v->gate || v->env[ENV_AMP].stage == ENV_IDLE || v->note == note) continue;
+        int seen = 0;
+        for (int k = 0; k < nst; k++) seen |= ages[k] == v->age;
+        if (!seen) ages[nst++] = v->age;
+    }
+    per = pool / (nst + 1);
+    if (per >= unit) return -1;
+    if (per < 1) per = 1;
+    uint32_t taken = 0;
+    for (int i = 0; i < pool && n < per; i++)   /* this key's own stack, replayed */
+        if (s->voice[i].note == note && s->voice[i].gate && s->voice[i].env[ENV_AMP].stage != ENV_IDLE) {
+            idx[n++] = i;
+            taken |= 1u << i;
+        }
+    for (int i = 0; i < pool && n < per; i++)
+        if (s->voice[i].env[ENV_AMP].stage == ENV_IDLE && !(taken >> i & 1)) { idx[n++] = i; taken |= 1u << i; }
+    while (n < per) {   /* released voices, quietest first */
+        int best = -1;
+        for (int i = 0; i < pool; i++) {
+            const voice_t *v = &s->voice[i];
+            if ((taken >> i & 1) || v->gate) continue;
+            if (best < 0 || v->env[ENV_AMP].level < s->voice[best].env[ENV_AMP].level) best = i;
+        }
+        if (best < 0) break;
+        idx[n++] = best;
+        taken |= 1u << best;
+    }
+    uint32_t moved = 0;   /* stacks that gave voices up (bit: their first voice) */
+    while (n < per) {   /* the biggest stack over its share gives up its outermost voice */
+        int big = -1, bigc = per;
+        unsigned bage = 0;
+        for (int k = 0; k < nst; k++) {
+            int c = 0;
+            for (int i = 0; i < pool; i++) c += !(taken >> i & 1) && s->voice[i].gate && s->voice[i].age == ages[k];
+            if (c > bigc || (c == bigc && big >= 0 && ages[k] < bage)) { big = k; bigc = c; bage = ages[k]; }
+        }
+        if (big < 0) break;
+        int out = -1;
+        for (int i = 0; i < pool; i++) {
+            const voice_t *v = &s->voice[i];
+            if ((taken >> i & 1) || !v->gate || v->age != ages[big]) continue;
+            if (out < 0 || fabsf(v->uni_pos) > fabsf(s->voice[out].uni_pos)) out = i;
+        }
+        idx[n++] = out;
+        taken |= 1u << out;
+        moved |= 1u << big;
+    }
+    for (int k = 0; k < nst; k++) {   /* the stacks that gave voices up: spread again over the voices they keep */
+        if (!(moved >> k & 1)) continue;
+        int keep[MAX_VOICES], c = 0;
+        for (int i = 0; i < pool; i++)
+            if (!(taken >> i & 1) && s->voice[i].gate && s->voice[i].age == ages[k]) keep[c++] = i;
+        for (int j = 0; j < c; j++) stack_voice(&s->voice[keep[j]], j, c);
+    }
+    return n;
+}
+
 static void note_on(one_t *s, int note, int vel) {
     if (s->nheld == 0) release_held(s, 0);   /* a non-legato note under HOLD (no pedal down) replaces what it latched */
     forget(s, note);              /* a repeated key moves to the top instead of being held twice */
     if (s->nheld == MAX_HELD) forget(s, s->held[0]);   /* drop the oldest key */
     s->held[s->nheld++] = note;
-    int legato = s->nheld > 1, first = 0;
+    int legato = s->nheld > 1, first = 0, stack = stack_size(s), idx[MAX_VOICES];
     if (is_mono(s)) {   /* the priority key: a new key that loses to a held one changes nothing */
         int key = mono_key(s);
         if (key != note && s->voice[0].gate && s->voice[0].note == key) return;
         note = key;
+    } else if (stack > 1 && (first = uni_take(s, note, idx)) >= 0) {
+        if (!(stack = first)) return;   /* nothing to take */
+        first = -1;
     } else if ((first = pick_stack(s, note)) < 0) {
         return;   /* No Stealing and every voice held */
     }
-    int stack = stack_size(s);
+    if (first >= 0)
+        for (int k = 0; k < stack; k++) idx[k] = first + k;
     unsigned age = ++s->age;
     float var = s->val[P_PITCH_VAR] * 0.01f;   /* cents to semitones */
     for (int k = 0; k < stack; k++) {
-        voice_t *v = &s->voice[first + k];
+        voice_t *v = &s->voice[idx[k]];
         if (v->env[ENV_AMP].stage != ENV_IDLE)   /* NOTE-ON RESET (a voice from silence starts at phase 0 anyway) */
             for (int n = 0; n < NOSC; n++)
                 if (s->val[P_O1_RESET + XO_STRIDE * n] > 0.5f) v->reset_pend |= 1 << n;
@@ -1543,7 +1625,7 @@ static void clock_block(one_t *s) {
 }
 
 static void pend_add(one_t *s, int note, int64_t at) {
-    if (s->npend == PEND_MAX) {   /* full (never with 8 voices): the first one ends now */
+    if (s->npend == PEND_MAX) {   /* full (never in practice): the first one ends now */
         out_off(s, s->pend[0].note, 1);
         s->pend[0] = s->pend[--s->npend];
     }
@@ -2049,6 +2131,11 @@ static int get_param(void *inst, const char *key, char *buf, int n) {
         return used;
     }
     if (!strcmp(key, "heals")) return snprintf(buf, n, "%d", s->heals);   /* ... how often heal() ran ... */
+    if (!strcmp(key, "voices_sounding")) {   /* ... the voices not idle (a test readout) ... */
+        int c = 0;
+        for (int i = 0; i < MAX_VOICES; i++) c += s->voice[i].env[ENV_AMP].stage != ENV_IDLE;
+        return snprintf(buf, n, "%d", c);
+    }
     if (!strcmp(key, "gen_euclid")) {   /* ... and the Euclidean pattern as x and . */
         int i = 0;
         for (; i < s->eu_n && i < n - 1; i++) buf[i] = s->eu[i] ? 'x' : '.';
