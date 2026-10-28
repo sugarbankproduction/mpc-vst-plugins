@@ -5,7 +5,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-enum { PATCH_NAME_MAX = 32, PATCH_STATE_MAX = 8192 };   /* a name's characters; the engine's state and the chunk */
+#ifndef VST2_CHUNK_MAX
+#define VST2_CHUNK_MAX 8192   /* the wrapper's chunk (wrapper/vst2_wrap.c); desktop/build.sh sets the desktop's */
+#endif
+enum { PATCH_NAME_MAX = 32, PATCH_STATE_MAX = VST2_CHUNK_MAX };   /* a name's characters; the engine's state and the chunk */
 enum { SCR_PATCHES = -10 };                             /* the centre screen showing the patch list (see SCR_MATRIX) */
 enum { Z_PATCH_ACT = 100300, Z_PATCH_ITEM = 200000 };   /* hit codes: an action button (+ PA_), a list entry (+ pos) */
 enum { PA_SAVE, PA_SAVE_AS, PA_RENAME, PA_DELETE, PA_IMPORT, PA_EXPORT, PA_COUNT };

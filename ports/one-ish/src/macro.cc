@@ -2,6 +2,7 @@
 // It does what Plaits' own Voice::Render does for one engine, minus the hardware: no user data from flash (the 6-op FM
 // models use the three factory banks in resources.cc), no 1 ms trigger delay, no decay envelope or low-pass gate (the
 // voice's own envelopes shape the sound), float output instead of 16-bit.
+#include <cmath>
 #include <new>
 #include <stdlib.h>
 #include <string.h>
@@ -145,11 +146,18 @@ struct macro_s {
   }
 
   void RenderBlock() {
-    if (model != active) {   // a new model: its state (and the shared RAM) starts afresh
+    if (model != active) {   // a new model (or a healed one): its state and the shared RAM start afresh
+      // The engines share `shared`, and some keep state there that their Reset() leaves alone (6-op FM's voice
+      // accumulator, for one): what the last model left would be read as floats, NaN included. So the RAM is cleared
+      // and the new engine laid out in it again (Init takes its buffers from the allocator: no allocation here).
       const Model& m = kModels[model];
+      memset(shared, 0, sizeof shared);
+      stmlib::BufferAllocator allocator(shared, sizeof shared);
+      engine[model]->Init(&allocator);
       engine[model]->LoadUserData(m.bank >= 0 ? fm_patches_table[m.bank] : NULL);
       engine[model]->Reset();
       out_limiter.Init();
+      aux_limiter.Init();
       active = model;
     }
     const Model& m = kModels[active];
@@ -165,6 +173,14 @@ struct macro_s {
     p.accent = 0.8f;   // the module's level with its LEVEL input unpatched
     bool enveloped = false;
     e->Render(p, out, aux_out, kBlock, &enveloped);
+    // a non-finite sample never leaves here (nor reaches the limiters, whose state it would poison): it is 0, and the
+    // engine starts afresh at the next block
+    bool bad = false;
+    for (int i = 0; i < kBlock; ++i) {
+      if (!std::isfinite(out[i])) { out[i] = 0.0f; bad = true; }
+      if (!std::isfinite(aux_out[i])) { aux_out[i] = 0.0f; bad = true; }
+    }
+    if (bad) active = -1;
     Post(m.out_gain, &out_limiter, out);
     Post(m.aux_gain, &aux_limiter, aux_out);
     // the main/aux blend glides across the block; then the module's own ceiling (its DAC clips at 16-bit full scale):

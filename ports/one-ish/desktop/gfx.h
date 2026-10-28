@@ -68,8 +68,9 @@ static void gfx_disc_grad(float cx, float cy, float r, DWORD c1, DWORD c2) {   /
     GdipDeleteBrush(b);
 }
 static void gfx_circle(float cx, float cy, float r, float w, DWORD c) {
+    if (!gfx_g) return;   /* (before the pen: no surface, no pen to leak) */
     void *p = gfx_pen(c, w);
-    if (!gfx_g || !p) return;
+    if (!p) return;
     GdipDrawEllipse(gfx_g, p, cx - r, cy - r, 2 * r, 2 * r);
     GdipDeletePen(p);
 }
@@ -87,27 +88,31 @@ static void gfx_rect_grad(float x, float y, float w, float h, DWORD c1, DWORD c2
     GdipDeleteBrush(b);
 }
 static void gfx_frame(float x, float y, float w, float h, float lw, DWORD c) {
+    if (!gfx_g) return;
     void *p = gfx_pen(c, lw);
-    if (!gfx_g || !p) return;
+    if (!p) return;
     GdipDrawRectangle(gfx_g, p, x, y, w, h);
     GdipDeletePen(p);
 }
 static void gfx_line(float x0, float y0, float x1, float y1, float w, DWORD c) {
+    if (!gfx_g) return;
     void *p = gfx_pen(c, w);
-    if (!gfx_g || !p) return;
+    if (!p) return;
     GdipDrawLine(gfx_g, p, x0, y0, x1, y1);
     GdipDeletePen(p);
 }
 static void gfx_lines(const gpt_t *pts, int n, float w, DWORD c) {
+    if (!gfx_g) return;
     void *p = gfx_pen(c, w);
-    if (!gfx_g || !p) return;
+    if (!p) return;
     GdipDrawLines(gfx_g, p, pts, n);
     GdipDeletePen(p);
 }
 static void gfx_arc(float cx, float cy, float r, float a0, float a1, float w, DWORD c) {   /* from a0 to a1 */
     if (fabsf(a1 - a0) < 0.5f) return;
+    if (!gfx_g) return;
     void *p = gfx_pen(c, w);
-    if (!gfx_g || !p) return;
+    if (!p) return;
     float lo = a0 < a1 ? a0 : a1;
     GdipDrawArc(gfx_g, p, cx - r, cy - r, 2 * r, 2 * r, lo - 90.0f, fabsf(a1 - a0));
     GdipDeletePen(p);

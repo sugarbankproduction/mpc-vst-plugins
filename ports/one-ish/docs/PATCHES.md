@@ -54,8 +54,12 @@ o2_wave=0
   is the default and a patch made today still loads after new parameters are added. Values out of range are clamped.
 - Unknown keys (a parameter a later version adds, or one renamed) are skipped quietly. Lines that make no sense (no
   `=`, a value that isn't a number or an option) are skipped and counted; the screen says how many. `;` also separates
-  entries, so a pasted engine state (`v=1;flt_cut=42.5;...`) loads. Files over 64 KB are refused.
-- The engine's 8 KB state limit applies (today's worst case is about 7.7 KB of parameters, every one off its default).
+  entries, so a pasted engine state (`v=1;flt_cut=42.5;...`) loads. Files over the state limit plus 64 KB are refused.
+- The engine's state limit applies: the desktop build's chunk, 256 KB (`VST2_CHUNK_MAX` in `desktop/build.sh`; the MPC's
+  is 8 KB, where a state that would not fit is written in the compact "v=2" form). The offline check measures the worst
+  case, every parameter off its default (its output gives the bytes), and fails when it leaves less than 15% of the
+  desktop chunk free or no longer fits the MPC's in either form (2026-10-28, offline). A state too big for the chunk is
+  never saved cut short: nothing is saved, the engine says so on stderr and the window on its screen.
 - The step sequencer's steps, when there are any, are one more line, `seq=<text>` (the engine's own form, see
   `docs/SEQUENCER.md`): a patch keeps its sequence, and loading a patch without the line empties the sequencer
   (2026-10-27, offline). A typical sequence adds a few hundred characters.
@@ -70,8 +74,8 @@ o2_wave=0
   (`audioMasterAutomate` inside begin/end edit, as a knob does), so the host and the window stay in step. Restoring as
   one state rather than one `setParameter` at a time keeps every value exact and stops LINK CUTOFF from dragging one
   cutoff while the other loads.
-- The project the host saves (`effGetChunk`) gets `;ui_patch=<edited>,<F|U|N>,<program>,<name>` appended when it fits
-  the 8 KB chunk; the engine ignores the key, and the window uses it on reopening to show the same patch name and `*`.
+- The project the host saves (`effGetChunk`) gets `;ui_patch=<edited>,<F|U|N>,<program>,<name>` appended (up to 96 bytes) when it
+  fits the chunk; the engine ignores the key, and the window uses it on reopening to show the same patch name and `*`.
 - The `*`: the editor keeps every parameter's value from the moment the patch was loaded or saved and compares.
 
 ## On the MPC later (not built)

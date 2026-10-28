@@ -54,6 +54,8 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100 };   /* Z_PAGE + p */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
+/* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
+enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
 enum { VENDOR_SPECIFIC = 50 };                   /* effVendorSpecific */
 #define TEST_MIDI_LOG 0x4F314D4C   /* VENDOR_SPECIFIC index: copy the MIDI the window passed to the engine (tests) */
 extern const short MXC[MX_COLS + 2];   /* the matrix columns: #, then each MX_ column, in base units from the left */

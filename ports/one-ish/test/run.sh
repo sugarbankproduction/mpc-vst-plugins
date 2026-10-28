@@ -6,7 +6,7 @@ set -euo pipefail
 P=ports/one-ish
 mkdir -p "$P/build/obj_san" "$P/build/obj_o2" "$P/test/out"
 eval "$(python3 tools/gen_vst.py "$P/vst.json" --shell)"
-INC=(-I"$P/build" -I"$P/src" -Iwrapper)
+INC=(-I"$P/build" -I"$P/src" -Iwrapper -DVST2_CHUNK_MAX=262144)   # the chunk size: the desktop build's (desktop/build.sh)
 build() {   # build <objdir> <out> <flags...>: offline_check.c plus the engine sources, each by its language
   local dir=$1 out=$2; shift 2
   local objs=()

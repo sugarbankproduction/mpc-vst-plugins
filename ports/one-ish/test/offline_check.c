@@ -91,13 +91,16 @@
  *   macro     the MACRO channel (Plaits, src/macro.h): every model finite and bounded at low to high notes and every
  *             corner of harmonics / timbre / morph; VA, wavetable and additive in tune (note, octave, frequency, bend,
  *             master tune) at 44.1 kHz; level 0 is exactly the sound without it; the drums, string and modal models
- *             fire on note-on; the matrix and the ribbon move harmonics, timbre, morph and level
+ *             fire on note-on; the matrix and the ribbon move harmonics, timbre, morph and level; every model change
+ *             (all 552) plays finite samples with no invalid operation; Particles then 6-op FM with the synth delay on
+ *             keeps sounding; Speech's phonemes read nothing past their table (ASan)
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav,
  *             arp_demo.wav, seq_demo.wav, macro_demo.wav)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
  *             MACRO channel at each model; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
+#include <fenv.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -119,6 +122,11 @@
 
 #define SR 44100
 #define N 16384   /* FFT length: 2.7 Hz per bin */
+#ifndef VST2_CHUNK_MAX
+#define VST2_CHUNK_MAX 8192   /* the chunk this build's engine was made for (test/run.sh: the desktop's, as build.sh) */
+#endif
+#define MPC_CHUNK 8192        /* the MPC build's (wrapper/vst2_wrap.c's default) */
+#define UI_PATCH_MAX 96       /* what the desktop editor adds to the chunk (";ui_patch=...", desktop/patches.c) */
 
 static const mpc_engine_t *E;
 static int failures;
@@ -1669,7 +1677,7 @@ static double get(void *e, const char *k) {
 }
 
 static void state(void) {
-    static char st[9000];
+    static char st[VST2_CHUNK_MAX + 1000];
     void *a = patch(SQUARE, 123, 456, 78, 901), *b = E->create(NULL);
     set(a, "volume", 42);
     int n = E->get_param(a, "state", st, sizeof st);
@@ -3559,6 +3567,26 @@ static void matrix_wiring(void) {
         check(fabs(a - 57) < 0.3 && fabs(b - 69) < 0.3 && fabs(c - 63.05) < 0.3 && fabs(d - 57) < 0.3, what);
         E->destroy(e);
 
+        /* the X/Y pad (the desktop window's, 2026-10-27): Pad X (CC 2), Pad Y (CC 3) and Pad Gate (CC 18) as sources,
+         * each to pitch +50% (+12 st at 1) in its own slot; X and Y hold where they were let go; CC 121 resets all */
+        static const int pad_cc[3] = {2, 3, 18};
+        double pv[3][3];
+        for (int j = 0; j < 3; j++) {
+            e = pitch_patch();
+            slot_set(e, 2, MS_PAD_X + j, MD_PITCH, 50);
+            const cc_ev_t ep[] = {{200, pad_cc[j], 127}, {450, 121, 0}};
+            k = cc_run(e, ep, 2, 700, t, st);
+            pv[j][0] = pitch_at(t, st, k, 150); pv[j][1] = pitch_at(t, st, k, 400); pv[j][2] = pitch_at(t, st, k, 650);
+            E->destroy(e);
+        }
+        snprintf(what, sizeof what, "Pad X / Pad Y / Pad Gate -> Pitch +50%%: %.2f %.2f %.2f before, %.2f %.2f %.2f at 127, "
+                 "%.2f %.2f %.2f after CC 121 (want 57, 69, 57)", pv[0][0], pv[1][0], pv[2][0], pv[0][1], pv[1][1], pv[2][1],
+                 pv[0][2], pv[1][2], pv[2][2]);
+        int pad_ok = 1;
+        for (int j = 0; j < 3; j++)
+            pad_ok &= fabs(pv[j][0] - 57) < 0.3 && fabs(pv[j][1] - 69) < 0.3 && fabs(pv[j][2] - 57) < 0.3;
+        check(pad_ok, what);
+
         e = pitch_patch();   /* its quick assignment, without a slot */
         set(e, "ribbon_dst", MD_PITCH); set(e, "ribbon_amt", -25); set(e, "ribbon_mode", 1);
         const cc_ev_t eq[] = {{0, 16, 127}};
@@ -3686,13 +3714,15 @@ static void matrix_wiring(void) {
         for (int i = SR / 20; i < SR / 2; i++) { d += (xb[i] - xa[i]) * (xb[i] - xa[i]); s += xa[i] * xa[i]; }
         snprintf(what, sizeof what, "LFO 1 -> %s +100%%: the output changes by %.1f dB against the signal (want audible)",
                  k ? "Send 2 (Reverb)" : "Synth FX Rate", 10 * log10(d / s + 1e-30));
-        check(10 * log10(d / s + 1e-30) > -20, what);
+        check(10 * log10(d / s + 1e-30) > -6, what);   /* (measured: rate +4.9 dB, send 2 -1.4 dB; broken: -inf) */
         E->destroy(a); E->destroy(b);
     }
 
-    /* the worst state: every param off its default, the continuous ones at six significant digits */
+    /* the worst state: every param off its default, the continuous ones at six significant digits. It must fit this
+     * build's chunk with 15% to spare (the editor's ui_patch tag included), and fit the MPC's 8 KB chunk; a buffer too
+     * small gets no state at all, never a cut one */
     {
-        static char stt[8192];
+        static char stt[VST2_CHUNK_MAX];
         void *a = E->create(NULL), *b = E->create(NULL);
         int changed = 0;
         for (int i = 0; i < NPARAMS; i++) {
@@ -3721,9 +3751,42 @@ static void matrix_wiring(void) {
             for (unsigned t = 0; t < sizeof TRANSIENT / sizeof TRANSIENT[0]; t++) skip |= !strcmp(PARAMS[i].key, TRANSIENT[t]);
             if (!skip) same &= get(a, PARAMS[i].key) == get(b, PARAMS[i].key);
         }
-        snprintf(what, sizeof what, "a state with %d of %d params off their defaults: %d bytes of the 8192-byte chunk, restores "
-                 "every value", changed, kept, n);
+        snprintf(what, sizeof what, "a state with %d of %d params off their defaults: %d bytes, restores every value", changed,
+                 kept, n);
         check(same && changed >= kept - 2, what);
+        double room = 1.0 - (double)(n + 1 + UI_PATCH_MAX) / VST2_CHUNK_MAX, mpc;
+        snprintf(what, sizeof what, "... with the editor's tag it leaves %.0f%% of this build's %d-byte chunk free (want "
+                 "15%% or more)", 100 * room, VST2_CHUNK_MAX);
+        check(n > 0 && room >= 0.15, what);
+        /* the MPC's chunk: "v=1" when it fits, else the compact "v=2" (shared key prefixes as "~"); it must restore too */
+        static char mpc_st[MPC_CHUNK];
+        int n8 = E->get_param(a, "state", mpc_st, MPC_CHUNK);
+        void *c = E->create(NULL);
+        E->set_param(c, "state", mpc_st);
+        int same8 = n8 > 0;
+        for (int i = 0; i < NPARAMS; i++) {
+            int skip = 0;
+            for (unsigned t = 0; t < sizeof TRANSIENT / sizeof TRANSIENT[0]; t++) skip |= !strcmp(PARAMS[i].key, TRANSIENT[t]);
+            if (!skip) same8 &= get(a, PARAMS[i].key) == get(c, PARAMS[i].key);
+        }
+        E->destroy(c);
+        mpc = 1.0 - (double)(n8 + 1) / MPC_CHUNK;
+        snprintf(what, sizeof what, "... and fits the MPC's %d-byte chunk as \"%.3s\" (%d bytes, %.0f%% free%s), restoring "
+                 "every value", MPC_CHUNK, mpc_st, n8, 100 * mpc, mpc < 0.15 ? ": under 15%, nearly full" : "");
+        check(n8 > 0 && same8, what);
+        /* the smallest buffer it fits (whatever form), and one byte less: no state at all, never a cut one */
+        static char small[VST2_CHUNK_MAX];
+        int lo = 1, hi = n + 1;
+        fflush(stdout);   /* (the engine says so on stderr: after the lines before it) */
+        while (lo < hi) {
+            int mid = (lo + hi) / 2;
+            if (E->get_param(a, "state", small, mid) > 0) hi = mid; else lo = mid + 1;
+        }
+        memset(small, 'x', sizeof small);
+        int m = E->get_param(a, "state", small, lo - 1);
+        snprintf(what, sizeof what, "a chunk one byte too small for the state (%d) gets none, not a cut one (%d bytes, "
+                 "\"%.8s\")", lo - 1, m, small);
+        check(m == 0 && small[0] == 0, what);
         E->destroy(a); E->destroy(b);
     }
 }
@@ -4435,6 +4498,39 @@ static void arp_generative(void) {
         snprintf(what, sizeof what, "arp Random repeating: only the held notes, and repeats allowed (%d in 30)", rep);
         check(n == 30 && in && rep > 0, what);
     }
+    {   /* a knob that has nothing to do with the arp (cutoff, moved every block) doesn't reshuffle a Random pattern in
+         * mid-pass; an arp setting (octaves) still takes effect at once */
+        static const int keys[6] = {60, 62, 64, 65, 67, 69};
+        void *a = arp_patch(), *b = arp_patch();
+        void *both[2] = {a, b};
+        int na = 0, nb = 0;
+        for (int j = 0; j < 2; j++) {
+            setkv(both[j], "arp_on=1,arp_pattern=3");
+            for (int k = 0; k < 6; k++) note(both[j], 1, keys[k], 100);
+        }
+        for (int blk = 0; blk < SR * 3 / 128; blk++) {   /* 3 s: 24 steps, four passes of six */
+            set(b, "flt_cut", 40 + blk % 50);
+            na = gen_render(a, 128, na);
+            int16_t buf[256];
+            E->render(b, buf, 128);
+            nb = gen_events(b, nb);
+        }
+        static int ga[64], gb[64];
+        int ca = gen_pick(na, 1, ga, NULL, NULL, 64), cb = gen_pick(nb, 1, gb, NULL, NULL, 64);
+        snprintf(what, sizeof what, "arp Random: moving the cutoff every block plays the same notes as not moving it (%d and "
+                 "%d notes)", ca, cb);
+        check(ca >= 24 && ca == cb && same_notes(ga, ca, gb, cb), what);
+        set(a, "arp_oct", 1);   /* 2 octaves */
+        int n0 = na, high = 0;
+        na = gen_render(a, SR, na);
+        int c = gen_pick(na, 1, NULL, NULL, NULL, 64), all[64];
+        gen_pick(na, 1, all, NULL, NULL, 64);
+        for (int i = ca; i < c; i++) high += all[i] > 69;
+        snprintf(what, sizeof what, "... while ARP OCTAVES takes effect at once (%d of the next %d notes an octave up)", high,
+                 c - ca);
+        check(na > n0 && high > 0, what);
+        E->destroy(a); E->destroy(b);
+    }
 
     /* timing: a synced 1/16 at 120 and 90 BPM lands on the exact sample; gate length; swing; free rate */
     for (int c = 0; c < 4; c++) {
@@ -4819,6 +4915,100 @@ static double partial_near(const float *x, double want) {
         if (pw[k] > pw[best]) best = k;
     double a = log(pw[best - 1] + 1e-30), b = log(pw[best] + 1e-30), c = log(pw[best + 1] + 1e-30);
     return (best + 0.5 * (a - c) / (a - 2 * b + c)) * bin;
+}
+
+/* the review's NaN (2026-10-27): the models share one block of RAM, and 6-op FM's Reset() leaves its voice accumulator
+ * there as the last model left it; after Particles that read as NaN, which filled the synth effect's delay line, and
+ * the output stayed silent for good, even back on VA. Now a model change clears the RAM and lays the engine out again,
+ * a non-finite Plaits sample is 0 (and restarts the model), and the engine's last guard heals the effects and filters. */
+static void macro_nan(void) {
+    static float x[SR];
+    static const int chord[] = {48, 55, 60, 64};
+    char what[200];
+    void *e = mac_patch(10 /* Particles */);
+    set(e, "modfx_on", 1); set(e, "modfx_type", SFX_DELAY); set(e, "modfx_mix", 50);
+    for (int k = 0; k < 4; k++) note(e, 1, chord[k], 100);
+    render_f(e, x, SR / 2);
+    for (int k = 0; k < 4; k++) note(e, 0, chord[k], 0);
+    render_f(e, x, SR / 4);
+    double fm[3], va;
+    for (int m = 0; m < 3; m++) {
+        set(e, "mac_model", MAC_FM6 + m);
+        for (int k = 0; k < 4; k++) note(e, 1, chord[k], 100);
+        render_f(e, x, SR / 4);
+        fm[m] = rms(x + SR / 20, SR / 5);
+        for (int k = 0; k < 4; k++) note(e, 0, chord[k], 0);
+        render_f(e, x, SR / 4);
+    }
+    set(e, "mac_model", MAC_VA);
+    note(e, 1, 60, 100);
+    render_f(e, x, SR / 4);
+    va = rms(x + SR / 20, SR / 5);
+    char heals[16] = "";
+    E->get_param(e, "heals", heals, sizeof heals);
+    snprintf(what, sizeof what, "macro: Particles, then 6-Op FM 1/2/3 with the synth delay on: they sound (rms %.3f %.3f "
+             "%.3f), and VA after them (rms %.3f); %s non-finite output (heals %s)", fm[0], fm[1], fm[2], va,
+             atoi(heals) ? "SOME" : "no", heals);
+    check(fm[0] > 0.01 && fm[1] > 0.01 && fm[2] > 0.01 && va > 0.01 && atoi(heals) == 0, what);
+    E->destroy(e);
+}
+
+/* every model change, from every model to every other, through the C API with FE_INVALID watched (an invalid
+ * operation is where a NaN is born): after a chord-ish workout on model a, model b plays finite samples and raises no
+ * invalid operation */
+static void macro_switch_sweep(void) {
+    static float x[2048];
+    char what[200], first[64] = "";
+    int bad = 0, invalid = 0;
+    macro_t *m = macro_create();
+    if (!m) { check(0, "macro: macro_create for the sweep"); return; }
+    for (int a = 0; a < MACRO_MODELS; a++)
+        for (int b = 0; b < MACRO_MODELS; b++) {
+            if (a == b) continue;
+            macro_set(m, a, 48.0f + (a % 5) * 7.0f, 0.7f, 0.6f, 0.4f, 0.5f);
+            macro_trigger(m); macro_gate(m, 1);
+            macro_render(m, x, 1536);
+            macro_gate(m, 0);
+            macro_render(m, x, 384);
+            feclearexcept(FE_INVALID);
+            macro_set(m, b, 60.0f, 0.3f, 0.5f, 0.7f, 0.5f);
+            macro_trigger(m); macro_gate(m, 1);
+            macro_render(m, x, 2048);
+            int fin = 1;
+            for (int i = 0; i < 2048; i++) fin &= isfinite(x[i]) && fabsf(x[i]) <= 1.0f;
+            int inv = fetestexcept(FE_INVALID) != 0;
+            bad += !fin;
+            invalid += inv;
+            if ((!fin || inv) && !first[0]) snprintf(first, sizeof first, "%s -> %s", macro_model_name(a), macro_model_name(b));
+        }
+    macro_destroy(m);
+    snprintf(what, sizeof what, "macro: all %d model changes play finite samples within full scale (%d don't) and raise "
+             "no invalid operation (%d do)%s%s", MACRO_MODELS * (MACRO_MODELS - 1), bad, invalid, first[0] ? ": first " : "",
+             first);
+    check(!bad && !invalid, what);
+}
+
+/* Speech's LPC phonemes (harmonics about 17-33%): a note-on picks a consonant, and the last one used to read a frame
+ * past Plaits' phoneme table (AddressSanitizer: global-buffer-overflow; third_party/patched/.../lpc_speech_synth.h).
+ * Every corner of that range, triggered at many notes, under the offline build's sanitizers: no report, finite out. */
+static void macro_speech(void) {
+    static float x[600];
+    int fin = 1, n = 0;
+    macro_t *m = macro_create();
+    if (!m) { check(0, "macro: macro_create for Speech"); return; }
+    for (int h = 15; h <= 35; h++)
+        for (int t = 0; t <= 10; t++)
+            for (int mo = 0; mo <= 10; mo++) {
+                macro_set(m, MAC_SPEECH, 36.0f + (float)((h * 7 + t * 5 + mo * 3) % 48), h * 0.01f, t * 0.1f, mo * 0.1f, 0.0f);
+                macro_trigger(m); macro_gate(m, 1);
+                macro_render(m, x, 600);
+                for (int i = 0; i < 600; i++) fin &= isfinite(x[i]);
+                n++;
+            }
+    macro_destroy(m);
+    char what[160];
+    snprintf(what, sizeof what, "macro: Speech's phonemes (harmonics 15-35%%), %d note-ons: finite, no read past its tables", n);
+    check(fin, what);
 }
 
 static void macro_osc(void) {
@@ -5458,6 +5648,9 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); return 0; }
     if (argc > 2 && !strcmp(argv[1], "macro")) {   /* just the MACRO channel: offline_check macro <dir>/demo.wav */
         macro_osc();
+        macro_nan();
+        macro_switch_sweep();
+        macro_speech();
         macro_wav(argv[2]);
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
@@ -5514,6 +5707,9 @@ int main(int argc, char **argv) {
     noise_stereo_drift();
     analog_character();
     macro_osc();
+    macro_nan();
+    macro_switch_sweep();
+    macro_speech();
     randomiser();
     arp_generative();
     step_sequencer();

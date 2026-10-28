@@ -374,8 +374,8 @@ def build(lay):
     L.cells([("pan", "PAN", 46), ("spread", "SPREAD", 44)], X + 1930, 456, 78)
     L.page("SFX", "SYNTH EFFECT", "The controls of the selected type (TYPE changes the list).", sfx_page(L))
     mac = [("mac_model", "Model"), ("mac_harm", "Harmonics"), ("mac_timbre", "Timbre"), ("mac_morph", "Morph"),
-           ("mac_oct", "Octave"), ("mac_freq", "Frequency"), ("mac_aux", "Aux Mix"), ("mac_decay", "Decay"),
-           ("mac_lpg", "Low-Pass Gate"), ("mac_level", "Level"), ("mac_svf", "To SVF"), ("mac_lad", "To Ladder")]
+           ("mac_oct", "Octave"), ("mac_freq", "Frequency"), ("mac_aux", "Aux Mix"), ("mac_level", "Level"),
+           ("mac_svf", "To SVF"), ("mac_lad", "To Ladder")]
     mac += [(p["key"], p.get("name", p["key"])) for p in L.params   # any other macro key: here, not on OTHER
             if p["key"].startswith("mac_") and p["key"] not in dict(mac)]
     L.page("MACRO", "MACRO OSCILLATOR", "A fourth sound source with many models (level: the mixer).",

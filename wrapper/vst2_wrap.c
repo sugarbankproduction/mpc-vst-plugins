@@ -53,6 +53,10 @@ void wrap_trace(int kind, int idx, float value);
 #else
 #define TRACE(kind, idx, value) ((void)0)
 #endif
+#ifndef VST2_CHUNK_MAX
+#define VST2_CHUNK_MAX 8192 /* the project chunk's size, the engine's "state" included (its NUL too). A desktop build may
+                             * raise it (ports/one-ish/desktop/build.sh); the engine must then be built with the same value */
+#endif
 #ifndef HAS_TRANSPORT
 #define HAS_TRANSPORT 0 /* 1: tell the DSP when the host transport plays/stops as "transport" = "1"/"0"; a jump back
                           * in song position while playing (a loop, a locate) is sent as "1" again */
@@ -147,7 +151,7 @@ typedef struct {
     char last_rev[16];       /* HAS_DISPLAY_REV: the "display_rev" last seen */
     float last_norm[NPARAMS];   /* HAS_DISPLAY_REV: value last reported per param (-1 = never) */
     float open[NPARAMS];     /* popup "open" flags (popup.h): kept here, never sent to the DSP or saved */
-    char chunk[8192];
+    char chunk[VST2_CHUNK_MAX];   /* the engine's "state", saved with the project (effGetChunk / effSetChunk) */
     pthread_mutex_t lock;    /* one engine call at a time: see eng_set() */
     int nrpn;                /* HAS_NRPN: the parameter CC 99/98 selected (-1: none), its coarse value from CC 6 */
     int nrpn_msb;
@@ -403,6 +407,7 @@ static void update_transport(wrap_t *w, const VstTimeInfo *ti) {
 }
 
 static void update_tempo(wrap_t *w, int32_t n) {
+    if (!w->master) return;   /* a host that gave no callback: no tempo, no song position */
     VstTimeInfo *ti = (VstTimeInfo *)w->master(&w->fx, audioMasterGetTime, 0,
                                               kVstTempoValid | ((HAS_TRANSPORT || HAS_SONG_POS) ? kVstPpqPosValid : 0), 0, 0);
     if (!ti) return;
