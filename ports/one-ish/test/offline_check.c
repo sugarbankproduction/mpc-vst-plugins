@@ -1473,6 +1473,33 @@ static void keys(void) {
     E->midi(e, cc120, 3);
     check(silent_after(e, 10), "All Sound Off (CC 120) is silent within 10 ms (a 2 ms fade, no click)");
     E->destroy(e);
+
+    /* MIDI CHANNEL: Omni (the default) plays every channel; a channel plays only its own */
+    double on[3];
+    for (int k = 0; k < 3; k++) {
+        e = patch(SAW, 0, 100, 100, 50);
+        if (k) set(e, "midi_ch", 3);
+        uint8_t m[3] = {(uint8_t)(0x90 | (k == 2 ? 2 : 0)), 60, 100};   /* channel 1, or channel 3 */
+        E->midi(e, m, 3);
+        on[k] = rms_of(e, SR / 10);
+        E->destroy(e);
+    }
+    char what[160];
+    snprintf(what, sizeof what, "MIDI channel: Omni plays channel 1 (rms %.3f); set to 3, channel 1 is ignored (%.4f) and "
+             "channel 3 plays (%.3f)", on[0], on[1], on[2]);
+    check(on[0] > 0.01 && on[1] < 1e-4 && on[2] > 0.01, what);
+
+    /* SILENT LEARN: chord learn makes no sound, and still learns the chord */
+    e = patch(SAW, 0, 100, 100, 50);
+    set(e, "learn_mode", 1); set(e, "chord_learn", 1);
+    note(e, 1, 60, 100); note(e, 1, 64, 100); note(e, 1, 67, 100);
+    double quiet = rms_of(e, SR / 10);
+    note(e, 0, 60, 0); note(e, 0, 64, 0); note(e, 0, 67, 0);
+    set(e, "chord_learn", 0);
+    snprintf(what, sizeof what, "silent chord learn: nothing heard while learning (rms %.5f); the chord kept: +%.0f +%.0f",
+             quiet, get(e, "chord_iv1"), get(e, "chord_iv2"));
+    check(quiet < 1e-4 && get(e, "chord_iv1") == 4 && get(e, "chord_iv2") == 7, what);
+    E->destroy(e);
 }
 
 /* one envelope on its own (env.h): times in ms (delay, attack, hold, decay, release), sustain 0..1, curves -1..1 */

@@ -195,7 +195,9 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_PAD: return "X/Y pad: drag inside it. Left/right is the matrix source Pad X (MIDI CC 2), up/down Pad Y (CC 3); "
                        "both stay where you let go. Pad Gate (CC 18) is on while you touch it. Up/down also sends "
                        "aftertouch (the source Aftertouch, back to 0 when you let go).";
-    case Z_OCT_DOWN: case Z_OCT_UP: return "Octave: shifts the on-screen keyboard down or up, two octaves each way.";
+    case Z_OCT_DOWN: case Z_OCT_UP:
+        return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Hold one: 1 s back to the "
+               "default octave, 2 s a MIDI panic (all notes off).";
     case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the factory presets, then your own "
                            "patches; click it for the patch list.";
     case Z_PREV: case Z_NEXT: return "Previous / next patch: the factory presets (F), then your own (U).";

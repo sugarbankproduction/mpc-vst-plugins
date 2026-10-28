@@ -216,6 +216,8 @@ enum {
     P_SEQ_ON, P_SEQ_PLAY, P_SEQ_REC, P_SEQ_STEP_MOD, P_SEQ_SYNC, P_SEQ_RATE, P_SEQ_DIV, P_SEQ_TIMING, P_SEQ_LENGTH,
     P_SEQ_FOLLOW_SWING, P_CLOCK_SWING, P_SEQ_NOTE_TRIG, P_SEQ_NOTE_RESET, P_SEQ_RESTART_HOLD, P_SEQ_RESTART_TRIG,
     P_SEQ_TRANSPOSE, P_SEQ_TR_MODE, P_SEQ_ONE_SHOT, P_SEQ_REC_MODE, P_SEQ_PATTERN,
+    /* settings: the MIDI channel the instrument listens on (Omni: every channel), and CHORD LEARN heard or silent */
+    P_MIDI_CH, P_LEARN_MODE,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -336,6 +338,7 @@ static const char *const KEYS[P_COUNT] = {
     "seq_on", "seq_play", "seq_rec", "seq_step_mod", "seq_sync", "seq_rate", "seq_div", "seq_timing", "seq_length",
     "seq_follow_swing", "clock_swing", "seq_note_trig", "seq_note_reset", "seq_restart_hold", "seq_restart_trig",
     "seq_transpose", "seq_tr_mode", "seq_one_shot", "seq_rec_mode", "seq_pattern",
+    "midi_ch", "learn_mode",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -1777,7 +1780,10 @@ static void key_on(one_t *s, int note, int vel) {
     switch (s->route) {
     case ROUTE_SEQ: seq_key_on(s, note, vel); return;
     case ROUTE_CHORD: chord_key_on(s, note, vel); return;
-    case ROUTE_LEARN: learn_key(s, note); note_on(s, note, vel); return;   /* heard as played (not a silent learn) */
+    case ROUTE_LEARN:   /* heard as played, or with SILENT LEARN (a setting) not at all */
+        learn_key(s, note);
+        if (s->val[P_LEARN_MODE] < 0.5f) note_on(s, note, vel);
+        return;
     default: note_on(s, note, vel); return;
     }
 }
@@ -1832,7 +1838,8 @@ int mpc_engine_changed(void *inst, char *key, int len) {
 static void midi(void *inst, const uint8_t *m, int len) {
     one_t *s = inst;
     if (len < 2) return;
-    int st = m[0] & 0xf0, d1 = m[1] & 0x7f, d2 = len > 2 ? m[2] & 0x7f : 0;
+    int st = m[0] & 0xf0, d1 = m[1] & 0x7f, d2 = len > 2 ? m[2] & 0x7f : 0, ch = (int)s->val[P_MIDI_CH];
+    if (ch > 0 && (m[0] & 0x0f) != ch - 1) return;   /* MIDI CHANNEL: only its own (Omni, the default: every one) */
     if (st == 0xd0) { s->aftertouch = d1 / 127.0f; return; }   /* channel pressure: two bytes */
     if (len < 3) return;
     if (st == 0x90 && d2) key_on(s, d1, d2);

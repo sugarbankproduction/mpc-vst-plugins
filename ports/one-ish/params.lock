@@ -583,3 +583,5 @@ seq_one_shot
 seq_rec_mode
 seq_pattern
 seq_pos
+midi_ch
+learn_mode

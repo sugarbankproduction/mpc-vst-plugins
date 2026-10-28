@@ -65,8 +65,21 @@ static ed_t *ed_of(AEffect *fx) {
     return NULL;
 }
 
+/* the MIDI channel the window plays on (0-15): the one the instrument listens on (MIDI CHANNEL; Omni: channel 1) */
+static int ui_channel(ed_t *e) {
+    static int k = -2;
+    if (k == -2) k = rnd_key("midi_ch") < NPARAMS ? rnd_key("midi_ch") : -1;
+    if (k < 0) return 0;
+    int o = (int)lroundf(e->fx->getParameter(e->fx, k) * (PARAMS[k].nopts - 1));
+    return o >= 1 && o <= 16 ? o - 1 : 0;
+}
+
 /* ---- MIDI from the window: the UI thread writes, the audio thread reads (no locks, no allocation) ---- */
-static void ui_midi(ed_t *e, int status, int d1, int d2) {
+static void ui_midi_on(ed_t *e, int status, int d1, int d2);
+static void ui_midi(ed_t *e, int status, int d1, int d2) {   /* on the window's channel */
+    ui_midi_on(e, status < 0xF0 ? status | ui_channel(e) : status, d1, d2);
+}
+static void ui_midi_on(ed_t *e, int status, int d1, int d2) {   /* on the channel in status */
     unsigned w = e->mq_w, r = __atomic_load_n(&e->mq_r, __ATOMIC_ACQUIRE);
     if (w - r >= MQ) return;   /* full (the host isn't processing): drop */
     e->mq[w % MQ][0] = (unsigned char)status;
@@ -597,6 +610,27 @@ static void set_octave(ed_t *e, int oct) {
     InvalidateRect(e->wnd, NULL, FALSE);
 }
 
+/* MIDI panic, as holding both OCTAVE buttons on the instrument: the pedals up, All Notes Off and All Sound Off on every
+ * channel (so every part hears it, whatever its channel) */
+static void panic(ed_t *e) {
+    key_off(e);
+    for (int ch = 0; ch < 16; ch++) {
+        ui_midi_on(e, 0xB0 | ch, 64, 0);
+        ui_midi_on(e, 0xB0 | ch, 66, 0);
+        ui_midi_on(e, 0xB0 | ch, 123, 0);
+        ui_midi_on(e, 0xB0 | ch, 120, 0);
+    }
+}
+
+/* an OCTAVE button held (the window's stand-in for pressing both on the instrument): after 1 s the keyboard goes back
+ * to the default octave, after 2 s a MIDI panic; the timer (WM_TIMER) checks */
+static void octave_hold(ed_t *e) {
+    if (e->mode != M_OCT) return;
+    unsigned held = GetTickCount() - e->oct_t0;
+    if (held >= 1000 && e->oct_stage == 0) { set_octave(e, 0); e->oct_stage = 1; }
+    if (held >= 2000 && e->oct_stage == 1) { panic(e); e->oct_stage = 2; InvalidateRect(e->wnd, NULL, FALSE); }
+}
+
 static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangles, page entries, sub-page arrows */
     if (patches_press(e, z)) return;   /* the PATCHES page's buttons and entries */
     int subs = screen_subs(e);
@@ -641,8 +675,13 @@ static void press(ed_t *e, int x, int y) {
     case Z_PREV: patches_step(e, -1); return;   /* factory presets, then user patches */
     case Z_NEXT: patches_step(e, 1); return;
     case Z_NAME: patches_toggle(e); return;
-    case Z_OCT_DOWN: set_octave(e, e->oct - 1); return;
-    case Z_OCT_UP: set_octave(e, e->oct + 1); return;
+    case Z_OCT_DOWN: case Z_OCT_UP:   /* a click steps; held, the default octave (1 s), then a panic (2 s) */
+        set_octave(e, e->oct + (i == Z_OCT_UP ? 1 : -1));
+        e->mode = M_OCT;
+        e->oct_t0 = GetTickCount();
+        e->oct_stage = 0;
+        SetCapture(e->wnd);
+        return;
     case Z_KEYS: e->mode = M_KEY; break;
     case Z_PITCH: e->mode = M_PITCH; break;
     case Z_MODW: e->mode = M_MODW; break;
@@ -712,6 +751,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             e->corner_tries++;
             e->corners = square_corners(w);
         }
+        octave_hold(e);
         int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
             float v = e->fx->getParameter(e->fx, i);

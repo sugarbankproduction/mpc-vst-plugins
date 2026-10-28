@@ -96,6 +96,8 @@ typedef struct {
     float shown[NPARAMS];
     int shown_prog;
     int oct, key, enc_y, enc_moved;            /* octave shift -2..2; the key held with the mouse (-1: none) */
+    unsigned oct_t0;                           /* an OCTAVE button held since (GetTickCount) ... */
+    int oct_stage;                             /* ... and what holding it has done: 1 the default octave, 2 panic */
     float bend, wheel, pad_x, pad_y, ribbon;   /* -1..1, 0..1, 0..1, 0..1, 0..1 */
     int pad_on, ribbon_on, ribbon_cc;          /* ribbon_cc: the position last sent (-1: none since the touch) */
     unsigned char mq[MQ][3];                   /* UI -> audio MIDI, single producer / single consumer */
@@ -115,7 +117,7 @@ typedef struct {
     int corners, corner_tries;                 /* square_corners(): 1 done, 0 not (yet), -1 failed; attempts */
     seq_ui_t sq;                               /* the step sequencer's page (seq_page.c) */
 } ed_t;
-enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ };
+enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT };
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
