@@ -8,6 +8,7 @@
 #include "params.h"
 #include "layout.h"
 #include "patches.h"
+#include "seq_page.h"
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*audioMasterCallback)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -50,7 +51,7 @@ enum { SCR_MATRIX = -1, SCR_INDEX = -2, SCR_RANDOM = -3 };
 enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 keys, C2..C7 at octave 0 */
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
        Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
-       Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
+       Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100 };   /* Z_PAGE + p */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 enum { VENDOR_SPECIFIC = 50 };                   /* effVendorSpecific */
@@ -65,7 +66,8 @@ typedef struct {
     const char *label[NPARAMS];
     const char *const *leds[NPARAMS];
     RECT screen, name, prev, next, tabline, head, row[ROWS], help, sub_prev, sub_next;
-    RECT tab_matrix, tab_more, tab_analog, tab_random, encoder, bprev, bnext, brand;
+    RECT tab_matrix, tab_more, tab_analog, tab_random, tab_seq, encoder, bprev, bnext, brand;
+    RECT seq_leds;                            /* the SEQUENCER module's page LEDs (seq_page.c) */
     RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon, euclid;   /* euclid: GENERATIVE's ring */
     RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
 } layout_t;
@@ -107,8 +109,9 @@ typedef struct {
     char hist_name[RND_HIST][40];
     patches_t pt;                              /* user patches and the browser (patches.c) */
     struct hostrate *hr;                       /* the host's rate and float output (hostrate.c); NULL: none */
+    seq_ui_t sq;                               /* the step sequencer's page (seq_page.c) */
 } ed_t;
-enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT };
+enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ };
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -165,3 +168,25 @@ void patches_program_set(ed_t *e, int before);
 intptr_t patches_get_chunk(ed_t *e, void *ptr);
 void patches_chunk_set(ed_t *e, const void *chunk, intptr_t len);
 intptr_t patches_test(ed_t *e, intptr_t op, char *buf, float opt);
+/* seq_page.c: the step sequencer's page (seq_page.h) */
+void seq_init(ed_t *e);
+int seq_read(ed_t *e);
+int seq_tick(ed_t *e, int params_changed);
+void seq_open(ed_t *e, int page);
+int seq_zone(int z);
+int seq_hit(ed_t *e, POINT pt);
+int seq_hit_panel(ed_t *e, POINT pt);
+int seq_press(ed_t *e, int z, int x, int y, int shift);
+void seq_drag(ed_t *e, int x, int y, int shift);
+void seq_release(ed_t *e);
+void seq_right(ed_t *e, int z);
+void seq_double(ed_t *e, int z);
+int seq_wheel(ed_t *e, int z, int dir, int shift);
+int seq_key(ed_t *e, int vk, int shift);
+void seq_draw(HDC dc, ed_t *e);
+void seq_panel_draw(HDC dc, ed_t *e);
+const char *seq_zone_help(ed_t *e, int z);
+void seq_help(ed_t *e, char *out, int n);
+const char *seq_message(ed_t *e);
+RECT seq_help_rect(void);
+intptr_t seq_test(ed_t *e, intptr_t op, char *buf);

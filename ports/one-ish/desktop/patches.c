@@ -286,6 +286,13 @@ static void parse(char *t, char *state, int n, parsed_t *r) {
         trim(key);
         trim(val);
         if (!strcmp(key, "name")) { snprintf(r->name, sizeof r->name, "%s", val); continue; }
+        if (!strcmp(key, "seq")) {   /* the step sequencer's steps (src/stepseq.h text): passed on as they are */
+            int len = snprintf(NULL, 0, ";seq=%s", val);
+            if (used + len >= n) { r->bad++; continue; }
+            used += snprintf(state + used, n - used, ";seq=%s", val);
+            r->values++;
+            continue;
+        }
         if (!strcmp(key, "author") || !strcmp(key, "category") || !strcmp(key, "v") || !strcmp(key, "ui_patch"))
             continue;
         int i = param_of(key);

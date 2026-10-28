@@ -146,6 +146,27 @@ static const char *help_for(int i) {
         {"mac_decay", "Decay: how fast the macro oscillator's own internal envelope dies away (for the percussive models)."},
         {"mac_lpg", "Low-pass gate: how much the macro oscillator's own envelope closes its tone as well as its level (a plucky, woody sound)."},
         {"mac_level", "Macro oscillator level in the mixer. Its SVF and LADDER buttons pick the filters it goes through."},
+        /* the step sequencer */
+        {"seq_on", "Sequencer ON: whether the sequencer plays the synth (it can run silently with ON off). The steps: the SEQ button."},
+        {"seq_play", "PLAY: starts the sequence from step 1, or stops it. Synced with the host playing, it lines up with the song."},
+        {"seq_rec", "REC: keys go into the sequence. Stopped: into the selected step, then the next; running: onto the nearest step (RECORD MODE)."},
+        {"seq_step_mod", "STEP MOD: turn knobs while it runs (or on the selected step) and their moves are kept per step in modulation lanes. The knob itself stays."},
+        {"seq_sync", "Sync: the sequencer follows the host's tempo (and song position); off, it runs at its FREE RATE."},
+        {"seq_rate", "Free rate: the tempo in BPM while SYNC is off (RATE still sets each step's note value)."},
+        {"seq_div", "Rate: each step's note value, 1/1 to 1/128 (1/16: four steps a beat). TIMING: dotted or triplet."},
+        {"seq_timing", "Timing: each step straight, dotted (half as long again) or triplet (two thirds)."},
+        {"seq_length", "Length: how many steps play before it starts again (1-64; four pages of 16)."},
+        {"seq_follow_swing", "Follow swing: while synced, every second step is moved by the MASTER SWING."},
+        {"clock_swing", "Master swing: 50% is straight; more delays every second step for a shuffle (the sequencer follows it with FOLLOW SWING)."},
+        {"seq_note_trig", "Note trig: the sequence plays while a key is held (the key doesn't sound) and stops when all are up. Not with PLAY."},
+        {"seq_note_reset", "Note reset (note trig): on, a key starts the sequence at once; off, it waits for the next step of the clock."},
+        {"seq_restart_hold", "Restart on hold (note trig with HOLD): a new key with none held starts the sequence again from step 1."},
+        {"seq_restart_trig", "Restart on trig: each note trig starts from step 1; off, it carries on from where it stopped."},
+        {"seq_transpose", "Transpose: keys move the whole sequence (and don't sound). TRANSPOSE MODE: from its first note, or from middle C."},
+        {"seq_tr_mode", "Start Key: the key becomes the sequence's first note. Interval: the key's distance from middle C is added."},
+        {"seq_one_shot", "One shot: the sequence plays to its end once and stops (PLAY goes off), instead of looping."},
+        {"seq_rec_mode", "Record mode (running): Replace clears a step the first time you play into it, Overdub adds, Focused replaces the selected step."},
+        {"seq_pattern", "Factory sequence: picks one of the built-in sequences (replacing the steps). User loads nothing: your own steps stay."},
     };
     const char *key = PARAMS[i].key;
     size_t kl = strlen(key);
@@ -159,7 +180,8 @@ static const char *help_for(int i) {
     return NULL;
 }
 
-static const char *zone_help(int z) {
+static const char *zone_help(ed_t *e, int z) {
+    if (seq_zone(z)) return seq_zone_help(e, z);   /* the step editor, the page LEDs */
     if (z >= Z_PATCH_ACT) return patches_zone_help(z);   /* the PATCHES page */
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) return "MORE: shows this module's other controls on the screen (click again for its next page, if any).";
     switch (z) {
@@ -181,6 +203,8 @@ static const char *zone_help(int z) {
     case Z_TAB_MORE: return "MORE: the list of every module's MORE page. The small triangles on the modules open them directly.";
     case Z_TAB_ANALOG: return "ANALOG: the analog character page (drift and per-voice differences).";
     case Z_TAB_RANDOM: return "RANDOM: the patch randomiser. New sounds to play with, variations of this one, locks, undo.";
+    case Z_TAB_SEQ: return "SEQ: the step sequencer's step editor (64 steps in four pages, note lanes and modulation lanes). "
+                           "Click again for its other view.";
     case Z_RND_GO: return "RANDOMISE: a new sound, made to be playable (heard, not harsh, in tune). Locked sections stay as "
                           "they are; volume, tuning, bend and keyboard settings are never changed.";
     case Z_RND_MUTATE: return "MUTATE: a variation of the sound playing now. AMOUNT sets how far: 10-20% a nudge, 100% a lot. "
@@ -657,11 +681,12 @@ static void draw_screen(HDC dc, ed_t *e) {
     if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
     int subs = screen_subs(e);
     if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
-    for (int r = 0; r < ROWS; r++)
+    for (int r = 0; r < ROWS && e->screen != SCR_SEQ; r++)
         if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0xFF0F1E2A);
     if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
     else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
     else if (e->screen == SCR_RANDOM) draw_random(dc, e);
+    else if (e->screen == SCR_SEQ) { gfx_end(); seq_draw(dc, e); gfx_begin(dc); }   /* (its own surface: seq_page.c) */
     else if (e->screen == SCR_PATCHES) {
         title_line(dc, e, "PATCHES:  factory presets and your own sounds", subs);
         patches_draw(dc, e);
@@ -669,7 +694,7 @@ static void draw_screen(HDC dc, ed_t *e) {
     else draw_page(dc, e, subs);
     /* help: what the control under the mouse does */
     char help[480];
-    const char *zh = zone_help(e->hover), *pm = patches_message(e);
+    const char *zh = zone_help(e, e->hover), *pm = patches_message(e);
     if (pm) {   /* what the last patch operation did (or why it couldn't) */
         snprintf(help, sizeof help, "%s", pm);
     } else if (e->hover >= 0 && e->hover < NPARAMS) {
@@ -685,6 +710,8 @@ static void draw_screen(HDC dc, ed_t *e) {
                                     "Save it in your host (a preset or the project).");
     } else if (e->screen == SCR_PATCHES) {
         patches_help(e, help, sizeof help);
+    } else if (e->screen == SCR_SEQ) {
+        seq_help(e, help, sizeof help);
     } else if (e->screen == SCR_MATRIX) {
         snprintf(help, sizeof help, "Each row: SOURCE x AMOUNT moves DESTINATION. VIA scales it by a second source "
                                     "(V.AMT: how much); XFORM reshapes the source (X.AMT: how strongly). Click a value "
@@ -694,8 +721,10 @@ static void draw_screen(HDC dc, ed_t *e) {
                                     "red button to step, an LED to pick, right-click for a list. A module's corner "
                                     "triangle shows its MORE page here. Play the keys and the ribbon below.");
     }
-    gfx_line((float)L.help.left, L.help.top - 4.0f, (float)L.help.right, L.help.top - 4.0f, 1.0f, 0xFF27404E);
-    text(dc, &L.help, help, font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
+    RECT hr = e->screen == SCR_SEQ ? seq_help_rect() : L.help;   /* (the step editor uses the top of it) */
+    if (e->screen == SCR_SEQ && seq_message(e) && !pm) snprintf(help, sizeof help, "%s", seq_message(e));
+    gfx_line((float)hr.left, hr.top - 4.0f, (float)hr.right, hr.top - 4.0f, 1.0f, 0xFF27404E);
+    text(dc, &hr, help, e->screen == SCR_SEQ ? font_cell : font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
 }
 
 static void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot) {   /* console buttons */
@@ -718,6 +747,7 @@ static void draw_console(HDC dc, ed_t *e) {
                  e->hover == Z_TAB_MORE);
     panel_button(dc, &L.tab_analog, "ANALOG", PG_ANALOG >= 0 && e->screen == PG_ANALOG, e->hover == Z_TAB_ANALOG);
     panel_button(dc, &L.tab_random, "RANDOM", e->screen == SCR_RANDOM, e->hover == Z_TAB_RANDOM);
+    panel_button(dc, &L.tab_seq, "SEQ", e->screen == SCR_SEQ, e->hover == Z_TAB_SEQ);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     int cx = (L.encoder.left + L.encoder.right) / 2, r = sc(31);
@@ -725,6 +755,9 @@ static void draw_console(HDC dc, ed_t *e) {
     knob((float)cx, (float)(L.encoder.top + sc(8) + r), (float)r, np > 1 && pos > 0 ? (float)pos / (np - 1) : 0.0f, 0);
     text_c(dc, cx, L.encoder.top + sc(14) + 2 * r, sc(80), sc(14), "PRESET", font_label, e->hover == Z_ENCODER ? T_HOT : T_LABEL);
     text(dc, &L.brand, "ONE-ish", font_brand, RGB(170, 172, 176), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    gfx_end();   /* the page LEDs draw on their own surface (seq_page.c) */
+    seq_panel_draw(dc, e);
+    gfx_begin(dc);
 }
 
 static void wheel(HDC dc, const RECT *r, float pos, int centred, const char *label, int hot) {   /* pos -1..1 */

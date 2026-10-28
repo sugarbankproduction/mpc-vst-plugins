@@ -81,13 +81,20 @@
  *             to the host), chord memory transposed by the key and applied after the arp; Bjorklund patterns and
  *             rotation, Euclid with and without the arp; probability 0/100/50%; velocity randomness; the Turing
  *             machine locked repeats, open changes, stays in its scale; everything off is a fresh instance's samples
+ *   seq       the step sequencer (test/stepseq_check.c, from "gen_log"): notes, velocities and gates on the exact
+ *             sample at 120 and 90 BPM; length and pages; rest, tie (no new attack; legato into another note), ratchets
+ *             1-4, chords in lanes; transpose by start key and by interval; note trig, note reset, restart on trig and
+ *             on hold, HOLD; one shot; follow swing, divisions, timing, the free rate; the host's song position and a
+ *             loop back; modulation lanes (and their controller); step, overdub, replace and real-time recording; STEP
+ *             MOD; factory sequences, duplicate, damaged text; a full 64-step state round trip and the chunk's worst
+ *             case; ON off is a fresh instance's samples; seq_demo.wav
  *   macro     the MACRO channel (Plaits, src/macro.h): every model finite and bounded at low to high notes and every
  *             corner of harmonics / timbre / morph; VA, wavetable and additive in tune (note, octave, frequency, bend,
  *             master tune) at 44.1 kHz; level 0 is exactly the sound without it; the drums, string and modal models
  *             fire on note-on; the matrix and the ribbon move harmonics, timbre, morph and level
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav,
- *             arp_demo.wav, macro_demo.wav)
+ *             arp_demo.wav, seq_demo.wav, macro_demo.wav)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
  *             MACRO channel at each model; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
@@ -3695,18 +3702,28 @@ static void matrix_wiring(void) {
             if (!p->nopts && fabs(v - def) < 1e-3) v = p->min + (p->max - p->min) * 0.876543;
             set(a, p->key, v);
         }
+        /* (not in a saved state on purpose: the sequencer's PLAY, REC and STEP MOD, and its step readout) */
+        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos"};
+        int kept = NPARAMS;
         for (int i = 0; i < NPARAMS; i++) {
             const param_t *p = &PARAMS[i];
+            int skip = 0;
+            for (unsigned t = 0; t < sizeof TRANSIENT / sizeof TRANSIENT[0]; t++) skip |= !strcmp(p->key, TRANSIENT[t]);
+            if (skip) { kept--; continue; }
             double def = p->nopts ? round(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
             changed += fabs(get(a, p->key) - def) > 1e-4;
         }
         int n = E->get_param(a, "state", stt, sizeof stt);
         E->set_param(b, "state", stt);
         int same = n > 0;
-        for (int i = 0; i < NPARAMS; i++) same &= get(a, PARAMS[i].key) == get(b, PARAMS[i].key);
+        for (int i = 0; i < NPARAMS; i++) {
+            int skip = 0;
+            for (unsigned t = 0; t < sizeof TRANSIENT / sizeof TRANSIENT[0]; t++) skip |= !strcmp(PARAMS[i].key, TRANSIENT[t]);
+            if (!skip) same &= get(a, PARAMS[i].key) == get(b, PARAMS[i].key);
+        }
         snprintf(what, sizeof what, "a state with %d of %d params off their defaults: %d bytes of the 8192-byte chunk, restores "
-                 "every value", changed, NPARAMS, n);
-        check(same && changed >= NPARAMS - 2, what);
+                 "every value", changed, kept, n);
+        check(same && changed >= kept - 2, what);
         E->destroy(a); E->destroy(b);
     }
 }
@@ -4770,6 +4787,9 @@ static void arp_wav(const char *demo_path) {
            "groove; a Turing machine changing, then locked)\n", path);
 }
 
+/* ---- the step sequencer (its own file: src/stepseq.h, src/stepseq_run.h) ---- */
+#include "stepseq_check.c"
+
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
        MAC_BASS_DRUM = 13, MAC_SNARE = 14, MAC_HIHAT = 15, MAC_FM6 = 18 };
@@ -5435,7 +5455,7 @@ static void fx2_wavs(const char *demo_path) {
 
 int main(int argc, char **argv) {
     E = mpc_engine();
-    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); return 0; }
+    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); return 0; }
     if (argc > 2 && !strcmp(argv[1], "macro")) {   /* just the MACRO channel: offline_check macro <dir>/demo.wav */
         macro_osc();
         macro_wav(argv[2]);
@@ -5448,6 +5468,13 @@ int main(int argc, char **argv) {
         oss_effects();
         effects_master();
         fx2_wavs(argv[2]);
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "seqbench")) { seq_bench(); return 0; }   /* just the sequencer's bench lines */
+    if (argc > 2 && !strcmp(argv[1], "seq")) {   /* just the step sequencer: offline_check seq <dir>/demo.wav */
+        step_sequencer();
+        seq_wav(argv[2]);
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -5489,6 +5516,7 @@ int main(int argc, char **argv) {
     macro_osc();
     randomiser();
     arp_generative();
+    step_sequencer();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");
@@ -5496,6 +5524,7 @@ int main(int argc, char **argv) {
     analog_wavs(argc > 1 ? argv[1] : "demo.wav");
     random_demo_wav(argc > 1 ? argv[1] : "demo.wav");
     arp_wav(argc > 1 ? argv[1] : "demo.wav");
+    seq_wav(argc > 1 ? argv[1] : "demo.wav");
     macro_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;

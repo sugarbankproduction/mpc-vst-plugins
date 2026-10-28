@@ -295,6 +295,20 @@ PATCHES = [
                    "lad_kbd": 40, "voices": "Mono",
                    "modfx_on": "On", "modfx_type": "Tape Color", "modfx_drive": 72, "modfx_bump": 65,
                    "modfx_flutter": 12, "modfx_tone": 60, "modfx_mix": 100}),
+    # the STEP SEQUENCER with a factory sequence: NOTE TRIG and TRANSPOSE on, so holding a key plays the sequence from
+    # that key (START KEY: the key becomes its first note) and letting go stops it. A bass line with a tie, a rest and
+    # ratchets (its cutoff lane comes in with the mod wheel); chord stabs over 32 steps with an SVF cutoff lane
+    ("Seq Bass Line", {**amp(2, 300, 70, 90), **fenv(1, 220, 15, 120),
+                       "o2_level": 75, "o2_oct": "16'", "o2_mix": 100, "o2_freq": 0.05, "flt_cut": hz(320),
+                       "flt_res": 45, "flt_drive": 30, "lad_env": 50, "lad_kbd": 40, "voices": "Mono",
+                       "seq_on": "On", "seq_pattern": "Bass Line", "seq_length": 16, "seq_note_trig": "On",
+                       "seq_transpose": "On", "clock_swing": 56, **delay("1/8.", 25, 12, synced=True)}),
+    ("Seq Chord Stabs", {**amp(2, 450, 40, 260), **fenv(1, 380, 20, 250),
+                         "o1_mix": 100, "o1_pw": 40, "o2_level": 80, "o2_freq": 0.08, "o1_svf": "On", "o2_svf": "On",
+                         "svf_mode": "LP", "svf_cut": hz(1600), "svf_res": 30, "svf_env": 25, "flt_mix": 40,
+                         "flt_cut": hz(2400), "voices": "8", "seq_on": "On", "seq_pattern": "Chord Stabs",
+                         "seq_length": 32, "seq_note_trig": "On", "seq_transpose": "On",
+                         **chorus(0.3, 8, 30, 30), **delay("1/8.", 35, 22, synced=True), **reverb(30, 2.6)}),
 ]
 
 
@@ -311,7 +325,12 @@ def main():
         if patch.get("flt_link", "Off") != "Off":
             raise SystemExit("%s: presets keep flt_link Off (it would move the cutoffs while they load)" % name)
         values = {}
-        for p in sorted(PARAMS, key=lambda p: p["key"] != "flt_link"):   # every parameter, link first, then VST order
+        # STEP MOD is set second, and Off: while it is on, a knob's move is recorded into the sequence instead of setting
+        # the knob, so the preset's other values would not land
+        first = ("flt_link", "seq_step_mod")
+        for p in sorted(PARAMS, key=lambda p: first.index(p["key"]) if p["key"] in first else 2):   # then VST order
+            if p.get("display") == "string":   # a readout (seq_pos), not a setting
+                continue
             v = patch.get(p["key"], p.get("default", p.get("min", 0)))
             if "options" in p and isinstance(v, (int, float)):
                 v = p["options"][int(v)]

@@ -564,7 +564,28 @@
   {"key": "rev_lvl1", "name": "FX2 Level Low", "min": 0, "max": 100, "unit": "%", "default": 100, "display": "int"},
   {"key": "rev_lvl2", "name": "FX2 Level Mid", "min": 0, "max": 100, "unit": "%", "default": 100, "display": "int"},
   {"key": "rev_lvl3", "name": "FX2 Level High", "min": 0, "max": 100, "unit": "%", "default": 100, "display": "int"},
-  {"key": "rev_ftype", "name": "FX2 Filter Type", "options": ["LP", "BP", "HP"], "default": "BP"}
+  {"key": "rev_ftype", "name": "FX2 Filter Type", "options": ["LP", "BP", "HP"], "default": "BP"},
+  {"key": "seq_on", "name": "Seq On", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_play", "name": "Seq Play", "options": ["Stopped", "Running"], "default": "Stopped"},
+  {"key": "seq_rec", "name": "Seq Record", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_step_mod", "name": "Seq Step Mod", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_sync", "name": "Seq Sync", "options": ["Off", "On"], "default": "On"},
+  {"key": "seq_rate", "name": "Seq Free Rate", "min": 10, "max": 280, "unit": "BPM", "default": 120, "display": "int"},
+  {"key": "seq_div", "name": "Seq Division", "options": ["1/1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128"], "default": "1/16"},
+  {"key": "seq_timing", "name": "Seq Timing", "options": ["Straight", "Dotted", "Triplet"], "default": "Straight"},
+  {"key": "seq_length", "name": "Seq Length", "min": 1, "max": 64, "default": 16, "display": "int"},
+  {"key": "seq_follow_swing", "name": "Seq Follow Swing", "options": ["Off", "On"], "default": "On"},
+  {"key": "clock_swing", "name": "Master Swing", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
+  {"key": "seq_note_trig", "name": "Seq Note Trig", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_note_reset", "name": "Seq Note Reset", "options": ["Off", "On"], "default": "On"},
+  {"key": "seq_restart_hold", "name": "Seq Restart On Hold", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_restart_trig", "name": "Seq Restart On Trig", "options": ["Off", "On"], "default": "On"},
+  {"key": "seq_transpose", "name": "Seq Transpose", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_tr_mode", "name": "Seq Transpose Mode", "options": ["Start Key", "Interval"], "default": "Start Key"},
+  {"key": "seq_one_shot", "name": "Seq One Shot", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_rec_mode", "name": "Seq Record Mode", "options": ["Replace", "Overdub", "Focused"], "default": "Replace"},
+  {"key": "seq_pattern", "name": "Seq Factory Sequence", "options": ["User", "Bass Line", "Chord Stabs", "Ratchet Run"], "default": "User"},
+  {"key": "seq_pos", "name": "Seq Step", "display": "string"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -641,6 +662,7 @@
   {"label": "SYNTH FX TWO-TAP / CRUSH", "keys": ["modfx_dtime_r", "modfx_depth_r", "modfx_offset", "modfx_fbl", "modfx_fbr", "modfx_xover"]},
   {"label": "MASTER FX", "keys": ["mfx_on", "mfx_buss", "mfx_send1", "mfx_send2", "mfx_series", "mfx_width"]},
   {"label": "MASTER FX 1", "keys": ["dly_type", "dly_mix", "dly_gain", "dly_sync", "dly_time", "dly_time_r", "dly_fb", "dly_fb_r", "dly_fbl", "dly_fbr", "dly_rate", "dly_rate_r", "dly_depth", "dly_depth_r", "dly_tone", "dly_offset", "dly_spread", "dly_noise", "dly_sweep", "dly_dfb", "dly_vrate", "dly_vdepth", "dly_flutter", "dly_wow", "dly_bias", "dly_room", "dly_decay", "dly_size", "dly_pre", "dly_damp", "dly_lowdamp", "dly_diff", "dly_mod", "dly_early", "dly_freeze", "dly_distance", "dly_hifreq", "dly_hlevel", "dly_mlevel", "dly_llevel", "dly_ldecay", "dly_hdecay", "dly_pitch", "dly_pitch_b", "dly_pdecay", "dly_gravity", "dly_xover", "dly_bits", "dly_srate", "dly_reso", "dly_cut1", "dly_cut2", "dly_cut3", "dly_lvl1", "dly_lvl2", "dly_lvl3", "dly_ftype"]},
-  {"label": "MASTER FX 2", "keys": ["rev_type", "rev_mix", "rev_gain", "rev_sync", "rev_time", "rev_time_r", "rev_fb", "rev_fb_r", "rev_fbl", "rev_fbr", "rev_rate", "rev_rate_r", "rev_depth", "rev_depth_r", "rev_tone", "rev_offset", "rev_spread", "rev_noise", "rev_sweep", "rev_dfb", "rev_vrate", "rev_vdepth", "rev_flutter", "rev_wow", "rev_bias", "rev_room", "rev_decay", "rev_size", "rev_pre", "rev_damp", "rev_lowdamp", "rev_diff", "rev_mod", "rev_early", "rev_freeze", "rev_distance", "rev_hifreq", "rev_hlevel", "rev_mlevel", "rev_llevel", "rev_ldecay", "rev_hdecay", "rev_pitch", "rev_pitch_b", "rev_pdecay", "rev_gravity", "rev_xover", "rev_bits", "rev_srate", "rev_reso", "rev_cut1", "rev_cut2", "rev_cut3", "rev_lvl1", "rev_lvl2", "rev_lvl3", "rev_ftype"]}
+  {"label": "MASTER FX 2", "keys": ["rev_type", "rev_mix", "rev_gain", "rev_sync", "rev_time", "rev_time_r", "rev_fb", "rev_fb_r", "rev_fbl", "rev_fbr", "rev_rate", "rev_rate_r", "rev_depth", "rev_depth_r", "rev_tone", "rev_offset", "rev_spread", "rev_noise", "rev_sweep", "rev_dfb", "rev_vrate", "rev_vdepth", "rev_flutter", "rev_wow", "rev_bias", "rev_room", "rev_decay", "rev_size", "rev_pre", "rev_damp", "rev_lowdamp", "rev_diff", "rev_mod", "rev_early", "rev_freeze", "rev_distance", "rev_hifreq", "rev_hlevel", "rev_mlevel", "rev_llevel", "rev_ldecay", "rev_hdecay", "rev_pitch", "rev_pitch_b", "rev_pdecay", "rev_gravity", "rev_xover", "rev_bits", "rev_srate", "rev_reso", "rev_cut1", "rev_cut2", "rev_cut3", "rev_lvl1", "rev_lvl2", "rev_lvl3", "rev_ftype"]},
+  {"label": "SEQUENCER", "keys": ["seq_on", "seq_play", "seq_rec", "seq_step_mod", "seq_sync", "seq_rate", "seq_div", "seq_timing", "seq_length", "seq_follow_swing", "clock_swing", "seq_note_trig", "seq_note_reset", "seq_restart_hold", "seq_restart_trig", "seq_transpose", "seq_tr_mode", "seq_one_shot", "seq_rec_mode", "seq_pattern", "seq_pos"]}
  ]
 }

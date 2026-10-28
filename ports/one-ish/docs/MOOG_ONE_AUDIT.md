@@ -6,8 +6,8 @@ cfb10b8 (branch `one-ish`): `ports/one-ish/params.json` (461 params), `src/engin
 `svf.h`, `env.h`, `lfo.h`, `modmatrix.h`, `seq.h`, `macro.*`, `randomize.h`, `src/fx.h` and `src/fx/*`, the desktop
 window (`desktop/editor.c`, `editor_draw.c`, `gen_layout.py`, `patches.c`), `presets.json` (35 factory presets),
 `docs/PATCHES.md` and `PLAN.md`. Every row below was checked against that code, not against the row's earlier text.
-The 64-step sequencer (section 17) is being built on another branch and is not in cfb10b8: its rows read Missing,
-marked "in progress".
+The 64-step sequencer (section 17) was built after cfb10b8 (2026-10-27, `docs/SEQUENCER.md`); its rows, and the ones
+it changed in sections 13, 14 and 22b, were updated against that code.
 
 Manual wording is summarised, not quoted; only parameter names and ranges are copied.
 
@@ -285,10 +285,10 @@ user patch files (2026-10-27, offline).
 | TEMPO | 10 BPM to 280 BPM (p61) | Have | The host's tempo is the master clock (`lfo_bpm`, 20-400 BPM; the arp also reads the song position's tempo) | - | none |
 | TAP tempo [HW] | p61 | Missing | Host | - | none |
 | NUDGE + / - and NUDGE MODE [HW] | Increment (1 or 0.1 BPM), Bend (2 or 1 BPM) (p62) | Missing | Host | - | none |
-| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Partial | `arp_swing` 0-100% (50: none; used 10-90%), the arp's own; no shared swing for the sequencer to follow (2026-10-27, offline) | S | none |
+| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Partial | `clock_swing` (the master swing, 50: none), followed by the sequencer (FOLLOW SWING); the arp keeps its own `arp_swing` (0-100%, used 10-90%) (2026-10-27, offline) | S | none |
 | LOAD PRESET TEMPO [HW] | on/off (p62) | Missing | A plugin can't set the host's tempo | - | none |
 | External clock overrides the Master Clock | p60 | Have | The host clock always applies | - | none |
-| What can sync: arp, sequencer, LFOs, EGs, effects | p60 | Partial | LFOs, EGs (`*_sync`), the synth effect and delay (`modfx_sync`, `dly_sync`) and the arp sync to the host; the sequencer is in progress | (with 17) | none |
+| What can sync: arp, sequencer, LFOs, EGs, effects | p60 | Have | LFOs, EGs (`*_sync`), the synth effect and delay (`modfx_sync`, `dly_sync`), the arp and the sequencer (`seq_sync`) sync to the host (2026-10-27, offline) | - | none |
 | Current tempo shown on the HOME screen [UI] | p60, p12 | Missing | - | S | none |
 
 ## 14. Voice allocation: Hold, Chord, Polyphony (p63-66)
@@ -298,7 +298,7 @@ user patch files (2026-10-27, offline).
 | HOLD: latch held notes; legato adds, non-legato replaces; with sustain it adds; latches the arp | on/off (p63) | Have | `hold`: as the manual; off lets go of what it latched (the pedals keep theirs); latches the arp's keys (2026-10-27, offline) | - | none |
 | CHORD memory: one key plays a stored interval stack, first note is the root | on/off (p63) | Have | `chord_on`, `chord_shape` (Custom = the learned chord in `chord_iv1..5`, +-24 st; or 14 built-in shapes), root first; voices as the chord needs (2026-10-27, offline) | - | high (multiplies sounding voices) |
 | CHORD LEARN, saved per Synth; silent or audible learn (Settings) [UI] | p63, p125 | Partial | `chord_learn` on/off param: first key clears and is the root, up to 5 more; off stores it and picks Custom; saved with the preset; always audible (no silent learn) (2026-10-27, offline) | S | none |
-| Chord is applied after the arp and sequencer | p63 | Have | Every arp / generative note plays its chord (2026-10-27, offline); the sequencer will need the same | - | none |
+| Chord is applied after the arp and sequencer | p63 | Have | Every arp / generative note and every sequencer note plays its chord (2026-10-27, offline) | - | none |
 | MONO | on/off (p64) | Have | `voices` = Mono, legato, with the note priority below | - | - |
 | UNISON: all voices stack, divided among held keys | on/off (p64) | Partial | `unison`: fixed stacks of `uni_count` voices per note, a stack allocated and stolen whole (8 voices, count 4: two notes); stacks don't re-divide as keys are added (2026-10-27, offline) | M | high (each stacked voice costs a full voice) |
 | DETUNE of the unison stack, uneven spread around the centre | 0 to 10 (p64) | Have | `uni_detune` 0-100%: voices at u*sqrt(abs(u)) of +-50 cents (u evenly -1..1), symmetric, the centre voice stays put; stacks scaled by 1/sqrt(n) in level (2026-10-27, offline) | - | none |
@@ -447,44 +447,44 @@ user patch files (2026-10-27, offline).
 
 ## 17. Sequencer (p82-95)
 
-In progress on another branch (2026-10-27); none of it is in cfb10b8, so every row reads Missing. Check the finished
-branch against this list.
+Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everything but OUTPUT and multi-Synth starts
+[MULTI], an RTZ button, editing every note of a step at once, the 15e step-mod-only destinations and performance notes.
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| Polyphonic step sequencer per Synth, up to 64 steps in pages of 16 | p82 | Missing | In progress | L | none |
-| ON (whether the sequencer plays the Synth) | on/off (p82) | Missing | In progress | (in L) | none |
-| RATE, free | 10 BPM to 280 BPM (p82) | Missing | In progress | (in L) | none |
-| CURRENT PAGE / ACTIVE STEP LEDs [UI] | p82 | Missing | In progress (the window can show the playing step) | S | none |
-| RETURN TO ZERO, START/STOP, RECORD, ADV back/forward [UI] | p83 | Missing | In progress | M | none |
-| REST per step (a rest may keep its notes) | on/off (p84, p87) | Missing | In progress | S | none |
-| TIE per step (no envelope retrigger) | on/off (p84, p87) | Missing | In progress | S | none |
-| STEP MOD: record knob moves as per-step offsets while running (a new lane per knob) | on/off (p84, p89) | Missing | In progress | M | none |
-| TRANSPOSE from the keyboard (keys then do not sound) | on/off (p84) | Missing | In progress | S | none |
-| NOTE TRIG: play while keys are held, stop on release (excludes START/STOP) | on/off (p85) | Missing | In progress | S | none |
-| STEP EDIT screen with lanes (one note per lane per step) [UI] | p85-86 | Missing | In progress | L | none |
-| Per-step NOTE | Off, C0 to G10 (p88) | Missing | In progress | (in L) | none |
-| Per-step VELOCITY | 1 to 127 (p88) | Missing | In progress | (in L) | none |
-| Per-step GATE (the last value set applies to new notes) | 1% to 100% (p88) | Missing | In progress | (in L) | none |
-| Per-step RATCHET (repeats inside one step) | 1 to 4 (p88) | Missing | In progress | S | none |
-| Edit all notes of a step at once; delete a note, a step or a lane (SHIFT + DELETE) [UI] | p88, p90 | Missing | In progress | S | none |
-| Modulation lanes: one destination each, bipolar % offset per step, CONTROLLER and AMOUNT per lane | p89-91 | Missing | In progress | M | low |
-| Step-mod destination list (CATEGORY/DESTINATION) | p91 (see 15e) | Missing | In progress; needs the 15e step-mod destinations (octave, EG switches, LFO waveform) | (in M) | none |
-| SYNC | off/on (p92) | Missing | In progress | S | none |
-| CLOCK DIVISION (also divides the free rate) | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p92) | Missing | In progress | S | none |
-| CLOCK TIMING | Straight, Dotted, Triplet (p92) | Missing | In progress | S | none |
-| LENGTH | 1 to 64 (p93) | Missing | In progress | S | none |
-| FOLLOW SWING | off/on (p93) | Missing | In progress | S | none |
-| NOTE RESET (with Note Trig) | off/on (p93) | Missing | In progress | S | none |
-| RESTART ON HOLD | off/on (p93) | Missing | In progress | S | none |
-| RESTART ON TRIG | off/on (p93) | Missing | In progress | S | none |
-| TRANSPOSE MODE | Start Key, Interval (from middle C) (p93) | Missing | In progress | S | none |
-| ONE SHOT | off/on (p94) | Missing | In progress | S | none |
-| RECORDING MODE | Replace, Overdub, Focused (p94) | Missing | In progress | M | none |
+| Polyphonic step sequencer per Synth, up to 64 steps in pages of 16 | p82 | Have | 64 steps, 8 note lanes, 8 modulation lanes (`src/stepseq.h`); plays the engine's own voices, through chord memory, beside the arp (2026-10-27, offline) | - | none |
+| ON (whether the sequencer plays the Synth) | on/off (p82) | Have | `seq_on`; it can run silently with ON off (2026-10-27, offline) | - | none |
+| RATE, free | 10 BPM to 280 BPM (p82) | Have | `seq_rate` with `seq_sync` Off (2026-10-27, offline) | - | none |
+| CURRENT PAGE / ACTIVE STEP LEDs [UI] | p82 | Have | the SEQUENCER module's four PAGE LEDs, the step editor's playing column, the `seq_pos` readout (2026-10-27, offline) | - | none |
+| RETURN TO ZERO, START/STOP, RECORD, ADV back/forward [UI] | p83 | Partial | `seq_play`, `seq_rec`; ADV: the step editor's clicks and arrow keys; RTZ is an engine command (`rtz`) without a button yet (2026-10-27, offline) | M | none |
+| REST per step (a rest may keep its notes) | on/off (p84, p87) | Have | REST (its notes kept) (2026-10-27, offline) | - | none |
+| TIE per step (no envelope retrigger) | on/off (p84, p87) | Have | per note lane: the same note goes on, another takes over its voice legato (2026-10-27, offline) | - | none |
+| STEP MOD: record knob moves as per-step offsets while running (a new lane per knob) | on/off (p84, p89) | Have | `seq_step_mod`: a knob's move becomes the step's offset in a lane for its destination (made if missing); the knob stays (2026-10-27, offline) | - | none |
+| TRANSPOSE from the keyboard (keys then do not sound) | on/off (p84) | Have | `seq_transpose` (2026-10-27, offline) | - | none |
+| NOTE TRIG: play while keys are held, stop on release (excludes START/STOP) | on/off (p85) | Have | `seq_note_trig`, excluding `seq_play` both ways (the host is told) (2026-10-27, offline) | - | none |
+| STEP EDIT screen with lanes (one note per lane per step) [UI] | p85-86 | Have | the window's step editor (SEQ: NOTES and MODS) (2026-10-27, offline) | - | none |
+| Per-step NOTE | Off, C0 to G10 (p88) | Have | 0-127 or none (2026-10-27, offline) | - | none |
+| Per-step VELOCITY | 1 to 127 (p88) | Have | per note (2026-10-27, offline) | - | none |
+| Per-step GATE (the last value set applies to new notes) | 1% to 100% (p88) | Have | per note, of the step's own length; the last one set goes to new notes (2026-10-27, offline) | - | none |
+| Per-step RATCHET (repeats inside one step) | 1 to 4 (p88) | Have | per note (2026-10-27, offline) | - | none |
+| Edit all notes of a step at once; delete a note, a step or a lane (SHIFT + DELETE) [UI] | p88, p90 | Partial | delete a note (or an offset) and a modulation lane; no editing of a step's notes together, no step delete button (the engine has `clearstep`) (2026-10-27, offline) | S | none |
+| Modulation lanes: one destination each, bipolar % offset per step, CONTROLLER and AMOUNT per lane | p89-91 | Have | 8 lanes, -100..+100% per step, a controller with an amount (2026-10-27, offline) | - | low |
+| Step-mod destination list (CATEGORY/DESTINATION) | p91 (see 15e) | Partial | the mod matrix's whole destination list (voices and effects); not yet the 15e step-mod-only ones (octave, EG switches, LFO waveform) (2026-10-27, offline) | S | none |
+| SYNC | off/on (p92) | Have | `seq_sync`: host tempo, and its song position while it plays (2026-10-27, offline) | - | none |
+| CLOCK DIVISION (also divides the free rate) | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p92) | Have | `seq_div`, named 1/1 .. 1/128 (2026-10-27, offline) | - | none |
+| CLOCK TIMING | Straight, Dotted, Triplet (p92) | Have | `seq_timing` (2026-10-27, offline) | - | none |
+| LENGTH | 1 to 64 (p93) | Have | `seq_length` (2026-10-27, offline) | - | none |
+| FOLLOW SWING | off/on (p93) | Have | `seq_follow_swing` follows the master swing `clock_swing` (synced) (2026-10-27, offline) | - | none |
+| NOTE RESET (with Note Trig) | off/on (p93) | Have | `seq_note_reset` (2026-10-27, offline) | - | none |
+| RESTART ON HOLD | off/on (p93) | Have | `seq_restart_hold` (HOLD keeps a note-trig sequence running) (2026-10-27, offline) | - | none |
+| RESTART ON TRIG | off/on (p93) | Have | `seq_restart_trig` (2026-10-27, offline) | - | none |
+| TRANSPOSE MODE | Start Key, Interval (from middle C) (p93) | Have | `seq_tr_mode` (2026-10-27, offline) | - | none |
+| ONE SHOT | off/on (p94) | Have | `seq_one_shot` (PLAY goes off at the end) (2026-10-27, offline) | - | none |
+| RECORDING MODE | Replace, Overdub, Focused (p94) | Have | `seq_rec_mode`; step recording stopped, real time running (gate as held) (2026-10-27, offline) | - | none |
 | OUTPUT: which Synth(s) the sequence plays [MULTI] | Synth 1/2/3, All Synths (p94) | Missing | - | S | none |
 | Start several Synths' sequences together (Panel Focus multi-select) [MULTI] | p83 | Missing | - | S | none |
-| CLEAR SEQUENCE, DUPLICATE X-Y [UI] | p94 | Missing | In progress | S | none |
-| LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Missing | In progress | M | none |
+| CLEAR SEQUENCE, DUPLICATE X-Y [UI] | p94 | Have | the step editor's CLEAR (asks) and DUP (2026-10-27, offline) | - | none |
+| LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Partial | `.oneseq` files from the step editor (the Windows file dialog sorts by name or date); no performance notes (2026-10-27, offline) | M | none |
 
 ## 18. Effects (p96-111)
 
@@ -739,7 +739,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | RECEIVE MIDI CLOCK | off/on (p128) | Partial | Always the host's tempo; no switch to ignore it | S | none |
-| RECEIVE MIDI START/STOP | off/on (p128) | Partial | The host's playing flag reaches the engine (`song_pos`); only the arp uses it (no LFO reset, no sequencer start yet) | S | none |
+| RECEIVE MIDI START/STOP | off/on (p128) | Partial | The host's playing flag reaches the engine (`song_pos`); the arp and the sequencer follow the song position while it plays (no LFO reset; the host's start and stop don't start or stop the sequence) | S | none |
 | MIDI I/O LOAD FROM PRESET [UI] | off/on (p129) | Missing | - | S | none |
 | MIDI IN PORTS [HW] | DIN, USB, DIN & USB (p129) | Missing | Host | - | none |
 | MIDI IN CHANNEL ALL (one channel for the whole preset) | Off, 1-16 (p129) | Missing | Omni: the channel nibble is ignored, every channel plays | S | none |
@@ -847,18 +847,18 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 10. VCA (p50-52) | 4 | 0 | 1 | 0 | 1 |
 | 11. Output (p53-56) | 0 | 0 | 6 | 4 | 0 |
 | 12. Performance Sets and text entry (p57-60) | 1 | 2 | 2 | 0 | 2 |
-| 13. Master Clock (p60-62) | 2 | 2 | 4 | 3 | 1 |
+| 13. Master Clock (p60-62) | 3 | 1 | 4 | 3 | 1 |
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 10 | 2 | 0 | 0 | 0 |
 | 15. Modulation (p67-77) | 71 | 3 | 14 | 2 | 3 |
 | 16. Arpeggiator (p78-81) | 16 | 1 | 0 | 0 | 0 |
-| 17. Sequencer (p82-95) | 0 | 0 | 33 | 0 | 6 |
+| 17. Sequencer (p82-95) | 27 | 4 | 2 | 0 | 0 |
 | 18. Effects (p96-111) | 84 | 1 | 3 | 0 | 1 |
 | 19. Left Hand Controller (p17-18, p112-117) | 14 | 2 | 3 | 1 | 0 |
 | 20. Browser, presets and timbres (p118-121) | 2 | 2 | 3 | 0 | 2 |
 | 21. Editing and saving (p122-123) | 1 | 0 | 3 | 0 | 2 |
 | 22. Settings (p124-139) | 3 | 5 | 23 | 11 | 7 |
 | 24. Appendices A and B (p143-158) | 0 | 3 | 3 | 1 | 0 |
-| **Total** | **310** | **45** | **120** | **27** | **34** |
+| **Total** | **337** | **49** | **89** | **27** | **28** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -871,7 +871,8 @@ cutoff, filter FM, unison and pitch variance); Tier 2 modulation and playability
 the High range, the 16-slot matrix with transforms, noise colours and EG, voice and keyboard options, stereo voices,
 analog character); Tier 3 effects (the synth effect slot with every type but the vocoders, master delay and reverb on
 two sends); Tier 4 the arpeggiator and chord memory. Shimmer and blackhole reverbs, the vocoders, the sequencer and
-multitimbral parts were left; the sequencer is now in progress. What remains is in the next section.
+multitimbral parts were left; the sequencer was built since (section 17, `docs/SEQUENCER.md`). What remains is in the
+next section.
 
 ### What is likely too CPU-heavy for the MPC
 
@@ -892,8 +893,8 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 
 ## Remaining work for the desktop version (2026-10-27)
 
-Everything above that is Missing or Partial and not hardware-only: 98 Missing rows (33 of them the sequencer, in
-progress) and 54 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
+Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
+rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual". Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
@@ -924,16 +925,15 @@ beside the engine work.
   every DSP file and would conflict with any package running at the same time.
 - Files: `src/engine.c`, `src/fx/*`, `src/macro.cc`, `third_party/patched/*`, `wrapper/vst2_wrap.c` (desktop switch).
 
-**2. Finish and check the sequencer** (section 17, in progress). Effort L (already under way). CPU: none per voice.
-- Check the branch against all 33 rows of section 17: lanes, ratchets, ties and rests; step-mod lanes with controller
-  and amount; sync, division, timing, length, swing, note reset, restart on hold and on trig, transpose mode, one
-  shot, recording modes; clear, duplicate, load and save with notes and sorting; the step edit screen and auto-scroll.
-- Also here: one shared swing (Master Clock SWING AMOUNT, section 13) with FOLLOW SWING for both the sequencer and the
-  arp (16); the host transport's start and stop start and stop the sequence (22b RECEIVE START/STOP); "what can sync"
-  becomes complete (13); chord memory after the sequencer (14).
+**2. Finish and check the sequencer** (section 17). Effort L. CPU: none per voice. Built 2026-10-27 (offline and the
+  desktop window, `docs/SEQUENCER.md`): 27 of its 33 rows Have, with the master swing `clock_swing` and FOLLOW SWING,
+  "what can sync" complete (13) and chord memory after the sequencer (14). Left (S each): an RTZ button, editing a
+  step's notes together and a step delete button, performance notes with a saved sequence, step edit auto-scroll
+  (22a), the arp following the master swing (16), the host transport's start and stop starting and stopping the
+  sequence (22b RECEIVE START/STOP).
 - Depends on: package 3 for the step-mod destinations the manual lists (oscillator octave, the EG switches, LFO
   waveform). OUTPUT to other Synths and starting several Synths together wait for package 13.
-- Files: `src/seq.h`, the performance section of `src/engine.c`, `params.json`, the window's sequencer pages.
+- Files: `src/stepseq.h`, `src/stepseq_run.h`, `desktop/seq_page.c`, `params.json`.
 
 **3. Modulation engine extras** (sections 5, 15, 19, 20). Effort M. CPU: low (control rate).
 - New matrix destinations: oscillator OCTAVE (x3), noise EG ATTACK / SUSTAIN / RELEASE, the EG switches MULTI TRIG /
@@ -1073,7 +1073,7 @@ doubles a voice).
 | Lane | Packages, in order | Main files |
 |---|---|---|
 | Engine | 1, then 3, 4, 9, 13 | `src/engine.c`, `params.json`, `src/modmatrix.h`, `src/lfo.h`, `src/env.h` |
-| Sequencer (under way) | 2 | `src/seq.h`, the performance section of `src/engine.c` |
+| Sequencer (built; small leftovers) | 2 | `src/stepseq.h`, `src/stepseq_run.h`, `desktop/seq_page.c` |
 | Effects | 10a, 10b, then 11's vocoders, 10c | `src/fx.h`, `src/fx/*` |
 | Window | 5, 7, then 6 (after 3) | `desktop/patches.c`, `desktop/editor_draw.c`, `desktop/editor.c` |
 | Library and settings | 12a, 12b, 8, then 12c, 12d, 14 | `desktop/patches.c` or `library.c`, `desktop/settings.c` |

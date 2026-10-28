@@ -3,8 +3,9 @@
  * page: RANDOMISE, UNDO, REDO, MUTATE, locks, and clicks while another thread renders). Proves the DLL's export, MIDI
  * path, audio path and presets on Windows itself; with a second path, writes all the presets to one WAV to listen
  * to; with a third, pictures of the editor. User patches (save, load, rename, delete, import, export) are tested in
- * a temporary folder. Then the host sample rate checks (rate_test.c): other rates and block sizes, float output; with
- * ONEISH_BASELINE_DLL set to an older build, its 44.1 kHz output must match this one's to the 16-bit sample.
+ * a temporary folder; so are .oneseq sequences, after notes are entered into the step sequencer's page from the window's
+ * keyboard and with clicks. Then the host sample rate checks (rate_test.c): other rates and block sizes, float output;
+ * with ONEISH_BASELINE_DLL set to an older build, its 44.1 kHz output must match this one's to the 16-bit sample.
  *   load_test.exe path\to\ONE-ish.dll [presets.wav] [editor.bmp] */
 #include <math.h>
 #include <stdint.h>
@@ -18,6 +19,8 @@
 #include "../src/randomize.h"   /* which lock section each parameter is in */
 #define TEST_MIDI_LOG 0x4F314D4C   /* as editor.h: effVendorSpecific index for the MIDI the window passed on */
 #include "patches.h"   /* TEST_PATCH and its operations, for the user patch tests */
+#include "seq_page.h"   /* TEST_SEQ and its operations, for the step sequencer's page */
+#include "../src/stepseq.h"   /* to read back the sequence the engine holds */
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*audioMasterCallback)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -607,6 +610,133 @@ static void patch_page(AEffect *fx, HWND child, float s, const char *bmp, int w,
     click(child, s, sx + 200, sy + 23);   /* the name again: back to the matrix */
 }
 
+/* ---- the step sequencer's page (desktop/seq_page.c), sequences in a temporary folder (ONEISH_SEQ_DIR) ---- */
+static char seq_dir[MAX_PATH];
+static int seq_now(AEffect *fx, sq_seq_t *q) {   /* the sequence the engine holds (TEST_SEQ / SQT_TEXT) */
+    static char buf[SQT_BUF];
+    buf[0] = 0;
+    fx->dispatcher(fx, 50, TEST_SEQ, SQT_TEXT, buf, 0);
+    sq_clear(q);
+    return sq_decode(buf, q, 4096, 4096);
+}
+static void click_ctl(HWND child, float s, const char *key) {   /* a control on the panel, by its key */
+    int i = rnd_key(key);
+    for (int c = 0; c < NCTLS; c++)
+        if (CTLS[c].param == i) click(child, s, CTLS[c].x + CTLS[c].w / 2.0f, CTLS[c].y + CTLS[c].h / 2.0f);
+}
+static void click_white(AEffect *fx, HWND child, float s, int j) {   /* white key j of the window's keyboard, low on it */
+    click(child, s, ZONE_KEYS[0] + (j + 0.5f) * ZONE_KEYS[2] / 36.0f, ZONE_KEYS[1] + ZONE_KEYS[3] * 0.92f);
+    play(fx, 2, 512);   /* the MIDI reaches the engine with the next block */
+}
+static void cell_xy(int col, int row, float *x, float *y) {   /* a step cell on the page (seq_page.c's geometry) */
+    float x0 = ZONE_SCREEN[0] + 8 + 24, w = (ZONE_SCREEN[2] - 16 - 24) / 16.0f;
+    *x = x0 + (col + 0.5f) * w;
+    *y = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 22 * row + 11;
+}
+static void seq_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[256], buf[SQT_BUF];
+    sq_seq_t q;
+    float x, y;
+    click_zone(child, s, ZONE_TAB_SEQ);   /* the step editor */
+    float bx = ZONE_SCREEN[0] + 8 + (ZONE_SCREEN[2] - 16 - 24) / 7.0f * 3.5f + 6;
+    float by = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 176 + 8 + 24 + 9;   /* CLEAR, in the buttons' row */
+    static const answer_t yes = {"ONE-ish", NULL, IDYES};
+    click_answered(child, s, bx, by, &yes);   /* CLEAR (asked; Yes): an empty sequence to start with */
+    check(seq_now(fx, &q) && sq_used_steps(&q) == 0, "SEQ page: CLEAR (after asking) empties the sequence");
+    click_ctl(child, s, "seq_rec");
+    check(fx->getParameter(fx, rnd_key("seq_rec")) > 0.5f, "SEQ page: the REC button on the SEQUENCER module lights");
+    cell_xy(0, 0, &x, &y);
+    click(child, s, x, y);   /* step 1 selected */
+    click_white(fx, child, s, 14);   /* C4, E4, G4 from the window's keyboard: steps 1-3 */
+    click_white(fx, child, s, 16);
+    click_white(fx, child, s, 18);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    int ok = seq_now(fx, &q) && q.n[0][0].note == 60 && q.n[1][0].note == 64 && q.n[2][0].note == 67;
+    snprintf(what, sizeof what, "SEQ page: three keys played on the window's keyboard with REC on went into steps 1-3 "
+             "(%d %d %d), the selection on step %d", q.n[0][0].note, q.n[1][0].note, q.n[2][0].note,
+             (int)fx->dispatcher(fx, 50, TEST_SEQ, SQT_SELECTED, buf, 0) / 16 + 1);
+    check(ok && fx->dispatcher(fx, 50, TEST_SEQ, SQT_SELECTED, buf, 0) / 16 == 3, what);
+    static const int more[5] = {13, 14, 16, 14, 11};   /* five more steps: a phrase for the picture */
+    for (int k = 0; k < 5; k++) click_white(fx, child, s, more[k]);
+    click_ctl(child, s, "seq_rec");   /* REC off: clicks edit */
+    cell_xy(5, 1, &x, &y);   /* a double-click on an empty cell: a new note (the last one's values) */
+    LPARAM at = MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s));
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);
+    SendMessageA(child, WM_LBUTTONUP, 0, at);
+    SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, at);
+    SendMessageA(child, WM_LBUTTONUP, 0, at);
+    seq_now(fx, &q);
+    snprintf(what, sizeof what, "SEQ page: a double-click on step 6, lane 2 makes a note there (%d)", q.n[5][1].note);
+    check(sq_has(&q.n[5][1]), what);
+    SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(0, 120), MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
+    int was = q.n[5][1].note;
+    seq_now(fx, &q);
+    check(q.n[5][1].note == was + 1, "SEQ page: the wheel over a note moves it up a semitone");
+    cell_xy(1, 0, &x, &y);   /* a drag up on step 2's note: louder */
+    int vel0 = q.n[1][0].vel;
+    at = MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s));
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM((int)lroundf(x * s), (int)lroundf((y - 30) * s)));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM((int)lroundf(x * s), (int)lroundf((y - 30) * s)));
+    seq_now(fx, &q);
+    snprintf(what, sizeof what, "SEQ page: dragging a note up raises its velocity (%d to %d)", vel0, q.n[1][0].vel);
+    check(q.n[1][0].vel > vel0, what);
+    cell_xy(5, 1, &x, &y);   /* a right-click deletes */
+    SendMessageA(child, WM_RBUTTONDOWN, MK_RBUTTON, MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
+    seq_now(fx, &q);
+    check(!sq_has(&q.n[5][1]), "SEQ page: a right-click deletes the note");
+    /* .oneseq files: save, CLEAR (asked), load it back */
+    char saved[SQT_BUF];
+    fx->dispatcher(fx, 50, TEST_SEQ, SQT_TEXT, saved, 0);
+    snprintf(buf, sizeof buf, "Walking Test");
+    intptr_t r = fx->dispatcher(fx, 50, TEST_SEQ, SQT_SAVE, buf, 0);
+    char path[MAX_PATH + 64];
+    snprintf(path, sizeof path, "%s\\Walking Test.oneseq", seq_dir);
+    check(r == 1 && GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES, "SEQ page: SAVE writes Walking Test.oneseq (ONEISH_SEQ_DIR)");
+    click_answered(child, s, bx, by, &yes);   /* CLEAR again, then Yes */
+    seq_now(fx, &q);
+    check(sq_used_steps(&q) == 0, "SEQ page: CLEAR again before loading the file");
+    snprintf(buf, sizeof buf, "Walking Test");
+    r = fx->dispatcher(fx, 50, TEST_SEQ, SQT_LOAD, buf, 0);
+    char back[SQT_BUF];
+    fx->dispatcher(fx, 50, TEST_SEQ, SQT_TEXT, back, 0);
+    check(r == 1 && !strcmp(back, saved), "SEQ page: LOAD brings the saved sequence back exactly");
+    /* a user patch keeps the sequence (its "seq=" line) */
+    pt(fx, PT_SAVE_AS, "Seq Patch", NULL, 1);
+    char ppath[MAX_PATH + 64], ptext[SQT_BUF] = "";
+    snprintf(ppath, sizeof ppath, "%s\\Seq Patch.oneish", patch_dir);
+    FILE *pf = fopen(ppath, "rb");
+    if (pf) { ptext[fread(ptext, 1, sizeof ptext - 1, pf)] = 0; fclose(pf); }
+    click_answered(child, s, bx, by, &yes);   /* CLEAR, then the patch again */
+    pt(fx, PT_LOAD, "Seq Patch", NULL, 0);
+    fx->dispatcher(fx, 50, TEST_SEQ, SQT_TEXT, back, 0);
+    check(strstr(ptext, "\nseq=") && !strcmp(back, saved), "SEQ page: a user patch saves the sequence (a seq= line) and loads it back");
+    /* the picture: the entered steps playing (ON, PLAY) on the step editor */
+    click_ctl(child, s, "seq_on");
+    click_ctl(child, s, "seq_play");
+    play(fx, 30, 512);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    check(fx->getParameter(fx, rnd_key("seq_on")) > 0.5f && fx->getParameter(fx, rnd_key("seq_play")) > 0.5f,
+          "SEQ page: ON and PLAY on the SEQUENCER module start it");
+    cell_xy(1, 0, &x, &y);
+    click(child, s, x, y);
+    if (bmp) shot(child, w, h, bmp, "_seq");
+    /* a factory sequence's modulation lane (MODS view) and the settings page, for the pictures */
+    fx->setParameter(fx, rnd_key("seq_pattern"), 1.0f / 3.0f);   /* Bass Line */
+    play(fx, 30, 512);
+    click_zone(child, s, ZONE_TAB_SEQ);   /* again: MODS */
+    SendMessageA(child, WM_TIMER, 1, 0);
+    if (bmp) shot(child, w, h, bmp, "_seq_mods");
+    click_zone(child, s, ZONE_TAB_SEQ);   /* NOTES again */
+    SendMessageA(child, WM_TIMER, 1, 0);
+    if (bmp) shot(child, w, h, bmp, "_seq_bass");
+    if (click_more(child, s, PG_SEQ) && bmp) shot(child, w, h, bmp, "_more_seq");
+    click_ctl(child, s, "seq_play");
+    click_ctl(child, s, "seq_on");
+    fx->setParameter(fx, rnd_key("seq_pattern"), 0.0f);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void editor(AEffect *fx, const char *bmp) {
@@ -690,6 +820,7 @@ static void editor(AEffect *fx, const char *bmp) {
         GetClientRect(child, &cr);
         SendMessageA(child, WM_LBUTTONUP, 0, 0);
         patch_page(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        seq_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
     }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
@@ -703,6 +834,10 @@ int main(int argc, char **argv) {
     CreateDirectoryA(patch_dir, NULL);
     empty_dir(patch_dir);
     SetEnvironmentVariableA("ONEISH_PATCH_DIR", patch_dir);
+    snprintf(seq_dir, sizeof seq_dir, "%soneish_seq_test_%lu", tmp, (unsigned long)GetCurrentProcessId());
+    CreateDirectoryA(seq_dir, NULL);
+    empty_dir(seq_dir);
+    SetEnvironmentVariableA("ONEISH_SEQ_DIR", seq_dir);
     HMODULE dll = LoadLibraryA(argc > 1 ? argv[1] : "ONE-ish.dll");
     if (!dll) { printf("FAIL LoadLibrary (error %lu)\n", GetLastError()); return 1; }
     AEffect *(*entry)(audioMasterCallback) = (AEffect * (*)(audioMasterCallback))(void *)GetProcAddress(dll, "VSTPluginMain");
@@ -752,6 +887,8 @@ int main(int argc, char **argv) {
     FreeLibrary(dll);
     empty_dir(patch_dir);
     RemoveDirectoryA(patch_dir);
+    empty_dir(seq_dir);
+    RemoveDirectoryA(seq_dir);
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }

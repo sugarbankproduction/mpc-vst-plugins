@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (now 284 have,
-  50 partial, 130 missing, 75 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (now 324 have,
+  57 partial, 94 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -177,7 +177,17 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      "Modal Bells", "Grain Cloud", "Tape Bass". No added memory (they use the slot's own buffers). PC cost per block:
      Rings up to 42 us (modal), Clouds 12-73 us by mode (spectral in bursts). Left: their CPU on the device, a place
      for the 14 params on the desktop window and the MPC page; Beads, Elements, Warps, Marbles.
-  10. After the Windows version is finished (owner, 2026-10-27): a web version to share with friends: the engine
+  10. The Moog One's step sequencer (owner, 2026-10-27). Done 2026-10-27 (offline and the desktop window;
+     `ports/one-ish/docs/SEQUENCER.md`): 64 steps in pages of 16, 8 note lanes (note, velocity, gate, ratchet 1-4, tie)
+     with rests, 8 modulation lanes (destination, controller and amount, an offset per step), STEP MOD from the knobs,
+     note trig, transpose (start key / interval), one shot, restart on trig / hold, follow swing (a master swing
+     `clock_swing`), divisions and timing, sync to the host's song position; step and real-time recording (replace,
+     overdub, focused); 20 `seq_*` settings, the `seq_pos` readout and `clock_swing`; the steps saved in the state
+     (`seq=`, about 350 characters for a typical sequence), in user patches and `.oneseq` files; a SEQ step editor and a
+     SEQUENCER module in the window; presets "Seq Bass Line", "Seq Chord Stabs". PC cost: the clock and steps alone
+     0.1 us per block, 8 modulation lanes 0.24 us per voice. Left: OUTPUT to Synth 1/2/3 [MULTI], an RTZ button, the
+     MPC page (the audit's section 17 and package 2 list the small leftovers).
+  11. After the Windows version is finished (owner, 2026-10-27): a web version to share with friends: the engine
      compiled to WebAssembly in an AudioWorklet, a browser panel generated from the same layout data, Web MIDI, patches
      in the browser (download/share as files), static hosting on Vercel. Build and test locally first; deploying
      publishes it, so only on the owner's go-ahead.
