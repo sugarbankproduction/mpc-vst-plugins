@@ -4,7 +4,8 @@
  * for the control under the mouse); mixer, filters, envelopes, effects and output on the right; and along the bottom a
  * left-hand controller (octave, glide, pitch and mod wheels, an X/Y pad, bend range), a ribbon and a 61-key keyboard
  * that play the synth. Wooden end cheeks. All artwork is drawn from scratch (editor_draw.c: GDI text, GDI+ shapes via
- * gfx.h): no maker's names, marks or photos. This file: the layout (scaled to fit the screen; ONEISH_EDITOR_SCALE
+ * gfx.h, materials and 3D parts shaded per pixel by skin.c): no maker's names, marks, photos or image files. A change
+ * repaints only the parts it touches (invalidate_param / invalidate_zone below). This file: the layout (scaled to fit the screen; ONEISH_EDITOR_SCALE
  * overrides it), the mouse, the MIDI from the window, and the VST2 side.
  *
  * RANDOM (the console button next to ANALOG) shows the patch randomiser on the screen (src/randomize.h): RANDOMISE makes
@@ -39,6 +40,7 @@
 #include <string.h>
 #include "editor.h"
 #include "hostrate.h"
+#include "skin.h"
 #include "../src/randomize.h"
 
 layout_t L;
@@ -208,6 +210,86 @@ RECT rnd_rect(int z) {
     return r;
 }
 
+/* ---- what to repaint: only the parts a change touches (the whole window takes longer to paint) ---- */
+static void invalidate(ed_t *e, const RECT *r) {
+    if (e->wnd) InvalidateRect(e->wnd, r, FALSE);
+}
+static int on_screen(ed_t *e, int i) {   /* does the centre screen's current page show param i (or depend on it)? */
+    if (e->screen == SCR_MATRIX) {
+        for (int m = e->sub * ROWS; m < (e->sub + 1) * ROWS && m < NMATRIX; m++)
+            for (int k = 0; k < MX_COLS; k++)
+                if (MATRIX[m][k] == i) return 1;
+        return 0;
+    }
+    if (e->screen == SCR_INDEX || e->screen == SCR_PATCHES) return 0;
+    if (e->screen < 0 || e->screen >= NPAGES) return 1;   /* RANDOM (it describes the sound), SEQ: all of it */
+    for (int k = PAGES[e->screen].first; k < PAGES[e->screen].first + PAGES[e->screen].count; k++)
+        if (ITEMS[k].param == i || ITEMS[k].cond == i) return 1;   /* (a condition changes which items show) */
+    return 0;
+}
+static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control, the screen, what shows it */
+    if (i < 0 || i >= NPARAMS) { invalidate(e, NULL); return; }
+    if (!IsRectEmpty(&L.ctl[i])) {   /* on the panel: the control, its label and value (they spill a little) */
+        RECT r = L.ctl[i];
+        InflateRect(&r, sc(16), sc(6));
+        invalidate(e, &r);
+    }
+    if (on_screen(e, i)) invalidate(e, &L.screen);   /* the matrix and MORE pages show values */
+    else {   /* the help lines (the value of the control under the mouse) */
+        RECT h = L.help;
+        InflateRect(&h, sc(2), sc(6));
+        invalidate(e, &h);
+    }
+    for (int w = 0; w < NWAVES; w++)
+        for (int k = 0; k < 4; k++)
+            if (WAVES[w].param[k] == i) {
+                RECT r = {sc(WAVES[w].x), sc(WAVES[w].y), sc(WAVES[w].x + WAVES[w].w), sc(WAVES[w].y + WAVES[w].h)};
+                invalidate(e, &r);
+            }
+    for (int k = 0; k < 4; k++)
+        if (EUCLID_P[k] == i) {
+            RECT r = L.euclid;
+            InflateRect(&r, sc(6), sc(6));
+            invalidate(e, &r);
+        }
+}
+static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z: it and the help line */
+    if (z < 0) return;
+    if (z < NPARAMS) { invalidate_param(e, z); return; }
+    const RECT *r = NULL;
+    switch (z) {
+    case Z_KEYS: r = &L.keys; break;
+    case Z_RIBBON: r = &L.ribbon; break;
+    case Z_PITCH: r = &L.pitch; break;
+    case Z_MODW: r = &L.modw; break;
+    case Z_PAD: r = &L.pad; break;
+    case Z_OCT_DOWN: r = &L.oct_down; break;
+    case Z_OCT_UP: r = &L.oct_up; break;
+    case Z_PREV: case Z_NEXT: invalidate(e, &L.bprev); r = &L.bnext; break;
+    case Z_ENCODER: r = &L.encoder; break;
+    case Z_TAB_MATRIX: r = &L.tab_matrix; break;
+    case Z_TAB_MORE: r = &L.tab_more; break;
+    case Z_TAB_ANALOG: r = &L.tab_analog; break;
+    case Z_TAB_RANDOM: r = &L.tab_random; break;
+    case Z_TAB_SEQ: r = &L.tab_seq; break;
+    case Z_EUCLID: r = &L.euclid; break;
+    }
+    if (seq_zone(z)) r = &L.seq_leds;   /* the step editor (on the screen) or the SEQUENCER's page LEDs */
+    if (z >= Z_PAGE && z < Z_PAGE + NPAGES)   /* its triangle(s) */
+        for (int k = 0; k < NMORES; k++)
+            if (MORES[k].page == z - Z_PAGE) {
+                RECT t = L.more[k];
+                InflateRect(&t, sc(6), sc(6));
+                invalidate(e, &t);
+            }
+    if (r) {
+        RECT g = *r;
+        InflateRect(&g, sc(20), sc(18));   /* labels under the parts */
+        invalidate(e, &g);
+    }
+    invalidate(e, &L.screen);   /* everything else lives on the screen; the help line is there too */
+}
+
 /* ---- values ---- */
 void param_text(ed_t *e, int i, char *out, int n) {
     char disp[64] = "", lab[32] = "";
@@ -222,7 +304,7 @@ static void set_value(ed_t *e, int i, float v) {
     v = v < 0 ? 0 : v > 1 ? 1 : v;
     e->fx->setParameter(e->fx, i, v);
     if (e->host) e->host(e->fx, audioMasterAutomate, i, 0, NULL, v);
-    InvalidateRect(e->wnd, NULL, FALSE);
+    invalidate_param(e, i);
 }
 
 static void edit_value(ed_t *e, int i, float v) {   /* a one-shot change, bracketed for the host's undo/automation */
@@ -485,9 +567,14 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
             e->enc_moved = 1;
             e->enc_y -= steps * sc(18);
             patches_step(e, steps);
+            invalidate(e, NULL);
         }
+        return;
     }
-    InvalidateRect(e->wnd, NULL, FALSE);
+    static const int Z[] = {0, 0, Z_KEYS, Z_PITCH, Z_MODW, Z_PAD, 0, Z_RIBBON, 0};   /* by mode (M_*) */
+    if (e->mode == M_RND_AMOUNT) invalidate(e, &L.screen);
+    else if (e->mode > 0 && e->mode < (int)(sizeof Z / sizeof Z[0]) && Z[e->mode]) invalidate_zone(e, Z[e->mode]);
+    else invalidate(e, NULL);
 }
 
 static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes off, the pitch wheel springs back */
@@ -602,6 +689,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         CREATESTRUCTA *cs = (CREATESTRUCTA *)lp;
         SetWindowLongPtrA(w, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
         SetTimer(w, 1, 50, NULL);
+        skin_acquire();   /* the shared look (skin.c), kept while any editor window is open */
         return 0;
     }
     case WM_ERASEBKGND:
@@ -618,15 +706,25 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER: {   /* values the host or a preset changed: redraw */
         if (!e) return 0;
-        int changed = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0);
+        int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
             float v = e->fx->getParameter(e->fx, i);
-            if (v != e->shown[i]) { e->shown[i] = v; changed = 1; }
+            if (v != e->shown[i]) {
+                e->shown[i] = v;
+                if (moved < 16) which[moved] = i;
+                moved++;
+            }
         }
         if (prog != e->shown_prog) { e->shown_prog = prog; changed = 1; }
         if (patches_tick(e)) changed = 1;   /* the edited mark, a message that ran out */
-        if (seq_tick(e, changed)) changed = 1;   /* the playing step; the sequence while it is edited */
-        if (changed) InvalidateRect(w, NULL, FALSE);
+        if (seq_tick(e, changed || moved)) {   /* the playing step; the sequence while it is edited: the screen, its LEDs */
+            invalidate(e, &L.screen);
+            RECT r = L.seq_leds;
+            InflateRect(&r, sc(8), sc(8));
+            invalidate(e, &r);
+        }
+        if (changed || moved > 16) InvalidateRect(w, NULL, FALSE);   /* a new sound: all of it */
+        else for (int k = 0; k < moved; k++) invalidate_param(e, which[k]);   /* a few knobs: just them */
         return 0;
     }
     case WM_MOUSEMOVE: {
@@ -642,7 +740,11 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         if (e->mode == M_SEQ) { seq_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode != M_NONE) { controller_move(e, x, y); return 0; }
         int h = hit(e, x, y);
-        if (h != e->hover) { e->hover = h; InvalidateRect(w, NULL, FALSE); }
+        if (h != e->hover) {
+            invalidate_zone(e, e->hover);
+            e->hover = h;
+            invalidate_zone(e, h);
+        }
         TRACKMOUSEEVENT tme = {sizeof tme, TME_LEAVE, w, 0};
         TrackMouseEvent(&tme);
         return 0;
@@ -727,6 +829,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             e->mode = M_NONE;
         }
         KillTimer(w, 1);
+        skin_release();
         return 0;
     }
     return DefWindowProcA(w, msg, wp, lp);

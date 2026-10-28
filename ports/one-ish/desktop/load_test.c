@@ -1,6 +1,7 @@
 /* Load the desktop ONE-ish.dll the way a DAW does (LoadLibrary + VSTPluginMain), play a note, save/restore its
  * state, then play every preset in its program list, then drive the editor window (keyboard, ribbon, the randomiser
- * page: RANDOMISE, UNDO, REDO, MUTATE, locks, and clicks while another thread renders). Proves the DLL's export, MIDI
+ * page: RANDOMISE, UNDO, REDO, MUTATE, locks, and clicks while another thread renders), times its painting (a full
+ * repaint, a knob turned) and checks it gives back its GDI handles over 20 opens. Proves the DLL's export, MIDI
  * path, audio path and presets on Windows itself; with a second path, writes all the presets to one WAV to listen
  * to; with a third, pictures of the editor. User patches (save, load, rename, delete, import, export) are tested in
  * a temporary folder; so are .oneseq sequences, after notes are entered into the step sequencer's page from the window's
@@ -747,6 +748,99 @@ static void seq_page_test(AEffect *fx, HWND child, float s, const char *bmp, int
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
+/* ---- painting: how long the window takes to draw, and that it gives back what it takes ---- */
+static double now_ms(void) {
+    LARGE_INTEGER f, t;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&t);
+    return t.QuadPart * 1000.0 / f.QuadPart;
+}
+static double print_ms(HWND child, HDC dc) {   /* one paint into dc (through WM_PRINTCLIENT, honouring dc's clip) */
+    double t0 = now_ms();
+    SendMessageA(child, WM_PRINTCLIENT, (WPARAM)dc, PRF_CLIENT);
+    return now_ms() - t0;
+}
+/* the first paint (it makes the static layer and the knob sprites), a full repaint, and a knob turned with the mouse:
+ * only what the window asks to repaint for it (its update region) is painted */
+static void paint_timing(AEffect *fx, HWND child, int w, int h) {
+    char what[200];
+    HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+    HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+    HGDIOBJ old = SelectObject(dc, bm);
+    double first = print_ms(child, dc), full = 0, part = 0;
+    for (int k = 0; k < 20; k++) full += print_ms(child, dc) / 20;
+    int c = 0;
+    while (c < NCTLS && CTLS[c].kind != K_KNOB) c++;
+    if (c < NCTLS) {
+        float s = w / (float)BASE_W, was = fx->getParameter(fx, CTLS[c].param);
+        int x = (int)lroundf((CTLS[c].x + CTLS[c].w / 2.0f) * s), y = (int)lroundf((CTLS[c].y + CTLS[c].h / 3.0f) * s);
+        RECT box = {0, 0, 0, 0};
+        HWND parent = GetParent(child);   /* shown (off the screen, never activated): a hidden window keeps no update region */
+        RECT home;
+        GetWindowRect(parent, &home);
+        SetWindowPos(parent, NULL, -w - 400, -h - 400, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        ValidateRect(child, NULL);
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(x, y));   /* hovering first: its own repaint */
+        ValidateRect(child, NULL);
+        SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+        SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x, y - 12));
+        HRGN rgn = CreateRectRgn(0, 0, 0, 0);
+        int kind = GetUpdateRgn(child, rgn, FALSE);
+        GetRgnBox(rgn, &box);
+        SelectClipRgn(dc, rgn);
+        for (int k = 0; k < 20; k++) part += print_ms(child, dc) / 20;
+        SelectClipRgn(dc, NULL);
+        DeleteObject(rgn);
+        SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(x, y - 12));
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));
+        ValidateRect(child, NULL);
+        SetWindowPos(parent, NULL, home.left, home.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+        /* (back where it was, hidden: later tests pass window positions as screen positions) */
+        fx->setParameter(fx, CTLS[c].param, was);
+        snprintf(what, sizeof what, "a knob turned with the mouse repaints only part of the window (%ld x %ld of %d x %d)",
+                 box.right - box.left, box.bottom - box.top, w, h);
+        check(kind != NULLREGION && kind != ERROR && (box.right - box.left) * (box.bottom - box.top) < w * h / 4, what);
+    }
+    printf("     paint: first %.1f ms (static layer and sprites), full repaint %.2f ms, a knob turned %.2f ms\n", first, full, part);
+    snprintf(what, sizeof what, "full repaint %.2f ms (target under 16), knob repaint %.2f ms (target under 2)", full, part);
+    check(full < 16 && part < 2, what);
+    SelectObject(dc, old);
+    DeleteObject(bm);
+    DeleteDC(dc);
+    ReleaseDC(NULL, screen);
+}
+/* open, paint and close the editor 21 times: after the first, the GDI handle count must not grow */
+static void gdi_test(AEffect *fx) {
+    DWORD gdi0 = 0, user0 = 0;
+    char what[200];
+    for (int k = 0; k <= 20; k++) {
+        struct { int16_t top, left, bottom, right; } *rect = NULL;
+        fx->dispatcher(fx, 13 /* effEditGetRect */, 0, 0, &rect, 0);
+        int w = rect ? rect->right - rect->left : 0, h = rect ? rect->bottom - rect->top : 0;
+        HWND parent = CreateWindowExA(0, "STATIC", "host", WS_POPUP, 0, 0, w, h, NULL, NULL, GetModuleHandleA(NULL), NULL);
+        fx->dispatcher(fx, 14 /* effEditOpen */, 0, 0, parent, 0);
+        HWND child = GetWindow(parent, GW_CHILD);
+        HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+        HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+        HGDIOBJ old = SelectObject(dc, bm);
+        if (child) print_ms(child, dc);
+        SelectObject(dc, old);
+        DeleteObject(bm);
+        DeleteDC(dc);
+        ReleaseDC(NULL, screen);
+        fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
+        DestroyWindow(parent);
+        if (k == 0) {
+            gdi0 = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS);
+            user0 = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+        }
+    }
+    DWORD gdi1 = GetGuiResources(GetCurrentProcess(), GR_GDIOBJECTS), user1 = GetGuiResources(GetCurrentProcess(), GR_USEROBJECTS);
+    snprintf(what, sizeof what, "the editor opened, painted and closed 20 more times: GDI handles %lu -> %lu, USER %lu -> %lu",
+             (unsigned long)gdi0, (unsigned long)gdi1, (unsigned long)user0, (unsigned long)user1);
+    check(gdi1 <= gdi0 + 2 && user1 <= user0 + 2, what);
+}
+
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void editor(AEffect *fx, const char *bmp) {
@@ -762,6 +856,7 @@ static void editor(AEffect *fx, const char *bmp) {
     intptr_t ok = fx->dispatcher(fx, 14 /* effEditOpen */, 0, 0, parent, 0);
     HWND child = GetWindow(parent, GW_CHILD);
     check(ok && child, "the editor window opens inside the host's window");
+    if (child) paint_timing(fx, child, w, h);
     if (child) {   /* play the on-screen keyboard: a click on a white key must sound, letting go must stop it */
         fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
         play(fx, 700, 512);   /* let the last preset's tails die away */
@@ -920,6 +1015,7 @@ int main(int argc, char **argv) {
     audition(fx, argc > 2 && argv[2][0] ? argv[2] : NULL);
     patch_tests(fx);
     editor(fx, argc > 3 ? argv[3] : NULL);
+    gdi_test(fx);
     const char *base = getenv("ONEISH_BASELINE_DLL");   /* an older build to compare 44.1 kHz output with */
     HMODULE old = base && base[0] ? LoadLibraryA(base) : NULL;
     if (base && base[0] && !old) check(0, "ONEISH_BASELINE_DLL loads");

@@ -35,6 +35,7 @@
 #pragma GCC diagnostic push   /* (only some of its drawing functions are used here) */
 #pragma GCC diagnostic ignored "-Wunused-function"
 #include "gfx.h"
+#include "skin.h"
 #pragma GCC diagnostic pop
 
 #define EXT ".oneseq"
@@ -788,19 +789,14 @@ void seq_draw(HDC dc, ed_t *e) {
 void seq_panel_draw(HDC dc, ed_t *e) {
     if (rw(&L.seq_leds) <= 0) return;
     gfx_begin(dc);
+    skin_bind(gfx_g);   /* (the LEDs write pixels: skin.c flushes this surface first) */
     int len = seq_len(e), playing = e->sq.play >= 0, cur = playing ? e->sq.play / SQ_PAGE : e->sq.page;
     for (int p = 0; p < 4; p++) {
         RECT r = pled_rect(p);
         float cx = (r.left + r.right) / 2.0f, cy = r.top + sc(7), rr = 2.8f * L.s + 0.4f;
         int on = p == cur, past = p * SQ_PAGE >= len;
-        if (on && !past) {
-            DWORD glow = playing ? 0x50FF5040 : 0x30FFE6B0;
-            gfx_disc(cx, cy, rr * 2.4f, glow);
-            gfx_disc(cx, cy, rr, playing ? 0xFFFF6A50 : 0xFFF8E6C0);
-        } else {
-            gfx_disc(cx, cy, rr, past ? 0xFF161618 : 0xFF2A2A2C);
-            gfx_circle(cx, cy, rr, 0.8f, 0xFF4E4E52);
-        }
+        skin_led(cx, cy, rr, on && !past ? (playing ? SK_LED_RED : 1) : 0);   /* (skin.c: the panel's LEDs) */
+        if (past) gfx_disc(cx, cy, rr * 1.1f, 0xA0101012);   /* past LENGTH: darker still */
         char n[4];
         snprintf(n, sizeof n, "%d", p + 1);
         RECT tr = {r.left, r.top + sc(12), r.right, r.top + sc(26)};
@@ -808,6 +804,7 @@ void seq_panel_draw(HDC dc, ed_t *e) {
     }
     RECT lr = {L.seq_leds.left, L.seq_leds.bottom - sc(14), L.seq_leds.right, L.seq_leds.bottom};
     txt(dc, lr, "PAGE", font_label, RGB(214, 214, 216), DT_CENTER | DT_VCENTER);
+    skin_bind(NULL);
     gfx_end();
 }
 
