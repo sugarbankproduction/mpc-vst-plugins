@@ -125,7 +125,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      what changed is repainted. On the PC (with the sequencer strip): full repaint 10-12 ms, a knob turned about
      0.5 ms, the first paint about 0.5 s (making the static layer); GDI handles stable over 20 opens. The SEQ page and
      the SEQUENCER strip use the same parts (`skin_led` has a red LED for the playing page). Not yet seen in Carla by
-     the owner.
+     the owner. Owner's follow-ups (2026-10-28, offline): polished silver pitch/mod wheels; square window corners
+     (Windows 11 rounds top-level windows: the editor asks for DWMWCP_DONOTROUND on the host's window when that window
+     holds only the editor, never a bigger one; load_test checks both; the wood cheeks' ends are square with a
+     slight bevel).
   3. Tier 2: done 2026-10-27 (offline): LFOs 3-4 and their options, 16-slot matrix with transforms and the missing
      sources/destinations (every effect control too, from global sources), noise colours and noise envelope,
      voice/keyboard options, stereo voices and pan, analog drift, the assignable ribbon. 402 params, 27 presets.

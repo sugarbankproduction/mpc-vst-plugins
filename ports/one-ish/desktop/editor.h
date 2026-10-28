@@ -58,6 +58,7 @@ enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
 enum { VENDOR_SPECIFIC = 50 };                   /* effVendorSpecific */
 #define TEST_MIDI_LOG 0x4F314D4C   /* VENDOR_SPECIFIC index: copy the MIDI the window passed to the engine (tests) */
+#define TEST_CORNERS 0x4F31434E    /* VENDOR_SPECIFIC index: square_corners()'s result for this window (tests) */
 extern const short MXC[MX_COLS + 2];   /* the matrix columns: #, then each MX_ column, in base units from the left */
 
 typedef struct {
@@ -111,6 +112,7 @@ typedef struct {
     char hist_name[RND_HIST][40];
     patches_t pt;                              /* user patches and the browser (patches.c) */
     struct hostrate *hr;                       /* the host's rate and float output (hostrate.c); NULL: none */
+    int corners, corner_tries;                 /* square_corners(): 1 done, 0 not (yet), -1 failed; attempts */
     seq_ui_t sq;                               /* the step sequencer's page (seq_page.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ };

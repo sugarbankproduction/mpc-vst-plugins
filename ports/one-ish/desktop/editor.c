@@ -210,6 +210,8 @@ RECT rnd_rect(int z) {
     return r;
 }
 
+static int square_corners(HWND wnd);   /* (below: the host window's corners) */
+
 /* ---- what to repaint: only the parts a change touches (the whole window takes longer to paint) ---- */
 static void invalidate(ed_t *e, const RECT *r) {
     if (e->wnd) InvalidateRect(e->wnd, r, FALSE);
@@ -706,6 +708,10 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER: {   /* values the host or a preset changed: redraw */
         if (!e) return 0;
+        if (e->corners == 0 && e->corner_tries < 100) {   /* the host's window sized to us yet? (for 5 s) */
+            e->corner_tries++;
+            e->corners = square_corners(w);
+        }
         int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
             float v = e->fx->getParameter(e->fx, i);
@@ -884,6 +890,29 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD why, LPVOID reserved) {
     return TRUE;
 }
 
+/* Windows 11 rounds the corners of top-level windows, so the plugin window a host makes around the editor shows the
+ * panel with rounded corners; the instrument is square. Ask for square corners (DWMWA_WINDOW_CORNER_PREFERENCE =
+ * DWMWCP_DONOTROUND), but only when that window holds just the editor (its client area our size, give or take a few
+ * pixels), never a DAW's own main window. dwmapi is looked up at run time, so older Windows (no such setting, or no
+ * DWM) simply keeps its look. 1: done, 0: not this window (yet), -1: Windows said no. */
+static int square_corners(HWND wnd) {
+    typedef HRESULT(WINAPI * dwm_set_t)(HWND, DWORD, LPCVOID, DWORD);
+    static dwm_set_t set;
+    static int looked;
+    HWND root = wnd ? GetAncestor(wnd, GA_ROOT) : NULL;
+    RECT c;
+    if (!root || root == wnd || !GetClientRect(root, &c)) return 0;
+    if (abs(rw(&c) - L.w) > 8 || abs(rh(&c) - L.h) > 8) return 0;
+    if (!looked) {
+        looked = 1;
+        HMODULE m = LoadLibraryExA("dwmapi.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (m) set = (dwm_set_t)(void *)GetProcAddress(m, "DwmSetWindowAttribute");
+    }
+    if (!set) return -1;
+    int pref = 1;   /* DWMWCP_DONOTROUND */
+    return set(root, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &pref, sizeof pref) == S_OK ? 1 : -1;
+}
+
 /* ---- the VST2 side ---- */
 static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, void *ptr, float opt) {
     ed_t *e = ed_of(fx);
@@ -904,6 +933,8 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         e->mode = M_NONE;
         patches_rescan(e);
         e->wnd = CreateWindowExA(0, CLASS_NAME, "ONE-ish", WS_CHILD | WS_VISIBLE, 0, 0, L.w, L.h, (HWND)ptr, NULL, dll, e);
+        e->corner_tries = 0;
+        e->corners = square_corners(e->wnd);   /* (again from the timer: some hosts size their window afterwards) */
         return e->wnd != NULL;
     }
     case effEditClose:
@@ -912,6 +943,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
     case effEditIdle:
         return 0;
     case VENDOR_SPECIFIC:   /* load_test: the MIDI the window passed to the engine since the last call (oldest first) */
+        if (idx == TEST_CORNERS && e) return e->corners;   /* load_test: did the window ask for square corners? */
         if (idx == TEST_MIDI_LOG && e && ptr) {
             unsigned n = e->mlog_n < MLOG ? e->mlog_n : MLOG;
             for (unsigned k = 0; k < n; k++) memcpy((unsigned char *)ptr + 3 * k, e->mlog[(e->mlog_n - n + k) % MLOG], 3);

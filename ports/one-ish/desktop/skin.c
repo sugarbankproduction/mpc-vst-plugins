@@ -615,24 +615,36 @@ static struct { int x, y, w, h; float pos; uint32_t *px; } WC[4];   /* each whee
 static void free_wheels(void) {
     for (int k = 0; k < 4; k++) { free(WC[k].px); WC[k].px = NULL; }
 }
+/* a polished aluminium wheel turning about a horizontal axis: a cylinder, so it mirrors the bright room above along a
+ * band and the dark panel below; fine grip ridges across it that move as it turns, a scooped notch at its centre
+ * position, rounded rims at both sides (darker), and its ends curving away into the slot */
 static void wheel_render(uint32_t *px, int w, int h, float pos) {
     float cx = w / 2.0f, cy = h / 2.0f, hw = w / 2.0f, hh = h / 2.0f, rot = pos * 0.95f;
+    float ridges = 2.0f * 3.14159265f * hh / (2.2f * (S.s > 0 ? S.s : 1.0f));   /* a ridge every ~2.2 base units */
     for (int j = 0; j < h; j++) {
         float sy = (j + 0.5f - cy) / hh, beta = asinf(clampf(sy * 0.97f, -1, 1));
-        float phi = beta + rot, fade = powf(clampf(cosf(beta), 0, 1), 0.7f);   /* curving away at the slot's ends */
+        float phi = beta + rot, fade = powf(clampf(cosf(beta), 0, 1), 0.55f);
         for (int i = 0; i < w; i++) {
             float u = (i + 0.5f - cx) / hw, au = fabsf(u);
-            float tilt = au > 0.78f ? (au - 0.78f) / 0.22f * 1.1f : 0.0f;
-            float rid = fabsf(phi) > 0.20f ? sinf(phi * 70.0f) : 0.0f;
-            float ny = sinf(beta) + 0.45f * rid, nz = cosf(beta), nx = (u > 0 ? 1 : -1) * sinf(tilt);
+            float tilt = au > 0.72f ? (au - 0.72f) / 0.28f * 1.2f : 0.0f;   /* the rims */
+            float rid = 0.0f;
+            if (fabsf(phi) > 0.22f && au < 0.80f) rid = sinf(phi * ridges);   /* fine grip ridges */
+            float ny = sinf(beta) + 0.10f * rid, nz = cosf(beta), nx = (u > 0 ? 1 : -1) * sinf(tilt);
             nz *= cosf(tilt);
             float l = sqrtf(nx * nx + ny * ny + nz * nz);
             nx /= l; ny /= l; nz /= l;
-            float k = 0.11f * (0.25f + 0.85f * clampf(lit(nx, ny, nz), 0, 1)) + 0.16f * spec(nx, ny, nz, 10.0f);
-            if (fabsf(phi) < 0.16f) {   /* the centre notch: a scoop, its far wall lit */
-                k = 0.05f + (phi < 0 ? 0.0f : 0.10f * (phi / 0.16f));
+            /* polished metal: what it mirrors (bright above, dark below), the light's highlight, a little diffuse */
+            float env = 0.26f + 0.50f * smooth(0.75f, -0.85f, ny) - 0.10f * smooth(0.1f, 0.9f, ny);
+            float k = 0.72f * env + 0.12f * clampf(lit(nx, ny, nz), 0, 1) + 0.55f * spec(nx, ny, nz, 18.0f) +
+                      0.10f * spec(nx, ny, nz, 4.0f);
+            k += 0.025f * (h2(i, (int)(phi * 60.0f), 51) - 0.5f);   /* machining marks around it */
+            if (au > 0.72f) k *= 0.62f + 0.38f * (1.0f - (au - 0.72f) / 0.28f);   /* darker at the rims */
+            float notch = fabsf(phi) < 0.18f ? 1.0f - fabsf(phi) / 0.18f : 0.0f;
+            if (notch > 0 && au < 0.86f) {   /* the centre notch: a scoop, its near wall in shade, the far one lit */
+                k = phi < 0 ? 0.16f + 0.10f * (1.0f - notch) : 0.30f + 0.45f * notch;
             }
-            px[(size_t)j * w + i] = pack(k * fade, k * fade, k * fade * 1.04f);
+            k *= fade;
+            px[(size_t)j * w + i] = pack(k * 0.97f, k * 0.985f, k * 1.02f);
         }
     }
 }
