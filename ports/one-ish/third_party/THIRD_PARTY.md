@@ -22,7 +22,7 @@ bootloader code, and its tests. Every copied file carries the MIT notice below; 
 
 ### Local changes
 
-Two files are changed. The changed copies live under `patched/`, which is first on the include path
+Three files are changed. The changed copies live under `patched/`, which is first on the include path
 (`-Iports/one-ish/third_party/patched` before `-Iports/one-ish/third_party` in `vst.json`), so every
 `#include "plaits/..."` picks them up; the originals stay unmodified beside them.
 
@@ -36,6 +36,10 @@ Two files are changed. The changed copies live under `patched/`, which is first 
 2. `patched/plaits/dsp/fm/dx_units.h`: in `Pow2Fast`, `r.w += x_integral << 23;` is worked out in unsigned arithmetic
    (the same bits). The original shifts a negative number left, undefined in C++11, which the offline checks'
    UndefinedBehaviorSanitizer reports.
+3. `patched/plaits/dsp/speech/lpc_speech_synth.h`: `PlayFrame(frames, frame, interpolate)` with `interpolate`
+   false passes the same frame twice instead of reading the next one at blend 0 (unused). The original read one frame
+   past `LPCSpeechSynthController::phonemes_` when a note-on picked the last consonant (Speech with harmonics about
+   17-33%), which AddressSanitizer reports as a global-buffer-overflow (2026-10-27, offline). The sound is the same.
 
 The build also defines `TEST` (`vst.json` cflags), which stmlib uses to pick its portable C code instead of ARM
 Cortex-M4 assembly and RAM-section attributes; nothing in ONE-ish's own code reads it.

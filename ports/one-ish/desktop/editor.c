@@ -30,7 +30,9 @@
  * lock-free queue per instance (one writer, the UI thread; one reader, the audio thread), which this file's
  * processReplacing empties into the wrapper's effProcessEvents just before each block, on the audio thread, as a host
  * would. No allocation and no lock is added to the audio path. The ribbon sends CC 16 (position, left 0 .. right 127)
- * and CC 17 (127 while touched, 0 on release); the engine decides what they do (spring or hold). */
+ * and CC 17 (127 while touched, 0 on release); the engine decides what they do (spring or hold). The X/Y pad sends
+ * CC 2 (X), CC 3 (Y) and CC 18 (127 while touched, 0 on release), the matrix sources Pad X, Pad Y and Pad Gate; Y
+ * also sends aftertouch (back to 0 on release), as it always did. */
 #include <windowsx.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -463,7 +465,9 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
         float px = (x - L.pad.left) / (float)rw(&L.pad), py = (L.pad.bottom - y) / (float)rh(&L.pad);
         e->pad_x = px < 0 ? 0 : px > 1 ? 1 : px;
         e->pad_y = py < 0 ? 0 : py > 1 ? 1 : py;
-        ui_midi(e, 0xB0, 2, (int)lroundf(e->pad_x * 127));
+        if (!e->pad_on) { e->pad_on = 1; ui_midi(e, 0xB0, PAD_TOUCH_CC, 127); }
+        ui_midi(e, 0xB0, PAD_X_CC, (int)lroundf(e->pad_x * 127));
+        ui_midi(e, 0xB0, PAD_Y_CC, (int)lroundf(e->pad_y * 127));
         ui_midi(e, 0xD0, (int)lroundf(e->pad_y * 127), 0);
     } else if (e->mode == M_RIBBON) {   /* the position (only when it changes), then the touch on the first move */
         float v = (x - L.ribbon.left) / (float)rw(&L.ribbon);
@@ -491,7 +495,7 @@ static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes
     e->mode = M_NONE;   /* first: the preset list below takes the mouse, which comes back here */
     if (m == M_KEY) key_off(e);
     if (m == M_PITCH) { e->bend = 0; ui_midi(e, 0xE0, 0, 64); }
-    if (m == M_PAD) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); }
+    if (m == M_PAD) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); }
     if (m == M_RIBBON) { e->ribbon_on = 0; e->ribbon_cc = -1; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
     if (m == M_ENC && !e->enc_moved) patches_open(e);   /* a click on the preset knob: the patch list */
     InvalidateRect(e->wnd, NULL, FALSE);
@@ -553,7 +557,7 @@ static void press(ed_t *e, int x, int y) {
     case Z_KEYS: e->mode = M_KEY; break;
     case Z_PITCH: e->mode = M_PITCH; break;
     case Z_MODW: e->mode = M_MODW; break;
-    case Z_PAD: e->mode = M_PAD; e->pad_on = 1; break;
+    case Z_PAD: e->mode = M_PAD; break;   /* (controller_move sends the touch and the position) */
     case Z_RIBBON: e->mode = M_RIBBON; e->ribbon_cc = -1; break;
     case Z_ENCODER: e->mode = M_ENC; e->enc_y = y; e->enc_moved = 0; break;
     case Z_RND_AMOUNT: e->mode = M_RND_AMOUNT; break;
@@ -719,6 +723,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         if (e) {   /* nothing left held: the key, the ribbon's touch */
             key_off(e);
             if (e->ribbon_on) { e->ribbon_on = 0; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
+            if (e->pad_on) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); }
             e->mode = M_NONE;
         }
         KillTimer(w, 1);
@@ -732,9 +737,24 @@ static HFONT font(float px, int weight, const char *face) {
     return CreateFontA(-(h < 7 ? 7 : h), 0, 0, 0, weight, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, face);
 }
 
+/* The window class and the fonts, made when the first editor opens and undone when the last instance closes (and,
+ * should a host unload the DLL without closing an instance, as the DLL goes): a class left registered would point into
+ * the unloaded DLL, and a rebuilt DLL loaded again at the same address would then open its window through it. */
+static int class_ready;
+static HFONT *const FONTS[] = {&font_title, &font_label, &font_value, &font_tiny, &font_screen, &font_cell, &font_big,
+                               &font_brand};
+static void free_window_class(void) {
+    if (!class_ready) return;
+    UnregisterClassA(CLASS_NAME, dll);
+    for (unsigned k = 0; k < sizeof FONTS / sizeof FONTS[0]; k++) {
+        if (*FONTS[k]) DeleteObject(*FONTS[k]);
+        *FONTS[k] = NULL;
+    }
+    class_ready = 0;
+}
+
 static void init_window_class(void) {
-    static int done;
-    if (done) return;
+    if (class_ready) return;
     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        (LPCSTR)(void *)&wndproc, &dll);
     WNDCLASSA wc = {0};
@@ -752,7 +772,13 @@ static void init_window_class(void) {
     font_cell = font(10.5f, FW_NORMAL, "Segoe UI");
     font_big = font(18, FW_SEMIBOLD, "Segoe UI");
     font_brand = font(17, FW_LIGHT, "Segoe UI");
-    done = 1;
+    class_ready = 1;
+}
+
+BOOL WINAPI DllMain(HINSTANCE inst, DWORD why, LPVOID reserved) {
+    (void)inst;
+    if (why == DLL_PROCESS_DETACH && !reserved) free_window_class();   /* FreeLibrary (not the process ending) */
+    return TRUE;
 }
 
 /* ---- the VST2 side ---- */
@@ -830,6 +856,9 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         for (int i = 0; i < MAX_INSTANCES; i++)
             if (eds[i] == e) eds[i] = NULL;   /* the slot stays allocated: see pool */
         if (e) { patches_free(e); e->hr = NULL; }   /* (the wrapper freed it with the engine) */
+        int left = 0;
+        for (int i = 0; i < MAX_INSTANCES; i++) left |= eds[i] != NULL;
+        if (!left) free_window_class();   /* the last instance: nothing of this DLL stays registered */
         return r;
     }
     }

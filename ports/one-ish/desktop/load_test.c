@@ -5,7 +5,8 @@
  * to; with a third, pictures of the editor. User patches (save, load, rename, delete, import, export) are tested in
  * a temporary folder; so are .oneseq sequences, after notes are entered into the step sequencer's page from the window's
  * keyboard and with clicks. Then the host sample rate checks (rate_test.c): other rates and block sizes, float output;
- * with ONEISH_BASELINE_DLL set to an older build, its 44.1 kHz output must match this one's to the 16-bit sample.
+ * with ONEISH_BASELINE_DLL set to an older build, its 44.1 kHz output must match this one's to the 16-bit sample. Last,
+ * as a host reloading a rebuilt plugin: closed and unloaded, nothing of it stays registered, and it loads and opens again.
  *   load_test.exe path\to\ONE-ish.dll [presets.wav] [editor.bmp] */
 #include <math.h>
 #include <stdint.h>
@@ -509,7 +510,8 @@ static void patch_tests(AEffect *fx) {
     check(r == PE_BADFILE && strstr(buf, "made no sense") != NULL, what);
     void *chunk = NULL;
     intptr_t len = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
-    char state[8192] = "";
+    static char state[PATCH_STATE_MAX];
+    state[0] = 0;
     if (len > 0 && chunk) snprintf(state, sizeof state, "%s", (const char *)chunk);
     char *tag = strstr(state, ";ui_patch=");
     if (tag) *tag = 0;
@@ -526,8 +528,8 @@ static void patch_tests(AEffect *fx) {
 
     /* a project keeps which patch it is */
     len = fx->dispatcher(fx, 23, 0, 0, &chunk, 0);
-    static char proj[8192];
-    memcpy(proj, chunk, len > 0 && len <= 8192 ? len : 0);
+    static char proj[PATCH_STATE_MAX];
+    memcpy(proj, chunk, len > 0 && len <= PATCH_STATE_MAX ? len : 0);
     check(len > 0 && strstr(proj, ";ui_patch=0,U,") != NULL, "the project state names the patch (ui_patch)");
     fx->dispatcher(fx, 2, 0, 6, NULL, 0);
     fx->dispatcher(fx, 24 /* effSetChunk */, 0, len, proj, 0);
@@ -570,13 +572,19 @@ static void dialog_shot(HWND d) {
     free(px);
     SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
 }
+/* waits (up to 10 s) for the dialog to be shown: a dialog is shown only after its WM_INITDIALOG has filled it in, so the
+ * name typed here can't be overwritten by the suggestion; the name is read back before OK is pressed */
 static DWORD WINAPI answer(void *arg) {
     const answer_t *a = arg;
-    for (int t = 0; t < 500; t++, Sleep(10)) {
+    for (int t = 0; t < 1000; t++, Sleep(10)) {
         HWND d = FindWindowA("#32770", a->title);
-        if (!d) continue;
-        Sleep(50);
-        if (a->text) SetDlgItemTextA(d, 101 /* ID_EDIT */, a->text);
+        if (!d || !IsWindowVisible(d)) continue;
+        if (a->text) {
+            char got[128] = "";
+            SetDlgItemTextA(d, 101 /* ID_EDIT */, a->text);
+            GetDlgItemTextA(d, 101, got, sizeof got);
+            if (strcmp(got, a->text)) continue;
+        }
         if (a->text && dialog_bmp) { Sleep(100); dialog_shot(d); }
         PostMessageA(d, WM_COMMAND, MAKEWPARAM(a->button, BN_CLICKED), 0);
         return 1;
@@ -586,7 +594,7 @@ static DWORD WINAPI answer(void *arg) {
 static void click_answered(HWND child, float s, float x, float y, const answer_t *a) {
     HANDLE th = CreateThread(NULL, 0, answer, (void *)a, 0, NULL);
     click(child, s, x, y);
-    WaitForSingleObject(th, 6000);
+    WaitForSingleObject(th, 11000);
     DWORD found = 0;
     GetExitCodeThread(th, &found);
     CloseHandle(th);
@@ -600,9 +608,11 @@ static void patch_page(AEffect *fx, HWND child, float s, const char *bmp, int w,
     click(child, s, sx + 200, sy + 23);   /* the patch name: the list */
     static const answer_t save_as = {"Save as", "UI Lead", IDOK}, yes = {"ONE-ish", NULL, IDYES};
     click_answered(child, s, sx + 8 + act_w * PA_SAVE_AS + act_w / 2 - 2, act_y, &save_as);
-    check(exists("UI Lead") && title_is(fx, "U  UI Lead", 1), "PATCHES page: SAVE AS asks for a name and saves");
-    click_answered(child, s, sx + 8 + act_w * PA_DELETE + act_w / 2 - 2, act_y, &yes);
-    check(!exists("UI Lead") && pt(fx, PT_COUNT, NULL, NULL, 0) == 2, "PATCHES page: DELETE asks, then removes it");
+    int saved = exists("UI Lead") && title_is(fx, "U  UI Lead", 1);
+    check(saved, "PATCHES page: SAVE AS asks for a name and saves");
+    if (saved)   /* (without it DELETE would remove another patch) */
+        click_answered(child, s, sx + 8 + act_w * PA_DELETE + act_w / 2 - 2, act_y, &yes);
+    check(saved && !exists("UI Lead") && pt(fx, PT_COUNT, NULL, NULL, 0) == 2, "PATCHES page: DELETE asks, then removes it");
     pt(fx, PT_LOAD, "Bright Pad", NULL, 0);
     fx->setParameter(fx, 37, 0.3f);   /* edited: the * and the lit SAVE in the picture */
     SendMessageA(child, WM_TIMER, 1, 0);
@@ -827,6 +837,40 @@ static void editor(AEffect *fx, const char *bmp) {
     DestroyWindow(parent);
 }
 
+/* a host unloading the DLL and loading it again (Carla after a rebuild): nothing of the old DLL stays registered, and
+ * the new one opens its editor and plays */
+static void reload_test(const char *path, HMODULE old) {
+    WNDCLASSA wc;
+    check(!GetClassInfoA(old, "ONEishEditor", &wc), "after FreeLibrary no window class points into the unloaded DLL");
+    HMODULE dll = LoadLibraryA(path);
+    AEffect *(*entry)(audioMasterCallback) =
+        dll ? (AEffect * (*)(audioMasterCallback))(void *)GetProcAddress(dll, "VSTPluginMain") : NULL;
+    AEffect *fx = entry ? entry(host) : NULL;
+    check(fx != NULL, "the DLL loads again");
+    if (!fx) { if (dll) FreeLibrary(dll); return; }
+    fx->dispatcher(fx, 0, 0, 0, NULL, 0);
+    fx->dispatcher(fx, 10, 0, 0, NULL, 44100.0f);
+    fx->dispatcher(fx, 12, 0, 1, NULL, 0);
+    struct { int16_t top, left, bottom, right; } *rect = NULL;
+    fx->dispatcher(fx, 13 /* effEditGetRect */, 0, 0, &rect, 0);
+    int w = rect ? rect->right - rect->left : 0, h = rect ? rect->bottom - rect->top : 0;
+    HWND parent = CreateWindowExA(0, "STATIC", "host", WS_POPUP, 0, 0, w, h, NULL, NULL, GetModuleHandleA(NULL), NULL);
+    intptr_t ok = fx->dispatcher(fx, 14 /* effEditOpen */, 0, 0, parent, 0);
+    HWND child = GetWindow(parent, GW_CHILD);
+    check(ok && child && GetClassInfoA(dll, "ONEishEditor", &wc), "the reloaded DLL opens its editor (its own class)");
+    send_midi(fx, 0x90, 60, 100);
+    double rms = play(fx, 20, 512);
+    char what[96];
+    snprintf(what, sizeof what, "the reloaded DLL plays (rms %.3f)", rms);
+    check(rms > 0.01, what);
+    fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
+    DestroyWindow(parent);
+    fx->dispatcher(fx, 12, 0, 0, NULL, 0);
+    fx->dispatcher(fx, 1 /* effClose */, 0, 0, NULL, 0);
+    check(!GetClassInfoA(dll, "ONEishEditor", &wc), "closed again: its window class is gone again");
+    FreeLibrary(dll);
+}
+
 int main(int argc, char **argv) {
     char tmp[MAX_PATH];   /* user patches go to a fresh temporary folder, not the owner's Documents */
     GetTempPathA(sizeof tmp, tmp);
@@ -884,7 +928,10 @@ int main(int argc, char **argv) {
 
     fx->dispatcher(fx, 12, 0, 0, NULL, 0);
     fx->dispatcher(fx, 1 /* effClose */, 0, 0, NULL, 0);
+    WNDCLASSA wc;
+    check(!GetClassInfoA(dll, "ONEishEditor", &wc), "the last instance closed: the editor's window class is gone");
     FreeLibrary(dll);
+    reload_test(argc > 1 ? argv[1] : "ONE-ish.dll", dll);
     empty_dir(patch_dir);
     RemoveDirectoryA(patch_dir);
     empty_dir(seq_dir);

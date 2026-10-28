@@ -35,7 +35,8 @@
 
 #define EXT ".oneish"
 static const char HEADER[] = "ONE-ish patch";
-enum { FORMAT_VERSION = 1, FILE_MAX = 65536, PER = ROWS - 1 };   /* PER: list entries per column (row 0: its heading) */
+/* FILE_MAX: a whole state, one value per line, and room for the rest; PER: list entries per column (row 0: its heading) */
+enum { FORMAT_VERSION = 1, FILE_MAX = PATCH_STATE_MAX + 65536, PER = ROWS - 1 };
 enum { ID_PROMPT = 100, ID_EDIT, ID_WHY };
 enum { effGetProgram_ = 3, effGetProgramNameIndexed_ = 29 };
 
@@ -683,10 +684,14 @@ void patches_program_set(ed_t *e, int before) {   /* after effSetProgram (the ho
     follow(e);
 }
 
-/* effGetChunk: the engine's state plus ";ui_patch=<edited>,<F|U|N>,<program>,<name>" when it fits the 8 KB chunk */
+/* effGetChunk: the engine's state plus ";ui_patch=<edited>,<F|U|N>,<program>,<name>" (up to 96 bytes) when it fits the
+ * chunk (PATCH_STATE_MAX); a state too big for the chunk is not saved, and the screen says so */
 intptr_t patches_get_chunk(ed_t *e, void *ptr) {
     patches_t *p = &e->pt;
-    if (!current_state(e, p->chunk, sizeof p->chunk)) return 0;
+    if (!current_state(e, p->chunk, sizeof p->chunk)) {
+        say(e, "This sound is too big to save with the project (more than %d bytes of settings).", PATCH_STATE_MAX);
+        return 0;
+    }
     char tag[96];
     int n = snprintf(tag, sizeof tag, ";ui_patch=%d,%c,%d,%s", patches_edited_now(e),
                      p->bank == BANK_FACTORY ? 'F' : p->bank == BANK_USER ? 'U' : 'N', p->prog, p->name);

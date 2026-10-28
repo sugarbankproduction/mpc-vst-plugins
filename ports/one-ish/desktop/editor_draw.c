@@ -16,7 +16,7 @@
 static const char *help_for(int i) {
     static const struct { const char *key, *text; } H[] = {
         {"_fm_src", "Which oscillator frequency-modulates this filter's cutoff (with FM AMT)."},
-        {"_src", "Mod source: what moves the destination (envelopes, LFOs, velocity, wheels, aftertouch, the key played, random values, expression pedals, a constant)."},
+        {"_src", "Mod source: what moves the destination (envelopes, LFOs, velocity, wheels, aftertouch, the key played, random values, expression pedals, the ribbon, the X/Y pad, a constant)."},
         {"_dst", "Mod destination: what the source moves. Pitch in semitones, cutoffs in octaves, levels and mix in % of their range."},
         {"_via_amt", "Via amount: how much the via source scales this row (100% = fully; minus turns it upside down)."},
         {"_xf_amt", "Transform amount: how strongly the transform reshapes the source (0% = not at all)."},
@@ -143,8 +143,6 @@ static const char *help_for(int i) {
         {"mac_oct", "Octave: the macro oscillator's footage, down or up in whole octaves."},
         {"mac_freq", "Frequency: tunes the macro oscillator up or down, in semitones."},
         {"mac_aux", "Aux mix: blends in the model's second output (a variation of its sound)."},
-        {"mac_decay", "Decay: how fast the macro oscillator's own internal envelope dies away (for the percussive models)."},
-        {"mac_lpg", "Low-pass gate: how much the macro oscillator's own envelope closes its tone as well as its level (a plucky, woody sound)."},
         {"mac_level", "Macro oscillator level in the mixer. Its SVF and LADDER buttons pick the filters it goes through."},
         /* the step sequencer */
         {"seq_on", "Sequencer ON: whether the sequencer plays the synth (it can run silently with ON off). The steps: the SEQ button."},
@@ -191,8 +189,9 @@ static const char *zone_help(ed_t *e, int z) {
                           "Its settings: the triangle at its right end.";
     case Z_PITCH: return "Pitch wheel: drag up or down to bend; it springs back to the centre. BEND + and BEND - set the range.";
     case Z_MODW: return "Mod wheel (MIDI CC 1): drag up to bring in the mod matrix's Mod Wheel rows (vibrato in most presets).";
-    case Z_PAD: return "X/Y pad: drag inside it. Up/down sends aftertouch (the matrix source Aftertouch; back to 0 when you let go). "
-                       "Left/right sends MIDI CC 2.";
+    case Z_PAD: return "X/Y pad: drag inside it. Left/right is the matrix source Pad X (MIDI CC 2), up/down Pad Y (CC 3); "
+                       "both stay where you let go. Pad Gate (CC 18) is on while you touch it. Up/down also sends "
+                       "aftertouch (the source Aftertouch, back to 0 when you let go).";
     case Z_OCT_DOWN: case Z_OCT_UP: return "Octave: shifts the on-screen keyboard down or up, two octaves each way.";
     case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the factory presets, then your own "
                            "patches; click it for the patch list.";

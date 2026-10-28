@@ -15,6 +15,7 @@
 #pragma once
 #include <stdint.h>
 #include <string.h>
+#include "modmatrix.h"   /* MDF_WORDS (the lanes' effect destinations) */
 
 #define SQ_STEPS 64
 #define SQ_PAGE 16

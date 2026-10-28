@@ -64,7 +64,7 @@ user patch files (2026-10-27, offline).
 | Voice: 3 VCOs, ring mod, noise, external input, mixer to SVF pair and ladder, VCA | p9-10 | Partial | 3 oscillators, ring mod, noise (and MACRO) into the SVF pair and the ladder, then the VCA; no external input | M (audio input) | none |
 | Each Synth: 4 LFOs and 3 EGs per voice (manual wording p10) | p10 | Have | 3 EGs and 4 LFOs per voice: an LFO runs per voice when it restarts per note or the matrix moves it per voice, else every voice follows one free-running LFO (2026-10-27, offline) | - | - |
 | Modulation: hard-wired, Quick Assign (DEST buttons), Mod Matrix with controllers and transforms | p10, p67 | Partial | Hard-wired amounts, a 16-slot matrix with controllers and the four transforms; no DEST / Expression Assign quick assign (only the ribbon's own quick assignment) | M | low |
-| Programmable: every knob and hidden parameter stored in Presets | p8 | Have | Full state per instance (`get_state`/`set_state`, non-default values only, within the 8 KB chunk), 35 factory programs, user patch files (`patches.c`) | - | none |
+| Programmable: every knob and hidden parameter stored in Presets | p8 | Have | Full state per instance (`get_state`/`set_state`, non-default values only, within the chunk: 8 KB on the MPC, 256 KB on the desktop (`VST2_CHUNK_MAX`, 2026-10-27)), 35 factory programs, user patch files (`patches.c`) | - | none |
 
 ## 1. Front panel, centre console, keyboard (p10-18)
 
@@ -341,10 +341,10 @@ user patch files (2026-10-27, offline).
 | NOISE EG | Have | "Noise EG" (0..1, per voice; 2026-10-27, offline) | - | - |
 | MOD WHEEL | Have | "Mod Wheel" (CC 1) | - | - |
 | PITCH WHEEL | Have | "Pitch Wheel" (-1..1) | - | - |
-| PAD X | Missing | The window's pad sends its X as CC 2, which the engine ignores | S | none |
-| PAD Y | Missing | The window's pad sends its Y as channel pressure (so it lands on "Aftertouch") | S | none |
+| PAD X | Have | "Pad X (CC 2)", 0..1; the window's pad sends it (2026-10-27, offline) | - | - |
+| PAD Y | Have | "Pad Y (CC 3)", 0..1; the window's pad sends it, and still sends channel pressure too ("Aftertouch") (2026-10-27, offline) | - | - |
 | PAD PRESSURE | Missing | - (a mouse has no pressure: a modifier key or the wheel could stand in) | S | none |
-| PAD GATE | Missing | - (the window knows when the pad is held) | S | none |
+| PAD GATE | Have | "Pad Gate (CC 18)", 1 while the window's pad is touched (2026-10-27, offline) | - | - |
 | VELOCITY | Have | "Velocity" | - | - |
 | AFTERTOUCH | Have | "Aftertouch" (channel pressure) | - | - |
 | KEY PITCH | Have | "Keyboard" (-1..1 around the key track centre) | - | - |
@@ -362,7 +362,7 @@ user patch files (2026-10-27, offline).
 
 | Moog One controller list | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|
-| Same 26 entries as the sources (NONE, MOD WHEEL, PITCH WHEEL, PAD X/Y/PRESSURE/GATE, VELOCITY, AFTERTOUCH, KEY PITCH, KB GATE, SUSTAIN, EXP 1/2, CV IN 1/2, the four EGs, LFO 1-4, RANDOM, RANDOM BIPOLAR, CONSTANT) | Partial | `modN_via` offers the same list as the sources (22 + None, with Noise EG, Sostenuto and Ribbon); missing: pad X/Y/pressure/gate (candidates), CV (hardware) | S | none |
+| Same 26 entries as the sources (NONE, MOD WHEEL, PITCH WHEEL, PAD X/Y/PRESSURE/GATE, VELOCITY, AFTERTOUCH, KEY PITCH, KB GATE, SUSTAIN, EXP 1/2, CV IN 1/2, the four EGs, LFO 1-4, RANDOM, RANDOM BIPOLAR, CONSTANT) | Partial | `modN_via` offers the same list as the sources (25 + None, with Noise EG, Sostenuto, Ribbon and Pad X, Pad Y, Pad Gate); missing: pad pressure (a mouse has none), CV (hardware) | S | none |
 
 ### 15d. Matrix transforms (p71, p75)
 
@@ -688,7 +688,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | PITCH BEND UP (SHIFT = finer than semitones) | -24 to +24 st (p115) | Have | `bend_up` -24..+24 st, fine values allowed; the old `bend_range` is retired (an older project's value sets both directions) (2026-10-27, offline) | - | none |
 | PITCH BEND DOWN | -24 to +24 st (p115) | Have | `bend_down` -24..+24 st (default -2: down a whole tone) (2026-10-27, offline) | - | none |
 | MOD wheel, not spring-loaded | p113 | Have | CC 1; the window's wheel stays where it is left | - | - |
-| X/Y PAD: X, Y, pressure, gate; X/Y HOLD saves the held value | p113-114 | Partial | The window has a pad: X goes out as CC 2 (the engine ignores it), Y as channel pressure (it lands on Aftertouch); no pressure, gate or HOLD | S | none |
+| X/Y PAD: X, Y, pressure, gate; X/Y HOLD saves the held value | p113-114 | Partial | The window has a pad: X as CC 2, Y as CC 3 (and channel pressure), touch as CC 18: the matrix sources Pad X, Pad Y, Pad Gate (2026-10-27, offline); no pressure or HOLD | S | none |
 | PAD POLARITY | Unipolar, Bipolar (p115) | Missing | - | S | none |
 | VELOCITY CURVE, per Synth | Soft, Medium, Hard, Compress, Expand (p116) | Have | `vel_curve`: Soft sqrt(v), Medium v (default, as before), Hard v^2, Compress and Expand flatten or steepen around the middle; all keep both ends (2026-10-27, offline) | - | none |
 | LOAD SAVED POS. (mod wheel, pad position with the Synth) | Off, Mod Wheel, Pad, Both (p117) | Missing | The wheel and pad positions are not saved | S | none |
@@ -940,7 +940,7 @@ beside the engine work.
   SYNC / LOOP / LATCH (x3), LFO WAVEFORM (x4). Step mod and the matrix both use them.
 - A per-slot ENABLE param, so a slot can be switched off without losing its settings.
 - The X/Y pad as the manual's four sources and controllers (PAD X, PAD Y, PAD PRESSURE, PAD GATE): CCs the engine
-  reads (the window's pad sends X as CC 2 today, which nothing reads, and Y as aftertouch), PAD POLARITY, X/Y HOLD,
+  reads (done 2026-10-27: Pad X, Pad Y, Pad Gate from CC 2, 3 and 18; Y also as aftertouch), PAD POLARITY, X/Y HOLD,
   and LOAD SAVED POS (the mod wheel and held pad positions saved with the sound and restored, sections 1, 19, 20).
 - Depends on: nothing. Packages 2 and 6 use its results.
 - Files: `src/modmatrix.h`, `src/engine.c` (`midi()`, `control_voice()`, the state), `params.json`, the pad in
@@ -1042,8 +1042,8 @@ effect: up to 3 synth effects and 2 master effects at once).
   per-Synth stereo outputs (MAIN and SUB routing, SUB VOLUME) as extra VST2 output pairs; the randomiser per part;
   NRPN for Synths 2 and 3.
 - Decide first (owner): three times today's 461 params as VST2 parameters (about 1400), or one panel's params that
-  follow the Panel Focus (host automation then reaches only the focused Synth). The saved state outgrows the 8 KB
-  chunk (`STATE_MAX`, the wrapper's chunk) and needs a bigger one.
+  follow the Panel Focus (host automation then reaches only the focused Synth). The saved state outgrows the MPC's
+  8 KB chunk (`STATE_MAX` = `VST2_CHUNK_MAX`, the wrapper's chunk; the desktop's is 256 KB since 2026-10-27).
 - Depends on: packages 2, 8 (channels) and 9 (16 voices); 10a if the effect slots are reused.
 - Files: most of `src/engine.c`, `params.json`, `wrapper/vst2_wrap.c` (chunk size, outputs), the window.
 

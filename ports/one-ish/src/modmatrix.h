@@ -20,12 +20,12 @@
 /* sources: envelopes 0..1, LFOs -1..1 (or 0..1 when unipolar), velocity / mod wheel / aftertouch / expression 0..1,
  * keyboard -1..1 over C-1..C9 around middle C, a per-note random value -1..1 (Random) or 0..1 (Random Uni), the pitch
  * wheel -1..1, KB gate, sustain and sostenuto 0 or 1, constant 1, the noise EG 0..1, the ribbon -1..1 (origin
- * centre) or 0..1 (origin left). Option order in params.json ("Off"/"None" first); new sources go at the end so saved
- * slots keep their meaning. */
+ * centre) or 0..1 (origin left), the X/Y pad's X and Y 0..1 (CC 2, CC 3) and its gate 0 or 1 (CC 18). Option order in
+ * params.json ("Off"/"None" first); new sources go at the end so saved slots keep their meaning. */
 enum {
     MS_OFF, MS_FENV, MS_AENV, MS_MENV, MS_LFO1, MS_LFO2, MS_VEL, MS_WHEEL, MS_AT, MS_KEY, MS_RAND,
     MS_LFO3, MS_LFO4, MS_BEND, MS_GATE, MS_SUSTAIN, MS_EXP1, MS_EXP2, MS_RAND_UNI, MS_CONST,
-    MS_NOISE_EG, MS_SOSTENUTO, MS_RIBBON, MS_COUNT
+    MS_NOISE_EG, MS_SOSTENUTO, MS_RIBBON, MS_PAD_X, MS_PAD_Y, MS_PAD_GATE, MS_COUNT
 };
 
 enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };   /* transforms, params.json order */

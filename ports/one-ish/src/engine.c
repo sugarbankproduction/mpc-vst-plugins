@@ -20,9 +20,9 @@
  * spread, and every continuous effect control (a second pass per control step, from the global sources: see
  * fx_mod_step); mod wheel, aftertouch, pitch bend (separate up and down amounts, plus per-oscillator offsets), sustain
  * and sostenuto pedals, HOLD, two expression CCs (11 and 4), a ribbon (CC 16 position, CC 17 touch: spring or hold,
- * centre or left origin, with a quick assignment of its own). Up to 8 voices: a new note takes an idle voice, else
- * one by the stealing mode (default: the quietest releasing one, else the oldest held one); the same key replays its
- * own voice. Mono (1 voice) plays
+ * centre or left origin, with a quick assignment of its own), an X/Y pad (CC 2 X, CC 3 Y, CC 18 touch). Up to 8
+ * voices: a new note takes an idle voice, else one by the stealing mode (default: the quietest releasing one, else
+ * the oldest held one); the same key replays its own voice. Mono (1 voice) plays
  * legato with low, high or last-note priority. Velocity curves, transpose, octave shift, key-track centre, master
  * tune; per oscillator pitch tracking, note-on phase reset and a choice of hard sync source. Glide (portamento): each
  * voice slides from its own
@@ -74,7 +74,10 @@
 #define NSRC 6             /* the mixer's channels: oscillators 1-3, noise, ring mod, MACRO (Plaits: src/macro.h) */
 #define NLFO 4
 #define HEADROOM 0.5f      /* one full-scale saw at full velocity and volume peaks at -6 dBFS */
-#define STATE_MAX 8192     /* the wrapper's chunk size (wrapper/vst2_wrap.c) */
+#ifndef VST2_CHUNK_MAX
+#define VST2_CHUNK_MAX 8192   /* the wrapper's chunk size (wrapper/vst2_wrap.c): 8 KB on the MPC, more on the desktop */
+#endif
+#define STATE_MAX VST2_CHUNK_MAX
 #define NOISE_FLOOR 1e-5f  /* -100 dB of noise into the filters, as in a circuit: starts self-oscillation, avoids denormals */
 #define CUT_MIN_HZ 20.0f   /* cutoff knobs: 20 Hz .. 20 kHz on a log scale (0..100) */
 #define CUT_RANGE 1000.0f
@@ -114,6 +117,9 @@
 #define RIBBON_CC 16       /* the ribbon's position, 0..127 (64: the middle) */
 #define RIBBON_TOUCH_CC 17 /* 127 (>= 64) as a finger lands on it, 0 as it lifts */
 #define RIBBON_RETURN_MS 50.0f   /* SPRING: back to the origin over about this long after the finger lifts */
+#define PAD_X_CC 2         /* the X/Y pad (the desktop window's, or any controller): X, 0..127 ... */
+#define PAD_Y_CC 3         /* ... Y, 0..127 ... */
+#define PAD_TOUCH_CC 18    /* ... and 127 (>= 64) while touched, 0 when let go: the sources Pad X, Pad Y, Pad Gate */
 #define FX_MOD_MS 10.0f    /* the effect destinations' modulation is smoothed over about this long */
 
 /* engine-side slots, matched to params.json by key (so the VST order there can grow freely). Per oscillator the
@@ -510,6 +516,7 @@ typedef struct {
     float rib_coef, fx_coef; /* per control step: the spring's return; the effect modulation's smoothing */
     unsigned env_gen;        /* counts changes to the shared envelope settings */
     float exp1, exp2;        /* expression controllers (CC 11, CC 4), 0..1 */
+    float pad_x, pad_y, pad_gate;   /* the X/Y pad (CC 2, CC 3, CC 18): 0..1, 0..1, 0 or 1 */
     float bpm;               /* the host's tempo, for synced LFOs, delay and envelopes */
     env_cfg_t ecfg[NENV];    /* each envelope's settings (times, curves, loop, latch...), shared by the voices */
     env_cfg_t ncfg;          /* the noise EG's */
@@ -522,7 +529,6 @@ typedef struct {
     int nheld;
     int sostenuto;           /* the sostenuto pedal (CC 66) is down */
     int hold;                /* HOLD as last applied (turning it off lets go of the notes it latched) */
-    float expression;        /* expression pedal (CC 11), 0..1: stored for the matrix, not yet routed */
     float tune_hz;           /* A above middle C: master tune with fine tune */
     float shift, center;     /* transpose + octave shift, and the key track centre, in whole semitones */
     float track[NOSC];       /* each oscillator's pitch tracking - 1 (0 at 100%) */
@@ -566,6 +572,7 @@ typedef struct {
     short sq_md[P_COUNT];    /* the matrix destination a knob's move records into (-1: none) ... */
     float sq_sc[P_COUNT];    /* ... and how far one unit of the knob moves it (1 = the destination's whole +-100%) */
     char sq_text[SQ_TEXT_MAX];   /* get_state's encoding of the sequence */
+    int heal, heals;         /* a non-finite sample reached the output: heal() before the next piece; how many times */
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
 
@@ -741,8 +748,9 @@ static void apply_analog(one_t *s) {
     }
 }
 
-/* the performance section's settings: whether the step clock plays, the Euclidean pattern (rotated later by
- * ROTATION steps: E(3,8) rotated by 1 is .x..x..x), and the arpeggiator's pattern is built again at its next step */
+/* the performance section's settings: whether the step clock plays and the Euclidean pattern (rotated later by
+ * ROTATION steps: E(3,8) rotated by 1 is .x..x..x). The arpeggiator's pattern is built again (at its next step) only
+ * when an arp setting changes (set_param) or the keys do, so another knob doesn't reshuffle a Random one mid-pass. */
 static void apply_perf(one_t *s) {
     const float *p = s->val;
     s->seq_on = p[P_ARP_ON] > 0.5f || p[P_GEN_EUCLID] > 0.5f || p[P_GEN_TM] > 0.5f;
@@ -752,7 +760,6 @@ static void apply_perf(one_t *s) {
     euclid(n, hits, e);
     for (int i = 0; i < n; i++) s->eu[i] = e[(i - rot + n) % n];
     s->eu_n = n;
-    s->adirty = 1;
 }
 
 /* recompute what the audio path reads from the parameter values */
@@ -1052,6 +1059,7 @@ static void *create(const char *data_dir) {
     s->step = 0.25;
     s->sp_ppq = -1.0;
     s->alast = -1;
+    s->adirty = 1;
     apply(s);
     s->rib = s->rib_to = ribbon_origin(s);
     return s;
@@ -1754,11 +1762,14 @@ static void midi(void *inst, const uint8_t *m, int len) {
         if (d2 < 64 && s->route == ROUTE_SEQ) seq_unlatch(s);   /* the keys it kept in the arp leave */
     }
     else if (st == 0xb0 && d1 == 66) sostenuto_pedal(s, d2 >= 64);
-    else if (st == 0xb0 && d1 == 11) s->exp1 = s->expression = d2 / 127.0f;   /* expression: matrix sources Exp 1, 2 */
+    else if (st == 0xb0 && d1 == 11) s->exp1 = d2 / 127.0f;   /* expression: matrix sources Exp 1, 2 */
     else if (st == 0xb0 && d1 == 4) s->exp2 = d2 / 127.0f;
+    else if (st == 0xb0 && d1 == PAD_X_CC) s->pad_x = d2 / 127.0f;
+    else if (st == 0xb0 && d1 == PAD_Y_CC) s->pad_y = d2 / 127.0f;
+    else if (st == 0xb0 && d1 == PAD_TOUCH_CC) s->pad_gate = d2 >= 64 ? 1.0f : 0.0f;
     else if (st == 0xb0 && (d1 == RIBBON_CC || d1 == RIBBON_TOUCH_CC)) ribbon_cc(s, d1, d2);
     else if (st == 0xb0 && d1 == 121) {   /* reset all controllers */
-        s->wheel = s->aftertouch = s->bend = s->expression = s->exp1 = s->exp2 = 0.0f;
+        s->wheel = s->aftertouch = s->bend = s->exp1 = s->exp2 = s->pad_x = s->pad_y = s->pad_gate = 0.0f;
         sustain_pedal(s, 0);
         sostenuto_pedal(s, 0);
         s->rib_touch = 0;
@@ -1800,33 +1811,43 @@ static void set_state(one_t *s, const char *str) {
 }
 
 /* only the values that differ from their defaults (set_state starts from the defaults), so a state of hundreds of
- * params fits the wrapper's 8 KB chunk; "v=1" first keeps it non-empty (an empty state would be no chunk at all).
- * When that would not fit (hundreds of params off their defaults at once), "v=2" writes a key that shares the previous
- * one's prefix (up to its first '_') as "~" and the rest: about a fifth smaller. The sequencer's PLAY, REC and STEP MOD
- * are not kept (a project opens stopped); its steps follow as "seq=<text>" (src/stepseq.h) when there are any. Should
- * the whole not fit, the sound is saved without the steps (the readout says so; the window can save them as a .oneseq
- * file). */
+ * params fits the wrapper's chunk (STATE_MAX: 8 KB on the MPC); "v=1" first keeps it non-empty (an empty state would
+ * be no chunk at all). When that would not fit (hundreds of params off their defaults at once), "v=2" writes a key that
+ * shares the previous one's prefix (up to its first '_') as "~" and the rest: about a fifth smaller. The sequencer's
+ * PLAY, REC and STEP MOD are not kept (a project opens stopped); its steps follow as "seq=<text>" (src/stepseq.h) when
+ * there are any. Should the whole not fit, the sound is saved without the steps (the readout says so; the window can
+ * save them as a .oneseq file). Should the sound alone not fit even so, it is never handed out cut short: buf is left
+ * empty, 0 is returned (the host then saves no chunk) and stderr says so, with the size it needed. Not called from
+ * render() or midi(). */
 static int state_keeps(const one_t *s, int i) {
     return KEYS[i][0] && s->val[i] != s->def[i] && i != P_SEQ_PLAY && i != P_SEQ_REC && i != P_SEQ_STEP_MOD;
+}
+static int state_put(char *buf, int n, int used, const char *fmt, const char *key, float v) {   /* counts past n */
+    return used + snprintf(used < n ? buf + used : NULL, used < n ? (size_t)(n - used) : 0, fmt, key, v);
 }
 static int get_state(one_t *s, char *buf, int n) {
     int used = snprintf(buf, n, "v=1");
     for (int i = 0; i < P_COUNT && used < n; i++)
-        if (state_keeps(s, i)) used += snprintf(buf + used, n - used, ";%s=%g", KEYS[i], s->val[i]);
+        if (state_keeps(s, i)) used = state_put(buf, n, used, ";%s=%g", KEYS[i], s->val[i]);
     if (used >= n) {
         used = snprintf(buf, n, "v=2");
         const char *prev = NULL;
-        for (int i = 0; i < P_COUNT && used < n; i++) {
+        for (int i = 0; i < P_COUNT; i++) {   /* (on to the end: used is then the full size, for the message) */
             if (!state_keeps(s, i)) continue;
             const char *u = strchr(KEYS[i], '_');
             size_t pl = u ? (size_t)(u + 1 - KEYS[i]) : 0;
             if (pl && prev && !strncmp(prev, KEYS[i], pl) && strchr(prev, '_') == prev + pl - 1)
-                used += snprintf(buf + used, n - used, ";~%s=%g", KEYS[i] + pl, s->val[i]);
+                used = state_put(buf, n, used, ";~%s=%g", KEYS[i] + pl, s->val[i]);
             else
-                used += snprintf(buf + used, n - used, ";%s=%g", KEYS[i], s->val[i]);
+                used = state_put(buf, n, used, ";%s=%g", KEYS[i], s->val[i]);
             prev = KEYS[i];
         }
-        if (used >= n) return 0;
+        if (used >= n) {
+            if (n > 0) buf[0] = 0;
+            fprintf(stderr, "ONE-ish: the sound's state is %d bytes, more than the %d-byte chunk: NOT SAVED\n", used + 1,
+                    n);
+            return 0;
+        }
     }
     s->sq.lost = 0;
     int lanes = 0;
@@ -1871,6 +1892,7 @@ static void set_param(void *inst, const char *key, const char *val) {
     if (k == P_SEQ_PATTERN) sq_load_factory(s, (int)s->val[k]);   /* (a state restores its own steps instead) */
     link_cutoffs(s, k);
     apply(s);
+    if (k < 0 || (k >= P_ARP_ON && k <= P_ARP_PEND_MODE)) s->adirty = 1;   /* what the arp's pattern is built from */
     /* a new origin or SPRING with no finger on the ribbon: it goes back to its (new) origin */
     if ((k < 0 || k == P_RIBBON_ORIGIN || k == P_RIBBON_MODE) && !s->rib_touch
         && (int)s->val[P_RIBBON_MODE] == RIB_SPRING)
@@ -2026,6 +2048,7 @@ static int get_param(void *inst, const char *key, char *buf, int n) {
         }
         return used;
     }
+    if (!strcmp(key, "heals")) return snprintf(buf, n, "%d", s->heals);   /* ... how often heal() ran ... */
     if (!strcmp(key, "gen_euclid")) {   /* ... and the Euclidean pattern as x and . */
         int i = 0;
         for (; i < s->eu_n && i < n - 1; i++) buf[i] = s->eu[i] ? 'x' : '.';
@@ -2214,6 +2237,9 @@ static void control_voice(one_t *s, voice_t *v) {
     src[MS_NOISE_EG] = v->noise_env;
     src[MS_SOSTENUTO] = s->sostenuto ? 1.0f : 0.0f;
     src[MS_RIBBON] = ribbon_value(s);
+    src[MS_PAD_X] = s->pad_x;
+    src[MS_PAD_Y] = s->pad_y;
+    src[MS_PAD_GATE] = s->pad_gate;
     /* the voice's slots (none reaches an effect: those are the effect pass's); the MACRO destinations sit past them */
     memset(dm + MD_MAC_HARM, 0, sizeof(float) * (MD_COUNT - MD_MAC_HARM));
     mod_eval_list(&p[P_MOD_BASE], &p[P_MODX_BASE], s->mod_list, s->mod_n, src, s->bipolar, dm, MD_FX_FIRST);
@@ -2489,9 +2515,9 @@ static inline int fx_bit(const uint64_t *w, int k) { return (int)(w[k >> 6] >> (
 
 /* THE EFFECT PASS, once per control step while a matrix slot or the ribbon reaches an effect (else skipped, once its
  * modulation has settled at 0). The effects run once for all voices, so these slots are evaluated a second time
- * from global sources: the free-running LFOs, mod wheel, aftertouch, pitch bend, ribbon, the pedals, expression,
- * constant; the per-voice sources (envelopes, velocity, keyboard, random, noise EG, gate) are the most recently
- * started sounding voice's, or 0 when nothing sounds. Each destination's sum is smoothed (a one-pole, FX_MOD_MS), so
+ * from global sources: the free-running LFOs, mod wheel, aftertouch, pitch bend, ribbon, X/Y pad, the pedals,
+ * expression, constant; the per-voice sources (envelopes, velocity, keyboard, random, noise EG, gate) are the most
+ * recently started sounding voice's, or 0 when nothing sounds. Each destination's sum is smoothed (a one-pole, FX_MOD_MS), so
  * a stepped source (S&H, a gate, the CC-driven ones) never zippers; the effects' gains then ramp across each step.
  * Sets `dirty` to the effect destinations whose settings need working out again (bit k: MDF_* k; fx_params_mod): those
  * modulated now or at the last step, and CTRL 1/2's targets when they are; returns whether there are any. */
@@ -2520,6 +2546,9 @@ static int fx_mod_step(one_t *s, uint64_t *dirty) {
         src[MS_EXP2] = s->exp2;
         src[MS_CONST] = 1.0f;
         src[MS_RIBBON] = ribbon_value(s);
+        src[MS_PAD_X] = s->pad_x;
+        src[MS_PAD_Y] = s->pad_y;
+        src[MS_PAD_GATE] = s->pad_gate;
         mod_eval_list(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->fx_list, s->fx_n, src, s->bipolar, dm, 0);
         int rd = (int)s->val[P_RIBBON_DST];
         if (rd >= MD_FX_FIRST && rd <= MD_FX_END) dm[rd] += src[MS_RIBBON] * s->val[P_RIBBON_AMT] * 0.01f;
@@ -2761,6 +2790,30 @@ static void fx_note_step(one_t *s, fx_params_t *f) {
     f->sfx.note = (f->sfx.follow ? (s->fx_age ? s->fx_key : 60.0f) : 60.0f) + f->sfx.pitch_st;
 }
 
+/* a non-finite sample reached the output (masked to 0 there): whatever holds it would otherwise keep the output at 0
+ * for good (a delay line or reverb tank full of NaN, a filter's state). Before the next piece: the synth effect and
+ * both master effect slots stop and clear their memory (fx.h's own path for a type switch: silent while it clears, a
+ * part per block, then they start again with their input fading in; no allocation) and every voice's filters, noise
+ * colours and FM feedback start clean. */
+static void heal(one_t *s) {
+    s->heal = 0;
+    s->heals++;
+    fxlife_t *life[3] = {&s->fx.ss, &s->fx.m[0].s, &s->fx.m[1].s};
+    for (int k = 0; k < 3; k++) {
+        if (life[k]->state == FS_OFF) continue;
+        life[k]->state = FS_CLEAR;
+        life[k]->at = 0;
+        life[k]->switching = 1;
+        life[k]->tone[0] = life[k]->tone[1] = 0.0f;
+    }
+    for (int i = 0; i < MAX_VOICES; i++) {
+        voice_t *v = &s->voice[i];
+        ladder_reset(&v->lad);
+        svf2_reset(&v->svf);
+        v->red = v->wprev = v->fm_prev = 0.0f;
+    }
+}
+
 /* one block into out (int16, the MPC's format) or, when out is NULL, into fout (float, the same samples before the
  * int16 step: one_ish_render_float) */
 static void render_to(void *inst, int16_t *out, float *fout, int frames) {
@@ -2775,6 +2828,7 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
     if (sq_live(s) || s->sq.start_pending) sq_block(s);   /* the step sequencer's clock */
     int done = 0;
     while (done < frames) {
+        if (s->heal) heal(s);
         int live = s->seq_on || s->npend > 0;   /* the step clock plays, or its last notes are still to end */
         int sql = sq_live(s);   /* the step sequencer runs, or has notes to start or end */
         if (live) seq_due(s);   /* steps and note ends at this sample, before the voices' control step */
@@ -2812,8 +2866,11 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         fxp->ramp = CR - s->phase;   /* the effect gains ramp across the whole control step, however the host splits it */
         fx_process(&s->fx, fxp, acc, side ? xl : acc, side ? xr : acc, l, r, n);   /* synth effect: mono in */
         fxp->sfx.strum = 0;
-        for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host */
-            float yl = isfinite(l[i]) ? soft_limit(l[i]) : 0.0f, yr = isfinite(r[i]) ? soft_limit(r[i]) : 0.0f;
+        int bad = 0;
+        for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host (and heal what made it: see heal()) */
+            int okl = isfinite(l[i]), okr = isfinite(r[i]);
+            bad |= !okl || !okr;
+            float yl = okl ? soft_limit(l[i]) : 0.0f, yr = okr ? soft_limit(r[i]) : 0.0f;
             if (out) {
                 out[2 * (done + i)] = (int16_t)(yl * 32767.0f);
                 out[2 * (done + i) + 1] = (int16_t)(yr * 32767.0f);
@@ -2822,6 +2879,7 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
                 fout[2 * (done + i) + 1] = yr;
             }
         }
+        s->heal |= bad;
         done += n;
         s->phase = (s->phase + n) % CR;
         s->now += n;

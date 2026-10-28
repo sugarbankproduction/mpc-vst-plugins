@@ -60,6 +60,10 @@ for the pattern). This applies to every future port, not just ones that hit the 
       `"DISPLAY_REV_NO_UPDATE": 1`: it reports only the moved values, no full `UpdateDisplay` (which closes the popup 10 times a second);
       text readouts then stop refreshing, so draw live numbers as `picture` widgets keyed on the same value (ottmpc: `vst/art/make_art.py`).
       Readouts longer than 24 characters need `"PARAM_TEXT_MAX": <n>` (NOTES.md; `poc/uiprobe` is the example).
+- [ ] The project chunk (the engine's `"state"`) is `VST2_CHUNK_MAX` bytes, 8192 by default (`wrapper/vst2_wrap.c`); a
+      state that doesn't fit is not saved at all, so check the worst case offline with room to spare. A build may raise it
+      (ONE-ish's desktop build passes `-DVST2_CHUNK_MAX=262144`, 2026-10-27); an engine that sizes its own buffers by it
+      must be built with the same value. A larger chunk on the MPC has not been tried on hardware.
 - [ ] Optional: an engine that sets its own parameters from something the host doesn't see (MIDI on an ALSA port of its
       own, say) can instead define `mpc_engine_changed()` (`wrapper/engine.h`) and return each key it changed: the wrapper
       tells the host as it does for a MIDI CC (at most every 1024 frames per control; an option list also gets an
