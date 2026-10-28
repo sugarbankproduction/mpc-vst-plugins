@@ -809,6 +809,35 @@ static void paint_timing(AEffect *fx, HWND child, int w, int h) {
     DeleteDC(dc);
     ReleaseDC(NULL, screen);
 }
+/* the plugin window's corners: Windows 11 rounds top-level windows; the editor asks for square ones when it sits alone
+ * in its own window (TEST_CORNERS: 1 done, 0 not that window, -1 Windows refused), and leaves a bigger window alone */
+#define TEST_CORNERS 0x4F31434E   /* as editor.h */
+static int windows_build(void) {
+    typedef LONG(WINAPI * rtl_t)(OSVERSIONINFOW *);
+    OSVERSIONINFOW v = {sizeof v, 0, 0, 0, 0, {0}};
+    rtl_t f = (rtl_t)(void *)GetProcAddress(GetModuleHandleA("ntdll.dll"), "RtlGetVersion");
+    return f && f(&v) == 0 ? (int)v.dwBuildNumber : 0;
+}
+static void corner_test(AEffect *fx) {
+    char what[200];
+    struct { int16_t top, left, bottom, right; } *rect = NULL;
+    fx->dispatcher(fx, 13 /* effEditGetRect */, 0, 0, &rect, 0);
+    int w = rect ? rect->right - rect->left : 0, h = rect ? rect->bottom - rect->top : 0, got[2];
+    for (int k = 0; k < 2; k++) {   /* 0: a window just our size; 1: a bigger one (a DAW's window with us in it) */
+        HWND parent = CreateWindowExA(0, "STATIC", "host", WS_POPUP, 0, 0, w + k * 300, h + k * 200, NULL, NULL,
+                                      GetModuleHandleA(NULL), NULL);
+        fx->dispatcher(fx, 14 /* effEditOpen */, 0, 0, parent, 0);
+        got[k] = (int)fx->dispatcher(fx, 50, TEST_CORNERS, 0, NULL, 0);
+        fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
+        DestroyWindow(parent);
+    }
+    int build = windows_build(), win11 = build >= 22000;
+    snprintf(what, sizeof what, "alone in its own window the editor asks for square corners (%d; Windows build %d)", got[0], build);
+    check(win11 ? got[0] == 1 : got[0] != 0, what);
+    snprintf(what, sizeof what, "inside a bigger window it leaves the corners alone (%d)", got[1]);
+    check(got[1] == 0, what);
+}
+
 /* open, paint and close the editor 21 times: after the first, the GDI handle count must not grow */
 static void gdi_test(AEffect *fx) {
     DWORD gdi0 = 0, user0 = 0;
@@ -1016,6 +1045,7 @@ int main(int argc, char **argv) {
     patch_tests(fx);
     editor(fx, argc > 3 ? argv[3] : NULL);
     gdi_test(fx);
+    corner_test(fx);
     const char *base = getenv("ONEISH_BASELINE_DLL");   /* an older build to compare 44.1 kHz output with */
     HMODULE old = base && base[0] ? LoadLibraryA(base) : NULL;
     if (base && base[0] && !old) check(0, "ONEISH_BASELINE_DLL loads");

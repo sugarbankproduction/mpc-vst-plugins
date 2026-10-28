@@ -973,6 +973,13 @@ static void bake(HDC dc) {
     skin_shadow((float)(L.w - cheek) - 2 * L.s, 0, (float)cheek + sc(10), (float)L.h, 6.0f * L.s, 0.7f);
     skin_wood(0, 0, cheek, L.h, 1, 5);
     skin_wood(L.w - cheek, 0, cheek, L.h, 1, 6);
+    for (int side = 0; side < 2; side++) {   /* the cheeks' square ends and outer edges, slightly bevelled */
+        float x0 = side ? (float)(L.w - cheek) : 0.0f, b = 1.5f * L.s;   /* (filled rects: square ends, no round caps) */
+        gfx_rect(side ? x0 + cheek - b : x0, 0, b, (float)L.h, side ? 0x60000000 : 0x50FFF4E0);   /* outer edge */
+        gfx_rect(x0, 0, (float)cheek, b, 0x58FFF4E0);                                   /* top end: catching the light */
+        gfx_rect(x0, L.h - b, (float)cheek, b, 0x70000000);                             /* bottom end: in shade */
+    }
+    gfx_rect((float)cheek, L.h - 1.5f * L.s, (float)(L.w - 2 * cheek), 1.5f * L.s, 0x60000000);   /* the rail's lower edge */
     draw_panels(dc);
     for (int c = 0; c < NCTLS; c++) {   /* knob scales */
         int i = CTLS[c].param;
