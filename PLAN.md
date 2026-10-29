@@ -322,6 +322,29 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      1.0 us (32 particles colliding); the engine with 4 held voices 24.8 us, plus 8 balls and 32 particles playing into
      the voices 28.1 us. Off: no work at all. Left: the MPC's 8 KB chunk overflows in the every-param-changed test (8424
      bytes, the lead's call); a panel button for the pages; an optional modulation output of the particles.
+  22. Rain and ripples, Markov melody (the GENERATIVE section, beyond the Moog One). Done 2026-10-30 (offline and the
+     desktop window; `src/gens_b.h`, `src/gens_b_run.h`, `test/gens_b_check.c`, load_test): per Synth. RAIN: drops fall
+     on a pond at a RATE (0.2-10 a second, uneven like rain; SYNC puts the notes on the tempo grid); each landing plays
+     a degree of the KEY and SCALE by where it falls, its size its velocity (DROP SIZE SPREAD), and starts a ring
+     (RIPPLE SPEED, RIPPLE LIFE); where two rings first meet, or a ring reaches one of the STONES (0-6), a softer echo
+     may play (ECHO: how likely and how loud; 0 none). Pools of 16 drops and 32 rings. 13 `rain_*` params. MARKOV:
+     learns from the keys played into the Synth (LEARN on; while it plays or not; chords and pauses left out): the step
+     from note to note as scale degrees (IN KEY, else semitones) after the last one or two degrees (ORDER 1/2), and its
+     gaps (1-8 steps of RATE); ON, it improvises on the RATE grid (1/4 .. 1/32, triplets) with CREATIVITY (0: always
+     the most likely step; up to 50% a draw by temperature; above it also wanders), RHYTHM learned / straight / sparse,
+     NOTE LENGTH (a share of the gap), OCTAVES around where the player played, the player's velocity. It starts from a
+     gentle built-in table (small steps, leaning home to the root) so it plays before learning; FORGET clears it.
+     12 `mkv_*` params. Shared: FREE / HELD KEYS (from the lowest key), MAX NOTES/S, notes through `play_step` (CHORD
+     works), deterministic from a seed per Synth. The learned table is runtime state, not saved with the sound: about
+     4.7 KB of counts per Synth (more than a whole sound's state, and the MPC chunk is already full), and a sound should
+     not change with whoever played into it last. Four matrix sources appended: Rain Drop, Ripple Energy, Markov Step,
+     Markov Height (0..1). Two MORE pages (RAIN AND RIPPLES, MARKOV MELODY; page ids RAIN, MARKOV) show the pond and the
+     melody's last notes and choice moving (`rain_view`, `markov_view`, a seqlock as the balls'). Old sounds play sample
+     for sample as before (golden check). CPU on the PC per 128-frame block (2026-10-30): the pond alone 1.7 us (10
+     drops a second, 32 rings, 6 stones, every echo), one Markov choice 0.15 us; the engine with 4 held voices 26.1 us,
+     both off with every setting moved 25.0 us (no cost), with the rain playing into the voices 40.8 us (mostly the
+     extra voices its notes and echoes sound), with the Markov melody on 1/32 28.5 us. Left: the matrix's bipolar mask
+     is 32 bits (30 sources now; others adding sources past 32 must widen it); the MPC chunk (25 more params a Synth).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
