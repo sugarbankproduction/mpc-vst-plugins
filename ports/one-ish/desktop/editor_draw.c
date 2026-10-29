@@ -1063,6 +1063,16 @@ static void draw_screen(HDC dc, ed_t *e) {
     else if (lib_screen(e->screen)) lib_draw(dc, e);   /* PATCHES and the library's pages, with their tabs */
     else if (e->screen == SCR_SETUP) draw_setup(dc, e, subs);
     else if (e->screen == SCR_GEN) draw_hub(dc, e);   /* (hub.c) */
+    else if (e->screen == SCR_QMOD) {   /* MOD FROM <source> while one is picked (quickmod.c: its own surface) */
+        char t[96];
+        qm_page_title(e, t, sizeof t);
+        title_line(dc, e, t, subs);
+        gfx_end();
+        skin_bind(NULL);
+        qm_page_draw(dc, e);
+        gfx_begin(dc);
+        skin_bind(gfx_g);
+    }
     else if (e->screen == SCR_SETTINGS) {   /* (settings.c) */
         char t[64];
         settings_title(e, t, sizeof t);

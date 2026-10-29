@@ -28,8 +28,12 @@
  * pages next to PATCHES; MIDI program and bank change from the host load user patches and set slots (noted on the
  * host's thread, loaded on the window's: a hidden window's timer does it while the editor is closed).
  *
- * QUICK ASSIGN (quickmod.c): a DEST button (LFOs, envelopes, NOISE) or Alt-click / right-click on a source, then a
- * click on a knob connects them in the matrix and its drag sets the amount; rings show what is modulated.
+ * QUICK ASSIGN (quickmod.c): a DEST button (LFOs, envelopes, NOISE, GENERATIVE, the controller panel) or Alt-click /
+ * right-click on a source, then a click on a knob connects them in the matrix and its drag sets the amount; the screen
+ * lists the source's connections meanwhile (- / +, REMOVE, MATRIX); rings show what is modulated.
+ *
+ * (2026-10-30) Every feature works with a plain click on something visible; Shift-, Ctrl-, Alt-, double- and
+ * right-clicks and the keys are shortcuts on top (docs/PLAN item 26 lists each with its visible way).
  *
  * It sits in front of the shared wrapper: wrapper/vst2_wrap.c is compiled with -DVSTPluginMain=one_ish_wrapped_main,
  * and this file's VSTPluginMain adds the editor opcodes and passes everything else on. Where each control sits comes
@@ -705,6 +709,7 @@ int screen_subs(ed_t *e) {
     if (lib_screen(e->screen)) return lib_subs(e);   /* (the patch list and the library's pages) */
     if (e->screen == SCR_SETUP) return 2;
     if (e->screen == SCR_SETTINGS) return settings_subs(e);
+    if (e->screen == SCR_QMOD) return qm_subs(e);   /* (quickmod.c: MOD FROM, the picked source's connections) */
     int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
     int per = e->screen == SCR_MATRIX ? ROWS : e->screen == SCR_INDEX ? SLOTS : page_slots(e->screen);
     return n > per ? (n + per - 1) / per : 1;

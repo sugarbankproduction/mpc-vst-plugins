@@ -11,6 +11,12 @@
  *   in every Synth in focus (Ctrl-picked Synths each their own row); the drag sets the amount, up positive, down
  *   negative (1% a pixel, Shift 0.2%), the knob's own value untouched. Several knobs one after the other; Esc, or the
  *   DEST button again, ends it. Later, Ctrl-drag a modulated knob to change its amount.
+ *   (2026-10-30, every gesture a plain click) DEST buttons on every source: LFO 1-4, the envelopes, NOISE, GENERATIVE
+ *   (its title strip: the generators' sources) and the controller panel's top left (the wheels, the X/Y pad, the
+ *   ribbon, the keyboard and pedals: a list). While a source is picked the centre screen shows MOD FROM <source>: each
+ *   of its connections in the Synth in focus with - / + (5% a click), REMOVE and MATRIX (that row, marked), CHANGE
+ *   SOURCE (a list of every source), ALL IN MATRIX and DONE (as Esc). Dragging a knob it already moves changes that
+ *   connection's amount. Alt-click, right-click, Ctrl-drag and Esc stay as shortcuts.
  *   See it: a thin arc around each modulated knob from its value by the amount (both ways for a source that swings both
  *   ways), coloured by the source's family (envelopes amber, LFOs blue, the hands' controllers green, random violet,
  *   others pink); a dot on a modulated switch. Hovering says what modulates it; a right-click lists the connections
@@ -33,21 +39,41 @@
 
 #define SRC_KEY "mod1_src"
 enum { MSG_MS = 5000, MAX_LINKS = MOD_SLOTS };
+/* (2026-10-30) the MOD FROM page: PAGE_LINKS connections a sub-page (the screen's rows 0..6), each with - + REMOVE
+ * MATRIX (Z_QP_ROW + line * 4 + k), then CHANGE SOURCE, ALL IN MATRIX and DONE on the last row */
+enum { PAGE_LINKS = ROWS - 1, QP_MINUS = 0, QP_PLUS, QP_REMOVE, QP_MATRIX, QP_PER, AMT_STEP = 5 };
+#define Z_QP_ROW (Z_QM + 100)
+#define Z_QP_PICK (Z_QM + 200)
+#define Z_QP_ALL (Z_QM + 201)
+#define Z_QP_DONE (Z_QM + 202)
+typedef struct { int row, src, on; float amt; } link_t;
+static int src_links(ed_t *e, int c, int s, link_t *out);
+static int page_index_of(ed_t *e, int row);
+static void page_press(ed_t *e, int z);
+static const char *page_help(ed_t *e, int z);
+static int page_hit(ed_t *e, POINT pt);
+static RECT page_rect(ed_t *e, int z);
 
 /* ---- the parts of the panel a source is picked from ---- */
 enum { QA_LFO1, QA_LFO2, QA_LFO3, QA_LFO4, QA_FENV, QA_AENV, QA_MENV, QA_NOISE, QA_PITCH, QA_MODW, QA_PAD, QA_RIBBON,
-       QA_KEYS, QA_GEN, QA_COUNT };
+       QA_KEYS, QA_GEN, QA_HANDS, QA_COUNT };
+enum { SRC_MAX = 16 };
 static const struct {
     const char *panel;        /* the panel's title (PANELS), or NULL: a zone of the controller */
-    int dest;                 /* a DEST button in its title strip */
-    signed char src[12];      /* its sources (0 ends); QA_GEN: every source past MS_COUNT */
+    int dest;                 /* a DEST button in its title strip (QA_HANDS: the controller panel's top left) */
+    signed char src[SRC_MAX]; /* its sources (0 ends); QA_GEN: the generators' (is_gen_src) */
 } AREA[QA_COUNT] = {
     {"LFO 1", 1, {MS_LFO1}}, {"LFO 2", 1, {MS_LFO2}}, {"LFO 3", 1, {MS_LFO3}}, {"LFO 4", 1, {MS_LFO4}},
     {"FILTER ENVELOPE", 1, {MS_FENV}}, {"AMPLIFIER ENVELOPE", 1, {MS_AENV}}, {"MODULATION ENVELOPE", 1, {MS_MENV}},
     {"NOISE", 1, {MS_NOISE_EG, MS_RAND, MS_RAND_UNI}},
     {NULL, 0, {MS_BEND}}, {NULL, 0, {MS_WHEEL}}, {NULL, 0, {MS_PAD_X, MS_PAD_Y, MS_PAD_GATE}}, {NULL, 0, {MS_RIBBON}},
     {NULL, 0, {MS_VEL, MS_AT, MS_KEY, MS_GATE, MS_SUSTAIN, MS_SOSTENUTO, MS_EXP1, MS_EXP2, MS_CONST}},
-    {"GENERATIVE", 0, {0}}};
+    {"GENERATIVE", 1, {0}},
+    /* (2026-10-30) the controller panel's DEST: everything the hands play, in one list */
+    {NULL, 1, {MS_BEND, MS_WHEEL, MS_PAD_X, MS_PAD_Y, MS_PAD_GATE, MS_RIBBON, MS_VEL, MS_AT, MS_KEY, MS_GATE, MS_SUSTAIN,
+               MS_SOSTENUTO, MS_EXP1, MS_EXP2, MS_CONST}}};
+/* the generators' sources (the matrix's list from RAIN DROP on, and any added after): the GENERATIVE part's */
+static int is_gen_src(int s) { return s >= MS_RAIN_DROP; }
 
 static int key_of(const char *k) {   /* a param's index by key, or -1 */
     for (int i = 0; i < NPARAMS; i++)
@@ -61,17 +87,18 @@ static const char *src_name(int s) { return s > 0 && s < nsources() ? PARAMS[src
 static int area_sources(int a, int *out) {   /* the sources of part a that the matrix has */
     int n = 0;
     if (a == QA_GEN) {
-        for (int s = MS_COUNT; s < nsources() && n < 32; s++) out[n++] = s;
+        for (int s = 1; s < nsources() && n < 32; s++)
+            if (is_gen_src(s)) out[n++] = s;
         return n;
     }
-    for (int k = 0; k < 12 && AREA[a].src[k]; k++)
+    for (int k = 0; k < SRC_MAX && AREA[a].src[k]; k++)
         if (AREA[a].src[k] < nsources()) out[n++] = AREA[a].src[k];
     return n;
 }
 static int area_of_source(int s) {
-    if (s >= MS_COUNT) return QA_GEN;
+    if (is_gen_src(s)) return QA_GEN;
     for (int a = 0; a < QA_COUNT; a++)
-        for (int k = 0; k < 12 && AREA[a].src[k]; k++)
+        for (int k = 0; k < SRC_MAX && AREA[a].src[k]; k++)
             if (AREA[a].src[k] == s) return a;
     return -1;
 }
@@ -85,6 +112,10 @@ static int panel_rect(const char *title, RECT *r) {
 }
 static int area_rect(int a, RECT *r) {   /* where part a is on the panel (0: not there) */
     if (AREA[a].panel) return panel_rect(AREA[a].panel, r);
+    if (a == QA_HANDS) {   /* the controller panel: from its DEST to the pad's right */
+        SetRect(r, L.qm_hands.left - sc(6), L.qm_hands.top - sc(6), L.pad.right + sc(8), L.pad.bottom + sc(18));
+        return !IsRectEmpty(&L.qm_hands);
+    }
     const RECT *z = a == QA_PITCH ? &L.pitch : a == QA_MODW ? &L.modw : a == QA_PAD ? &L.pad : a == QA_RIBBON ? &L.ribbon
                                                                                                          : &L.keys;
     *r = *z;
@@ -93,6 +124,7 @@ static int area_rect(int a, RECT *r) {   /* where part a is on the panel (0: not
 }
 static int dest_rect(int a, RECT *r) {   /* its DEST button, at the left of the title strip */
     RECT p;
+    if (a == QA_HANDS) { *r = L.qm_hands; return !IsRectEmpty(r); }
     if (!AREA[a].dest || !area_rect(a, &p)) return 0;
     SetRect(r, p.left + sc(3), p.top + sc(2), p.left + sc(29), p.top + sc(11));
     return 1;
@@ -204,7 +236,6 @@ static float amt_norm(int i, float pct) {
     return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 static int row_on(ed_t *e, int m, int c) { return MATRIX_ON[m] < 0 || opt_at(e, synth_param(MATRIX_ON[m], c)) > 0; }
-typedef struct { int row, src, on; float amt; } link_t;
 static int links(ed_t *e, int c, int d, link_t *out) {   /* Synth c's rows that reach destination d */
     int n = 0;
     for (int m = 0; m < NMATRIX && n < MAX_LINKS; m++) {
@@ -284,8 +315,12 @@ static void focus_names(ed_t *e, char *out, int n) {   /* "Synth 1", "Synths 1+3
         if (e->focus_mask >> c & 1u) k += snprintf(out + k, n - k, k ? "+%d" : many ? "Synths %d" : "Synth %d", c + 1);
 }
 
-/* ---- picking a source ---- */
+/* ---- picking a source: the screen shows MOD FROM <source> while it is picked, the page it showed before after ---- */
 static void arm(ed_t *e, int s) {
+    if (s && !e->qm.src && e->screen != SCR_QMOD) { e->qm.back_screen = e->screen; e->qm.back_sub = e->sub; }
+    if (s && e->screen != SCR_QMOD) ed_show(e, SCR_QMOD, 0);
+    if (s && s != e->qm.src) e->sub = 0;
+    if (!s && e->screen == SCR_QMOD) ed_show(e, e->qm.back_screen, e->qm.back_sub);
     e->qm.src = s;
     e->qm.msg[0] = 0;
     repaint_all(e);
@@ -345,8 +380,8 @@ static int connect(ed_t *e, int i, int y) {   /* the source picked -> control i:
         if (e->qm.row[c] < 0) full |= 1 << c;
     }
     if (e->qm.row[e->focus] < 0) {
-        say(e, "All %d matrix rows of Synth %d are in use: %s can't be connected to %s. Free one first (right-click a "
-            "ringed knob and REMOVE, or clear a row's DESTINATION on the MATRIX page).", NMATRIX, e->focus + 1,
+        say(e, "All %d matrix rows of Synth %d are in use: %s can't be connected to %s. Free one first (REMOVE in a "
+            "source's MOD FROM list, or a row's DESTINATION to Off on the MATRIX page).", NMATRIX, e->focus + 1,
             src_name(s), dst_name(d));
         return 1;
     }
@@ -363,6 +398,7 @@ static int connect(ed_t *e, int i, int y) {   /* the source picked -> control i:
     drag_start(e, i, d, y, what);
     lib_hold(e, -1);   /* (drag_start holds it until the mouse lets go) */
     if (e->screen == SCR_MATRIX) e->sub = e->qm.row[e->focus] / ROWS;   /* (the MATRIX page shows the row) */
+    if (e->screen == SCR_QMOD) e->sub = page_index_of(e, e->qm.row[e->focus]) / PAGE_LINKS;   /* (and MOD FROM its line) */
     focus_names(e, who, sizeof who);
     if (full) {
         char f[24] = "";
@@ -401,10 +437,11 @@ static int turn_existing(ed_t *e, int i, int y) {   /* Ctrl-drag a modulated con
 int qm_press(ed_t *e, int i, int x, int y) {
     POINT pt = {x, y};
     if (e->qm.mark >= 0) { e->qm.mark = -1; InvalidateRect(e->wnd, &L.screen, FALSE); }
-    if (i >= Z_QM && i < Z_QM_END) {   /* a DEST button: its source, or done */
+    if (i >= Z_QM && i < Z_QM + QA_COUNT) {   /* a DEST button: its source, or done */
         pick_source(e, i - Z_QM, x, y, 0);
         return 1;
     }
+    if (i >= Z_QM + QA_COUNT && i < Z_QM_END) { page_press(e, i); return 1; }   /* the MOD FROM page */
     if (GetKeyState(VK_MENU) < 0) {   /* Alt-click: the source of the part clicked */
         int a = area_at(pt);
         if (a >= 0) { pick_source(e, a, x, y, 0); return 1; }
@@ -473,6 +510,177 @@ static void remove_link(ed_t *e, int row) {
     say(e, "%s > %s removed (row %d is free again).", src_name(s), dst_name(d), row + 1);
     repaint_all(e);
 }
+/* ---- (2026-10-30) the MOD FROM page: the picked source's connections in the Synth in focus ---- */
+static int src_links(ed_t *e, int c, int s, link_t *out) {   /* Synth c's rows from source s that reach somewhere */
+    int n = 0;
+    for (int m = 0; m < NMATRIX && n < MAX_LINKS; m++) {
+        if (opt_at(e, cell(m, MX_SRC, c)) != s || opt_at(e, cell(m, MX_DST, c)) <= 0) continue;
+        link_t l = {m, s, row_on(e, m, c), real_at(e, cell(m, MX_AMT, c))};
+        out[n++] = l;
+    }
+    return n;
+}
+static int page_index_of(ed_t *e, int row) {   /* where matrix row `row` is in the list (0 if not there) */
+    link_t l[MAX_LINKS];
+    int n = e->qm.src ? src_links(e, e->focus, e->qm.src, l) : 0;
+    for (int k = 0; k < n; k++)
+        if (l[k].row == row) return k;
+    return 0;
+}
+int qm_subs(ed_t *e) {
+    link_t l[MAX_LINKS];
+    int n = e->qm.src ? src_links(e, e->focus, e->qm.src, l) : 0;
+    return n > PAGE_LINKS ? (n + PAGE_LINKS - 1) / PAGE_LINKS : 1;
+}
+static RECT page_rect(ed_t *e, int z) {   /* where button z is (empty: not shown now) */
+    RECT r = {0, 0, 0, 0};
+    if (z >= Z_QP_ROW && z < Z_QP_ROW + PAGE_LINKS * QP_PER) {
+        int line = (z - Z_QP_ROW) / QP_PER, k = (z - Z_QP_ROW) % QP_PER;
+        link_t l[MAX_LINKS];
+        int n = e->qm.src ? src_links(e, e->focus, e->qm.src, l) : 0;
+        if (e->sub * PAGE_LINKS + line >= n) return r;
+        static const short X[QP_PER + 1] = {-150, -128, -106, -54, 0};   /* from the row's right: - + REMOVE MATRIX */
+        RECT row = L.row[line];
+        SetRect(&r, row.right + sc(X[k]), row.top + sc(3), row.right + sc(X[k + 1]) - sc(4), row.bottom - sc(3));
+    } else if (z >= Z_QP_PICK && z <= Z_QP_DONE) {
+        int w = (rw(&L.row[ROWS - 1]) - 2 * sc(8)) / 3, x = L.row[ROWS - 1].left + (z - Z_QP_PICK) * (w + sc(8));
+        SetRect(&r, x, L.row[ROWS - 1].top + sc(2), x + w, L.row[ROWS - 1].bottom - sc(2));
+    }
+    return r;
+}
+static int page_hit(ed_t *e, POINT pt) {
+    for (int z = Z_QP_ROW; z < Z_QP_ROW + PAGE_LINKS * QP_PER; z++) {
+        RECT r = page_rect(e, z);
+        if (PtInRect(&r, pt)) return z;
+    }
+    for (int z = Z_QP_PICK; z <= Z_QP_DONE; z++) {
+        RECT r = page_rect(e, z);
+        if (PtInRect(&r, pt)) return z;
+    }
+    return -1;
+}
+static void amount_step(ed_t *e, int row, int d) {   /* a connection's amount by d % (and the same in Synths edited with it) */
+    int s = opt_at(e, cell(row, MX_SRC, e->focus)), dst = opt_at(e, cell(row, MX_DST, e->focus));
+    float a = real_at(e, cell(row, MX_AMT, e->focus)) + d;
+    char what[64];
+    snprintf(what, sizeof what, "Mod amount %s > %s", src_name(s), dst_name(dst));
+    lib_hold(e, 1);   /* one undo step */
+    lib_touch(e, what);
+    for (int c = 0; c < NSYNTHS; c++) {
+        if (c != e->focus && !(e->focus_mask >> c & 1u)) continue;
+        for (int m = 0; m < NMATRIX; m++)
+            if (c == e->focus ? m == row : opt_at(e, cell(m, MX_SRC, c)) == s && opt_at(e, cell(m, MX_DST, c)) == dst) {
+                int k = cell(m, MX_AMT, c);
+                put_once(e, k, amt_norm(k, a));
+                break;
+            }
+    }
+    lib_hold(e, -1);
+    say(e, "%s > %s: %+.0f%% (row %d).", src_name(s), dst_name(dst), real_at(e, cell(row, MX_AMT, e->focus)), row + 1);
+    repaint_all(e);
+}
+static void open_matrix(ed_t *e, int row) {   /* quick assign done; the MATRIX page at that row (marked), or row 1 */
+    e->qm.src = 0;
+    e->qm.mark = row;
+    ed_show(e, SCR_MATRIX, row >= 0 ? row / ROWS : 0);
+    repaint_all(e);
+}
+static void pick_any(ed_t *e) {   /* CHANGE SOURCE: every source of the matrix, in columns */
+    HMENU m = CreatePopupMenu();
+    for (int s = 1; s < nsources(); s++)
+        AppendMenuA(m, MF_STRING | (s == e->qm.src ? MF_CHECKED : 0) | (s > 1 && (s - 1) % 18 == 0 ? MF_MENUBARBREAK : 0),
+                    (UINT_PTR)s, src_name(s));
+    RECT b = page_rect(e, Z_QP_PICK);
+    int c = menu(e, m, b.left, b.bottom);
+    if (c > 0 && c < nsources()) arm(e, c);
+}
+static void page_press(ed_t *e, int z) {
+    if (z == Z_QP_PICK) { pick_any(e); return; }
+    if (z == Z_QP_ALL) { open_matrix(e, -1); return; }
+    if (z == Z_QP_DONE) {
+        char t[48];
+        snprintf(t, sizeof t, "%s", src_name(e->qm.src));
+        arm(e, 0);
+        say(e, "Quick assign from %s done.", t);
+        return;
+    }
+    if (z < Z_QP_ROW || z >= Z_QP_ROW + PAGE_LINKS * QP_PER || !e->qm.src) return;
+    link_t l[MAX_LINKS];
+    int n = src_links(e, e->focus, e->qm.src, l), k = e->sub * PAGE_LINKS + (z - Z_QP_ROW) / QP_PER;
+    if (k >= n) return;
+    switch ((z - Z_QP_ROW) % QP_PER) {
+    case QP_MINUS: amount_step(e, l[k].row, -AMT_STEP); break;
+    case QP_PLUS: amount_step(e, l[k].row, AMT_STEP); break;
+    case QP_REMOVE: remove_link(e, l[k].row); if (e->sub >= qm_subs(e)) e->sub = qm_subs(e) - 1; break;
+    case QP_MATRIX: open_matrix(e, l[k].row); break;
+    }
+}
+static const char *page_help(ed_t *e, int z) {
+    (void)e;
+    if (z == Z_QP_PICK) return "CHANGE SOURCE: a list of every modulation source (LFOs, envelopes, noise, the wheels, the pad, "
+                               "the ribbon, the keyboard, the pedals, the generators): the next knobs you click connect to it.";
+    if (z == Z_QP_ALL) return "ALL IN MATRIX: the MATRIX page, where every connection's source, amount, VIA and XFORM can be "
+                              "changed (quick assign ends).";
+    if (z == Z_QP_DONE) return "DONE: quick assign ends; the screen goes back to the page it showed (as Esc, or the DEST "
+                               "button again).";
+    switch ((z - Z_QP_ROW) % QP_PER) {
+    case QP_MINUS: return "-: this connection's amount 5% lower (below 0 the source works the other way round).";
+    case QP_PLUS: return "+: this connection's amount 5% higher. (Dragging its knob while the source is picked sets it too.)";
+    case QP_REMOVE: return "REMOVE: this connection goes (its matrix row is free again; in the Synths edited together too).";
+    case QP_MATRIX: return "MATRIX: this connection's row on the MATRIX page, marked (VIA, XFORM and the rest are there).";
+    }
+    return "";
+}
+static void ptext(HDC dc, RECT r, const char *s, HFONT f, COLORREF c, UINT fmt) {
+    if (skin_text(&r, s, f, c, fmt)) return;
+    SelectObject(dc, f);
+    SetTextColor(dc, c);
+    SetBkMode(dc, TRANSPARENT);
+    DrawTextA(dc, s, -1, &r, fmt | DT_NOPREFIX);
+}
+static void pbutton(HDC dc, RECT r, const char *label, int hot) {   /* as the screen's other buttons */
+    gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 0xFF0F2230);
+    gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f, hot ? 0xFFFFFFFF : 0xFF3E6273);
+    ptext(dc, r, label, font_cell, hot ? RGB(255, 255, 255) : RGB(150, 215, 232), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+void qm_page_title(ed_t *e, char *out, int n) { snprintf(out, n, "MOD FROM %s:  click knobs to connect", src_name(e->qm.src)); }
+void qm_page_draw(HDC dc, ed_t *e) {   /* under the title line (editor_draw.c draws it) */
+    gfx_begin(dc);
+    skin_bind(gfx_g);
+    char who[24], t[160];
+    focus_names(e, who, sizeof who);
+    snprintf(t, sizeof t, "Click a knob, drag up / down for the amount. %s's connections:", who);
+    ptext(dc, L.head, t, font_tiny, RGB(90, 130, 145), DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    link_t l[MAX_LINKS];
+    int n = e->qm.src ? src_links(e, e->focus, e->qm.src, l) : 0;
+    if (!n) {
+        RECT r = {L.row[0].left, L.row[0].top, L.row[0].right, L.row[1].bottom};
+        ptext(dc, r, "Nothing connected yet: click a knob on the panel (a ringed one is modulated already).", font_cell,
+              RGB(150, 215, 232), DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
+    for (int line = 0; line < PAGE_LINKS && e->sub * PAGE_LINKS + line < n; line++) {
+        const link_t *k = &l[e->sub * PAGE_LINKS + line];
+        RECT row = L.row[line], mi = page_rect(e, Z_QP_ROW + line * QP_PER);
+        int live = e->mode == M_QMOD && e->qm.row[e->focus] == k->row;   /* (its knob being dragged now) */
+        COLORREF c = k->on ? RGB(150, 215, 232) : RGB(90, 130, 145);
+        char a[24], d[96];
+        snprintf(d, sizeof d, "%d  %s%s", k->row + 1, dst_name(opt_at(e, cell(k->row, MX_DST, e->focus))), k->on ? "" : " (off)");
+        snprintf(a, sizeof a, "%+.0f%%", k->amt);
+        RECT dr = {row.left + sc(2), row.top, mi.left - sc(48), row.bottom}, ar = {mi.left - sc(46), row.top, mi.left - sc(6), row.bottom};
+        ptext(dc, dr, d, font_cell, live ? RGB(255, 255, 255) : c, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        ptext(dc, ar, a, font_cell, live ? RGB(255, 255, 255) : c, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        static const char *const B[QP_PER] = {"-", "+", "REMOVE", "MATRIX"};
+        for (int b = 0; b < QP_PER; b++) {
+            int z = Z_QP_ROW + line * QP_PER + b;
+            pbutton(dc, page_rect(e, z), B[b], e->hover == z);
+        }
+    }
+    static const char *const NB[3] = {"CHANGE SOURCE", "ALL IN MATRIX", "DONE"};
+    for (int b = 0; b < 3; b++) pbutton(dc, page_rect(e, Z_QP_PICK + b), NB[b], e->hover == Z_QP_PICK + b);
+    gfx_end();
+    skin_bind(NULL);
+}
+
 int qm_right(ed_t *e, int i, int x, int y) {
     POINT pt = {x, y};
     if (i >= 0 && i < NPARAMS) {
@@ -504,6 +712,7 @@ int qm_right(ed_t *e, int i, int x, int y) {
         } else if (c == 300) return 2;
         return 1;
     }
+    if (i >= Z_QM + QA_COUNT && i < Z_QM_END) return 1;   /* (the MOD FROM page's buttons: a plain click) */
     int a = i >= Z_QM && i < Z_QM_END ? i - Z_QM : area_at(pt);
     if (a < 0) return 0;
     pick_source(e, a, x, y, 1);
@@ -512,9 +721,10 @@ int qm_right(ed_t *e, int i, int x, int y) {
 
 int qm_key(ed_t *e, int vk) {
     if (vk != VK_ESCAPE || !e->qm.src || e->mode == M_QMOD) return 0;
-    say(e, "Quick assign from %s done.", src_name(e->qm.src));
-    e->qm.src = 0;
-    repaint_all(e);
+    char t[48];
+    snprintf(t, sizeof t, "%s", src_name(e->qm.src));
+    arm(e, 0);
+    say(e, "Quick assign from %s done.", t);
     return 1;
 }
 void qm_tick(ed_t *e) {
@@ -544,8 +754,12 @@ int qm_help(ed_t *e, char *out, int n) {
         if (h >= 0 && d >= 0) snprintf(line, sizeof line, "Click %s to connect it to %s, and drag for the amount.", dst_name(d), src_name(e->qm.src));
         else if (h >= 0) snprintf(line, sizeof line, "%s has no matrix destination.", PARAMS[fp(e, h)].name);
         else snprintf(line, sizeof line, "Click a knob for %s to move, drag it up or down for the amount.", src_name(e->qm.src));
+        if (e->hover >= Z_QM + QA_COUNT && e->hover < Z_QM_END) {   /* a button of the MOD FROM page: what it does */
+            snprintf(out, n, "%s%s%s", recent ? e->qm.msg : "", recent ? "\n" : "", page_help(e, e->hover));
+            return 1;
+        }
         snprintf(out, n, "QUICK ASSIGN from %s: %s\n%s", src_name(e->qm.src), recent ? e->qm.msg : line,
-                 recent ? line : "Connect as many as you like; Esc (or the DEST button again) when done.");
+                 recent ? line : "Connect as many as you like (drag a knob it moves to change its amount); DONE when finished.");
         return 1;
     }
     if (recent && (e->hover < 0 || e->hover >= NPARAMS || e->hover == e->qm.ctl)) {   /* (a control's own help first) */
@@ -563,15 +777,24 @@ void qm_links_text(ed_t *e, int i, char *out, int n) {
     for (int j = 0; j < k && len + w < n; j++)
         w += snprintf(out + len + w, n - len - w, "%s %s %+.0f%%%s", j ? "," : "", l[j].src ? src_name(l[j].src) : "via",
                       l[j].amt, l[j].on ? "" : " (off)");
-    if (len + w < n) snprintf(out + len + w, n - len - w, "; Ctrl-drag: amount, right-click: remove / open in MATRIX]");
+    if (len + w < n) snprintf(out + len + w, n - len - w, "; to change or remove: that source's DEST, then the list on the "
+                              "screen, or the MATRIX page; shortcuts: Ctrl-drag, right-click]");
 }
 const char *qm_zone_help(ed_t *e, int z) {
     static char t[300];
     int a = z - Z_QM, s[32];
     if (a < 0 || a >= QA_COUNT || !area_sources(a, s)) return NULL;
-    snprintf(t, sizeof t, "DEST: modulate from %s. Click it, then click each knob %s should move and drag it up or down "
-             "for the amount (Esc or DEST again: done). Alt-click or right-click the wheels, the X/Y pad, the ribbon or "
-             "the keyboard to modulate from them.", src_name(s[0]), src_name(s[0]));
+    if (a == QA_HANDS)
+        snprintf(t, sizeof t, "DEST: modulate from what you play: the pitch and mod wheels, the X/Y pad, the ribbon, the "
+                 "keyboard (velocity, aftertouch, the key) and the pedals. Click it for the list, then click each knob it "
+                 "should move and drag up or down for the amount.");
+    else if (a == QA_GEN)
+        snprintf(t, sizeof t, "DEST: modulate from the generators (the rain, the balls, the particles, Turing, Euclid, Life, "
+                 "the orbits, the pendulums, the Markov melody). Click it for the list, then click knobs and drag.");
+    else
+        snprintf(t, sizeof t, "DEST: modulate from %s. Click it, then click each knob %s should move and drag it up or "
+                 "down for the amount; the screen lists the connections (- / +, REMOVE). DEST again or DONE: finished.",
+                 src_name(s[0]), src_name(s[0]));
     (void)e;
     return t;
 }
@@ -602,7 +825,7 @@ static DWORD family(int s) {   /* the colour of a source's family */
     case MS_RAND: case MS_RAND_UNI: return 0xFFBC94F2;                              /* random: violet */
     case MS_CONST: return 0xFFD4D4D8;
     }
-    return s >= MS_COUNT ? 0xFFF28CBE : 0xFF86D886;   /* added later (generators): pink; the hands' controllers: green */
+    return is_gen_src(s) ? 0xFFF28CBE : 0xFF86D886;   /* the generators: pink; the hands' controllers: green */
 }
 static int swings_both(ed_t *e, int s) {   /* a source that moves both ways from the knob's setting */
     if (s == MS_LFO1 || s == MS_LFO2 || s == MS_LFO3 || s == MS_LFO4) {
@@ -672,7 +895,7 @@ void qm_draw(HDC dc, ed_t *e, const RECT *clip) {
         RECT b;
         int s[32];
         if (!dest_rect(a, &b) || !seen(&b, sc(2), clip) || !area_sources(a, s)) continue;
-        int on = armed == a, hot = e->hover == Z_QM + a;
+        int on = armed == a || (a == QA_HANDS && armed >= QA_PITCH && armed <= QA_KEYS), hot = e->hover == Z_QM + a;
         gfx_rect((float)b.left, (float)b.top, (float)rw(&b), (float)rh(&b), on ? 0xFFF2AA4C : hot ? 0xFF4A4A50 : 0xFF2A2A2E);
         gfx_frame((float)b.left, (float)b.top, (float)rw(&b), (float)rh(&b), 1.0f, on ? 0xFFFFE0A8 : 0xFF0C0C0E);
         label(dc, &b, "DEST", on ? RGB(30, 20, 8) : hot ? RGB(255, 255, 255) : RGB(214, 214, 216));
@@ -689,12 +912,11 @@ void qm_draw(HDC dc, ed_t *e, const RECT *clip) {
 
 /* ---- hit codes and load_test ---- */
 int qm_hit(ed_t *e, POINT pt) {
-    (void)e;
     for (int a = 0; a < QA_COUNT; a++) {
         RECT b;
         if (dest_rect(a, &b) && PtInRect(&b, pt)) return Z_QM + a;
     }
-    return -1;
+    return e->screen == SCR_QMOD && e->qm.src ? page_hit(e, pt) : -1;
 }
 intptr_t qm_test(ed_t *e, intptr_t op, char *buf, float opt) {
     switch (op) {
@@ -713,6 +935,12 @@ intptr_t qm_test(ed_t *e, intptr_t op, char *buf, float opt) {
         return (intptr_t)strlen(buf);
     }
     case QMT_DST_OF: return dst_of((int)lroundf(opt));
+    case QMT_PAGE_XY: {   /* the MOD FROM page's button Z_QM + opt, in pixels (-1: not shown) */
+        RECT b = page_rect(e, Z_QM + (int)lroundf(opt));
+        if (IsRectEmpty(&b)) return -1;
+        return (b.left + b.right) / 2 | ((b.top + b.bottom) / 2) << 16;
+    }
+    case QMT_LINKS: { link_t l[MAX_LINKS]; return e->qm.src ? src_links(e, e->focus, e->qm.src, l) : -1; }
     }
     return 0;
 }

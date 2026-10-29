@@ -148,6 +148,7 @@ typedef struct {
     float from;              /* the focused Synth's amount (%) when the drag began */
     int mark;                /* the MATRIX row "open in MATRIX" jumped to (-1: none) */
     int answer;              /* load_test: the menu choice taken instead of showing a menu (0: show it) */
+    int back_screen, back_sub;   /* (2026-10-30) the page the screen showed before MOD FROM (SCR_QMOD) */
     char msg[220];           /* what the last action did, for the help line, and since when */
     DWORD msg_at;
     unsigned char drawn[NPARAMS];   /* a control drawn with a modulation ring (repainted when the matrix changes) */
@@ -251,9 +252,12 @@ void knob_geom(int i, float *cx, float *cy, float *r, int *label_y);   /* where 
  * source (also the wheels, the X/Y pad, the ribbon, the keyboard) picks a mod source; a click on a knob then connects
  * it in the focused Synths' matrix and the drag sets the amount. Rings on the knobs show what is modulated. */
 #define Z_QM 660000        /* hit codes: a DEST button, Z_QM + its area */
-#define Z_QM_END 660032
+#define Z_QM_END 660300    /* (DEST buttons Z_QM + 0..31; the MOD FROM page's buttons Z_QM + 100 and up) */
 #define TEST_QM 0x4F31514D /* VENDOR_SPECIFIC index: load_test's quick assign operations (QMT_*, quickmod.c) */
-enum { QMT_SOURCE = 1, QMT_ANSWER, QMT_DRAWN, QMT_DEST_XY, QMT_HELP, QMT_DST_OF };
+enum { QMT_SOURCE = 1, QMT_ANSWER, QMT_DRAWN, QMT_DEST_XY, QMT_HELP, QMT_DST_OF,
+       QMT_PAGE_XY,          /* (2026-10-30) the MOD FROM page's button Z_QM + opt: its middle in pixels (-1: none) */
+       QMT_LINKS };          /* the picked source's connections in the focused Synth (-1: none picked) */
+enum { SCR_QMOD = -31 };     /* the centre screen while a source is picked: MOD FROM <source> (quickmod.c) */
 int qm_hit(ed_t *e, POINT pt);                  /* a DEST button under pt (Z_QM + area), or -1 */
 int qm_press(ed_t *e, int i, int x, int y);     /* a left click (i: hit()'s); 1: quick assign took it */
 void qm_drag(ed_t *e, int x, int y, int fine);  /* M_QMOD: the amount follows the mouse */
@@ -269,6 +273,9 @@ const char *qm_zone_help(ed_t *e, int z);
 int qm_marked(ed_t *e);                         /* the MATRIX row to mark (-1: none) */
 void qm_matrix_changed(ed_t *e, int i);         /* param i (a panel index) changed: rings to repaint if it is the matrix's */
 intptr_t qm_test(ed_t *e, intptr_t op, char *buf, float opt);
+int qm_subs(ed_t *e);                           /* the MOD FROM page's sub-pages */
+void qm_page_title(ed_t *e, char *out, int n);  /* its title line */
+void qm_page_draw(HDC dc, ed_t *e);             /* its connections and buttons, under the title line */
 /* more_pics.c: a MORE page's picture (an envelope, an LFO, the filters, the mixer) in rect a of the screen */
 void pics_draw(HDC dc, ed_t *e, int page, RECT a);
 void pics_tick(ed_t *e);   /* the rate timer: a moving picture (the balls' box) repaints, only its own area */

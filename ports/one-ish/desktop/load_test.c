@@ -1922,8 +1922,8 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
 
 /* ---- QUICK ASSIGN (desktop/quickmod.c): a source picked on the panel, a knob clicked and dragged for the amount ---- */
 #define TEST_QM 0x4F31514D   /* as editor.h */
-enum { QMT_SOURCE = 1, QMT_ANSWER, QMT_DRAWN, QMT_DEST_XY, QMT_HELP, QMT_DST_OF };
-enum { QA_LFO1 = 0, QA_LFO2 = 1, QA_PAD = 10 };   /* quickmod.c's parts of the panel */
+enum { QMT_SOURCE = 1, QMT_ANSWER, QMT_DRAWN, QMT_DEST_XY, QMT_HELP, QMT_DST_OF, QMT_PAGE_XY, QMT_LINKS };
+enum { QA_LFO1 = 0, QA_LFO2 = 1, QA_PAD = 10, QA_GEN = 13, QA_HANDS = 14 };   /* quickmod.c's parts of the panel */
 static char qbuf[1024];
 static intptr_t qmt(AEffect *fx, int op, float opt) { qbuf[0] = 0; return fx->dispatcher(fx, 50, TEST_QM, op, qbuf, opt); }
 static int qm_steps(AEffect *fx) { static char b[1024]; return (int)fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, b, 0) % 1000; }
@@ -2519,9 +2519,82 @@ static void undo_buttons_test(AEffect *fx, HWND child, float s) {
     hover_at(child, s, 0, 0);
 }
 
+/* quick assign without Alt, right-click, Ctrl-drag or Esc: the controller's and GENERATIVE's DEST, the MOD FROM page */
+enum { T_SCR_QMOD = -31, QP_ROW = 100, QP_PICK = 200, QP_ALL, QP_DONE };   /* as editor.h, quickmod.c */
+static void qm_plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    static float saved[NPARAMS];
+    snapshot(fx, saved);
+    int svf = rnd_key("svf_cut"), d_svf = (int)qmt(fx, QMT_DST_OF, (float)svf);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, qbuf, 0);
+    mclear(fx);
+    click_zone(child, s, ZONE_TAB_MORE);
+    /* the controller panel's DEST: a list of what the hands play (answered: Mod Wheel, 7) */
+    qmt(fx, QMT_ANSWER, 7);
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_HANDS));
+    int armed = (int)qmt(fx, QMT_SOURCE, 0), scr = screen_now(fx);
+    snprintf(what, sizeof what, "the controller panel's DEST picks the mod wheel from its list (source %d \"%s\") and the "
+             "screen shows MOD FROM (screen %d)", armed, qbuf, scr);
+    check(armed == 7 && strstr(qbuf, "Wheel") && scr == T_SCR_QMOD, what);
+    qm_drag(child, "svf_cut", s, 30);
+    int links = (int)qmt(fx, QMT_LINKS, 0), st0 = qm_steps(fx);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 1));   /* + */
+    float up = mamt(fx, 0, 0);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 0));   /* - twice */
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 0));
+    snprintf(what, sizeof what, "MOD FROM lists the new connection (%d); its + and - buttons set the amount 30 -> %.0f -> "
+             "%.0f%%, each one undo step (%d -> %d)", links, up, mamt(fx, 0, 0), st0, qm_steps(fx));
+    check(links == 1 && fabsf(up - 35.0f) < 0.01f && fabsf(mamt(fx, 0, 0) - 25.0f) < 0.01f && qm_steps(fx) == st0 + 3, what);
+    intptr_t rm = qmt(fx, QMT_PAGE_XY, QP_ROW + 2);
+    hover_at(child, 1.0f, (float)(rm & 0xFFFF), (float)(rm >> 16));
+    snprintf(what, sizeof what, "hovering REMOVE explains it (\"%.70s\")", help_fresh(fx));
+    check(strstr(hbuf, "REMOVE:") != NULL, what);
+    if (bmp) shot(child, w, h, bmp, "_qm_page");
+    /* GENERATIVE's DEST: the generators' sources (answered: Rain Drop, 26) */
+    qmt(fx, QMT_ANSWER, 26);
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_GEN));
+    armed = (int)qmt(fx, QMT_SOURCE, 0);
+    char gname[64];
+    snprintf(gname, sizeof gname, "%s", qbuf);
+    int glinks = (int)qmt(fx, QMT_LINKS, 0);
+    snprintf(what, sizeof what, "GENERATIVE's DEST picks a generator's source (%d \"%s\"); its list is empty (%d)", armed,
+             gname, glinks);
+    check(armed == 26 && strstr(gname, "Rain") && glinks == 0, what);
+    /* CHANGE SOURCE: any source (answered: the mod wheel again), then REMOVE its connection */
+    qmt(fx, QMT_ANSWER, 7);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_PICK));
+    armed = (int)qmt(fx, QMT_SOURCE, 0);
+    int st1 = qm_steps(fx);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 2));   /* REMOVE */
+    snprintf(what, sizeof what, "CHANGE SOURCE picks any source (%d); REMOVE takes its connection away (dst %d, listed %d), "
+             "one undo step (%d -> %d)", armed, mopt(fx, 0, 0, "dst"), (int)qmt(fx, QMT_LINKS, 0), st1, qm_steps(fx));
+    check(armed == 7 && mopt(fx, 0, 0, "dst") == 0 && qmt(fx, QMT_LINKS, 0) == 0 && qm_steps(fx) == st1 + 1, what);
+    /* MATRIX on a line: that row on the MATRIX page; DONE: back to the page before */
+    qm_drag(child, "svf_cut", s, 20);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 3));
+    scr = screen_now(fx);
+    snprintf(what, sizeof what, "MATRIX on a line shows the MATRIX page (screen %d) and ends quick assign (source %d); the "
+             "row is there (dst %d = %d)", scr, (int)qmt(fx, QMT_SOURCE, 0), mopt(fx, 0, 0, "dst"), d_svf);
+    check(scr == T_SCR_MATRIX && qmt(fx, QMT_SOURCE, 0) == 0 && mopt(fx, 0, 0, "dst") == d_svf, what);
+    click_zone(child, s, ZONE_TAB_SETUP);
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_LFO1));
+    int during = screen_now(fx);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_DONE));
+    snprintf(what, sizeof what, "DONE ends quick assign (source %d) and the screen goes back from MOD FROM (%d) to SETUP (%d)",
+             (int)qmt(fx, QMT_SOURCE, 0), during, screen_now(fx));
+    check(qmt(fx, QMT_SOURCE, 0) == 0 && during == T_SCR_QMOD && screen_now(fx) == T_SCR_SETUP, what);
+    hover_at(child, s, 0, 0);
+    for (int i = 0; i < NPARAMS; i++)
+        if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    SendMessageA(child, WM_TIMER, 1, 0);
+}
+
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     together_test(fx, child, s, bmp, w, h);
     undo_buttons_test(fx, child, s);
+    qm_plain_test(fx, child, s, bmp, w, h);
 }
 
 static void reload_test(const char *path, HMODULE old) {
