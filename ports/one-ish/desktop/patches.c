@@ -408,7 +408,10 @@ int patches_tick(ed_t *e) {
 static void apply_state(ed_t *e, const char *state) {
     static float before[NPARAMS];
     for (int i = 0; i < NPARAMS; i++) before[i] = e->fx->getParameter(e->fx, i);
+    float keep[4];
+    int held = settings_midi_keep(e, keep);   /* MIDI I/O FROM PRESET off: the channels stay (settings.c) */
     wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(state) + 1, (void *)state, 0);
+    if (held) settings_midi_put(e, keep);
     for (int i = 0; i < NPARAMS; i++) {
         float v = e->fx->getParameter(e->fx, i);
         if (v == before[i] || !e->host) continue;
@@ -617,14 +620,16 @@ int patches_load_pos(ed_t *e, int pos) {
 void patches_step(ed_t *e, int d) {
     patches_rescan(e);
     if (lib_step_filtered(e, d)) return;   /* the tag filters narrow PREV / NEXT too */
-    int pos = patches_pos(e), n = patches_total(e), to = pos < 0 ? (d > 0 ? 0 : n - 1) : pos + d;
+    /* (PRESET AUTOLOAD off: the step moves where the knob points, from where it points: settings.c) */
+    int pos = settings_cue_from(e, patches_pos(e)), n = patches_total(e), to = pos < 0 ? (d > 0 ? 0 : n - 1) : pos + d;
     if (to < 0) to = 0;
     if (to > n - 1) to = n - 1;
-    if (to != pos) patches_load_pos(e, to);
+    if (to != pos && !settings_cue_step(e, to)) patches_load_pos(e, to);
 }
 
 void patches_title(ed_t *e, char *out, int n) {
     patches_t *p = &e->pt;
+    if (settings_cue_title(e, out, n)) return;   /* "> F 004  Name ?": pointed at, not loaded yet */
     const char *mark = p->edited ? " *" : "", *cmp = lib_comparing(e) ? "COMPARE  " : "";
     if (p->bank == BANK_FACTORY) {
         char nm[64] = "";

@@ -4958,6 +4958,7 @@ static void arp_wav(const char *demo_path) {
 #include "stepseq_check.c"
 #include "multi_check.c"   /* multitimbral: three Synths */
 #include "ext_check.c"     /* the audio input: the EXT channel and the vocoders */
+#include "midi_check.c"    /* MIDI settings, learn, NRPN, microtuning */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5730,6 +5731,11 @@ int main(int argc, char **argv) {
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
+    if (argc > 2 && !strcmp(argv[1], "midi")) {   /* just the MIDI settings, learn, NRPN, tuning: offline_check midi x */
+        midi_settings();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "multi")) {   /* just the multitimbral checks: offline_check multi <dir>/demo.wav */
         multitimbral();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
@@ -5805,6 +5811,7 @@ int main(int argc, char **argv) {
     multitimbral();
     ext_input();
     vocoders();
+    midi_settings();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

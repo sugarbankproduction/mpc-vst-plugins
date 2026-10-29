@@ -25,6 +25,7 @@
 #define ONEISH_SYNTHS 3     /* Synths per instance: 3 (the instrument's); a build may set 1 (vst.json "defines") */
 #endif
 #define NSYN ONEISH_SYNTHS
+#include "midi_in.h"
 _Static_assert(NSYN >= 1 && NSYN <= 3, "one to three Synths");
 #define FX_TAIL_S 4         /* a Synth switched off keeps its synth effect ringing this long, then it stops */
 
@@ -40,6 +41,7 @@ typedef struct inst {
     char state_buf[STATE_MAX];   /* set_state's working copy (allocated with the instance, not per call) */
     float ext[128];          /* the next render's audio input, mono (one_ish_set_input); ext_n frames of it, 0: silence */
     int ext_n;
+    midi_in_t mi;            /* the MIDI input settings (the window's SETTINGS page: src/midi_in.h) */
 } inst_t;
 
 /* the shared params: one copy, in Synth 1's values (presets/make_synths.py GLOBAL keeps the same list) */
@@ -141,10 +143,21 @@ static int chan_ok(const inst_t *in, int c, int ch) {
     int own = (int)in->syn[c]->val[P_SYN_CH];   /* "syn_ch": Omni, 1 .. 16 */
     return own == 0 || ch == own - 1;
 }
+#include "midi_in_run.h"
 static void midi(void *inst, const uint8_t *m, int len) {
     inst_t *in = inst;
     if (len < 2 || m[0] >= 0xf0) return;
     int st = m[0] & 0xf0, ch = m[0] & 0x0f, note = m[1] & 0x7f, vel = len > 2 ? m[2] & 0x7f : 0;
+    uint8_t mm[3];
+    if (st == 0xb0 && len > 2) {   /* the pedals' CC numbers (SETTINGS): as the Synths know them */
+        int r = mi_pedal(&in->mi, note);
+        if (r < 0) return;
+        if (r != note) {
+            mm[0] = m[0], mm[1] = (uint8_t)r, mm[2] = m[2];
+            m = mm;
+            note = r;
+        }
+    }
     for (int c = 0; c < NSYN; c++) {
         one_t *s = in->syn[c];
         if (!chan_ok(in, c, ch)) continue;
@@ -194,8 +207,7 @@ static void set_param(void *inst, const char *key, const char *val) {
     inst_t *in = inst;
     if (!strcmp(key, "lfo_bpm")) {   /* the host's tempo (HAS_LFO_BPM), not a param */
         float bpm = (float)atof(val);
-        if (isfinite(bpm) && bpm >= 20.0f && bpm <= 400.0f)
-            for (int c = 0; c < NSYN; c++) synth_bpm(in->syn[c], bpm);
+        if (isfinite(bpm) && bpm >= 20.0f && bpm <= 400.0f) mi_host_bpm(in, bpm);   /* (unless RECEIVE CLOCK is off) */
         return;
     }
     if (!strcmp(key, "state")) {
@@ -203,6 +215,10 @@ static void set_param(void *inst, const char *key, const char *val) {
             int c = val[6] >= '1' && val[6] <= '9' ? val[6] - '1' : 0;
             const char *nl = strchr(val, '\n');
             if (nl && c < NSYN) sq_command(in->syn[c], nl + 1);
+            return;
+        }
+        if (!strncmp(val, "midicfg\n", 8)) {   /* the window's SETTINGS page (src/midi_in_run.h) */
+            mi_command(in, val + 8);
             return;
         }
         if (!strncmp(val, "synthload", 9)) {   /* "synthload<n>\n<state>": a sound's Synth 1 into Synth n only */
@@ -422,6 +438,8 @@ static int get_param(void *inst, const char *key, char *buf, int n) {
             for (int i = 0; i < MAX_VOICES; i++) t += voice_busy(&in->syn[c]->voice[i]);
         return snprintf(buf, n, "%d", t);
     }
+    if (!strcmp(key, "midicfg")) return mi_text(in, buf, n);   /* readouts for the tests: the MIDI settings, */
+    if (!strcmp(key, "bpm")) return snprintf(buf, n, "%g", in->syn[0]->bpm);   /* the tempo the Synths follow */
     if (!strcmp(key, "heals")) {
         int h = 0;
         for (int c = 0; c < NSYN; c++) h += in->syn[c]->heals;
@@ -468,6 +486,7 @@ int mpc_engine_changed(void *inst, char *key, int len) {
 
 static void song_pos(void *inst, double ppq, double bpm, int playing, int frames) {
     inst_t *in = inst;
+    if (!in->mi.rx_clock) { ppq = -1.0; bpm = 0.0; playing = 0; }   /* RECEIVE CLOCK off: free running, own tempo */
     for (int c = 0; c < NSYN; c++) synth_song_pos(in->syn[c], ppq, bpm, playing, frames);
 }
 
@@ -485,6 +504,7 @@ static void *create(const char *data_dir) {
     if (!in) return NULL;
     fx_touch(&in->mfx, sizeof in->mfx);   /* the effect buffers' pages, mapped now rather than in the audio thread */
     keys_init(in, pidx);
+    mi_init(&in->mi);
     for (int c = 0; c < NSYN; c++)
         if (!(in->syn[c] = synth_create(in, c, pidx[c]))) { destroy(in); return NULL; }
     return in;

@@ -9,7 +9,9 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
 - **The name on the centre screen** shows what is playing: `F 004  Acid Line` is factory preset 4, `U  Bright Pad`
   is one of your own, `-  Other` is a sound that is no longer saved anywhere (its patch was deleted, or a project from
   before this feature). A `*` after the name means the sound has changed since it was loaded or saved.
-- **`<` `>`, PREV / NEXT and the PRESET knob** step through the 27 factory presets, then your patches A to Z.
+- **`<` `>`, PREV / NEXT and the PRESET knob** step through the 27 factory presets, then your patches A to Z. With
+  PRESET AUTOLOAD off (SETTINGS page, `docs/SETTINGS.md`, 2026-10-29) they only point (`> F 004  Name ?`); a click on
+  the PRESET knob or the name then loads it.
 - **Click the name** (or click the PRESET knob) for the PATCHES page: factory presets on the left, yours on the right,
   7 at a time (`<` `>` on its title line, or the mouse wheel, for more). Click one to load it. Click the name again to
   go back to the matrix.

@@ -68,6 +68,10 @@ static ed_t *ed_of(AEffect *fx) {
         if (eds[i] && eds[i]->fx == fx) return eds[i];
     return NULL;
 }
+void ed_each(void (*fn)(ed_t *)) {   /* UI thread */
+    for (int i = 0; i < MAX_INSTANCES; i++)
+        if (eds[i]) fn(eds[i]);
+}
 
 /* the MIDI channel the window plays on (0-15): the one the instrument listens on (MIDI CHANNEL; Omni: channel 1; Per
  * Synth: the focused Synth's own, so the keys play the Synth on the panel) */
@@ -184,6 +188,7 @@ static void layout(void) {
     L.focus[1] = zone(ZONE_FOCUS2);
     L.focus[2] = zone(ZONE_FOCUS3);
     L.tab_setup = zone(ZONE_TAB_SETUP);
+    L.tab_settings = zone(ZONE_TAB_SETTINGS);
     L.seq_leds = zone(ZONE_SEQ_LEDS);
     L.encoder = zone(ZONE_ENCODER);
     L.bprev = zone(ZONE_PREV);
@@ -257,7 +262,7 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
         return 0;
     }
     if (e->screen == SCR_INDEX || lib_screen(e->screen)) return 0;   /* (the patch list, the library's pages) */
-    if (e->screen == SCR_SETUP) return 1;   /* (every Synth's setup: any change may show) */
+    if (e->screen == SCR_SETUP || e->screen == SCR_SETTINGS) return 1;   /* (every Synth's setup: any change may show) */
     if (e->screen < 0 || e->screen >= NPAGES) return 1;   /* RANDOM (it describes the sound), SEQ: all of it */
     for (int k = PAGES[e->screen].first; k < PAGES[e->screen].first + PAGES[e->screen].count; k++)
         if (ITEMS[k].param == i || ITEMS[k].cond == i) return 1;   /* (a condition changes which items show) */
@@ -310,6 +315,7 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_TAB_SEQ: r = &L.tab_seq; break;
     case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3: r = &L.focus[z - Z_FOCUS1]; break;
     case Z_TAB_SETUP: r = &L.tab_setup; break;
+    case Z_TAB_SETTINGS: r = &L.tab_settings; break;
     case Z_EUCLID: r = &L.euclid; break;
     case Z_COMPARE: r = &L.compare; break;
     case Z_SNAPSHOT: r = &L.snapshot; break;
@@ -565,6 +571,7 @@ int page_items(ed_t *e, int p, int *items) {
 int screen_subs(ed_t *e) {
     if (lib_screen(e->screen)) return lib_subs(e);   /* (the patch list and the library's pages) */
     if (e->screen == SCR_SETUP) return 2;
+    if (e->screen == SCR_SETTINGS) return settings_subs(e);
     int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
     int per = e->screen == SCR_MATRIX ? ROWS : e->screen == SCR_INDEX ? SLOTS : page_slots(e->screen);
     return n > per ? (n + per - 1) / per : 1;
@@ -623,6 +630,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
             }
     } else if (e->screen == SCR_SEQ) {
         return seq_hit(e, pt);
+    } else if (e->screen == SCR_SETTINGS) {
+        return settings_hit(e, pt);
     } else if (e->screen == SCR_SETUP) {   /* a cell: a param's own index (Synth 1, 2 or 3's, or a shared one) */
         int keys[ROWS];
         setup_rows(e->sub, keys);
@@ -671,7 +680,8 @@ static int hit(ed_t *e, int x, int y) {
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
         {&L.focus[0], Z_FOCUS1}, {&L.focus[1], Z_FOCUS2}, {&L.focus[2], Z_FOCUS3}, {&L.tab_setup, Z_TAB_SETUP},
-        {&L.euclid, Z_EUCLID}, {&L.compare, Z_COMPARE}, {&L.snapshot, Z_SNAPSHOT}};   /* (euclid: empty when there is no GENERATIVE section) */
+        {&L.euclid, Z_EUCLID}, {&L.compare, Z_COMPARE}, {&L.snapshot, Z_SNAPSHOT},
+        {&L.tab_settings, Z_TAB_SETTINGS}};   /* (euclid: empty when there is no GENERATIVE section) */
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++)
         if (PtInRect(Z[k].r, pt)) return Z[k].z;
     return -1;
@@ -753,7 +763,8 @@ static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes
     if (m == M_PITCH) { e->bend = 0; ui_midi(e, 0xE0, 0, 64); }
     if (m == M_PAD) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); }
     if (m == M_RIBBON) { e->ribbon_on = 0; e->ribbon_cc = -1; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
-    if (m == M_ENC && !e->enc_moved) patches_open(e);   /* a click on the preset knob: the patch list */
+    /* a click on the preset knob: what it points at (PRESET AUTOLOAD off), else the patch list */
+    if (m == M_ENC && !e->enc_moved && !settings_cue_load(e)) patches_open(e);
     if (m == M_LIB) lib_release(e);   /* a set's number: let go early, it loads; held, it was assigned */
     InvalidateRect(e->wnd, NULL, FALSE);
 }
@@ -788,6 +799,8 @@ static void octave_hold(ed_t *e) {
 
 static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangles, page entries, sub-page arrows */
     if (patches_press(e, z)) return;   /* the PATCHES page's buttons and entries */
+    if (settings_press(e, z)) return;   /* the SETTINGS page's */
+    if (z == Z_TAB_SETTINGS) { settings_open(e); return; }
     int subs = screen_subs(e);
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) {   /* again on an open page: its next sub-page */
         int p = z - Z_PAGE;
@@ -840,7 +853,7 @@ static void press(ed_t *e, int x, int y) {
     case -1: return;
     case Z_PREV: patches_step(e, -1); return;   /* factory presets, then user patches */
     case Z_NEXT: patches_step(e, 1); return;
-    case Z_NAME: patches_toggle(e); return;
+    case Z_NAME: if (!settings_cue_load(e)) patches_toggle(e); return;   /* (a pointed-at patch: it loads) */
     case Z_OCT_DOWN: case Z_OCT_UP:   /* a click steps; held, the default octave (1 s), then a panic (2 s) */
         set_octave(e, e->oct + (i == Z_OCT_UP ? 1 : -1));
         e->mode = M_OCT;
@@ -1026,6 +1039,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         ScreenToClient(w, &pt);
         int i = hit(e, pt.x, pt.y), dir = GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 1 : -1;
         if (i == Z_ENCODER) { patches_step(e, -dir); return 0; }
+        if (settings_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;
         if (seq_zone(i) || (e->screen == SCR_SEQ && PtInRect(&L.screen, pt) && (i < 0 || i >= NPARAMS))) {
             lib_touch(e, NULL);   /* (committed after a pause) */
             if (seq_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;
@@ -1223,6 +1237,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             return e->focus + 4 * (intptr_t)e->focus_mask;
         }
         if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
+        if (idx == TEST_SETTINGS && e && ptr) return settings_test(e, v, ptr, opt);   /* load_test: the settings */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
             hr_set_legacy(e->hr, (int)v);
             fx->initialDelay = hr_latency(e->hr);
@@ -1249,7 +1264,10 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             char what[64] = "";
             if (ui) wrapped_dispatch(fx, effGetProgramNameIndexed, (int32_t)v, 0, what, 0);
             if (ui) lib_before_load(e, what);
+            float keep[4];
+            int held = settings_midi_keep(e, keep);   /* MIDI I/O FROM PRESET off: the channels stay */
             intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
+            if (held) settings_midi_put(e, keep);
             patches_program_set(e, before);
             if (ui) lib_after_load(e);
             return r;
@@ -1314,6 +1332,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         if (hr) fx->numInputs = 2;   /* a stereo audio input (hostrate.c): the EXT channel and the vocoders */
         patches_init(e);
         seq_init(e);
+        settings_init(e);   /* the settings file (once per process) into this instance's engine */
         break;
     }
     return fx;   /* no free slot: the plugin still works, without its window, at 44.1 kHz in 16 bits (the old path) */

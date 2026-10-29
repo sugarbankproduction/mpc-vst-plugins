@@ -9,6 +9,7 @@
 #include "layout.h"
 #include "patches.h"
 #include "seq_page.h"
+#include "settings.h"
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*audioMasterCallback)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -52,7 +53,7 @@ enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 key
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
        Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
        Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_FOCUS1, Z_FOCUS2, Z_FOCUS3,
-       Z_TAB_SETUP, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
+       Z_TAB_SETUP, Z_TAB_SETTINGS, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
 enum { SCR_SETUP = -11, NSYNTHS = 3 };   /* the centre screen's SETUP page (the three Synths side by side) */
@@ -78,6 +79,7 @@ typedef struct {
     RECT seq_leds;                            /* the SEQUENCER module's page LEDs (seq_page.c) */
     RECT focus[NSYNTHS], tab_setup;           /* PANEL FOCUS: SYNTH 1-3, and the SETUP page's button */
     RECT compare, snapshot;                   /* COMPARE and SNAPSHOT, under PREV / NEXT (library.c) */
+    RECT tab_settings;                        /* the SETTINGS page's button (settings.c) */
     RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon, euclid;   /* euclid: GENERATIVE's ring */
     RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
 } layout_t;
@@ -151,6 +153,7 @@ typedef struct {
     rate_ui_t rl;                              /* the rate and tempo LEDs (rate_leds.c) */
     struct lib *lib;                           /* undo, compare, snapshots, tags, sets (library.c; NULL: none) */
     HWND idle;                                 /* a hidden window whose timer loads MIDI program changes */
+    settings_ui_t st;                          /* the SETTINGS page (settings.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB };
 
@@ -268,3 +271,26 @@ void seq_help(ed_t *e, char *out, int n);
 const char *seq_message(ed_t *e);
 RECT seq_help_rect(void);
 intptr_t seq_test(ed_t *e, intptr_t op, char *buf);
+/* editor.c: fn for every instance of this process (the settings are global) */
+void ed_each(void (*fn)(ed_t *));
+/* settings.c: the SETTINGS page and the settings file (settings.h) */
+void settings_init(ed_t *e);
+int settings_path(char *out, int n);
+int settings_autoload(void);
+int settings_cue_from(ed_t *e, int pos);       /* PRESET AUTOLOAD off: browsing points instead of loading */
+int settings_cue_step(ed_t *e, int to);
+int settings_cue_title(ed_t *e, char *out, int n);
+int settings_cue_load(ed_t *e);
+int settings_midi_keep(ed_t *e, float *keep);  /* MIDI I/O FROM PRESET off: a load keeps the channels (keep[4]) */
+void settings_midi_put(ed_t *e, const float *keep);
+void settings_open(ed_t *e);
+void settings_title(ed_t *e, char *out, int n);
+int settings_subs(ed_t *e);
+int settings_hit(ed_t *e, POINT pt);
+int settings_press(ed_t *e, int z);
+int settings_wheel(ed_t *e, int z, int dir, int fine);
+void settings_draw(HDC dc, ed_t *e);
+const char *settings_zone_help(ed_t *e, int z);
+void settings_help(ed_t *e, char *out, int n);
+const char *settings_message(ed_t *e);
+intptr_t settings_test(ed_t *e, intptr_t op, char *buf, float opt);

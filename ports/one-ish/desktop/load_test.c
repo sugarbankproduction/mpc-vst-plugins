@@ -24,6 +24,7 @@
 #define TEST_FOCUS 0x4F314643      /* as editor.h: the Panel Focus */
 #include "patches.h"   /* TEST_PATCH and its operations, for the user patch tests */
 #include "seq_page.h"   /* TEST_SEQ and its operations, for the step sequencer's page */
+#include "settings.h"   /* TEST_SETTINGS and its operations, for the SETTINGS page */
 #include "../src/stepseq.h"   /* to read back the sequence the engine holds */
 
 typedef struct AEffect AEffect;
@@ -1038,6 +1039,7 @@ static void rate_led_test(AEffect *fx, HWND child, int w, int h) {
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
     check(fx->flags & 1, "the plugin says it has an editor window");
@@ -1131,10 +1133,125 @@ static void editor(AEffect *fx, const char *bmp) {
         seq_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         focus_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         failures += library_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* undo, compare, sets ... */
+        settings_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
     }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
     DestroyWindow(parent);
+}
+
+/* ---- the SETTINGS page (desktop/settings.c): its file in the temporary folder (ONEISH_SETTINGS) ---- */
+static char settings_file[MAX_PATH];
+static intptr_t st(AEffect *fx, int op, const char *in, char *out, float opt) {   /* a TEST_SETTINGS operation */
+    static char buf[1024];
+    snprintf(buf, sizeof buf, "%s", in ? in : "");
+    intptr_t r = fx->dispatcher(fx, 50, TEST_SETTINGS, op, buf, opt);
+    if (out) snprintf(out, 1024, "%s", buf);
+    return r;
+}
+static int file_has(const char *path, const char *text) {   /* the settings file holds this line */
+    char t[4096] = "";
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    size_t n = fread(t, 1, sizeof t - 1, f);
+    fclose(f);
+    t[n] = 0;
+    return strstr(t, text) != NULL;
+}
+static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char buf[1024], what[300];
+    (void)s;
+    check(st(fx, STT_RESTORE, NULL, NULL, 0) == 1 && file_has(settings_file, "autoload=1")
+              && file_has(settings_file, "ONE-ish settings 1"),
+          "SETTINGS: RESTORE DEFAULT SETTINGS writes the settings file (ONEISH_SETTINGS) with the defaults");
+    st(fx, STT_PATH, NULL, buf, 0);
+    snprintf(what, sizeof what, "SETTINGS: the file is where ONEISH_SETTINGS says (%s)", buf);
+    check(!_stricmp(buf, settings_file), what);
+
+    /* PRESET AUTOLOAD off: NEXT only points; a click on the PRESET knob loads it */
+    pt(fx, PT_LOAD_POS, NULL, NULL, 2);
+    int pos0 = (int)pt(fx, PT_POS, NULL, NULL, 0);
+    check(st(fx, STT_SET, "autoload=0", NULL, 0) == 1 && file_has(settings_file, "autoload=0"),
+          "SETTINGS: PRESET AUTOLOAD off is saved at once");
+    int after = (int)pt(fx, PT_STEP, NULL, NULL, 1), cue = (int)st(fx, STT_CUE, NULL, NULL, 0);
+    pt(fx, PT_STEP, NULL, NULL, 1);
+    int cue2 = (int)st(fx, STT_CUE, NULL, NULL, 0);
+    pt(fx, PT_TITLE, NULL, buf, 0);
+    snprintf(what, sizeof what, "autoload off: NEXT twice leaves patch %d loaded and points at %d, then %d (\"%s\")",
+             after, cue, cue2, buf);
+    check(after == pos0 && cue == pos0 + 1 && cue2 == pos0 + 2 && buf[0] == '>', what);
+    check(st(fx, STT_CUE_LOAD, NULL, NULL, 0) == 1 && pt(fx, PT_POS, NULL, NULL, 0) == pos0 + 2
+              && st(fx, STT_CUE, NULL, NULL, 0) == -1,
+          "autoload off: a click on the PRESET knob loads the one it points at");
+    st(fx, STT_SET, "autoload=1", NULL, 0);
+    check(pt(fx, PT_STEP, NULL, NULL, 1) == pos0 + 3 && st(fx, STT_CUE, NULL, NULL, 0) == -1,
+          "autoload on: NEXT loads at once, as before");
+
+    /* MIDI I/O FROM PRESET off: a loaded patch keeps the MIDI channel */
+    int ch = rnd_key("midi_ch");
+    if (ch < NPARAMS) {
+        float omni = 0.0f, five = 5.0f / (PARAMS[ch].nopts - 1);
+        fx->setParameter(fx, ch, omni);
+        pt(fx, PT_SAVE_AS, "MIDI IO Test", NULL, 1);
+        fx->setParameter(fx, ch, five);
+        st(fx, STT_SET, "midi_io_preset=0", NULL, 0);
+        pt(fx, PT_LOAD, "MIDI IO Test", NULL, 0);
+        float kept = fx->getParameter(fx, ch);
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);
+        float kept2 = fx->getParameter(fx, ch);
+        st(fx, STT_SET, "midi_io_preset=1", NULL, 0);
+        pt(fx, PT_LOAD, "MIDI IO Test", NULL, 0);
+        float loaded = fx->getParameter(fx, ch);
+        snprintf(what, sizeof what, "MIDI I/O FROM PRESET: off, a patch and a preset keep MIDI channel 5 (%.3f, %.3f); "
+                 "on, the patch's Omni loads (%.3f)", kept, kept2, loaded);
+        check(fabsf(kept - five) < 1e-4f && fabsf(kept2 - five) < 1e-4f && fabsf(loaded - omni) < 1e-4f, what);
+        pt(fx, PT_DELETE, NULL, NULL, 0);
+    }
+
+    /* the pedals: a fixed CC is skipped; the engine follows a new sustain number */
+    st(fx, STT_SET, "sustain_cc=66", NULL, 0);
+    check(file_has(settings_file, "sustain_cc=67"), "pedals: SUSTAIN can't take CC 66 (sostenuto): it moves on to 67");
+    st(fx, STT_SET, "exp1_cc=67", NULL, 0);
+    check(file_has(settings_file, "exp1_cc=68"), "pedals: two pedals can't share a CC (EXP 1 goes on to 68)");
+    st(fx, STT_SET, "sustain_cc=69", NULL, 0);
+    fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
+    play(fx, 400, 512);
+    send_midi(fx, 0xB0, 69, 127);
+    send_midi(fx, 0x90, 60, 100);
+    play(fx, 20, 512);
+    send_midi(fx, 0x80, 60, 0);
+    play(fx, 200, 512);
+    double held = play(fx, 10, 512);
+    send_midi(fx, 0xB0, 69, 0);
+    play(fx, 400, 512);
+    double gone = play(fx, 10, 512);
+    send_midi(fx, 0xB0, 64, 127);   /* the old number now does nothing */
+    send_midi(fx, 0x90, 60, 100);
+    play(fx, 20, 512);
+    send_midi(fx, 0x80, 60, 0);
+    play(fx, 400, 512);
+    double old = play(fx, 10, 512);
+    send_midi(fx, 0xB0, 64, 0);
+    snprintf(what, sizeof what, "pedals: sustain on CC 69 holds the note (rms %.4f), lets go (%.5f); CC 64 doesn't "
+             "hold any more (%.5f)", held, gone, old);
+    check(held > 0.01 && gone < held / 20 && old < held / 20, what);
+
+    /* the file is read again as a new process would; unknown lines are skipped */
+    FILE *f = fopen(settings_file, "wb");
+    if (f) { fputs("ONE-ish settings 1\r\nautoload=1\r\ntempo=99\r\nrx_clock=0\r\nnonsense line\r\nfuture_key=3\r\n", f); fclose(f); }
+    st(fx, STT_RELOAD, NULL, NULL, 0);
+    st(fx, STT_GET, NULL, buf, 0);
+    check(strstr(buf, "tempo=99") && strstr(buf, "rx_clock=0") && strstr(buf, "sustain_cc=64"),
+          "SETTINGS: a hand-edited file loads (unknown lines skipped, the rest at their defaults)");
+
+    if (bmp) {
+        for (int t = 0; t < ST_TABS; t++) {
+            static const char *const SUFFIX[ST_TABS] = {"_settings", "_settings_library", "_settings_tuning"};
+            st(fx, STT_TAB, NULL, NULL, (float)t);
+            shot(child, w, h, bmp, SUFFIX[t]);
+        }
+    }
+    st(fx, STT_RESTORE, NULL, NULL, 0);
 }
 
 /* ---- PANEL FOCUS (multitimbral): the panel shows the focused Synth's values ---- */
@@ -1321,6 +1438,8 @@ int main(int argc, char **argv) {
     CreateDirectoryA(seq_dir, NULL);
     empty_dir(seq_dir);
     SetEnvironmentVariableA("ONEISH_SEQ_DIR", seq_dir);
+    snprintf(settings_file, sizeof settings_file, "%s\\Settings.txt", patch_dir);   /* (removed with the folder) */
+    SetEnvironmentVariableA("ONEISH_SETTINGS", settings_file);
     HMODULE dll = LoadLibraryA(argc > 1 ? argv[1] : "ONE-ish.dll");
     if (!dll) { printf("FAIL LoadLibrary (error %lu)\n", GetLastError()); return 1; }
     AEffect *(*entry)(audioMasterCallback) = (AEffect * (*)(audioMasterCallback))(void *)GetProcAddress(dll, "VSTPluginMain");
