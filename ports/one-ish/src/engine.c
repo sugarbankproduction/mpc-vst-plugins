@@ -229,6 +229,11 @@ enum {
     P_EXT_LEVEL, P_EXT_ROUTE,
     /* the vocoders' SIBILANCE and SENSITIVITY: the synth effect's, then each master slot's (src/fx/vocoder.h) */
     P_MODFX_SIBIL, P_MODFX_SENS, P_DLY_SIBIL, P_DLY_SENS, P_REV_SIBIL, P_REV_SENS,
+    /* (2026-10-29) each matrix slot's ENABLE; the X/Y pad's polarity and hold, LOAD SAVED POS and the saved wheel and
+     * pad positions */
+    P_MOD1_ON, P_MOD16_ON = P_MOD1_ON + MOD_SLOTS - 1, P_PAD_POLARITY, P_PAD_HOLD, P_LOAD_POS, P_WHEEL_POS, P_PAD_X_POS,
+    P_PAD_Y_POS, P_EG_TIMES,   /* (2026-10-29) the envelopes' MIN and 13 synced values */
+    P_ARP_FOLLOW_SWING, P_SEQ_HOST_SS,   /* (2026-10-29) the arp's FOLLOW SWING; the sequencer on the host's start, stop */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -357,6 +362,9 @@ static const char *const KEYS[P_COUNT] = {
     "syn_on", "syn_ch", "key_lo", "key_hi", "master_level", "seq_all",
     "ext_level", "ext_route",
     "modfx_sibil", "modfx_sens", "dly_sibil", "dly_sens", "rev_sibil", "rev_sens",
+    "mod1_on", "mod2_on", "mod3_on", "mod4_on", "mod5_on", "mod6_on", "mod7_on", "mod8_on", "mod9_on", "mod10_on",
+    "mod11_on", "mod12_on", "mod13_on", "mod14_on", "mod15_on", "mod16_on", "pad_polarity", "pad_hold", "load_pos",
+    "wheel_pos", "pad_x_pos", "pad_y_pos", "eg_times", "arp_follow_swing", "seq_host_ss",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -415,6 +423,7 @@ static const short BANK[2][BK_COUNT] = {
 };
 
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
+#define NOCT 5         /* their options: 32' .. 2' */
 enum { FLT_PARALLEL, FLT_SERIES };
 
 /* tempo-synced LFO rates (the rate knob picks one): beats per LFO cycle */
@@ -433,7 +442,9 @@ static const struct { const char *name; float beats; } LFO_DIV[] = {
 #define NLDIV ((int)(sizeof LFO_DIV / sizeof LFO_DIV[0]))
 static const float LFO_TIMING[] = {1.0f, 1.5f, 2.0f / 3};   /* "lfoN_timing" options */
 static const char *const LFO_TIMING_TAG[] = {"", " D", " T"};
-static const float LFO_RANGE_HZ[] = {0.001f, 0.01f, 0.1f};   /* "lfoN_range": Slow, Low, Medium (lowest rate) */
+/* "lfoN_range": Slow, Low, Medium, High (each one's lowest rate; High, 1 Hz .. 1 kHz, runs per sample: 2026-10-29) */
+static const float LFO_RANGE_HZ[] = {0.001f, 0.01f, 0.1f, 1.0f};
+enum { LR_HIGH = 3 };
 enum { POL_BIPOLAR, POL_UNIPOLAR };                         /* "lfoN_polarity" options */
 
 typedef struct {
@@ -501,7 +512,25 @@ typedef struct {
     float mac_harm, mac_timbre, mac_morph;   /* its three knobs with the matrix's modulation, 0..1 */
     int mac_trig;            /* a note-on it hasn't seen yet (kept until the channel is heard) */
     int dying;               /* stolen for another Synth (the pool, src/synths.h): fading out, not counted as sounding */
+    /* (2026-10-29) the step-mod list's destinations */
+    env_cfg_t ncfg_v;        /* the noise EG's settings with this voice's modulation (when it has any) */
+    float nq[3];             /* the attack knob, release knob and sustain they were worked out for ... */
+    unsigned ngen;           /* ... and the shared settings' generation */
+    float multi_mat[NENV];   /* the matrix's MULTI TRIG modulation at the last control step (gate_on adds the sequencer's) */
+    float lfo_wdm[NLFO];     /* the matrix's LFO wave modulation from the last control step */
+    /* (2026-10-29) LFOs in the High range run per sample in render_voice (hi_lfo_block) */
+    unsigned hi_run;         /* bit n: LFO n is High and runs this control step (not waiting out its delay, not done) */
+    unsigned hi_reach;       /* bit n: and it moves pitch, a cutoff or the amp level (its per-sample offsets) */
+    float hi_inc[NLFO];      /* its step per sample */
+    int hi_wave[NLFO];       /* its wave and variation this step (modulation included) */
+    float hi_var[NLFO];
+    float hi_g[NLFO];        /* its delay / fade gain this step */
+    float hi_y0[NLFO];       /* its value at the control step (lfo_out), which the control-rate settings already hold */
+    float hi_k[NLFO][7];     /* how far it moves (per unit): HK_* below */
+    float hi_amp0;           /* the amp level's modulation without the High LFOs' share (1: none) ... */
+    float hi_amp1;           /* ... and with it, at the control step */
 } voice_t;
+enum { HK_PITCH, HK_O1, HK_O2, HK_O3, HK_LAD, HK_SVF, HK_AMP };   /* semitones (all, each osc), octaves (ladder, SVF), x */
 
 typedef struct {
     float val[P_COUNT];      /* each value in its own units: option index, semitones, cents, % or a 0..100 knob */
@@ -519,10 +548,12 @@ typedef struct {
     float lfo_hz[NLFO];      /* and their rates (apply_lfos) */
     float lfo_coef[NLFO];    /* each LFO's smoothing coefficient per control step (1: none) */
     float lfo_fade[NLFO][3]; /* each LFO's delay, fade in and fade out, samples (0: off) */
+    float lfo_coef1[NLFO];   /* each LFO's smoothing coefficient per sample (the High range's path; 1: none) */
     uint32_t bipolar;        /* bit s: matrix source s is bipolar (for the limit transforms) */
     uint8_t mod_list[MOD_SLOTS];   /* the matrix slots in use, and how many */
     int mod_n;
     int mod_env, mod_lfo;    /* a slot in use goes to an envelope's / an LFO's settings */
+    int mod_nenv;            /* ... or the noise EG's (2026-10-29) */
     uint8_t fx_list[MOD_SLOTS];   /* the slots in use that reach the effects (mod_list has the others), and how many */
     int fx_n;
     int fx_mod;              /* a slot or the ribbon reaches the effects: the effect pass runs */
@@ -664,10 +695,23 @@ static int sync_div(float knob) { return (int)clampf(roundf(knob * 0.01f * (NDIV
  * envelope's time scale (10% .. 1000%, a log knob with 100% in the middle). Delay and hold at 0 are off. */
 static float env_scale(float knob) { return powf(10.0f, (knob - 50.0f) * 0.02f); }
 static int env_div(float knob) { return NDIV - 1 - sync_div(knob); }
+/* (2026-10-29) EG TIMES "MIN, 13 Syncs" ("eg_times" 1; 0, the default, is as before): an attack, decay or release knob
+ * at its far left is MIN, shorter than 1 ms and left alone by TIME SCALE (and the voice cards); synced, the time knobs
+ * pick from the manual's 13 values, 1/64 to 64 beats (LFO_DIV's, longest on the right) */
+#define ENV_MIN_MS 0.2f
+static int eg13(const one_t *s) { return s->val[P_EG_TIMES] > 0.5f; }
+static int env_div13(float knob) { return NLDIV - 1 - (int)clampf(roundf(knob * 0.01f * (NLDIV - 1)), 0, NLDIV - 1); }
+static float env_sync_beats(const one_t *s, float knob) {
+    return eg13(s) ? LFO_DIV[env_div13(knob)].beats : SYNC_DIV[env_div(knob)].beats;
+}
+static const char *env_sync_name(const one_t *s, float knob) {
+    return eg13(s) ? LFO_DIV[env_div13(knob)].name : SYNC_DIV[env_div(knob)].name;
+}
 static float env_time_scaled(const one_t *s, int n, float knob, int zero_off, float scale_knob) {
     const float *x = &s->val[P_FENV_DELAY + EX_STRIDE * n];
     if (zero_off && knob <= 0.0f) return 0.0f;
-    if (x[X_SYNC] > 0.5f) return 60000.0f / s->bpm * SYNC_DIV[env_div(knob)].beats;
+    if (x[X_SYNC] > 0.5f) return 60000.0f / s->bpm * env_sync_beats(s, knob);
+    if (!zero_off && knob <= 0.0f && eg13(s)) return ENV_MIN_MS;
     return env_ms(knob) * env_scale(scale_knob);
 }
 static float env_time(const one_t *s, int n, float knob, int zero_off) {
@@ -714,17 +758,51 @@ static float lfo_rate_hz(const one_t *s, int n, float knob) {
     knob = clampf(knob, 0.0f, 100.0f);
     if (s->val[lfo_base(n) + 2] > 0.5f)
         return s->bpm / 60.0f / (LFO_DIV[lfo_div(knob)].beats * LFO_TIMING[(int)clampf(x[L_TIMING], 0, 2)]);
-    return LFO_RANGE_HZ[(int)clampf(x[L_RANGE], 0, 2)] * powf(LFO_RANGE, knob * 0.01f);
+    return LFO_RANGE_HZ[(int)clampf(x[L_RANGE], 0, LR_HIGH)] * powf(LFO_RANGE, knob * 0.01f);
 }
 static float lfo_hz(const one_t *s, int n) { return lfo_rate_hz(s, n, s->val[lfo_base(n)]); }
 
 /* an LFO delay or fade knob (0: off, then 1 ms .. 10 s) in samples */
 static float lfo_samples(float knob) { return knob > 0.0f ? env_ms(fminf(knob, 100.0f)) * 0.001f * SR : 0.0f; }
 
+/* ---- (2026-10-29) the step-mod list's destinations, the matrix slots' ENABLE, the pad's polarity, hold and saved
+ * positions ---- */
+/* which kind of per-voice setting a matrix destination reaches: an envelope's (times, sustain, switches), an LFO's
+ * (rate ... fades, wave), the noise EG's */
+static int md_env(int d) { return (d >= MD_FENV_DELAY && d <= MD_ENV_END) || (d >= MD_FENV_MULTI && d <= MD_ENVSW_END); }
+static int md_lfo(int d) { return (d >= MD_LFO1_RATE && d <= MD_LFO_END) || (d >= MD_LFO1_WAVE && d <= MD_LFO_WAVE_END); }
+static int md_nenv(int d) { return d >= MD_NOISE_A && d <= MD_NOISE_R; }
+/* a switch or option list moved by modulation m (+-1 = the whole list): the setting plus m times the list's span,
+ * rounded to a whole step and kept in the list */
+static int md_step(float setting, float m, int nopts) {
+    return (int)clampf(roundf(setting + m * (float)(nopts - 1)), 0.0f, (float)(nopts - 1));
+}
+/* PAD POLARITY: Bipolar makes Pad X and Y -1..1 (the centre 0) instead of 0..1 */
+static int pad_bipolar(const one_t *s) { return s->val[P_PAD_POLARITY] > 0.5f; }
+static float pad_src(const one_t *s, float v) { return pad_bipolar(s) ? 2.0f * v - 1.0f : v; }
+/* X/Y HOLD off: lifting the finger sends the pad back to its rest (0, or the centre when bipolar) */
+static void pad_release(one_t *s) {
+    if (s->val[P_PAD_HOLD] > 0.5f) return;
+    s->pad_x = s->pad_y = pad_bipolar(s) ? 0.5f : 0.0f;
+}
+/* LOAD SAVED POS ("load_pos": Off, Mod Wheel, Pad, Both; bit 0 the wheel, bit 1 the pad): a state saved with it holds
+ * the mod wheel's and the pad's positions (wheel_pos, pad_x_pos, pad_y_pos, 0..100%); loading it puts them back */
+static void positions_capture(one_t *s) {   /* (get_state: before the values are written) */
+    int lp = (int)s->val[P_LOAD_POS];
+    if (lp & 1) s->val[P_WHEEL_POS] = s->wheel * 100.0f;
+    if (lp & 2) { s->val[P_PAD_X_POS] = s->pad_x * 100.0f; s->val[P_PAD_Y_POS] = s->pad_y * 100.0f; }
+}
+static void positions_load(one_t *s) {
+    int lp = (int)s->val[P_LOAD_POS];
+    if (lp & 1) s->wheel = s->val[P_WHEEL_POS] * 0.01f;
+    if (lp & 2) { s->pad_x = s->val[P_PAD_X_POS] * 0.01f; s->pad_y = s->val[P_PAD_Y_POS] * 0.01f; }
+}
+
 /* the LFOs' settings that don't change per voice */
 static void apply_lfos(one_t *s) {
     s->bipolar = 1u << MS_KEY | 1u << MS_RAND | 1u << MS_BEND
-                 | (uint32_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON;
+                 | (uint32_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON
+                 | (uint32_t)pad_bipolar(s) * (1u << MS_PAD_X | 1u << MS_PAD_Y);
     static const int src[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
     for (int n = 0; n < NLFO; n++) {
         const float *x = lfo_x(s, n);
@@ -735,7 +813,13 @@ static void apply_lfos(one_t *s) {
         s->lfo_fade[n][2] = lfo_samples(x[L_FADE_OUT]);
         s->lfo_hz[n] = lfo_hz(s, n);
         if ((int)x[L_POLARITY] == POL_BIPOLAR) s->bipolar |= 1u << src[n];
+        /* the High range's per-sample path: its smoothing per sample (2026-10-29) */
+        s->lfo_coef1[n] = sm > 0.0f ? 1.0f - expf(-6.2831853f * LFO_SMOOTH_HZ * powf(10.0f, -4.0f * sm) / SR) : 1.0f;
     }
+}
+/* LFO n runs per sample: RANGE High, not tempo-synced (2026-10-29) */
+static int lfo_high(const one_t *s, int n) {
+    return s->val[lfo_base(n) + 2] < 0.5f && (int)lfo_x(s, n)[L_RANGE] == LR_HIGH;
 }
 
 /* the matrix slots in use, split into those the voices evaluate and those that reach the effects (the effect pass),
@@ -743,11 +827,12 @@ static void apply_lfos(one_t *s) {
  * skipped) or the effects (else the effect pass is skipped) */
 static void apply_matrix(one_t *s) {
     uint8_t all[MOD_SLOTS];
-    int n = mod_active(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], all), rd = (int)s->val[P_RIBBON_DST];
+    int n = mod_active(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], &s->val[P_MOD1_ON], all), rd = (int)s->val[P_RIBBON_DST];
     s->fx_stale = 1;   /* a setting changed: the next render works the effect settings out again */
     s->mod_n = s->fx_n = 0;
-    s->mod_env = rd >= MD_FENV_DELAY && rd <= MD_ENV_END;
-    s->mod_lfo = rd >= MD_LFO1_RATE && rd <= MD_LFO_END;
+    s->mod_env = md_env(rd);
+    s->mod_lfo = md_lfo(rd);
+    s->mod_nenv = md_nenv(rd) || s->sq.nenv_lanes;
     memset(s->fx_dst, 0, sizeof s->fx_dst);
     if (rd >= MD_FX_FIRST && rd <= MD_FX_END) s->fx_dst[(rd - MD_FX_FIRST) >> 6] |= 1ull << ((rd - MD_FX_FIRST) & 63);
     for (int k = 0; k < n; k++) {
@@ -758,8 +843,9 @@ static void apply_matrix(one_t *s) {
             continue;
         }
         s->mod_list[s->mod_n++] = all[k];
-        s->mod_env |= d >= MD_FENV_DELAY && d <= MD_ENV_END;
-        s->mod_lfo |= d >= MD_LFO1_RATE && d <= MD_LFO_END;
+        s->mod_env |= md_env(d);
+        s->mod_lfo |= md_lfo(d);
+        s->mod_nenv |= md_nenv(d);
     }
     s->mod_env |= s->sq.env_lanes;   /* the step sequencer's modulation lanes reach them like slots */
     s->mod_lfo |= s->sq.lfo_lanes;
@@ -1188,12 +1274,20 @@ static void forget(one_t *s, int note) {
         }
 }
 
-static void gate_on(voice_t *v) {
+static float sq_dest_now(const one_t *s, int d, const float *src);   /* src/stepseq_run.h */
+/* envelope n's MULTI TRIG for a note starting now: the setting, or with modulation reaching it, the matrix's (from the
+ * last control step) and the sequencer's lanes as they are on this step */
+static int env_multi(const one_t *s, const voice_t *v, int n) {
+    if (!s->mod_env) return v->env[n].cfg->multi;
+    int d = MD_FENV_MULTI + MDS_COUNT * n + MDS_MULTI;
+    return md_step(s->val[P_FENV_MULTI + EX_STRIDE * n], v->multi_mat[n] + sq_dest_now(s, d, v->src), 2);
+}
+static void gate_on(const one_t *s, voice_t *v) {
     /* a legato note (this voice's key still down) restarts an envelope only with its MULTI TRIG on */
     int legato = v->gate && !v->sustained && v->env[ENV_AMP].stage != ENV_IDLE;
     for (int n = 0; n < NENV; n++)
-        if (!legato || v->env[n].cfg->multi) env_gate_on(&v->env[n]);
-    if (!legato || v->env[ENV_AMP].cfg->multi) {   /* the noise EG and the MACRO channel's trigger go with the amp's */
+        if (!legato || env_multi(s, v, n)) env_gate_on(&v->env[n]);
+    if (!legato || env_multi(s, v, ENV_AMP)) {   /* the noise EG and the MACRO channel's trigger go with the amp's */
         env_gate_on(&v->nenv);
         v->mac_trig = 1;
     }
@@ -1325,6 +1419,7 @@ static int mono_key(const one_t *s) {
  * note-on reset or a repeat count it restarts at its start phase with a random value of its own; the delay and fades
  * start again */
 static void lfo_note_on(one_t *s, voice_t *v) {
+    v->hi_run = v->hi_reach = 0;   /* the High range's per-sample path waits for the next control step's values */
     for (int n = 0; n < NLFO; n++) {
         const float *x = lfo_x(s, n);
         lfo_t *l = &v->lfo[n];
@@ -1442,7 +1537,7 @@ static void note_on(one_t *s, int note, int vel) {
         v->age = age;
         stack_voice(v, k, stack);
         start_note(s, v, note, legato);
-        gate_on(v);
+        gate_on(s, v);
         lfo_note_on(s, v);
     }
 }
@@ -1460,7 +1555,7 @@ static void note_off(one_t *s, int note) {
                 int start = !v->gate;   /* this voice wasn't playing (a switch from poly or to unison): start it */
                 if (start) stack_voice(v, k, stack);
                 start_note(s, v, key, 1);
-                if (start) { gate_on(v); lfo_note_on(s, v); }
+                if (start) { gate_on(s, v); lfo_note_on(s, v); }
             }
         }
         return;
@@ -1647,7 +1742,9 @@ static void clock_block(one_t *s) {
     double bps = bpm / 60.0 / SR, now_pos = clock_pos(s);
     double step = ARP_DIV_BEATS[(int)clampf(p[P_ARP_DIV], 0, 7)] * ARP_TIMING[(int)clampf(p[P_ARP_TIMING], 0, 2)];
     /* SWING: the on-step's share of each pair of steps (50%: none), so odd steps come later (or earlier) */
-    double swoff = (2.0 * clampf(p[P_ARP_SWING] * 0.01f, 0.1f, 0.9f) - 1.0) * step;
+    /* FOLLOW SWING (synced, 2026-10-29): the master swing instead of the arp's own */
+    float sw = sync && p[P_ARP_FOLLOW_SWING] > 0.5f ? p[P_CLOCK_SWING] : p[P_ARP_SWING];
+    double swoff = (2.0 * clampf(sw * 0.01f, 0.1f, 0.9f) - 1.0) * step;
     int restep = step != s->step || swoff != s->swoff, jump = 0;
     s->step = step;
     s->swoff = swoff;
@@ -1867,14 +1964,39 @@ static void perf_after_set(one_t *s, int k) {
     if (r == ROUTE_SEQ && (k == P_HOLD || k == P_ARP_LATCH || k < 0)) seq_unlatch(s);
 }
 
+/* (2026-10-29) the host's transport starts: every tempo-synced LFO goes back to its START PHASE, the free-running one
+ * and each voice's own (its repeat count carries on), as the manual's Master Clock start does */
+static void lfo_transport_start(one_t *s) {
+    for (int n = 0; n < NLFO; n++) {
+        if (s->val[lfo_base(n) + 2] < 0.5f) continue;
+        float ph = lfo_x(s, n)[L_PHASE] * 0.01f;
+        lfo_reset(&s->lfo[n], ph);
+        for (int i = 0; i < MAX_VOICES; i++)
+            if (s->voice[i].lfo_own >> n & 1) s->voice[i].lfo[n].phase = ph - floorf(ph);
+    }
+}
+
 /* the host's song position at each block (HAS_SONG_POS): the step clock follows it while synced and playing */
+static void synth_after(one_t *s, int k);
 static void synth_song_pos(one_t *s, double ppq, double bpm, int playing, int frames) {
     (void)frames;
+    int started = playing && !s->sp_playing, stopped = !playing && s->sp_playing;
+    if (started) lfo_transport_start(s);
     s->sp_ppq = ppq;
     s->sp_bpm = bpm;
     s->sp_playing = playing;
     s->sp_new = 1;
     s->sq.sp_new = 1;
+    /* RECEIVE START/STOP (seq_host_ss, 2026-10-29): the host's start plays the sequence (ON, the Synth on, NOTE TRIG
+     * off), its stop stops it; PLAY follows and the host is told */
+    if (s->val[P_SEQ_HOST_SS] < 0.5f || (!started && !stopped)) return;
+    int play = s->val[P_SEQ_PLAY] > 0.5f;
+    if (started && !play && s->on && s->val[P_SEQ_ON] > 0.5f && s->val[P_SEQ_NOTE_TRIG] < 0.5f) play = 1;
+    else if (stopped && play) play = 0;
+    else return;
+    s->val[P_SEQ_PLAY] = (float)play;
+    s->changed |= 1u << SQ_CHG_PLAY;
+    synth_after(s, P_SEQ_PLAY);
 }
 
 /* a MIDI message for this Synth (src/synths.h chose which Synths, by channel and key range) */
@@ -1898,7 +2020,10 @@ static void synth_midi(one_t *s, const uint8_t *m, int len) {
     else if (st == 0xb0 && d1 == 4) s->exp2 = d2 / 127.0f;
     else if (st == 0xb0 && d1 == PAD_X_CC) s->pad_x = d2 / 127.0f;
     else if (st == 0xb0 && d1 == PAD_Y_CC) s->pad_y = d2 / 127.0f;
-    else if (st == 0xb0 && d1 == PAD_TOUCH_CC) s->pad_gate = d2 >= 64 ? 1.0f : 0.0f;
+    else if (st == 0xb0 && d1 == PAD_TOUCH_CC) {
+        s->pad_gate = d2 >= 64 ? 1.0f : 0.0f;
+        if (d2 < 64) pad_release(s);   /* X/Y HOLD off: back to its rest */
+    }
     else if (st == 0xb0 && (d1 == RIBBON_CC || d1 == RIBBON_TOUCH_CC)) ribbon_cc(s, d1, d2);
     else if (st == 0xb0 && d1 == 121) {   /* reset all controllers */
         s->wheel = s->aftertouch = s->bend = s->exp1 = s->exp2 = s->pad_x = s->pad_y = s->pad_gate = 0.0f;
@@ -1938,6 +2063,7 @@ static void synth_after(one_t *s, int k) {
     link_cutoffs(s, k);
     apply(s);
     if (k < 0 || (k >= P_ARP_ON && k <= P_ARP_PEND_MODE)) s->adirty = 1;   /* what the arp's pattern is built from */
+    if (k < 0 || (k >= P_WHEEL_POS && k <= P_PAD_Y_POS)) positions_load(s);   /* LOAD SAVED POS: a state, or a preset */
     /* a new origin or SPRING with no finger on the ribbon: it goes back to its (new) origin */
     if ((k < 0 || k == P_RIBBON_ORIGIN || k == P_RIBBON_MODE) && !s->rib_touch
         && (int)s->val[P_RIBBON_MODE] == RIB_SPRING)
@@ -1953,7 +2079,9 @@ static void synth_after(one_t *s, int k) {
     s->hold = hold_on(s);
     for (int i = 0; i < MAX_VOICES; i++)   /* LATCH off: envelopes it held open after key up now release */
         for (int n = 0; n < NENV; n++)
-            if (!s->ecfg[n].latch && s->voice[i].env[n].held && !s->voice[i].gate) env_release(&s->voice[i].env[n]);
+            if (!(s->mod_env ? s->voice[i].env[n].cfg->latch : s->ecfg[n].latch) && s->voice[i].env[n].held
+                && !s->voice[i].gate)   /* (with modulation reaching an envelope: the voice's own LATCH) */
+                env_release(&s->voice[i].env[n]);
     perf_after_set(s, k);
     sq_sync_params(s);
     synth_switch(s);   /* ON off: everything it plays lets go */
@@ -2028,7 +2156,8 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
     }
     if (k >= P_ENV_A && k < P_ENV_A + NENV * ENV_STRIDE && (k - P_ENV_A) % ENV_STRIDE != 2) {   /* A, D, R: not S */
         if (s->val[P_FENV_SYNC + EX_STRIDE * ((k - P_ENV_A) / ENV_STRIDE)] > 0.5f)
-            return snprintf(buf, n, "%s", SYNC_DIV[env_div(s->val[k])].name);
+            return snprintf(buf, n, "%s", env_sync_name(s, s->val[k]));
+        if (s->val[k] <= 0.0f && eg13(s)) return snprintf(buf, n, "MIN");
         return time_text(buf, n, env_ms(s->val[k]));
     }
     if (k >= P_FENV_DELAY && k < P_FENV_DELAY + NENV * EX_STRIDE) {   /* delay, hold, time scale */
@@ -2036,7 +2165,7 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
         if (x == X_SCALE) return snprintf(buf, n, "%.0f%%", env_scale(s->val[k]) * 100.0f);
         if (x != X_DELAY && x != X_HOLD) return 0;
         if (s->val[k] <= 0.0f) return snprintf(buf, n, "0 ms");
-        if (s->val[P_FENV_SYNC + EX_STRIDE * e] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[env_div(s->val[k])].name);
+        if (s->val[P_FENV_SYNC + EX_STRIDE * e] > 0.5f) return snprintf(buf, n, "%s", env_sync_name(s, s->val[k]));
         return time_text(buf, n, env_ms(s->val[k]));
     }
     if (k == P_KEY_CENTER || k == P_KEY_LO || k == P_KEY_HI) {   /* a note name, middle C (60) as C4, and the MIDI note number */
@@ -2178,22 +2307,39 @@ static void voice_lfos(const one_t *s, voice_t *v) {
         if (f[0] > 0.0f || f[1] > 0.0f || f[2] > 0.0f
             || (s->mod_lfo && (dm[MDL_DELAY] != 0.0f || dm[MDL_FADE_IN] != 0.0f || dm[MDL_FADE_OUT] != 0.0f)))
             g = lfo_fade(s, v, n, dm, &waiting);
-        int own = x[L_RESET] > 0.5f || repeats >= 1
-                  || (s->mod_lfo && (dm[MDL_RATE] != 0.0f || dm[MDL_SEMIS] != 0.0f || dm[MDL_VAR] != 0.0f));
+        float wdm = s->mod_lfo ? v->lfo_wdm[n] : 0.0f;   /* LFO WAVE as a destination (2026-10-29) */
+        int wave = wdm != 0.0f ? md_step(s->val[lfo_base(n) + 1], wdm, LFO_WAVES) : (int)s->val[lfo_base(n) + 1];
+        int high = lfo_high(s, n);   /* RANGE High: each voice runs it, per sample (render_voice, 2026-10-29) */
+        int own = x[L_RESET] > 0.5f || repeats >= 1 || high
+                  || (s->mod_lfo && (dm[MDL_RATE] != 0.0f || dm[MDL_SEMIS] != 0.0f || dm[MDL_VAR] != 0.0f || wdm != 0.0f));
+        v->hi_run &= ~(1u << n);
         if (!own) {
             v->lfo_own &= ~(1u << n);
             y = s->lfo_val[n];
         } else {
             lfo_t *l = &v->lfo[n];
             if (!(v->lfo_own >> n & 1)) { *l = s->lfo[n]; v->lfo_own |= 1u << n; }
-            if (!waiting && (repeats < 1 || l->cycles < repeats)) {   /* a restarted LFO waits out its delay */
-                float hz = dm[MDL_RATE] != 0.0f ? lfo_rate_hz(s, n, s->val[lfo_base(n)] + 100.0f * dm[MDL_RATE]) : s->lfo_hz[n];
+            int run = !waiting && (repeats < 1 || l->cycles < repeats);   /* a restarted LFO waits out its delay */
+            float hz = 0.0f, var = x[L_VAR] * 0.01f + dm[MDL_VAR];
+            if (run) {
+                hz = dm[MDL_RATE] != 0.0f ? lfo_rate_hz(s, n, s->val[lfo_base(n)] + 100.0f * dm[MDL_RATE]) : s->lfo_hz[n];
                 if (dm[MDL_SEMIS] != 0.0f) hz *= exp2f(dm[MDL_SEMIS] * MOD_PITCH_ST / 12.0f);
-                lfo_advance(l, fminf(hz * CR / SR, 0.5f));
             }
-            if (repeats >= 1 && l->cycles >= repeats) y = 0.0f;
-            else y = lfo_smooth(l, lfo_polar(s, n, lfo_shape(l, (int)s->val[lfo_base(n) + 1], x[L_VAR] * 0.01f + dm[MDL_VAR])),
-                                s->lfo_coef[n]);
+            if (high) {   /* not moved on here: the samples of this step do it; this is its value now */
+                v->hi_run |= (unsigned)run << n;
+                v->hi_inc[n] = fminf(hz / SR, 0.49f);
+                v->hi_wave[n] = wave;
+                v->hi_var[n] = var;
+                v->hi_g[n] = g;
+                if (repeats >= 1 && l->cycles >= repeats) y = 0.0f;
+                else if (s->lfo_coef1[n] < 1.0f) y = l->smooth;
+                else y = lfo_polar(s, n, lfo_shape(l, wave, var));
+                v->hi_y0[n] = y * g;
+            } else {
+                if (run) lfo_advance(l, fminf(hz * CR / SR, 0.5f));
+                if (repeats >= 1 && l->cycles >= repeats) y = 0.0f;
+                else y = lfo_smooth(l, lfo_polar(s, n, lfo_shape(l, wave, var)), s->lfo_coef[n]);
+            }
         }
         v->lfo_out[n] = y * g;
     }
@@ -2203,15 +2349,48 @@ static void voice_lfos(const one_t *s, voice_t *v) {
  * and the time scale's 10% .. 1000%, both log), 1000 + the division when synced, or ENV_Q_OFF for a delay or hold
  * at 0 */
 #define ENV_Q_OFF -1e9f
-static float env_q(const one_t *s, int n, float knob, int zero_off, float scale_knob) {
+#define ENV_Q_MIN 2000.0f   /* MIN (EG TIMES "MIN, 13 Syncs"); 1100 + a division: the 13-value list's */
+static float env_q(const one_t *s, int n, float knob, int zero_off, float scale_knob, int sync) {
+    (void)n;
     if (zero_off && knob <= 0.0f) return ENV_Q_OFF;
-    if (s->val[P_FENV_SYNC + EX_STRIDE * n] > 0.5f) return 1000.0f + (float)env_div(knob);
+    if (sync) return eg13(s) ? 1100.0f + (float)env_div13(knob) : 1000.0f + (float)env_div(knob);
+    if (!zero_off && knob <= 0.0f && eg13(s)) return ENV_Q_MIN;
     return 0.04f * knob + 0.02f * (scale_knob - 50.0f);
 }
 static float env_q_ms(const one_t *s, float q) {
     if (q <= ENV_Q_OFF * 0.5f) return 0.0f;
+    if (q >= ENV_Q_MIN - 1.0f) return ENV_MIN_MS;
+    if (q >= 1099.0f) return 60000.0f / s->bpm * LFO_DIV[(int)(q - 1100.0f)].beats;
     if (q >= 999.0f) return 60000.0f / s->bpm * SYNC_DIV[(int)(q - 1000.0f)].beats;
     return exp2f(q * 3.3219281f);   /* 10^q */
+}
+
+/* LATCH modulated off after the key went up (it held the envelope open): it lets go now, as LATCH switched off does.
+ * Only while modulation reaches an envelope (otherwise synth_after does it when the switch moves). */
+static void env_unlatch(const one_t *s, voice_t *v, int n) {
+    env_t *e = &v->env[n];
+    if (s->mod_env && !e->cfg->latch && e->held && !v->gate) env_release(e);
+}
+
+/* (2026-10-29) the noise EG with the matrix's NOISE EG ATTACK, SUSTAIN and RELEASE: its own settings while any of them
+ * moves (worked out again when a time moves by more than 1% or the sustain switch flips), else the shared ones */
+static void voice_nenv(const one_t *s, voice_t *v, const float *dm) {
+    float ma = dm[MD_NOISE_A], ms = dm[MD_NOISE_SUS], mr = dm[MD_NOISE_R];
+    if (!s->mod_nenv || (ma == 0.0f && ms == 0.0f && mr == 0.0f)) { v->nenv.cfg = &s->ncfg; return; }
+    float a = clampf(s->val[P_NOISE_A] + 100.0f * ma, 0.0f, 100.0f), r = clampf(s->val[P_NOISE_R] + 100.0f * mr, 0.0f, 100.0f);
+    float sus = (float)md_step(s->val[P_NOISE_SUS], ms, 2);
+    env_cfg_t *c = &v->ncfg_v;
+    if (v->nenv.cfg == c && fabsf(a - v->nq[0]) < 0.11f && fabsf(r - v->nq[1]) < 0.11f && sus == v->nq[2]
+        && v->ngen == s->env_gen)
+        return;   /* within 1% (the knob is 25 per decade: 1% of a time is 0.11 of it), the same switch */
+    v->ngen = s->env_gen;
+    v->nq[0] = a;
+    v->nq[1] = r;
+    v->nq[2] = sus;
+    float na = env_ms(a), nr = env_ms(r);
+    *c = s->ncfg;
+    env_config(c, (const float[5]){0.0f, na, 0.0f, nr, nr}, sus, 0.0f, 0.5f, 0.5f, SR);
+    v->nenv.cfg = c;
 }
 
 /* one voice's envelope settings with the matrix's envelope destinations: the stage times move on the time knobs'
@@ -2229,26 +2408,35 @@ static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
         return;
     }
     for (int n = 0; n < NENV; n++) {
-        const float *m = &dm[MD_FENV_DELAY + MDE_COUNT * n];
-        float dq = v->an_env_dq[n];
-        int any = 0;
-        for (int k = 0; k < MDE_COUNT && s->mod_env; k++) any |= m[k] != 0.0f;
-        if (!any && dq == 0.0f) { v->env[n].cfg = &s->ecfg[n]; continue; }
+        const float *m = &dm[MD_FENV_DELAY + MDE_COUNT * n], *sw = &dm[MD_FENV_MULTI + MDS_COUNT * n];
         const float *e = &s->val[P_ENV_A + ENV_STRIDE * n], *x = &s->val[P_FENV_DELAY + EX_STRIDE * n];
+        float dq = v->an_env_dq[n];
+        int any = 0, swm = 0;   /* (swm: the switches MULTI TRIG, SYNC, LOOP, LATCH are modulated, 2026-10-29) */
+        for (int k = 0; k < MDE_COUNT && s->mod_env; k++) any |= m[k] != 0.0f;
+        for (int k = 0; k < MDS_COUNT && s->mod_env; k++) swm |= sw[k] != 0.0f;
+        if (!any && !swm && dq == 0.0f) {
+            v->env[n].cfg = &s->ecfg[n];
+            env_unlatch(s, v, n);
+            continue;
+        }
         const float knob[5] = {x[X_DELAY], e[0], x[X_HOLD], e[1], e[3]};
+        int sync = swm ? md_step(x[X_SYNC], sw[MDS_SYNC], 2) : x[X_SYNC] > 0.5f;
         env_cfg_t *c = &v->ecfg[n];
         int fresh = v->env[n].cfg != c || v->egen[n] != s->env_gen;
-        if (!any && !fresh && !v->env_mod[n]) continue;   /* the card's times alone, already worked out */
-        v->env_mod[n] = any;
+        if (!any && !swm && !fresh && !v->env_mod[n]) continue;   /* the card's times alone, already worked out */
+        v->env_mod[n] = any || swm;
         if (fresh) {   /* start from the shared settings */
             *c = s->ecfg[n];
             v->egen[n] = s->env_gen;
-            for (int k = 0; k < 5; k++) v->eq[n][k] = env_q(s, n, knob[k], k == 0 || k == 2, x[X_SCALE]);
+            for (int k = 0; k < 5; k++) v->eq[n][k] = env_q(s, n, knob[k], k == 0 || k == 2, x[X_SCALE], x[X_SYNC] > 0.5f);
         }
         const float bend[5] = {0.0f, -x[X_ACURVE] * 0.01f, 0.0f, x[X_DCURVE] * 0.01f, x[X_RCURVE] * 0.01f};
         float scale = clampf(x[X_SCALE] + 100.0f * m[MDE_SCALE], 0.0f, 100.0f);
+        c->multi = swm ? md_step(x[X_MULTI], sw[MDS_MULTI], 2) : s->ecfg[n].multi;
+        c->loop = swm ? md_step(x[X_LOOP], sw[MDS_LOOP], 2) : s->ecfg[n].loop;
+        c->latch = swm ? md_step(x[X_LATCH], sw[MDS_LATCH], 2) : s->ecfg[n].latch;
         for (int k = 0; k < 5; k++) {
-            float q = env_q(s, n, clampf(knob[k] + 100.0f * m[knob_md[k]], 0.0f, 100.0f), k == 0 || k == 2, scale);
+            float q = env_q(s, n, clampf(knob[k] + 100.0f * m[knob_md[k]], 0.0f, 100.0f), k == 0 || k == 2, scale, sync);
             if (q > ENV_Q_OFF * 0.5f && q < 999.0f) q += dq;   /* a free time (not off, not tempo-synced) */
             if (fabsf(q - v->eq[n][k]) < 0.0043f) continue;   /* within 1% */
             v->eq[n][k] = q;
@@ -2258,6 +2446,50 @@ static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
         c->has_hold = v->eq[n][2] > ENV_Q_OFF * 0.5f;
         c->sustain = clampf(e[2] * 0.01f + m[MDE_SUSTAIN], 0.0f, 1.0f);
         v->env[n].cfg = c;
+        env_unlatch(s, v, n);
+    }
+}
+
+/* (2026-10-29) the High range's per-sample reach: for each LFO running per sample, how far one unit of it moves the
+ * pitch (all oscillators and each one), both cutoffs and the amp level, from the hard-wired amounts (LFO 1 to pitch,
+ * LFO 2 to the cutoffs) and the matrix slots where it acts linearly (as the source or the controller of a slot with no
+ * transform; not both). Everything else it reaches follows it at the control rate. hi_amp0: the amp level's
+ * modulation without the High LFOs' share, which the per-sample path puts back. */
+static void hi_coefs(const one_t *s, voice_t *v, const float *src, const float *dm) {
+    static const int MS_OF[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
+    const float *p = s->val;
+    v->hi_reach = 0;
+    v->hi_amp0 = v->hi_amp1 = 1.0f + dm[MD_AMP];
+    for (int n = 0; n < NLFO; n++) {
+        if (!(v->hi_run >> n & 1)) continue;
+        float *k = v->hi_k[n];
+        memset(k, 0, sizeof v->hi_k[n]);
+        if (n == 0) k[HK_PITCH] += (p[P_PITCH_LFO] * 0.01f + dm[MD_PITCH_LFO1]) * LFO_PITCH_ST;
+        if (n == 1) {
+            k[HK_LAD] += (p[P_LAD_LFO] * 0.01f + dm[MD_LAD_LFO2]) * LFO_CUT_OCT;
+            k[HK_SVF] += (p[P_SVF_LFO] * 0.01f + dm[MD_SVF_LFO2]) * LFO_CUT_OCT;
+        }
+        int ms = MS_OF[n];
+        for (int j = 0; j < s->mod_n; j++) {
+            int i = s->mod_list[j];
+            const float *sl = &p[P_MOD_BASE + MOD_SLOT_PARAMS * i], *ex = &p[P_MODX_BASE + MOD_SLOT_EXTRA * i];
+            int sr = (int)sl[0], d = (int)sl[1], via = (int)sl[3];
+            if ((int)ex[1] != MX_NONE || (sr == ms && via == ms)) continue;
+            int has_src = sr > MS_OFF && sr < MS_COUNT, has_via = via > MS_OFF && via < MS_COUNT;
+            float c = ex[0] * 0.01f, amt = sl[2] * 0.01f, per;
+            if (has_src && sr == ms) per = amt * (has_via ? (c >= 0.0f ? 1.0f - c + c * src[via] : 1.0f + c * src[via]) : 1.0f);
+            else if (has_src && via == ms) per = src[sr] * c * amt;   /* the controller's gain is linear in it */
+            else if (!has_src && via == ms) per = c;                  /* a controller alone: the source, its amount */
+            else continue;
+            if (d == MD_PITCH) k[HK_PITCH] += per * MOD_PITCH_ST;
+            else if (d >= MD_O1_PITCH && d <= MD_O3_PITCH) k[HK_O1 + d - MD_O1_PITCH] += per * MOD_PITCH_ST;
+            else if (d == MD_LAD_CUT) k[HK_LAD] += per * MOD_CUT_OCT;
+            else if (d == MD_SVF_CUT) k[HK_SVF] += per * MOD_CUT_OCT;
+            else if (d == MD_AMP) k[HK_AMP] += per;
+        }
+        for (int h = 0; h < HK_AMP + 1; h++)
+            if (k[h] != 0.0f) v->hi_reach |= 1u << n;
+        v->hi_amp0 -= v->hi_y0[n] * k[HK_AMP];
     }
 }
 
@@ -2295,8 +2527,8 @@ static void control_voice(one_t *s, voice_t *v) {
     src[MS_NOISE_EG] = v->noise_env;
     src[MS_SOSTENUTO] = s->sostenuto ? 1.0f : 0.0f;
     src[MS_RIBBON] = ribbon_value(s);
-    src[MS_PAD_X] = s->pad_x;
-    src[MS_PAD_Y] = s->pad_y;
+    src[MS_PAD_X] = pad_src(s, s->pad_x);
+    src[MS_PAD_Y] = pad_src(s, s->pad_y);
     src[MS_PAD_GATE] = s->pad_gate;
     /* the voice's slots (none reaches an effect: those are the effect pass's); the MACRO destinations sit past them */
     memset(dm + MD_MAC_HARM, 0, sizeof(float) * (MD_COUNT - MD_MAC_HARM));
@@ -2304,9 +2536,14 @@ static void control_voice(one_t *s, voice_t *v) {
     int rd = (int)p[P_RIBBON_DST];   /* the ribbon's quick assignment, to a voice destination */
     if (rd > MD_OFF && (rd < MD_FX_FIRST || (rd > MD_FX_END && rd < MD_COUNT)))
         dm[rd] += src[MS_RIBBON] * p[P_RIBBON_AMT] * 0.01f;
+    for (int n = 0; n < NENV && s->mod_env; n++) v->multi_mat[n] = dm[MD_FENV_MULTI + MDS_COUNT * n + MDS_MULTI];
     if (s->sq.mod_live) sq_mod_voice(s, src, dm);   /* the sequencer's modulation lanes */
     memcpy(v->lfo_dm, &dm[MD_LFO1_RATE], sizeof v->lfo_dm);   /* the LFOs read these next step */
+    memcpy(v->lfo_wdm, &dm[MD_LFO1_WAVE], sizeof v->lfo_wdm);
     voice_envs(s, v, dm);
+    voice_nenv(s, v, dm);
+    if (v->hi_run) hi_coefs(s, v, src, dm);   /* LFOs in the High range: their per-sample reach */
+    else v->hi_reach = 0;
     float fenv = src[MS_FENV], key_oct = kc / 12.0f;
 
     float semis = v->lfo_out[0] * (p[P_PITCH_LFO] * 0.01f + dm[MD_PITCH_LFO1]) * LFO_PITCH_ST
@@ -2315,10 +2552,16 @@ static void control_voice(one_t *s, voice_t *v) {
     float dr[NDRIFT] = {0};   /* analog drift, -1..1 x the amount per oscillator and for the cutoffs; off: none at all */
     float drift = clampf(p[P_DRIFT] * 0.01f + dm[MD_DRIFT], 0.0f, 1.0f);
     if (drift > 0.0f) drift_step(s, v, dr, drift);
-    const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST + v->an_tune[0],
-                                   dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST + v->an_tune[1],
-                                   dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2) + dr[2] * DRIFT_ST + v->an_tune[2]};
-    for (int n = 0; n < NOSC; n++) v->beat_mod[n] = dm[MD_O1_BEAT + n] * BEAT_HZ;
+    float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST + v->an_tune[0],
+                             dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST + v->an_tune[1],
+                             dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2) + dr[2] * DRIFT_ST + v->an_tune[2]};
+    for (int n = 0; n < NOSC; n++) {
+        v->beat_mod[n] = dm[MD_O1_BEAT + n] * BEAT_HZ;
+        if (dm[MD_O1_OCT + n] != 0.0f) {   /* OCTAVE as a destination: whole octaves within the footage list */
+            float o = p[P_O1_WAVE + OSC_STRIDE * n + O_OCT];
+            osc_semis[n] += 12.0f * ((float)md_step(o, dm[MD_O1_OCT + n], NOCT) - o);
+        }
+    }
     set_pitch(s, v, semis, osc_semis);
 
     v->cut += (p[P_FLT_CUT] - v->cut) * s->glide;
@@ -2340,6 +2583,7 @@ static void control_voice(one_t *s, voice_t *v) {
              clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES] + v->an_res[1], 0.0f, 1.0f), (int)p[P_SVF_MODE],
              (int)p[P_SVF_PAIR], SR);
     set_targets(s, v, dm, v->lfo_out[2]);
+    if (v->hi_reach) v->amp_mod = clampf(v->hi_amp0, 0.0f, 2.0f);   /* (the High LFOs move it per sample) */
     if (mac_heard(v)) v->mac_note = mac_pitch(s, v, semis + dr[0] * DRIFT_ST + v->an_tune[0]);
     noise_targets(s, v, dm[MD_NOISE_MIX]);
     /* pan modulation, and spread's: the knob moved (within 0..100%) times the voice's place in the spread */
@@ -2414,6 +2658,53 @@ __attribute__((noinline)) static void mac_channel(const one_t *s, voice_t *v, fl
     macro_render(v->mac, mb, n);
 }
 
+/* (2026-10-29) the LFOs in the High range for n samples: each moves on and is read per sample (its wave, variation,
+ * polarity, smoothing and fade gain as this control step has them); where it reaches pitch, a cutoff or the amp level
+ * (hi_coefs), its difference from the control step's value becomes per-sample factors: each oscillator's frequency
+ * (pm), the ladder's and the SVF's cutoff (lm, sm), the amp level (am). Returns which are in use: bits 0-2 the
+ * oscillators, 3 the ladder, 4 the SVF, 5 the amp. Out of line: only a voice with a High LFO calls it. */
+enum { HF_O1 = 1, HF_LAD = 8, HF_SVF = 16, HF_AMP = 32 };
+__attribute__((noinline)) static int hi_lfo_block(const one_t *s, voice_t *v, int n, float pm[NOSC][CR], float *lm,
+                                                  float *sm, float *am) {
+    float dp[NOSC][CR] = {{0}}, dl[CR] = {0}, ds[CR] = {0}, da[CR] = {0};
+    int used = 0;
+    for (int k = 0; k < NLFO; k++) {
+        if (!(v->hi_run >> k & 1)) continue;
+        lfo_t *l = &v->lfo[k];
+        float inc = v->hi_inc[k], coef = s->lfo_coef1[k], g = v->hi_g[k], y0 = v->hi_y0[k], var = v->hi_var[k];
+        int wave = v->hi_wave[k], uni = (int)lfo_x(s, k)[L_POLARITY] == POL_UNIPOLAR, reach = v->hi_reach >> k & 1;
+        if (!reach && coef >= 1.0f) { lfo_advance(l, inc * (float)n); continue; }   /* nothing heard per sample */
+        const float *kk = v->hi_k[k];
+        float kp[NOSC] = {kk[HK_PITCH] + kk[HK_O1], kk[HK_PITCH] + kk[HK_O2], kk[HK_PITCH] + kk[HK_O3]};
+        for (int i = 0; i < n; i++) {
+            lfo_advance(l, inc);
+            float y = lfo_shape(l, wave, var);
+            if (uni) y = 0.5f * (y + 1.0f);
+            if (coef < 1.0f) y = l->smooth += (y - l->smooth) * coef;
+            if (!reach) continue;
+            float d = y * g - y0;
+            for (int o = 0; o < NOSC; o++) dp[o][i] += d * kp[o];
+            dl[i] += d * kk[HK_LAD];
+            ds[i] += d * kk[HK_SVF];
+            da[i] += d * kk[HK_AMP];
+        }
+        if (!reach) continue;
+        for (int o = 0; o < NOSC; o++) used |= (kp[o] != 0.0f) << o;
+        used |= (kk[HK_LAD] != 0.0f) * HF_LAD | (kk[HK_SVF] != 0.0f) * HF_SVF | (kk[HK_AMP] != 0.0f) * HF_AMP;
+    }
+    for (int o = 0; o < NOSC; o++)
+        if (used & HF_O1 << o)
+            for (int i = 0; i < n; i++) pm[o][i] = exp2_fast(dp[o][i] * (1.0f / 12.0f));
+    if (used & HF_LAD) for (int i = 0; i < n; i++) lm[i] = exp2_fast(dl[i]);
+    if (used & HF_SVF) for (int i = 0; i < n; i++) sm[i] = exp2_fast(ds[i]);
+    if (used & HF_AMP) {
+        float base = clampf(v->hi_amp0, 0.0f, 2.0f);
+        if (base < 1e-4f) used &= ~HF_AMP;   /* (at no level there is nothing to move) */
+        else for (int i = 0; i < n; i++) am[i] = clampf(v->hi_amp1 + da[i], 0.0f, 2.0f) / base;   /* the whole, over the rest */
+    }
+    return used;
+}
+
 /* render n (<= CR) samples of one voice, adding into acc (the mono sum: the mod effect's input, and the dry path of
  * every centred voice) and, for a voice off the centre, its difference from the centre into xl, xr (so the dry path
  * is acc + xl, acc + xr, and centred voices cost nothing extra); returns whether it did. Levels, wave shapes, FM
@@ -2424,6 +2715,8 @@ static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, floa
     const float *p = s->val;
     float inv = 1.0f / (float)n, out[CR], wn[CR], cn[CR];   /* the voice's output; white noise; the noise channel */
     const float *ncp = noise_channel(s, v, first, inv, n, wn, cn);
+    float hp[NOSC][CR], hl[CR], hs[CR], ha[CR];   /* the High range's per-sample factors (pitch, cutoffs, amp: 2026-10-29) */
+    int hf = v->hi_run ? hi_lfo_block(s, v, n, hp, hl, hs, ha) : 0;
     float lad[NSRC], svf[NSRC], dlad[NSRC], dsvf[NSRC];
     int sync2 = p[P_O2_SYNC] > 0.5f, sync3 = p[P_O3_SYNC] > 0.5f;
     int sync2_3 = sync2 && p[P_O2_SYNC_SRC] > 0.5f, sync3_2 = sync3 && p[P_O3_SYNC_SRC] > 0.5f;   /* else from osc 1 */
@@ -2493,11 +2786,17 @@ static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, floa
     float target = gain_target(s, v);
     osc_t *o1 = &v->osc[0], *o2 = &v->osc[1], *o3 = &v->osc[2];
     for (int i = 0; i < n; i++) {
+        if (hf & 7) {   /* a High LFO on pitch: each oscillator's frequency this sample */
+            if (hf & 1) o1->inc = clampf(v->inc0[0] * hp[0][i], 0.0f, 0.49f);
+            if (hf & 2) o2->inc = clampf(v->inc0[1] * hp[1][i], 0.0f, 0.49f);
+            if (hf & 4) o3->inc = clampf(v->inc0[2] * hp[2][i], 0.0f, 0.49f);
+        }
         /* linear FM: the carrier's frequency moves with the modulator's output (3 > 1 uses osc 3's last sample) */
-        if (fm_on && route == FM_3TO1) o1->inc = clampf(v->inc0[0] * (1.0f + fm * v->fm_prev), 0.0f, 0.49f);
+        if (fm_on && route == FM_3TO1)
+            o1->inc = clampf((hf & 1 ? v->inc0[0] * hp[0][i] : v->inc0[0]) * (1.0f + fm * v->fm_prev), 0.0f, 0.49f);
         float a = osc_next(o1, &sh[0], -1.0f), wrap = o1->wrap_d;
-        if (fm_on && route == FM_1TO2) o2->inc = clampf(v->inc0[1] * (1.0f + fm * a), 0.0f, 0.49f);
-        if (fm_on && route == FM_1TO3) o3->inc = clampf(v->inc0[2] * (1.0f + fm * a), 0.0f, 0.49f);
+        if (fm_on && route == FM_1TO2) o2->inc = clampf((hf & 2 ? v->inc0[1] * hp[1][i] : v->inc0[1]) * (1.0f + fm * a), 0.0f, 0.49f);
+        if (fm_on && route == FM_1TO3) o3->inc = clampf((hf & 4 ? v->inc0[2] * hp[2][i] : v->inc0[2]) * (1.0f + fm * a), 0.0f, 0.49f);
         /* hard sync: osc 2 from osc 3 looks ahead to osc 3's wrap; osc 3 from osc 2 takes osc 2's wrap this sample
          * (its last one when the two sync to each other) */
         float m3 = sync3_2 ? o2->wrap_d : wrap;
@@ -2515,13 +2814,20 @@ static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, floa
             float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
             if (mac_on) in += mc * svf[MACRO];
             if (ext_on) in += ext[i] * svf[EXT];
-            svf_out = svf_fm > 0.0f ? svf2_next_fm(&v->svf, in, exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)))
-                                    : svf2_next(&v->svf, in);
+            if (hf & HF_SVF)   /* a High LFO on its cutoff (with filter FM, if any) */
+                svf_out = svf2_next_fm(&v->svf, in, (svf_fm > 0.0f ? exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c))
+                                                                   : 1.0f) * hs[i]);
+            else
+                svf_out = svf_fm > 0.0f ? svf2_next_fm(&v->svf, in, exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)))
+                                        : svf2_next(&v->svf, in);
             if (series) lad_in += svf_out;
         }
         if (run_lad) {
             float in = lad_in + nz * NOISE_FLOOR;
-            if (lad_nl)   /* NON-LINEAR LADDER (analog character) */
+            if (hf & HF_LAD) {   /* a High LFO on its cutoff (with filter FM, if any) */
+                float e = (lad_fm > 0.0f ? exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)) : 1.0f) * hl[i];
+                lad_out = lad_nl ? ladder_next_nl_fm(&v->lad, in, e) : ladder_next_fm(&v->lad, in, e);
+            } else if (lad_nl)   /* NON-LINEAR LADDER (analog character) */
                 lad_out = lad_fm > 0.0f ? ladder_next_nl_fm(&v->lad, in, exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
                                         : ladder_next_nl(&v->lad, in);
             else
@@ -2532,6 +2838,7 @@ static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, floa
         v->gain += (target - v->gain) * s->gain_coef;
         if (fabsf(v->gain - target) < 1e-7f) v->gain = target;   /* settle exactly: no denormal tail */
         float y = f * env_next(&v->env[ENV_AMP]) * v->gain;
+        if (hf & HF_AMP) y *= ha[i];   /* a High LFO on the amp level */
         acc[i] += y;
         out[i] = y;
         if (fading)
@@ -2611,8 +2918,8 @@ static int fx_mod_step(one_t *s, uint64_t *dirty) {
         src[MS_EXP2] = s->exp2;
         src[MS_CONST] = 1.0f;
         src[MS_RIBBON] = ribbon_value(s);
-        src[MS_PAD_X] = s->pad_x;
-        src[MS_PAD_Y] = s->pad_y;
+        src[MS_PAD_X] = pad_src(s, s->pad_x);
+        src[MS_PAD_Y] = pad_src(s, s->pad_y);
         src[MS_PAD_GATE] = s->pad_gate;
         mod_eval_list(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->fx_list, s->fx_n, src, s->bipolar, dm, 0);
         int rd = (int)s->val[P_RIBBON_DST];

@@ -166,6 +166,16 @@ static void sq_mod_voice(const one_t *s, const float *src, float *dm) {
         dm[d] += r->moff[l] * sq_ctl_gain(&r->q.m[l], src);
     }
 }
+/* (2026-10-29) the lanes' offset to one destination now, for a voice whose sources are src: what a note starting on
+ * this very step reads (gate_on's MULTI TRIG), before the next control step adds it to the voice */
+static float sq_dest_now(const one_t *s, int d, const float *src) {
+    const sq_run_t *r = &s->sq;
+    float m = 0.0f;
+    if (!r->mod_live) return 0.0f;
+    for (int l = 0; l < SQ_ML; l++)
+        if (r->moff[l] != 0.0f && r->q.m[l].dest == d) m += r->moff[l] * sq_ctl_gain(&r->q.m[l], src);
+    return m;
+}
 /* the effect destinations (fx_mod_step) */
 static void sq_mod_fx(const one_t *s, const float *src, float *dm) {
     const sq_run_t *r = &s->sq;
@@ -178,12 +188,13 @@ static void sq_mod_fx(const one_t *s, const float *src, float *dm) {
  * run for them as for a matrix slot), and the offsets now */
 static void sq_lanes_changed(one_t *s) {
     sq_run_t *r = &s->sq;
-    r->env_lanes = r->lfo_lanes = 0;
+    r->env_lanes = r->lfo_lanes = r->nenv_lanes = 0;
     memset(r->fx_mask, 0, sizeof r->fx_mask);
     for (int l = 0; l < SQ_ML; l++) {
         int d = r->q.m[l].dest;
-        r->env_lanes |= d >= MD_FENV_DELAY && d <= MD_ENV_END;
-        r->lfo_lanes |= d >= MD_LFO1_RATE && d <= MD_LFO_END;
+        r->env_lanes |= md_env(d);
+        r->lfo_lanes |= md_lfo(d);
+        r->nenv_lanes |= md_nenv(d);
         if (d >= MD_FX_FIRST && d <= MD_FX_END) r->fx_mask[(d - MD_FX_FIRST) >> 6] |= 1ull << ((d - MD_FX_FIRST) & 63);
     }
     apply_matrix(s);
@@ -483,7 +494,7 @@ static int sq_step_mod(one_t *s, int k, const char *val) {
     for (int l = 0; l < SQ_ML && lane < 0; l++)
         if (r->q.m[l].dest == d) lane = l;
     for (int l = 0; l < SQ_ML && lane < 0; l++)
-        if (!r->q.m[l].dest) { lane = l; sq_clear_mlane(&r->q.m[l]); r->q.m[l].dest = (uint8_t)d; }
+        if (!r->q.m[l].dest) { lane = l; sq_clear_mlane(&r->q.m[l]); r->q.m[l].dest = (uint16_t)d; }
     if (lane < 0) return 1;   /* every lane is in use */
     float off = clampf((v - s->val[k]) * s->sq_sc[k], -1.0f, 1.0f);
     r->q.m[lane].off[step] = (int8_t)lroundf(off * 100.0f);
@@ -547,6 +558,20 @@ static void sq_map_init(one_t *s) {
     SQ_MAP(P_MAC_HARM, MD_MAC_HARM, 100.0f);
     SQ_MAP(P_MAC_TIMBRE, MD_MAC_TIMBRE, 100.0f);
     SQ_MAP(P_MAC_MORPH, MD_MAC_MORPH, 100.0f);
+    /* (2026-10-29) the manual's step-mod-only list: footages, the noise EG, the EG switches, the LFO waves (a switch or
+     * list's move becomes as many steps of it) */
+    for (int n = 0; n < NOSC; n++) SQ_MAP(P_O1_WAVE + OSC_STRIDE * n + O_OCT, MD_O1_OCT + n, (float)(NOCT - 1));
+    SQ_MAP(P_NOISE_A, MD_NOISE_A, 100.0f);
+    SQ_MAP(P_NOISE_SUS, MD_NOISE_SUS, 1.0f);
+    SQ_MAP(P_NOISE_R, MD_NOISE_R, 100.0f);
+    for (int n = 0; n < NENV; n++) {
+        int x = P_FENV_DELAY + EX_STRIDE * n, md = MD_FENV_MULTI + MDS_COUNT * n;
+        SQ_MAP(x + X_MULTI, md + MDS_MULTI, 1.0f);
+        SQ_MAP(x + X_SYNC, md + MDS_SYNC, 1.0f);
+        SQ_MAP(x + X_LOOP, md + MDS_LOOP, 1.0f);
+        SQ_MAP(x + X_LATCH, md + MDS_LATCH, 1.0f);
+    }
+    for (int n = 0; n < NLFO; n++) SQ_MAP(lfo_base(n) + 1, MD_LFO1_WAVE + n, (float)(LFO_WAVES - 1));
     for (int k = 0; k < MDF_COUNT; k++)   /* the effect controls: +-100% of their range */
         if (s->fx_hi[k] > s->fx_lo[k]) SQ_MAP(FXMD_SLOT[k], MD_FX_FIRST + k, s->fx_hi[k] - s->fx_lo[k]);
 #undef SQ_MAP
@@ -559,6 +584,7 @@ static void sq_map_init(one_t *s) {
  *   off L S V            lane L's offset on step S (-100..100; x: none)
  *   sel S L              the selected step and lane            gate G   new notes' gate %
  *   rtz                  RETURN TO ZERO              load <text>  a whole sequence (src/stepseq.h's form)
+ *   stepnotes S D V G R  every note of step S: moved D semitones, velocity V, gate G %, ratchet R (0: kept) (2026-10-29)
  * Bad numbers are clamped; an unknown command is skipped. */
 static void sq_command(one_t *s, const char *text) {
     sq_run_t *r = &s->sq;
@@ -607,7 +633,7 @@ static void sq_command(one_t *s, const char *text) {
             sq_mlane_t *m = &r->q.m[a[0]];
             if (a[1] <= MD_OFF || a[1] >= MD_COUNT) sq_clear_mlane(m);
             else {
-                m->dest = (uint8_t)a[1];
+                m->dest = (uint16_t)a[1];
                 m->ctl = (uint8_t)(a[2] > 0 && a[2] < MS_COUNT ? a[2] : 0);
                 m->amt = (uint8_t)clampf((float)a[3], 0.0f, 100.0f);
             }
@@ -618,6 +644,8 @@ static void sq_command(one_t *s, const char *text) {
             lanes = 1;   /* (STEP MOD's stopped preview follows the selection) */
         } else if (!strcmp(word, "gate") && got == 1) {
             r->def_gate = (int)clampf((float)a[0], 1.0f, 100.0f);
+        } else if (!strcmp(word, "stepnotes") && got == 5) {   /* every note of a step together (2026-10-29) */
+            sq_step_notes(&r->q, st, a[1], a[2], a[3], a[4]);
         } else if (!strcmp(word, "rtz")) {   /* RETURN TO ZERO: step 1 next */
             if (r->running) r->k0 = r->next_k;
             r->resume = r->cursor = 0;

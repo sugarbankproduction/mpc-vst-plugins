@@ -22,6 +22,11 @@ sequence, its text form, the factory sequences), `src/stepseq_run.h` (playing, r
   under the grid: NOTE, VEL, GATE, RATCH of the selection (drag or scroll). Buttons: REST, TIE, DELETE, CLEAR (asks),
   DUP (copies steps after the end: SHIFT + click a step number to pick them), SAVE, LOAD. Right-click a step number: rest.
   Arrow keys move the selection, Delete deletes.
+- **(2026-10-29, offline and the desktop window)** ALL (in the buttons' row): the values row then acts on every note of
+  the selected step: NOTE moves them all together (kept inside 0-127 as a chord), VEL, GATE and RATCH give them all one
+  value; DELETE becomes DEL STEP (empties the step: its notes, rest and offsets; SHIFT + Delete does it too). On the
+  title line: RTZ (return to zero: step 1 next) and AUTO (step edit auto-scroll, lit by default: the page shown follows
+  the step playing). SAVE asks for performance notes (one line), kept in the file and shown when it loads.
 - **Modulation lanes (MODS):** each row is a lane: DEST (the mod matrix's list), CTRL (a controller: with AMT 100%, the
   controller at its minimum silences the lane) and an offset per step (drag across the row; right-click removes one).
   STEP MOD makes them from the knobs: with it lit, turning a knob records its move as that step's offset (the playing
@@ -45,8 +50,15 @@ sequence, its text form, the factory sequences), `src/stepseq_run.h` (playing, r
 - Clock: its own, sample-accurate like the arpeggiator's. Synced, the host's tempo; with the transport playing, the
   song position: a looping sequence started with PLAY lines up with the song (step 1 on the song's start), and a loop
   back in the host plays from there. NOTE TRIG and ONE SHOT start where the key or PLAY fell. Unsynced: `seq_rate`.
-  FOLLOW SWING (synced) applies the master swing `clock_swing` (only the sequencer follows it so far; the arpeggiator
-  keeps its own `arp_swing`).
+  FOLLOW SWING (synced) applies the master swing `clock_swing`; the arpeggiator follows it too with `arp_follow_swing`
+  (synced; off, the default, it keeps its own `arp_swing`: 2026-10-29).
+- RECEIVE START/STOP (`seq_host_ss`, per Synth, default Off; 2026-10-29): the host transport's start turns PLAY on (if
+  the sequencer is ON, the Synth on and NOTE TRIG off) and its stop turns it off; the host is told. Synced, the sequence
+  then lines up with the song from its start.
+- Modulation lanes reach the matrix's whole list, the manual's step-mod-only destinations too (2026-10-29: oscillator
+  octave, the noise EG, the EG switches, the LFO waves); STEP MOD records the footage, EG switch, noise EG and LFO wave
+  controls (a switch's flip as +-100%, a list's move as its steps). A sequence with a lane past destination 255 is
+  written in a two-byte form (version 2 of the text); every other one as before.
 - NOTE TRIG and PLAY exclude each other (setting one turns the other off; the host is told). ONE SHOT turns PLAY off at
   the end. HOLD keeps a note-trig sequence running with no key; RESTART ON HOLD restarts it with the next key.
 - Modulation lanes add to their destination like a matrix slot (voices, or the effect pass for an effect destination),
@@ -79,6 +91,7 @@ sequence, its text form, the factory sequences), `src/stepseq_run.h` (playing, r
 ```
 ONE-ish sequence 1
 name=Walking Bass
+notes=Wheel half up on bar 2   performance notes, one line (2026-10-29; may be empty)
 seq_length=16      the sequence's shape: length, division, timing (the other settings stay as they are)
 seq_div=4
 seq_timing=0
@@ -88,7 +101,7 @@ seq=<text>
 ## How the window edits it
 
 The engine owns the sequence. The window sends commands (`seqcmd` lines, `seqcmd2` / `seqcmd3` for Synths 2 and 3: `note`, `rest`, `clear`, `dup`, `lane`, `off`,
-`sel`, `gate`, `rtz`, `load`; `src/stepseq_run.h` `sq_command`) through the plugin's chunk call (`effSetChunk`), which
+`sel`, `gate`, `rtz`, `load`, `clearstep`, and `stepnotes` for a whole step (2026-10-29); `src/stepseq_run.h` `sq_command`) through the plugin's chunk call (`effSetChunk`), which
 the wrapper hands to the engine under its per-instance lock, between two audio blocks, the same way as any knob move:
 no new lock, no allocation, no file access on the audio thread (files are read and written by the window). It reads the
 steps back from the plugin's state (`effGetChunk`) after its own edits and on its 50 ms timer while REC or STEP MOD can
@@ -98,7 +111,4 @@ change them, and the playing step from the `seq_pos` readout.
 
 - OUTPUT to another Synth or all of them [MULTI]: each Synth's sequence plays its own Synth (2026-10-28). Sending it
   elsewhere needs its notes to go to that Synth's voices instead of `out_on`.
-- Performance notes with a saved sequence, and sorting the load list by date (the Windows file dialog sorts by name or
-  date itself).
-- The arpeggiator following the master swing.
 - The MPC page (Phase 9): the params are ready; editing steps there needs a page design (and the readout's polling).

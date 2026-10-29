@@ -329,6 +329,7 @@ static int tun_value(one_t *s, const char *rest, const char *val) {
 static int get_state(inst_t *in, char *buf, int n) {
     char prev[64];
     int used = 0, v2, last = NSYN - 1;
+    for (int c = 0; c < NSYN; c++) positions_capture(in->syn[c]);   /* LOAD SAVED POS: the wheel and pad now */
     for (v2 = 0; v2 < 2; v2++) {   /* every Synth in v=1, else in v=2 */
         prev[0] = 0;
         used = snprintf(buf, n, v2 ? "v=2" : "v=1");
@@ -447,6 +448,7 @@ static void synth_load(inst_t *in, int c, const char *str) {
 static int synth_state(inst_t *in, int c, char *buf, int n) {
     one_t *s = in->syn[c];
     const one_t *s0 = in->syn[0];
+    positions_capture(s);   /* LOAD SAVED POS: the wheel and pad as they are now */
     int used = snprintf(buf, n, "v=1");
     for (int i = 0; i < P_COUNT; i++) {
         if (!KEYS[i][0] || load_skip(i) || s->val[i] == s0->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC

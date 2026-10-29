@@ -9,6 +9,9 @@ enum { SCR_SEQ = -4 };          /* the centre screen showing the step editor (se
  * SQT_BUF bytes (a name in; a folder, the sequence's text or a message out) */
 #define TEST_SEQ 0x4F315351
 enum { SQT_SAVE = 1, SQT_LOAD, SQT_DIR, SQT_TEXT, SQT_MESSAGE, SQT_SELECTED, SQT_BUF = 8192 };
+/* (2026-10-29) the performance notes saved with a sequence: set (buf in) and read (buf out); the page shown */
+enum { SQT_SET_NOTES = 20, SQT_NOTES, SQT_PAGE };
+#define SQ_NOTES_MAX 200        /* a sequence's performance notes: one line */
 
 #ifdef NPARAMS   /* the editor (params.h); load_test only needs the numbers above */
 #include "../src/stepseq.h"
@@ -27,5 +30,9 @@ typedef struct {
     int last_note, last_vel, last_gate;    /* what a new note gets (the last one edited) */
     char msg[240];              /* the last file operation's result, shown for a while */
     DWORD msg_at;
+    /* (2026-10-29) */
+    int all;                    /* ALL: the values row (and DELETE) act on every note of the selected step */
+    int autoscroll;             /* AUTO: the page shown follows the playing step (STEP EDIT AUTO-SCROLL) */
+    char notes[SQ_NOTES_MAX + 1];   /* the performance notes of the sequence last saved or loaded */
 } seq_ui_t;
 #endif

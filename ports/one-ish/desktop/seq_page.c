@@ -10,7 +10,10 @@
  *   octave). With REC lit, the keyboard (on screen or MIDI) enters notes into the selected step and moves on.
  *   MODS: click or drag across a row to set offsets; right-click removes one; DEST, CTRL and AMT set the lane.
  *   Step numbers: click selects the step, SHIFT + click marks the end of the range DUPLICATE copies, right-click toggles
- *   its rest. Arrow keys move the selection, Delete deletes.
+ *   its rest. Arrow keys move the selection, Delete deletes (SHIFT + Delete: the whole step).
+ *   (2026-10-29) ALL: the values row moves every note of the step together (NOTE) or gives them one VEL, GATE or RATCH,
+ *   and DELETE becomes DEL STEP. The title line's RTZ returns to step 1; AUTO (step edit auto-scroll, on by default)
+ *   makes the page shown follow the step playing. SAVE asks for performance notes, saved in the file and shown on LOAD.
  * The engine owns the sequence: every edit is a command sent to it (wrapper/vst2_wrap.c's effSetChunk with "seqcmd",
  * src/stepseq_run.h sq_command), applied between two audio blocks; the page reads the sequence back from the plugin's
  * state (effGetChunk, its "seq=" text) after its own edits, and on its timer while REC or STEP MOD can change it. The
@@ -20,7 +23,8 @@
  * variable ONEISH_SEQ_DIR overrides both), plain text:
  *     ONE-ish sequence 1
  *     name=Walking Bass
- *     seq_length=16        the length, division and timing (the sequence's shape); the other settings stay as they are
+ *     notes=Play the low C with the wheel half up   (2026-10-29: performance notes, one line; may be empty)
+ *     seq_length=16       the length, division and timing (the sequence's shape); the other settings stay as they are
  *     seq_div=4
  *     seq_timing=0
  *     seq=<text>           the steps (src/stepseq.h) */
@@ -43,8 +47,10 @@ static const char HEADER[] = "ONE-ish sequence";
 enum { Z_CELL = Z_SEQ_BASE, Z_STEPNUM = Z_SEQ_BASE + 200, Z_PAGEBTN = Z_SEQ_BASE + 220, Z_VIEW = Z_SEQ_BASE + 230,
        Z_FIELD = Z_SEQ_BASE + 240, Z_BTN = Z_SEQ_BASE + 260, Z_LANE = Z_SEQ_BASE + 280, Z_PLED = Z_SEQ_BASE + 300,
        Z_SEQ_END = Z_SEQ_BASE + 400 };
-enum { NFIELD = 4, NBTN = 7, LABEL_W = 24 };
-enum { B_REST, B_TIE, B_DELETE, B_CLEAR, B_DUP, B_SAVE, B_LOAD };   /* MODS: B_REST is DEL LANE, B_TIE is unused */
+enum { NFIELD = 4, NBTN = 8, LABEL_W = 24 };
+/* MODS: B_REST is DEL LANE, B_TIE and B_ALL are unused; with ALL lit, B_DELETE is DEL STEP */
+enum { B_REST, B_TIE, B_ALL, B_DELETE, B_CLEAR, B_DUP, B_SAVE, B_LOAD };
+enum { Z_RTZ = Z_SEQ_BASE + 234, Z_AUTO = Z_SEQ_BASE + 235 };   /* the title line's RTZ and AUTO (2026-10-29) */
 #define C_LCD 0xFF96D7E8
 #define C_DIM 0xFF5A8291
 #define T_LCD RGB(150, 215, 232)
@@ -83,6 +89,7 @@ void seq_init(ed_t *e) {
     e->sq.last_vel = 100;
     e->sq.last_gate = 50;
     e->sq.dirty = 1;
+    e->sq.autoscroll = 1;
 }
 
 /* ---- talking to the engine ---- */
@@ -154,6 +161,10 @@ int seq_tick(ed_t *e, int params_changed) {
         }
         redo = 1;
     }
+    if (e->sq.autoscroll && e->sq.play >= 0 && e->sq.play / SQ_PAGE != e->sq.page) {   /* AUTO: the playing page */
+        e->sq.page = e->sq.play / SQ_PAGE;
+        redo = 1;
+    }
     if (params_changed) e->sq.dirty = 1;
     if (e->screen == SCR_SEQ && (e->sq.dirty || on_of(e, 2) || on_of(e, 5))) redo |= seq_read(e);
     else if (e->sq.len != seq_len(e)) { e->sq.len = seq_len(e); redo = 1; }
@@ -196,6 +207,11 @@ static RECT view_rect(int v) {
     RECT r = {x, L.tabline.top, x + sc(48), L.tabline.bottom};
     return r;
 }
+static RECT title_btn_rect(int z) {   /* RTZ and AUTO, after the views */
+    int x = view_rect(1).right + sc(6) + (z == Z_AUTO ? sc(32) : 0);
+    RECT r = {x, L.tabline.top, x + (z == Z_AUTO ? sc(36) : sc(28)), L.tabline.bottom};
+    return r;
+}
 static RECT field_rect(ed_t *e, int f) {   /* the values row: a label then four fields */
     static const short NOTE_X[NFIELD + 1] = {70, 150, 222, 300, 384}, MOD_X[NFIELD + 1] = {50, 158, 258, 312, 384};
     const short *x = e->sq.view ? MOD_X : NOTE_X;
@@ -223,6 +239,7 @@ static RECT pled_rect(int p) {   /* the SEQUENCER module's page LEDs: four in a 
 int seq_hit(ed_t *e, POINT pt) {
     for (int p = 0; p < SQ_STEPS / SQ_PAGE; p++) { RECT r = pagebtn_rect(p); if (PtInRect(&r, pt)) return Z_PAGEBTN + p; }
     for (int v = 0; v < 2; v++) { RECT r = view_rect(v); if (PtInRect(&r, pt)) return Z_VIEW + v; }
+    for (int z = Z_RTZ; z <= Z_AUTO; z++) { RECT r = title_btn_rect(z); if (PtInRect(&r, pt)) return z; }
     for (int c = 0; c < SQ_PAGE; c++) {
         RECT r = stepnum_rect(c);
         if (PtInRect(&r, pt)) return Z_STEPNUM + c;
@@ -232,7 +249,7 @@ int seq_hit(ed_t *e, POINT pt) {
     for (int f = 0; f < NFIELD; f++) { RECT r = field_rect(e, f); if (PtInRect(&r, pt)) return Z_FIELD + f; }
     for (int b = 0; b < NBTN; b++) {
         RECT r = btn_rect(b);
-        if (e->sq.view && b == B_TIE) continue;
+        if (e->sq.view && (b == B_TIE || b == B_ALL)) continue;
         if (PtInRect(&r, pt)) return Z_BTN + b;
     }
     return -1;
@@ -262,6 +279,17 @@ static void remember(ed_t *e, const sq_note_t *n) {   /* a new note gets the val
 /* field f of the selection moved by d steps (the wheel, a drag); NOTES: note, velocity, gate, ratchet; MODS: amount
  * and the step's offset (DEST and CTRL are lists) */
 static void field_step(ed_t *e, int f, int d) {
+    if (!e->sq.view && e->sq.all) {   /* ALL: every note of the step: moved together, or given the one value */
+        const sq_note_t *n = sel_note(e);
+        for (int l = 0; l < SQ_NL && !sq_has(n); l++) n = &e->sq.q.n[e->sq.step][l];   /* (the selected lane, or the first) */
+        if (!sq_has(n)) return;
+        int s = e->sq.step, rat = clampi(sq_ratchet(n) + (d > 0 ? 1 : -1), 1, 4);
+        if (f == 0) seq_send(e, "stepnotes %d %d 0 0 0", s, d);
+        if (f == 1) seq_send(e, "stepnotes %d 0 %d 0 0", s, clampi(n->vel + d, 1, 127));
+        if (f == 2) seq_send(e, "stepnotes %d 0 0 %d 0", s, clampi(n->gate + d, 1, 100));
+        if (f == 3) seq_send(e, "stepnotes %d 0 0 0 %d", s, rat);
+        return;
+    }
     if (!e->sq.view) {
         sq_note_t *n = sel_note(e);
         if (!sq_has(n)) { if (f == 0) new_note(e, e->sq.step, e->sq.lane, e->sq.last_note + d); return; }
@@ -339,8 +367,9 @@ static int write_seq(ed_t *e, const char *path, const char *name) {
     char text[SQ_TEXT_MAX + 512], st[SQ_TEXT_MAX];
     seq_read(e);
     sq_encode(&e->sq.q, st, sizeof st);
-    snprintf(text, sizeof text, "%s 1\nname=%s\nseq_length=%d\nseq_div=%d\nseq_timing=%d\nseq=%s\n", HEADER, name,
-             e->sq.len, SEQ_P[6] >= 0 ? option_of(e, SEQ_P[6]) : 4, SEQ_P[7] >= 0 ? option_of(e, SEQ_P[7]) : 0, st);
+    snprintf(text, sizeof text, "%s 1\nname=%s\nnotes=%s\nseq_length=%d\nseq_div=%d\nseq_timing=%d\nseq=%s\n", HEADER,
+             name, e->sq.notes, e->sq.len, SEQ_P[6] >= 0 ? option_of(e, SEQ_P[6]) : 4,
+             SEQ_P[7] >= 0 ? option_of(e, SEQ_P[7]) : 0, st);
     char tmp[MAX_PATH + 8];
     snprintf(tmp, sizeof tmp, "%s.tmp", path);
     FILE *f = fopen(tmp, "wb");
@@ -376,8 +405,14 @@ static int read_seq(ed_t *e, const char *path) {
     if (strncmp(t, HEADER, sizeof HEADER - 1)) return -1;
     int len = -1, div = -1, timing = -1;
     const char *seq = NULL;
+    char notes[SQ_NOTES_MAX + 1] = "";   /* (a file without notes: none) */
     for (const char *l = t; l && *l; l = strchr(l, '\n'), l = l ? l + 1 : NULL) {
-        if (!strncmp(l, "seq_length=", 11)) len = atoi(l + 11);
+        if (!strncmp(l, "notes=", 6)) {
+            int k = 0;
+            for (const char *c = l + 6; *c && *c != '\n' && *c != '\r' && k < SQ_NOTES_MAX; c++) notes[k++] = *c;
+            notes[k] = 0;
+        }
+        else if (!strncmp(l, "seq_length=", 11)) len = atoi(l + 11);
         else if (!strncmp(l, "seq_div=", 8)) div = atoi(l + 8);
         else if (!strncmp(l, "seq_timing=", 11)) timing = atoi(l + 11);
         else if (!strncmp(l, "seq=", 4)) seq = l + 4;
@@ -390,6 +425,7 @@ static int read_seq(ed_t *e, const char *path) {
     if (div >= 0 && SEQ_P[6] >= 0 && div < PARAMS[SEQ_P[6]].nopts) set_option(e, SEQ_P[6], div);
     if (timing >= 0 && SEQ_P[7] >= 0 && timing < PARAMS[SEQ_P[7]].nopts) set_option(e, SEQ_P[7], timing);
     seq_send(e, "load %s", enc);
+    snprintf(e->sq.notes, sizeof e->sq.notes, "%s", notes);
     return 1;
 }
 static int save_named(ed_t *e, const char *name) {
@@ -405,7 +441,8 @@ static int load_path(ed_t *e, const char *path) {
     char name[64];
     base_name(path, name, sizeof name);
     int r = read_seq(e, path);
-    if (r > 0) say(e, "Loaded the sequence \"%s\".", name);
+    if (r > 0 && e->sq.notes[0]) say(e, "Loaded the sequence \"%s\". Notes: %s", name, e->sq.notes);
+    else if (r > 0) say(e, "Loaded the sequence \"%s\".", name);
     else say(e, r < 0 ? "\"%s\" is not a ONE-ish sequence (or it is damaged)." : "Couldn't open \"%s\".", name);
     return r > 0;
 }
@@ -423,6 +460,71 @@ static int file_dialog(ed_t *e, int save, char *path, int n) {
     o.lpstrTitle = save ? "Save the sequence" : "Load a sequence";
     o.Flags = OFN_NOCHANGEDIR | (save ? OFN_OVERWRITEPROMPT : OFN_FILEMUSTEXIST);
     return save ? GetSaveFileNameA(&o) : GetOpenFileNameA(&o);
+}
+
+/* ---- PERFORMANCE NOTES (2026-10-29): a line of text saved with a sequence, asked for on SAVE ---- */
+enum { ID_NOTES_EDIT = 101 };
+static INT_PTR CALLBACK notes_proc(HWND d, UINT m, WPARAM wp, LPARAM lp) {
+    char *text = (char *)GetWindowLongPtrA(d, DWLP_USER);
+    if (m == WM_INITDIALOG) {
+        SetWindowLongPtrA(d, DWLP_USER, lp);
+        SetDlgItemTextA(d, ID_NOTES_EDIT, (const char *)lp);
+        SendDlgItemMessageA(d, ID_NOTES_EDIT, EM_LIMITTEXT, SQ_NOTES_MAX, 0);
+        SendDlgItemMessageA(d, ID_NOTES_EDIT, EM_SETSEL, 0, -1);
+        SetFocus(GetDlgItem(d, ID_NOTES_EDIT));
+        return FALSE;
+    }
+    if (m == WM_COMMAND && LOWORD(wp) == IDOK && text) {
+        GetDlgItemTextA(d, ID_NOTES_EDIT, text, SQ_NOTES_MAX + 1);
+        for (char *c = text; *c; c++) if ((unsigned char)*c < 32) *c = ' ';   /* one line */
+        EndDialog(d, 1);
+        return TRUE;
+    }
+    if (m == WM_COMMAND && LOWORD(wp) == IDCANCEL) { EndDialog(d, 0); return TRUE; }
+    return FALSE;
+}
+static WORD *dlg_text(WORD *w, const char *s) {   /* a dialog template's text: UTF-16, here plain ASCII */
+    do *w++ = (WORD)(unsigned char)*s; while (*s++);
+    return w;
+}
+static WORD *dlg_item(WORD *w, DWORD style, short x, short y, short cx, short cy, WORD id, WORD cls, const char *text) {
+    w = (WORD *)(((ULONG_PTR)w + 3) & ~(ULONG_PTR)3);
+    DLGITEMTEMPLATE *it = (DLGITEMTEMPLATE *)w;
+    it->style = style | WS_CHILD | WS_VISIBLE;
+    it->dwExtendedStyle = 0;
+    it->x = x; it->y = y; it->cx = cx; it->cy = cy; it->id = id;
+    w = (WORD *)(it + 1);
+    *w++ = 0xFFFF;
+    *w++ = cls;   /* 0x80 button, 0x81 edit, 0x82 static */
+    w = dlg_text(w, text);
+    *w++ = 0;
+    return w;
+}
+/* a modal box asking for the notes (in: the current ones; out: the new ones); 0 if cancelled */
+static int ask_notes(ed_t *e, char *notes) {
+    static DWORD buf[512];
+    memset(buf, 0, sizeof buf);
+    DLGTEMPLATE *dt = (DLGTEMPLATE *)buf;
+    dt->style = DS_MODALFRAME | DS_SETFONT | DS_CENTER | WS_POPUP | WS_CAPTION | WS_SYSMENU;
+    dt->cdit = 4;
+    dt->cx = 280;
+    dt->cy = 62;
+    WORD *w = (WORD *)(dt + 1);
+    *w++ = 0;
+    *w++ = 0;
+    w = dlg_text(w, "Performance notes");
+    *w++ = 9;
+    w = dlg_text(w, "Segoe UI");
+    w = dlg_item(w, SS_LEFT, 8, 8, 264, 10, 0xFFFF, 0x82, "Notes saved with this sequence (optional), one line:");
+    w = dlg_item(w, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 8, 21, 264, 13, ID_NOTES_EDIT, 0x81, "");
+    w = dlg_item(w, WS_TABSTOP | BS_DEFPUSHBUTTON, 168, 41, 50, 14, IDOK, 0x80, "OK");
+    dlg_item(w, WS_TABSTOP | BS_PUSHBUTTON, 222, 41, 50, 14, IDCANCEL, 0x80, "Skip");
+    char text[SQ_NOTES_MAX + 1];
+    snprintf(text, sizeof text, "%s", notes);
+    HINSTANCE inst = e->wnd ? (HINSTANCE)GetWindowLongPtrA(e->wnd, GWLP_HINSTANCE) : GetModuleHandleA(NULL);
+    if (DialogBoxIndirectParamA(inst, dt, e->wnd, notes_proc, (LPARAM)text) != 1) return 0;
+    snprintf(notes, SQ_NOTES_MAX + 1, "%s", text);
+    return 1;
 }
 
 /* ---- the buttons ---- */
@@ -443,8 +545,13 @@ static void press_button(ed_t *e, int b) {
         send_note(e, e->sq.step, e->sq.lane);
         return;
     }
+    case B_ALL:   /* ALL: the values row and DELETE act on the whole step */
+        e->sq.all = !e->sq.all;
+        redraw(e);
+        return;
     case B_DELETE:
         if (e->sq.view) seq_send(e, "off %d %d x", e->sq.mlane, e->sq.step);
+        else if (e->sq.all) seq_send(e, "clearstep %d", e->sq.step);   /* DEL STEP: its notes, rest and offsets */
         else seq_send(e, "note %d %d -1 0 0 0 0", e->sq.step, e->sq.lane);
         return;
     case B_CLEAR:
@@ -466,6 +573,7 @@ static void press_button(ed_t *e, int b) {
         if (file_dialog(e, 1, path, sizeof path)) {
             char name[64];
             base_name(path, name, sizeof name);
+            ask_notes(e, e->sq.notes);   /* (Skip keeps the notes as they were) */
             if (write_seq(e, path, name)) say(e, "Saved the sequence as \"%s\".", name);
             else say(e, "Couldn't save \"%s\" (Windows error %lu).", name, GetLastError());
         }
@@ -496,6 +604,13 @@ int seq_press(ed_t *e, int z, int x, int y, int shift) {
     if (z >= Z_PLED && z < Z_PLED + 4) { seq_open(e, z - Z_PLED); return 0; }
     if (z >= Z_PAGEBTN && z < Z_PAGEBTN + 4) { e->sq.page = z - Z_PAGEBTN; redraw(e); return 0; }
     if (z == Z_VIEW || z == Z_VIEW + 1) { e->sq.view = z - Z_VIEW; redraw(e); return 0; }
+    if (z == Z_RTZ) {   /* RETURN TO ZERO: step 1 next (and the selection there) */
+        seq_send(e, "rtz");
+        e->sq.step = e->sq.page = 0;
+        say(e, "Return to zero: the sequence goes on from step 1.");
+        return 0;
+    }
+    if (z == Z_AUTO) { e->sq.autoscroll = !e->sq.autoscroll; redraw(e); return 0; }
     if (z >= Z_BTN && z < Z_BTN + NBTN) { press_button(e, z - Z_BTN); return 0; }
     if (z >= Z_LANE && z < Z_LANE + ROWS) { select_cell(e, e->sq.step, z - Z_LANE); return 0; }
     if (z >= Z_STEPNUM && z < Z_STEPNUM + SQ_PAGE) {
@@ -623,9 +738,11 @@ int seq_key(ed_t *e, int vk, int shift) {   /* the arrow keys move the selection
     case VK_UP: select_cell(e, e->sq.step, (lane + lanes - 1) % lanes); return 1;
     case VK_DOWN: select_cell(e, e->sq.step, (lane + 1) % lanes); return 1;
     case VK_PRIOR: case VK_NEXT: select_cell(e, (e->sq.step + (vk == VK_NEXT ? SQ_PAGE : SQ_STEPS - SQ_PAGE)) % SQ_STEPS, lane); return 1;
-    case VK_DELETE: case VK_BACK: press_button(e, B_DELETE); return 1;
+    case VK_DELETE: case VK_BACK:
+        if (shift && !e->sq.view) seq_send(e, "clearstep %d", e->sq.step);   /* SHIFT + DELETE: the whole step */
+        else press_button(e, B_DELETE);
+        return 1;
     }
-    (void)shift;
     return 0;
 }
 
@@ -701,7 +818,9 @@ void seq_draw(HDC dc, ed_t *e) {
         if (p * SQ_PAGE >= len) gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 0x900B1621);
         if (e->sq.play >= 0 && e->sq.play / SQ_PAGE == p) gfx_disc((float)r.right - 3.0f * L.s, (float)r.top + 3.0f * L.s, 1.8f * L.s, 0xFFFF6A50);
     }
-    RECT pr = {view_rect(1).right + sc(6), L.tabline.top, pagebtn_rect(0).left - sc(4), L.tabline.bottom};
+    button(dc, title_btn_rect(Z_RTZ), "RTZ", 0, e->hover == Z_RTZ);
+    button(dc, title_btn_rect(Z_AUTO), "AUTO", e->sq.autoscroll, e->hover == Z_AUTO);
+    RECT pr = {title_btn_rect(Z_AUTO).right + sc(6), L.tabline.top, pagebtn_rect(0).left - sc(4), L.tabline.bottom};
     char info[64];
     snprintf(info, sizeof info, "%s", e->sq.readout[0] ? e->sq.readout : "");
     txt(dc, pr, info, font_tiny, !strncmp(e->sq.readout, "Too", 3) ? RGB(255, 140, 110) : T_LCD, DT_RIGHT | DT_VCENTER | DT_END_ELLIPSIS);
@@ -739,7 +858,7 @@ void seq_draw(HDC dc, ed_t *e) {
             txt(dc, dr, dest_name(e->sq.q.m[row].dest), font_tiny, RGB(40, 70, 84), DT_LEFT | DT_VCENTER);
         }
         for (int c = 0; c < SQ_PAGE; c++) {
-            int step = page * SQ_PAGE + c, sel = step == e->sq.step && sel_lane;
+            int step = page * SQ_PAGE + c, sel = step == e->sq.step && (sel_lane || (e->sq.all && !view));
             RECT cr = cell_rect(c, row);
             if (view) draw_mod(e, &e->sq.q.m[row], step, cr, sel);
             else if (sq_has(&e->sq.q.n[step][row])) draw_note(dc, e, &e->sq.q.n[step][row], cr, sel, (int)(e->sq.q.rest >> step & 1));
@@ -754,7 +873,8 @@ void seq_draw(HDC dc, ed_t *e) {
     if (!view) {
         const sq_note_t *n = sel_note(e);
         int has = sq_has(n);
-        snprintf(lab, sizeof lab, "STEP %d.%d", e->sq.step + 1, e->sq.lane + 1);
+        if (e->sq.all) snprintf(lab, sizeof lab, "STEP %d ALL", e->sq.step + 1);
+        else snprintf(lab, sizeof lab, "STEP %d.%d", e->sq.step + 1, e->sq.lane + 1);
         if (has) sq_note_name(n->note, v[0], sizeof v[0]); else snprintf(v[0], sizeof v[0], "--");
         snprintf(v[1], sizeof v[1], has ? "%d" : "--", n->vel);
         snprintf(v[2], sizeof v[2], has ? "%d%%" : "--", n->gate);
@@ -779,11 +899,12 @@ void seq_draw(HDC dc, ed_t *e) {
     int y = e->sq.range_to >= 0 ? (e->sq.step > e->sq.range_to ? e->sq.step : e->sq.range_to) : len - 1;
     snprintf(dup, sizeof dup, "DUP %d-%d", x + 1, y + 1);
     const sq_note_t *sn = sel_note(e);
-    const char *const NB[NBTN] = {"REST", "TIE", "DELETE", "CLEAR", dup, "SAVE", "LOAD"};
-    const char *const MB[NBTN] = {"DEL LANE", "", "DELETE", "CLEAR", dup, "SAVE", "LOAD"};
+    const char *const NB[NBTN] = {"REST", "TIE", "ALL", e->sq.all ? "DEL STEP" : "DELETE", "CLEAR", dup, "SAVE", "LOAD"};
+    const char *const MB[NBTN] = {"DEL LANE", "", "", "DELETE", "CLEAR", dup, "SAVE", "LOAD"};
     for (int b = 0; b < NBTN; b++) {
-        if (view && b == B_TIE) continue;
-        int lit = !view && ((b == B_REST && (e->sq.q.rest >> e->sq.step & 1)) || (b == B_TIE && sq_has(sn) && (sn->flags & SQ_TIE)));
+        if (view && (b == B_TIE || b == B_ALL)) continue;
+        int lit = !view && ((b == B_REST && (e->sq.q.rest >> e->sq.step & 1)) || (b == B_TIE && sq_has(sn) && (sn->flags & SQ_TIE))
+                            || (b == B_ALL && e->sq.all));
         button(dc, btn_rect(b), view ? MB[b] : NB[b], lit, e->hover == Z_BTN + b);
     }
     gfx_end();
@@ -819,6 +940,9 @@ const char *seq_zone_help(ed_t *e, int z) {
                                               "to edit that page in the step editor.";
     if (z >= Z_PAGEBTN && z < Z_PAGEBTN + 4) return "The four pages of 16 steps (a red dot: the page playing). LENGTH sets "
                                                     "how many steps play; steps past it are dimmed.";
+    if (z == Z_RTZ) return "RTZ (return to zero): the sequence goes on from step 1 at its next step (stopped: it starts there).";
+    if (z == Z_AUTO) return "AUTO (step edit auto-scroll): lit, the page shown follows the step playing. Off, the page stays "
+                            "where you put it.";
     if (z == Z_VIEW) return "NOTES: the note lanes (a box per note: height = velocity, width = gate; ticks = ratchets, an arrow "
                             "= a tie).";
     if (z == Z_VIEW + 1) return "MODS: the modulation lanes: each a destination with a bipolar offset per step (drag across "
@@ -852,11 +976,17 @@ const char *seq_zone_help(ed_t *e, int z) {
                                    : "REST: the selected step plays nothing (its notes are kept). Again to undo.";
     case B_TIE: return "TIE: the selected note carries on into the next step: the same note there goes on without a new attack, "
                        "another note takes over legato.";
-    case B_DELETE: return "DELETE: removes the selected note (MODS: the selected step's offset). The Delete key does too.";
+    case B_ALL: return "ALL: the values row (NOTE moves every note of the step together; VEL, GATE, RATCH give them all the "
+                       "same value) and DELETE (DEL STEP) act on the whole selected step. Again to edit one note.";
+    case B_DELETE: return e->sq.all ? "DEL STEP: empties the selected step (its notes, its rest and its offsets). SHIFT + "
+                                      "Delete does too."
+                                    : "DELETE: removes the selected note (MODS: the selected step's offset). The Delete key "
+                                      "does too; SHIFT + Delete empties the whole step.";
     case B_CLEAR: return "CLEAR: removes every note and modulation lane (asks first).";
     case B_DUP: return "DUPLICATE: copies the steps shown after the end of the sequence and makes it that much longer (up to "
                        "64). SHIFT + click a step number to choose the steps.";
-    case B_SAVE: return "SAVE: writes the sequence (its steps, length and rate) to a .oneseq file in Documents\\ONE-ish\\Sequences.";
+    case B_SAVE: return "SAVE: writes the sequence (its steps, length and rate) to a .oneseq file in Documents\\ONE-ish\\Sequences, "
+                        "with performance notes if you write some (LOAD shows them).";
     case B_LOAD: return "LOAD: reads a .oneseq file into the sequencer (the sound stays as it is).";
     }
     return NULL;
@@ -864,6 +994,7 @@ const char *seq_zone_help(ed_t *e, int z) {
 void seq_help(ed_t *e, char *out, int n) {
     const char *m = seq_message(e);
     if (m) { snprintf(out, n, "%s", m); return; }
+    if (e->sq.notes[0]) { snprintf(out, n, "Notes: %s", e->sq.notes); return; }   /* the sequence's performance notes */
     snprintf(out, n, "Select a step, light REC (SEQUENCER, below) and play keys: notes go in and the selection moves on. "
              "PLAY runs it (ON lets it play the synth); TRIG plays it while a key is held, TRANSP moves it with the keys. "
              "The SEQUENCER triangle: its settings.");
@@ -883,6 +1014,9 @@ intptr_t seq_test(ed_t *e, intptr_t op, char *buf) {
     case SQT_TEXT: seq_read(e); sq_encode(&e->sq.q, buf, SQT_BUF); return (intptr_t)strlen(buf);
     case SQT_MESSAGE: snprintf(buf, SQT_BUF, "%s", e->sq.msg); return 1;
     case SQT_SELECTED: return e->sq.step * 16 + e->sq.lane;
+    case SQT_SET_NOTES: snprintf(e->sq.notes, sizeof e->sq.notes, "%s", buf); return 1;
+    case SQT_NOTES: snprintf(buf, SQT_BUF, "%s", e->sq.notes); return 1;
+    case SQT_PAGE: return e->sq.page;
     }
     return 0;
 }

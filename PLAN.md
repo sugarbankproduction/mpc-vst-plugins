@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 393 have,
-  32 partial, 50 missing, 27 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 417 have,
+  17 partial, 41 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -200,7 +200,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      overdub, focused); 20 `seq_*` settings, the `seq_pos` readout and `clock_swing`; the steps saved in the state
      (`seq=`, about 350 characters for a typical sequence), in user patches and `.oneseq` files; a SEQ step editor and a
      SEQUENCER module in the window; presets "Seq Bass Line", "Seq Chord Stabs". PC cost: the clock and steps alone
-     0.1 us per block, 8 modulation lanes 0.24 us per voice. Left: OUTPUT to Synth 1/2/3 [MULTI], an RTZ button, the
+     0.1 us per block, 8 modulation lanes 0.24 us per voice. Left: OUTPUT to Synth 1/2/3 [MULTI] (the RTZ button since: 18), the
      MPC page (the audit's section 17 and package 2 list the small leftovers).
   11. After the Windows version is finished (owner, 2026-10-27): a web version to share with friends: the engine
      compiled to WebAssembly in an AudioWorklet, a browser panel generated from the same layout data, Web MIDI, patches
@@ -266,6 +266,24 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      in the sound (state, patches, SAVE / INTO SYNTH); master tune and fine tune still apply; tested offline with
      12-TET (identical samples), 19-EDO and just intonation with a keyboard map (`ports/one-ish/test/scales/`).
      Left: MIDI out of the plugin's notes (package 14b); the sustain pedal's target Synth; the owner's check in Carla.
+  17. Modulation extras (audit package 3). Done 2026-10-29 (offline and the desktop window; `test/modx_check.c`): the
+     manual's step-mod destinations in the matrix and the sequencer's lanes (oscillator octave, the noise EG's attack,
+     sustain and release, each envelope's multi trig, sync, loop and latch, each LFO's wave; 275 destinations), an
+     ENABLE per matrix slot (click a row's number on the MATRIX page), PAD POLARITY, X/Y HOLD and LOAD SAVED POS (the
+     wheel and pad saved with the sound; CTRL page). Old sounds play sample for sample as before; CPU on the PC within
+     2% of before (8 voices 67.4 against 66.4 us, A/B on the same machine, 2026-10-29).
+  18. LFO and envelope fidelity (audit package 4). Done 2026-10-29 (offline; `test/lfoenv_check.c`): LFO RANGE High
+     (1 Hz-1 kHz, run per sample on pitch, both cutoffs and the amp level), the LFO wave "Pulse" (width over 0-100%),
+     synced LFOs restarting at their start phase when the host transport starts, and EG TIMES "MIN, 13 Syncs" (an
+     attack, decay or release knob at its far left is MIN, 0.2 ms, which time scale leaves alone; synced times from the
+     manual's 13 values). Old sounds unchanged (the default EG TIMES keeps the old times). CPU on the PC: unchanged with
+     no LFO in High (8 voices 68.0 us); one LFO in High on pitch adds 3.2-3.7 us per voice (two runs; 89.4 to 114.9 us for 8 voices),
+     LFOs 1 and 2 in High on pitch and both cutoffs 5.1-6.4 us per voice (130.4 us).
+  19. The sequencer's leftovers (audit package 2). Done 2026-10-29 (offline and the desktop window;
+     `test/seqx_check.c`, load_test): RTZ and AUTO (step edit auto-scroll) on the step editor's title line; ALL (edit a
+     step's notes together) and DEL STEP; performance notes saved with a .oneseq sequence; the arp following the master
+     swing (`arp_follow_swing`); the host transport's start and stop starting and stopping the sequence
+     (`seq_host_ss`, RECEIVE START/STOP). No CPU cost. Left: OUTPUT to another Synth [MULTI], the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

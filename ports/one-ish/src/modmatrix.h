@@ -86,8 +86,17 @@ enum {
     MD_MAC_HARM, MD_MAC_TIMBRE, MD_MAC_MORPH, MD_MAC_LEVEL,
     /* the mixer's EXT channel (the audio input), per voice: level +-100% of its range */
     MD_EXT_LEVEL,
+    /* (2026-10-29) the manual's step-mod list (p91), per voice: each oscillator's OCTAVE (+-100% = the whole 32'..2'
+     * list, in whole octaves), the noise EG's ATTACK and RELEASE (+-the whole knob) and SUSTAIN (a switch), each
+     * envelope's MULTI TRIG, SYNC, LOOP and LATCH (switches: +50% turns one on, -50% off) and each LFO's WAVE (+-100% =
+     * the whole list). A switch or list moves in whole steps: the setting plus the modulation times the list's span,
+     * rounded. */
+    MD_O1_OCT, MD_O2_OCT, MD_O3_OCT, MD_NOISE_A, MD_NOISE_SUS, MD_NOISE_R,
+    MD_FENV_MULTI, MD_ENVSW_END = MD_FENV_MULTI + 3 * 4 - 1,   /* per envelope, MDS_COUNT apart (MDS_* below) */
+    MD_LFO1_WAVE, MD_LFO_WAVE_END = MD_LFO1_WAVE + 3,
     MD_COUNT
 };
+enum { MDS_MULTI, MDS_SYNC, MDS_LOOP, MDS_LATCH, MDS_COUNT };
 enum { MDE_DELAY, MDE_ATTACK, MDE_HOLD, MDE_DECAY, MDE_SUSTAIN, MDE_RELEASE, MDE_SCALE, MDE_COUNT };
 enum { MDL_RATE, MDL_SEMIS, MDL_VAR, MDL_DELAY, MDL_FADE_IN, MDL_FADE_OUT, MDL_COUNT };
 
@@ -104,13 +113,14 @@ static inline float mod_transform(float x, int xf, float amt, int bipolar) {
 
 /* the slots that do something (a destination, and a source with an amount or a controller alone with its amount),
  * listed in `list` (MOD_SLOTS entries); returns how many. Worked out when a setting changes, so the control-rate
- * evaluation skips the empty slots. */
-static inline int mod_active(const float *slots, const float *extra, uint8_t *list) {
+ * evaluation skips the empty slots. on: each slot's ENABLE (MOD_SLOTS values, 0 = off: the slot keeps its settings
+ * and does nothing), or NULL for all on. */
+static inline int mod_active(const float *slots, const float *extra, const float *on, uint8_t *list) {
     int n = 0;
     for (int i = 0; i < MOD_SLOTS; i++) {
         const float *sl = slots + i * MOD_SLOT_PARAMS;
         int s = (int)sl[0], d = (int)sl[1], via = (int)sl[3];
-        if (d <= MD_OFF || d >= MD_COUNT) continue;
+        if (d <= MD_OFF || d >= MD_COUNT || (on && on[i] < 0.5f)) continue;
         if (s > MS_OFF && s < MS_COUNT ? sl[2] != 0.0f : via > MS_OFF && via < MS_COUNT && extra[i * MOD_SLOT_EXTRA] != 0.0f)
             list[n++] = (uint8_t)i;
     }
@@ -146,5 +156,5 @@ static inline void mod_eval_list(const float *slots, const float *extra, const u
 /* every slot, for callers without a list */
 static inline void mod_eval(const float *slots, const float *extra, const float *src, uint32_t bipolar, float *dst) {
     uint8_t list[MOD_SLOTS];
-    mod_eval_list(slots, extra, list, mod_active(slots, extra, list), src, bipolar, dst, MD_COUNT);
+    mod_eval_list(slots, extra, list, mod_active(slots, extra, NULL, list), src, bipolar, dst, MD_COUNT);
 }

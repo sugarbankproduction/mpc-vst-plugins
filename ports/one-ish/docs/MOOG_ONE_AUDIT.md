@@ -87,7 +87,7 @@ user patch files (2026-10-27, offline).
 | Selectable velocity curves | p17, p116 | Have | `vel_curve` (see 19) | - | none |
 | OCTAVE buttons; both = default octave; hold both = MIDI panic | p17, p112 | Have | `octave_shift` -2..+2 per Synth; the window's OCTAVE buttons: held 1 s back to the default octave, 2 s a MIDI panic (pedals up, All Notes Off, All Sound Off on every channel) (2026-10-28, the desktop window) | - | none |
 | Oscillator OLED waveform displays [UI] | p10, p22 | Have | Each oscillator panel draws its wave from wave, angle, pulse width and mix (`draw_wave`), static as on the instrument | - | none |
-| Mod wheel position saved with the preset | p18, p113 | Missing | The wheel's position is MIDI state, not saved (see LOAD SAVED POS, 19) | S | none |
+| Mod wheel position saved with the preset | p18, p113 | Have | With LOAD SAVED POS (19) on Mod Wheel or Both, the wheel's position is saved with the sound (`wheel_pos`) and put back when it loads; the window's wheel follows (2026-10-29, offline and the desktop window) | - | none |
 
 ## 2. Rear panel (p19-21)
 
@@ -146,7 +146,7 @@ user patch files (2026-10-27, offline).
 | Noise EG: ATTACK | 1 ms to 10 s (p29) | Have | `noise_a` 1 ms-10 s (log knob), shaping the noise when `noise_env` is On (default Off) (2026-10-27, offline) | - | low |
 | Noise EG: RELEASE | 1 ms to 10 s (p29) | Have | `noise_r` 1 ms-10 s | - | low |
 | Noise EG: SUSTAIN button (off: release acts as decay after the attack) | on/off (p29) | Have | `noise_sus` | - | none |
-| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Partial | Source "Noise EG" (per voice, 0..1); its attack, sustain and release are not destinations (see 15e) | S | low |
+| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Have | Source "Noise EG" (per voice, 0..1); destinations "Noise EG Attack", "Noise EG Sustain", "Noise EG Release" (see 15e) (2026-10-29, offline) | - | low |
 | Colours: white, red (-6 dB/oct), purple (+6 dB/oct) | p30 | Have | Red: white through a 40 Hz one-pole low-pass; purple: its first difference; same RMS as white. Measured -6.1 / +5.8 dB/oct over 250 Hz-4 kHz (2026-10-27, offline) | - | low |
 | COLOR pair select | Red+White, Red+Purple, White+Purple (p30) | Have | `noise_color_pair` | - | none |
 | COLOR MIX between the two selected colours (also a matrix destination) | knob (p30, p76) | Have | `noise_color_mix` 0-100%, equal-power crossfade; matrix destination "Noise Color Mix" (2026-10-27, offline) | - | low |
@@ -206,13 +206,13 @@ user patch files (2026-10-27, offline).
 | DECAY | 1 ms to 10 s (p41) | Have | `*_d`; curve `*_dcurve` (default 50% exp = the old one-pole decay, 99% in the set time) | - | - |
 | SUSTAIN | 0 to 10 (p41) | Have | `*_s` 0-100% | - | - |
 | RELEASE | 1 ms to 10 s (p41) | Have | `*_r`; curve `*_rcurve` (default 50% exp); ends at exactly the set time | - | - |
-| MIN setting below 1 ms, ignored by TIME SCALE | p40 | Partial | Shortest time 1 ms, and time scale applies to every free stage | S | none |
+| MIN setting below 1 ms, ignored by TIME SCALE | p40 | Have | `eg_times` "MIN, 13 Syncs" (per Synth; the default "1 ms, 11 Syncs" is as before, so old sounds are unchanged): an attack, decay or release knob at its far left is MIN (0.2 ms), left alone by time scale and the voice cards, shown as "MIN" (CTRL page) (2026-10-29, offline) | - | none |
 | ATTACK CURVE | 100% log to linear to 100% exp (p45) | Have | `*_acurve` -100..100%: one shared shaper (u = u m + b per sample), every curve takes the stage's whole time (2026-10-27, offline) | - | none |
 | DECAY CURVE | 100% log to linear to 100% exp (p45) | Have | `*_dcurve` -100..100%, default 50 (2026-10-27, offline) | - | none |
 | RELEASE CURVE | 100% log to linear to 100% exp (p45) | Have | `*_rcurve` -100..100%, default 50 (2026-10-27, offline) | - | none |
 | MULTI TRIG: legato notes restart the envelope or not | on/off (p42) | Have | `*_multi` (default on): off, a new note on a voice whose key is still down carries on from the envelope's current position (2026-10-27, offline) | - | none |
 | RESET: restart the attack from zero (mono/unison with multi trig) | off/on (p44) | Have | `*_reset`: every restart from zero (also a stolen or replayed voice in poly) (2026-10-27, offline) | - | none |
-| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Partial | `*_sync`: the five time knobs pick from 11 divisions (1/32 to 4 bars, longest on the right) at the host tempo; not the manual's 13 (1/64 .. 64 beats); time scale does not apply (2026-10-27, offline) | S | none |
+| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Have | `*_sync`: with `eg_times` "MIN, 13 Syncs" the time knobs pick from the manual's 13 values, 1/64 to 64 beats (shown as 1/256 .. 16 bars), longest on the right; "1 ms, 11 Syncs" keeps the old 11 (1/32 to 4 bars); time scale does not apply (2026-10-29, offline) | - | none |
 | LOOP: repeat the whole DAHDSR (trapezoid) | on/off (p42) | Have | `*_loop`: after the decay it goes straight to the release, then the delay again, while held (2026-10-27, offline) | - | none |
 | LATCH: hold at sustain after key up; with LOOP keeps cycling | on/off (p42) | Have | `*_latch`: key up ignored until the voice is replayed or stolen, latch is switched off or All Notes Off (2026-10-27, offline) | - | none |
 | TIME SCALE, keeps the stage ratios; modulatable | 10% to 1000% (p44) | Have | `*_scale` 10-1000%, log knob with 100% in the middle; matrix "... Env Time Scale" per voice (2026-10-27, offline) | - | none |
@@ -228,18 +228,18 @@ user patch files (2026-10-27, offline).
 | Four LFOs (hard-wired: 1 to pitch, 2 to cutoffs, 3 to wave shape) | p46, p27-28 | Have | `lfo1_*` .. `lfo4_*`; LFO 1 to pitch, LFO 2 to cutoffs, LFO 3 to wave angle and width (2026-10-27, offline) | - | - |
 | LFOs per voice (manual p10) so they can restart per note | p10 | Have | Per voice when restarted (note-on reset, repeats) or modulated per voice; free-running otherwise (2026-10-27, offline) | - | - |
 | RATE | 0 to 10 within the RANGE (p46) | Have | `lfoN_rate`, three decades on a log knob within the range (2026-10-27, offline) | - | - |
-| RANGE | Slow 0.001-1 Hz, Low 0.01-10 Hz, Medium 0.1-100 Hz, High 1 Hz-1 kHz (p48) | Partial | `lfoN_range` Slow, Low (default), Medium; no High (1 Hz-1 kHz needs per-sample LFOs: the control rate is 2.76 kHz) (2026-10-27, offline) | M (High) | medium for High |
+| RANGE | Slow 0.001-1 Hz, Low 0.01-10 Hz, Medium 0.1-100 Hz, High 1 Hz-1 kHz (p48) | Have | `lfoN_range` Slow, Low (default), Medium, High. High runs per sample in each voice: on pitch (LFO 1 hard-wired, matrix Pitch / Osc n Pitch), both cutoffs (LFO 2 hard-wired, matrix cutoffs) and Amp Level, where the matrix slot is linear in it (source or controller, no transform); its other destinations follow it at the control rate (2.76 kHz) (2026-10-29, offline) | - | medium for a High LFO (PLAN.md) |
 | WAVE: Triangle/Sine | p46 | Have | Triangle and Sine, each morphing into the other with `lfoN_var` (2026-10-27, offline) | - | - |
-| WAVE: Pulse with variable width | 0% always off .. 100% always on (p46, p48) | Partial | Square; `lfoN_var` narrows it from 50% to always low; widths over 50% only by inverting the amount, and 0% is a square, not the manual's always-off | S | none |
+| WAVE: Pulse with variable width | 0% always off .. 100% always on (p46, p48) | Have | The wave "Pulse": its width is `lfoN_var` over the whole range, 0% always off, 50% a square, 100% always on; Square keeps its old narrowing (old sounds unchanged) (2026-10-29, offline) | - | none |
 | WAVE: Saw/Ramp | p46 | Have | Saw and Ramp, each morphing through a triangle into the other (2026-10-27, offline) | - | - |
 | WAVE: S&H/Noise (smooth random) | p46 | Have | S&H and Noise (smooth random, the same random steps glided), each morphing into the other (2026-10-27, offline) | - | - |
 | VARIATION: morph within the wave category | 0% to 100% (p48-49) | Have | `lfoN_var`, from the chosen wave towards its partner; a matrix destination (2026-10-27, offline) | - | - |
 | POLARITY | Unipolar, Bipolar (p49) | Have | `lfoN_polarity` Bipolar / Unipolar (2026-10-27, offline) | - | - |
-| START PHASE (used on reset, repeats, clock start) | 0% to 100% (p49) | Partial | `lfoN_phase`, on note-on reset and repeats; the host transport's start is not used (next row) | S | none |
+| START PHASE (used on reset, repeats, clock start) | 0% to 100% (p49) | Have | `lfoN_phase`, on note-on reset and repeats, and for a synced LFO when the host transport starts (2026-10-29, offline) | - | none |
 | SYNC to the Master Clock | on/off (p49) | Have | `lfoN_sync`, host tempo | - | - |
 | SYNC DIVISION | 64, 32, 16, 8, 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (p49) | Have | 13 divisions, 16 bars .. 1/256 (64 .. 1/64 quarter-note beats), a table of the LFOs' own (2026-10-27, offline) | - | - |
 | SYNC TIMING | Straight, Dotted, Triplet (p49) | Have | `lfoN_timing` Straight, Dotted (x1.5), Triplet (x2/3) (2026-10-27, offline) | - | - |
-| Reset to start phase on Master Clock start when synced | p49 | Missing | The engine sees the host's playing flag (`song_pos`) but only the arp uses it | S | none |
+| Reset to start phase on Master Clock start when synced | p49 | Have | When the host transport starts, every synced LFO (free-running and each voice's own) goes back to its start phase (2026-10-29, offline) | - | none |
 | NOTE-ON RESET | off/on (p49) | Have | `lfoN_reset`: the voice restarts its LFO at the start phase, with its own random values (2026-10-27, offline) | - | - |
 | DELAY TIME before the LFO starts | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_delay` Off, 1 ms .. 10 s, per voice from the note-on; a restarted LFO waits at its start phase (2026-10-27, offline) | - | - |
 | FADE IN TIME | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_fade_in` Off, 1 ms .. 10 s (2026-10-27, offline) | - | - |
@@ -287,7 +287,7 @@ user patch files (2026-10-27, offline).
 | TEMPO | 10 BPM to 280 BPM (p61) | Have | The host's tempo is the master clock (`lfo_bpm`, 20-400 BPM; the arp also reads the song position's tempo) | - | none |
 | TAP tempo [HW] | p61 | Missing | Host | - | none |
 | NUDGE + / - and NUDGE MODE [HW] | Increment (1 or 0.1 BPM), Bend (2 or 1 BPM) (p62) | Missing | Host | - | none |
-| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Partial | `clock_swing` (the master swing, 50: none), followed by the sequencer (FOLLOW SWING); the arp keeps its own `arp_swing` (0-100%, used 10-90%) (2026-10-27, offline) | S | none |
+| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Have | `clock_swing` (the master swing, 50: none), followed by the sequencer (FOLLOW SWING) and, with `arp_follow_swing`, the arp (synced; otherwise its own `arp_swing`) (2026-10-29, offline) | - | none |
 | LOAD PRESET TEMPO [HW] | on/off (p62) | Missing | A plugin can't set the host's tempo | - | none |
 | External clock overrides the Master Clock | p60 | Have | The host clock always applies | - | none |
 | What can sync: arp, sequencer, LFOs, EGs, effects | p60 | Have | LFOs, EGs (`*_sync`), the synth effect and delay (`modfx_sync`, `dly_sync`), the arp and the sequencer (`seq_sync`) sync to the host (2026-10-27, offline) | - | none |
@@ -319,7 +319,7 @@ user patch files (2026-10-27, offline).
 | Hard-wired: pitch (LFO 1, Mod EG), wave (LFO 3 to angle and width), FM, cutoff (EG, LFO 2, FM) | p67 | Have | All of them; each amount is also a matrix destination (2026-10-27, offline) | - | - |
 | Quick Assign: DEST and Expression Assign; ADD DESTINATION, EDIT MODULATIONS, DONE, CANCEL; turning the destination knob sets the amount without moving the knob's own value [UI] | p68-69 | Missing | - (the ribbon's `ribbon_dst`/`ribbon_amt` is the only quick assignment) | M | none |
 | Matrix slots (numbered list; the count is not stated in this manual) | p70 | Have | 16 slots (`mod1_*` .. `mod16_*`) (2026-10-27, offline) | - | low (control rate; empty slots skipped) |
-| Per-slot DISABLE/ENABLE without deleting | p70 | Partial | Set the source to Off or the amount to 0 (the setting is lost) | S | none |
+| Per-slot DISABLE/ENABLE without deleting | p70 | Have | `modN_on` per slot (default On): off, the slot keeps its settings and does nothing (the effect pass too); on the MATRIX page a click on the row's number switches it (red: off) (2026-10-29, offline and the desktop window) | - | none |
 | SOURCE AMOUNT | -300% to +300% (p70) | Have | `modN_amt` -300% .. +300% (2026-10-27, offline) | - | - |
 | CONTROLLER with its own amount (negative inverts; a controller alone acts as a source) | -100% to +100% (p71) | Have | `modN_via` with `modN_via_amt` -100..+100% (default +100%); a slot with only a controller uses it as the source (2026-10-27, offline) | - | - |
 | Order: controller and transform first, source amount last | p70 | Have | As the manual (2026-10-27, offline) | - | - |
@@ -392,9 +392,9 @@ user patch files (2026-10-27, offline).
 | Oscillator 1-3: TRIANGLE (angle) | Have | "Osc n Angle" | - | - |
 | Oscillator 1-3: PULSE (width) | Have | "Osc n PW" | - | - |
 | Oscillator 1-3: MIX | Have | "Osc n Wave Mix" | - | - |
-| Oscillator 1-3: OCTAVE (step-mod list, p91) | Missing | - | S | none |
+| Oscillator 1-3: OCTAVE (step-mod list, p91) | Have | "Osc n Octave": whole octaves within 32'..2', +-100% = the whole list (+25% one octave) (2026-10-29, offline) | - | none |
 | Noise: COLOR MIX | Have | "Noise Color Mix" (+-100% = the whole knob) | - | - |
-| Noise: ATTACK, SUSTAIN, RELEASE (noise EG) | Missing | The noise EG exists (`noise_a`, `noise_sus`, `noise_r`); its stages are not destinations | S | none |
+| Noise: ATTACK, SUSTAIN, RELEASE (noise EG) | Have | "Noise EG Attack" / "Release" (+-the whole knob), "Noise EG Sustain" (a switch: +50% on, -50% off); per voice, worked out again only when a time moves by 1% (2026-10-29, offline) | - | none |
 | Mixer: OSC 1, 2, 3 LEVEL | Have | "Osc n Level" | - | - |
 | Mixer: RMOD LEVEL | Have | "Ring Level" | - | - |
 | Mixer: NOISE LEVEL | Have | "Noise Level" | - | - |
@@ -417,13 +417,13 @@ user patch files (2026-10-27, offline).
 | EG 1-3: ATTACK, DECAY, RELEASE | Have | Per voice: a voice with envelope modulation gets its own envelope settings; a stage is recalculated when its time moves by over 1% (2026-10-27, offline) | - | low-medium: about 0.9 us per voice per block with three envelopes swept by an LFO, none when unused |
 | EG 1-3: SUSTAIN | Have | "... Env Sustain" (per voice) | - | - |
 | EG 1-3: TIME SCALE | Have | "... Env Time Scale" (per voice) | - | - |
-| EG 1-3: MULTI TRIGGER, SYNC, LOOP, LATCH (step-mod list, p91) | Missing | - (switches: a step-mod offset would flip them) | S | none |
+| EG 1-3: MULTI TRIGGER, SYNC, LOOP, LATCH (step-mod list, p91) | Have | "... Env Multi Trig", "... Env Sync", "... Env Loop", "... Env Latch", per voice: switches, +50% turns one on, -50% off; a note on a step reads that step's MULTI TRIG at once; latch modulated off after key up lets go (2026-10-29, offline) | - | none |
 | LFO 1-4: RATE | Have | "LFO n Rate" (+-100% = the whole knob; per voice) | - | - |
 | LFO 1-4: RATE (SEMITONES) | Have | "LFO n Rate (st)" (+-100% = +-24 st) | - | - |
 | LFO 1-4: VARIATION | Have | "LFO n Variation" | - | - |
 | LFO 1-4: DELAY | Have | "LFO n Delay" | - | - |
 | LFO 1-4: FADE IN TIME, FADE OUT TIME (RAMP UP/DOWN TIME in the step-mod list) | Have | "LFO n Fade In", "LFO n Fade Out" | - | - |
-| LFO 1-4: WAVEFORM (step-mod list, p91) | Missing | - | S | none |
+| LFO 1-4: WAVEFORM (step-mod list, p91) | Have | "LFO n Wave": +-100% = the whole wave list, in whole steps, per voice (2026-10-29, offline) | - | none |
 
 ## 16. Arpeggiator (p78-81)
 
@@ -441,7 +441,7 @@ user patch files (2026-10-27, offline).
 | CLOCK DIVISION | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p81) | Have | `arp_div`, named 1/1 .. 1/128 (4 .. 1/32 beats) (2026-10-27, offline) | - | none |
 | CLOCK TIMING | Straight, Dotted, Triplet (p81) | Have | `arp_timing` (2026-10-27, offline) | - | none |
 | GATE LENGTH | 1% to 100% (p81) | Have | `arp_gate`; 100% ties into the next step (2026-10-27, offline) | - | none |
-| FOLLOW SWING | off/on (p81) | Partial | No master swing: `arp_swing` always applies (50% = none) (2026-10-27, offline) | S | none |
+| FOLLOW SWING | off/on (p81) | Have | `arp_follow_swing` (default Off: `arp_swing` as before): synced, the arp plays the master swing `clock_swing` (ARP page) (2026-10-29, offline) | - | none |
 | NOTE RESET: restart at once on a new note, or wait for the next division | off/on (p81) | Have | `arp_reset` (default On); with the transport playing, steps stay on the song grid (2026-10-27, offline) | - | none |
 | PENDULUM MODE: end notes played once or twice | Once, Twice (p81) | Have | `arp_pend_mode` (2026-10-27, offline) | - | none |
 | RANDOM MODE | Non-repeating, Repeating (p81) | Have | `arp_rnd_mode` (2026-10-27, offline) | - | none |
@@ -450,7 +450,7 @@ user patch files (2026-10-27, offline).
 ## 17. Sequencer (p82-95)
 
 Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everything but OUTPUT and multi-Synth starts
-[MULTI], an RTZ button, editing every note of a step at once, the 15e step-mod-only destinations and performance notes.
+[MULTI] (2026-10-29: RTZ, editing every note of a step at once, the 15e step-mod-only destinations and performance notes since).
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
@@ -458,7 +458,7 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | ON (whether the sequencer plays the Synth) | on/off (p82) | Have | `seq_on`; it can run silently with ON off (2026-10-27, offline) | - | none |
 | RATE, free | 10 BPM to 280 BPM (p82) | Have | `seq_rate` with `seq_sync` Off (2026-10-27, offline) | - | none |
 | CURRENT PAGE / ACTIVE STEP LEDs [UI] | p82 | Have | the SEQUENCER module's four PAGE LEDs, the step editor's playing column, the `seq_pos` readout (2026-10-27, offline) | - | none |
-| RETURN TO ZERO, START/STOP, RECORD, ADV back/forward [UI] | p83 | Partial | `seq_play`, `seq_rec`; ADV: the step editor's clicks and arrow keys; RTZ is an engine command (`rtz`) without a button yet (2026-10-27, offline) | M | none |
+| RETURN TO ZERO, START/STOP, RECORD, ADV back/forward [UI] | p83 | Have | `seq_play`, `seq_rec`; ADV: the step editor's clicks and arrow keys; RTZ on the step editor's title line (2026-10-29, offline and the desktop window) | - | none |
 | REST per step (a rest may keep its notes) | on/off (p84, p87) | Have | REST (its notes kept) (2026-10-27, offline) | - | none |
 | TIE per step (no envelope retrigger) | on/off (p84, p87) | Have | per note lane: the same note goes on, another takes over its voice legato (2026-10-27, offline) | - | none |
 | STEP MOD: record knob moves as per-step offsets while running (a new lane per knob) | on/off (p84, p89) | Have | `seq_step_mod`: a knob's move becomes the step's offset in a lane for its destination (made if missing); the knob stays (2026-10-27, offline) | - | none |
@@ -469,9 +469,9 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | Per-step VELOCITY | 1 to 127 (p88) | Have | per note (2026-10-27, offline) | - | none |
 | Per-step GATE (the last value set applies to new notes) | 1% to 100% (p88) | Have | per note, of the step's own length; the last one set goes to new notes (2026-10-27, offline) | - | none |
 | Per-step RATCHET (repeats inside one step) | 1 to 4 (p88) | Have | per note (2026-10-27, offline) | - | none |
-| Edit all notes of a step at once; delete a note, a step or a lane (SHIFT + DELETE) [UI] | p88, p90 | Partial | delete a note (or an offset) and a modulation lane; no editing of a step's notes together, no step delete button (the engine has `clearstep`) (2026-10-27, offline) | S | none |
+| Edit all notes of a step at once; delete a note, a step or a lane (SHIFT + DELETE) [UI] | p88, p90 | Have | ALL in the step editor: NOTE moves every note of the step together, VEL, GATE, RATCH set them all (the engine's `stepnotes`); DEL STEP (ALL lit) and SHIFT + Delete empty the step; a note, an offset and a lane as before (2026-10-29, offline and the desktop window) | - | none |
 | Modulation lanes: one destination each, bipolar % offset per step, CONTROLLER and AMOUNT per lane | p89-91 | Have | 8 lanes, -100..+100% per step, a controller with an amount (2026-10-27, offline) | - | low |
-| Step-mod destination list (CATEGORY/DESTINATION) | p91 (see 15e) | Partial | the mod matrix's whole destination list (voices and effects); not yet the 15e step-mod-only ones (octave, EG switches, LFO waveform) (2026-10-27, offline) | S | none |
+| Step-mod destination list (CATEGORY/DESTINATION) | p91 (see 15e) | Have | the mod matrix's whole destination list (voices and effects), the step-mod-only ones too (octave, noise EG, EG switches, LFO wave: 2026-10-29); STEP MOD records the footage, EG switch, noise EG and LFO wave controls as offsets (a list's move as its steps); a lane past destination 255 saves in a two-byte form, older sequences as before (2026-10-29, offline) | - | none |
 | SYNC | off/on (p92) | Have | `seq_sync`: host tempo, and its song position while it plays (2026-10-27, offline) | - | none |
 | CLOCK DIVISION (also divides the free rate) | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p92) | Have | `seq_div`, named 1/1 .. 1/128 (2026-10-27, offline) | - | none |
 | CLOCK TIMING | Straight, Dotted, Triplet (p92) | Have | `seq_timing` (2026-10-27, offline) | - | none |
@@ -486,7 +486,7 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | OUTPUT: which Synth(s) the sequence plays [MULTI] | Synth 1/2/3, All Synths (p94) | Missing | - | S | none |
 | Start several Synths' sequences together (Panel Focus multi-select) [MULTI] | p83 | Have | PLAY ALL (`seq_all`, the SETUP page): every Synth that is on with its sequencer ON starts (or stops) on the same sample (2026-10-28, offline and the desktop window) | - | none |
 | CLEAR SEQUENCE, DUPLICATE X-Y [UI] | p94 | Have | the step editor's CLEAR (asks) and DUP (2026-10-27, offline) | - | none |
-| LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Partial | `.oneseq` files from the step editor (the Windows file dialog sorts by name or date); no performance notes (2026-10-27, offline) | M | none |
+| LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Have | `.oneseq` files from the step editor (the Windows file dialog sorts by name or date); SAVE asks for performance notes, kept in the file and shown on LOAD (2026-10-29, the desktop window) | - | none |
 
 ## 18. Effects (p96-111)
 
@@ -690,10 +690,10 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | PITCH BEND UP (SHIFT = finer than semitones) | -24 to +24 st (p115) | Have | `bend_up` -24..+24 st, fine values allowed; the old `bend_range` is retired (an older project's value sets both directions) (2026-10-27, offline) | - | none |
 | PITCH BEND DOWN | -24 to +24 st (p115) | Have | `bend_down` -24..+24 st (default -2: down a whole tone) (2026-10-27, offline) | - | none |
 | MOD wheel, not spring-loaded | p113 | Have | CC 1; the window's wheel stays where it is left | - | - |
-| X/Y PAD: X, Y, pressure, gate; X/Y HOLD saves the held value | p113-114 | Partial | The window has a pad: X as CC 2, Y as CC 3 (and channel pressure), touch as CC 18: the matrix sources Pad X, Pad Y, Pad Gate (2026-10-27, offline); no pressure or HOLD | S | none |
-| PAD POLARITY | Unipolar, Bipolar (p115) | Missing | - | S | none |
+| X/Y PAD: X, Y, pressure, gate; X/Y HOLD saves the held value | p113-114 | Partial | The window has a pad: X as CC 2, Y as CC 3 (and channel pressure), touch as CC 18: the matrix sources Pad X, Pad Y, Pad Gate (2026-10-27, offline); X/Y HOLD `pad_hold` (default On, as before; Off: let go, the pad returns to its rest, the window's dot too) (2026-10-29, offline and the desktop window); no pressure (a mouse has none) | S | none |
+| PAD POLARITY | Unipolar, Bipolar (p115) | Have | `pad_polarity`: Unipolar (0..1, as before) or Bipolar (-1..1, the middle 0) for Pad X and Y (2026-10-29, offline) | - | none |
 | VELOCITY CURVE, per Synth | Soft, Medium, Hard, Compress, Expand (p116) | Have | `vel_curve`: Soft sqrt(v), Medium v (default, as before), Hard v^2, Compress and Expand flatten or steepen around the middle; all keep both ends (2026-10-27, offline) | - | none |
-| LOAD SAVED POS. (mod wheel, pad position with the Synth) | Off, Mod Wheel, Pad, Both (p117) | Missing | The wheel and pad positions are not saved | S | none |
+| LOAD SAVED POS. (mod wheel, pad position with the Synth) | Off, Mod Wheel, Pad, Both (p117) | Have | `load_pos` per Synth: a saved sound holds the wheel's and pad's positions (`wheel_pos`, `pad_x_pos`, `pad_y_pos`, taken as the state is saved) and loading it puts them back (CTRL page) (2026-10-29, offline and the desktop window) | - | none |
 | SEMITONE TRANSP. | -12 to Off to +12 (p117) | Have | `transpose` -12..+12 st (2026-10-27, offline) | - | none |
 | KEY TRACK CENTER for all key tracking | C0 to G10, default middle C (p117) | Have | `key_center` MIDI note 0-127, shown as "C4 (60)": both filters' tracking, the Keyboard matrix source and oscillator pitch tracking (2026-10-27, offline) | - | none |
 | HEADPHONES jacks [HW] | p114 | Missing | - | - | none |
@@ -708,7 +708,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Load a Timbre from any preset into any Synth [MULTI] | p119 | Have | PATCHES page INTO S1/2/3: a factory preset or user patch loads into the focused Synth only (its setup kept), the engine's `synthload` (2026-10-28, offline and the desktop window) | - | none |
 | SAVE PRESET / SAVE PRESET AS, unique names, overwrite prompt [UI] | p120 | Have | The PATCHES page: SAVE, SAVE AS (asks before replacing a same-named patch; names compare case-insensitively), RENAME, DELETE (2026-10-27, offline) | - | none |
 | SAVE TIMBRE to a new single-Timbre preset [UI][MULTI] | p121 | Have | PATCHES page SAVE S1/2/3: the focused Synth's sound as a user patch (2026-10-28, offline and the desktop window) | - | none |
-| A preset restores everything (sequences, matrices, arps, effects, held wheel and pad) | p119 | Partial | The state restores every ONE-ish parameter; not the held mod wheel or pad (and no sequences yet) | S | none |
+| A preset restores everything (sequences, matrices, arps, effects, held wheel and pad) | p119 | Have | The state restores every ONE-ish parameter and the sequences (2026-10-27); the held mod wheel and pad with LOAD SAVED POS (2026-10-29, offline) | - | none |
 
 ## 21. Editing and saving (p122-123)
 
@@ -731,7 +731,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | LCD BRIGHTNESS, PANEL LED BRIGHTNESS [HW] | 0% to 100% (p125) | Missing | - | - | none |
 | SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Have | PRESET AUTOLOAD on the SETTINGS page: on, the PRESET knob and PREV/NEXT (tag filters too) load as they step (as before); off, they point at a patch ("> F 004 ... ?") and a click on the knob or the name loads it (2026-10-29, the desktop window; `docs/SETTINGS.md`); SHOW BANK PREVIEW on the SETTINGS page: on, the SET page's bank letters show their eight patches (as before, `docs/PATCHES.md`); off, only the numbers (2026-10-29, the desktop window) | - | none |
 | DUPLICATE NAMES ON IMPORT / EXPORT [UI] | Ignore, Overwrite, Auto Rename, Manual Rename (p126) | Partial | IMPORT asks before overwriting a same-named patch; no auto-rename or ignore choice | S | none |
-| STEP EDIT AUTO-SCROLL [UI] | off/on (p126) | Missing | (with the sequencer) | S | none |
+| STEP EDIT AUTO-SCROLL [UI] | off/on (p126) | Have | AUTO on the step editor's title line (lit by default): the page shown follows the step playing; a window setting for now, not saved (2026-10-29, the desktop window) | - | none |
 | NOISE REDUCTION between notes [ANALOG][HW] | -24 dB to 0 dB, default -12 dB (p126) | Missing | Not needed: no analog hiss (ONE-ish adds only a -100 dB floor) | - | none |
 | SET DATE/TIME, formats [HW] | p127 | Missing | The computer's clock | - | none |
 | FAN MODE [HW] | Normal, Low (p127) | Missing | - | - | none |
@@ -741,7 +741,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | RECEIVE MIDI CLOCK | off/on (p128) | Have | SETTINGS page: on (default), the host's tempo and song position; off, both are ignored and the Synths run free at the page's own TEMPO (10-280 BPM) (2026-10-29, offline and the desktop window) | - | none |
-| RECEIVE MIDI START/STOP | off/on (p128) | Partial | The host's playing flag reaches the engine (`song_pos`); the arp and the sequencer follow the song position while it plays (no LFO reset; the host's start and stop don't start or stop the sequence) | S | none |
+| RECEIVE MIDI START/STOP | off/on (p128) | Have | `seq_host_ss` per Synth (default Off): the host's start and stop start and stop the sequence (PLAY follows, the host is told); synced LFOs restart on the start (2026-10-29, offline) | - | none |
 | MIDI I/O LOAD FROM PRESET [UI] | off/on (p129) | Have | SETTINGS page: on (default, as before), a loaded preset or patch brings its MIDI channels; off, `midi_ch` and each Synth's `syn_ch` stay as set (a project still restores everything) (2026-10-29, the desktop window) | - | none |
 | MIDI IN PORTS [HW] | DIN, USB, DIN & USB (p129) | Missing | Host | - | none |
 | MIDI IN CHANNEL ALL (one channel for the whole preset) | Off, 1-16 (p129) | Have | `midi_ch`: Omni (the default: every channel, as before) or 1-16 for every Synth; the window plays on it (2026-10-28, offline) | - | none |
@@ -837,30 +837,30 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | Module | Have | Partial | Missing | Missing [HW] | Missing [UI] |
 |---|---|---|---|---|---|
 | 0. Architecture and overview (p8-10) | 8 | 2 | 0 | 0 | 0 |
-| 1. Front panel, centre console, keyboard (p10-18) | 8 | 4 | 4 | 1 | 2 |
+| 1. Front panel, centre console, keyboard (p10-18) | 9 | 4 | 3 | 1 | 2 |
 | 2. Rear panel (p19-21) | 1 | 2 | 3 | 3 | 0 |
 | 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
-| 5. Noise (p29-30) | 8 | 1 | 0 | 0 | 0 |
+| 5. Noise (p29-30) | 9 | 0 | 0 | 0 | 0 |
 | 6. Mixer (p31-32) | 8 | 0 | 1 | 1 | 0 |
 | 7. Filters (p33-39) | 23 | 1 | 0 | 0 | 0 |
-| 8. Envelopes (p40-45) | 18 | 2 | 1 | 0 | 1 |
-| 9. LFOs (p46-49) | 18 | 4 | 1 | 0 | 0 |
+| 8. Envelopes (p40-45) | 20 | 0 | 1 | 0 | 1 |
+| 9. LFOs (p46-49) | 22 | 1 | 0 | 0 | 0 |
 | 10. VCA (p50-52) | 5 | 0 | 0 | 0 | 0 |
 | 11. Output (p53-56) | 0 | 0 | 6 | 4 | 0 |
 | 12. Performance Sets and text entry (p57-60) | 5 | 0 | 0 | 0 | 0 |
-| 13. Master Clock (p60-62) | 4 | 1 | 3 | 3 | 0 |
+| 13. Master Clock (p60-62) | 5 | 0 | 3 | 3 | 0 |
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
-| 15. Modulation (p67-77) | 75 | 3 | 10 | 2 | 3 |
-| 16. Arpeggiator (p78-81) | 16 | 1 | 0 | 0 | 0 |
-| 17. Sequencer (p82-95) | 28 | 4 | 1 | 0 | 0 |
+| 15. Modulation (p67-77) | 80 | 2 | 6 | 2 | 3 |
+| 16. Arpeggiator (p78-81) | 17 | 0 | 0 | 0 | 0 |
+| 17. Sequencer (p82-95) | 32 | 0 | 1 | 0 | 0 |
 | 18. Effects (p96-111) | 87 | 0 | 1 | 0 | 1 |
-| 19. Left Hand Controller (p17-18, p112-117) | 15 | 1 | 3 | 1 | 0 |
-| 20. Browser, presets and timbres (p118-121) | 6 | 1 | 0 | 0 | 0 |
+| 19. Left Hand Controller (p17-18, p112-117) | 17 | 1 | 1 | 1 | 0 |
+| 20. Browser, presets and timbres (p118-121) | 7 | 0 | 0 | 0 | 0 |
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
-| 22. Settings (p124-139) | 13 | 3 | 15 | 11 | 2 |
+| 22. Settings (p124-139) | 15 | 2 | 14 | 11 | 1 |
 | 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
-| **Total** | **393** | **32** | **50** | **27** | **9** |
+| **Total** | **417** | **17** | **41** | **27** | **8** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -898,7 +898,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after packages 8, 14a and 16: 34 and 35). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after packages 8, 14a and 16: 34 and 35; then packages 3, 4 and 2's leftovers: 12 and 17). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -933,12 +933,20 @@ beside the engine work.
   "what can sync" complete (13) and chord memory after the sequencer (14). Left (S each): an RTZ button, editing a
   step's notes together and a step delete button, performance notes with a saved sequence, step edit auto-scroll
   (22a), the arp following the master swing (16), the host transport's start and stop starting and stopping the
-  sequence (22b RECEIVE START/STOP).
+  sequence (22b RECEIVE START/STOP). Done 2026-10-29 (offline and the desktop window; `test/seqx_check.c`, load_test):
+  all of these (RTZ and AUTO on the step editor's title line, ALL and DEL STEP, notes in .oneseq files,
+  `arp_follow_swing`, `seq_host_ss`); 32 of the 33 rows Have, OUTPUT [MULTI] left.
 - Depends on: package 3 for the step-mod destinations the manual lists (oscillator octave, the EG switches, LFO
   waveform). OUTPUT to other Synths and starting several Synths together wait for package 13.
 - Files: `src/stepseq.h`, `src/stepseq_run.h`, `desktop/seq_page.c`, `params.json`.
 
 **3. Modulation engine extras** (sections 5, 15, 19, 20). Effort M. CPU: low (control rate).
+- Done 2026-10-29 (offline and the desktop window; `test/modx_check.c`): the 22 destinations below (275 in all, after Ext Level; per
+  voice; switches and lists move in whole steps), `modN_on` for every slot (the MATRIX page: click a row's number),
+  `pad_polarity`, `pad_hold`, `load_pos` with `wheel_pos` / `pad_x_pos` / `pad_y_pos` (the CTRL page), STEP MOD on the
+  new destinations; sequences with a lane past destination 255 save in a two-byte form (older ones as before). Old
+  sounds give the same samples (`test/golden_check.c`); the CPU is unchanged (PLAN.md). Left: PAD PRESSURE (a mouse has
+  none), the matrix page's other package 6 items.
 - New matrix destinations: oscillator OCTAVE (x3), noise EG ATTACK / SUSTAIN / RELEASE, the EG switches MULTI TRIG /
   SYNC / LOOP / LATCH (x3), LFO WAVEFORM (x4). Step mod and the matrix both use them.
 - A per-slot ENABLE param, so a slot can be switched off without losing its settings.
@@ -951,6 +959,11 @@ beside the engine work.
 
 **4. LFO and envelope fidelity** (sections 8, 9). Effort M. CPU: none, except an LFO in the High range (medium for
 that LFO: it needs a per-sample path).
+- Done 2026-10-29 (offline; `test/lfoenv_check.c`): RANGE High (per sample on pitch, the cutoffs and the amp level;
+  sidebands where they belong and none of the control rate's images), the wave "Pulse" (its width the variation,
+  0-100%; Square as before), synced LFOs back to their start phase when the transport starts, `eg_times` "MIN, 13
+  Syncs" (MIN 0.2 ms unscaled, the 13 synced values; the default keeps the old times, so old sounds are unchanged).
+  The High range's cost is in PLAN.md. Left: High-range modulation of the other destinations is at the control rate.
 - LFO RANGE High (1 Hz to 1 kHz); the pulse VARIATION over the manual's whole range, 0% (always off) to 100% (always
   on); synced LFOs restart at their start phase when the host transport starts.
 - Envelope MIN times below 1 ms that time scale leaves alone; the manual's 13 synced values (1/64 to 64 beats).

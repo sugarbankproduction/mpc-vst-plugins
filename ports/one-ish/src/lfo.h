@@ -11,7 +11,9 @@
 #include <math.h>
 #include <stdint.h>
 
-enum { LFO_TRI, LFO_SINE, LFO_SQUARE, LFO_SAW, LFO_RAMP, LFO_SH, LFO_NOISE, LFO_WAVES };   /* option order in params.json */
+/* option order in params.json. PULSE (2026-10-29): the manual's pulse, its width the variation over the whole range,
+ * 0% always low ("off") .. 50% a square .. 100% always high ("on"); Square keeps its old narrowing from 50% */
+enum { LFO_TRI, LFO_SINE, LFO_SQUARE, LFO_SAW, LFO_RAMP, LFO_SH, LFO_NOISE, LFO_PULSE, LFO_WAVES };
 
 typedef struct {
     float phase;    /* 0..1 */
@@ -67,6 +69,7 @@ static inline float lfo_shape(const lfo_t *l, int wave, float v) {
         if (v <= 0.0f) return sinf(6.2831853f * t);
         return (1.0f - v) * sinf(6.2831853f * t) + v * lfo_tri(t + 0.25f < 1.0f ? t + 0.25f : t - 0.75f);
     case LFO_SQUARE: return t < 0.5f * (1.0f - v) ? 1.0f : -1.0f;
+    case LFO_PULSE:  return t < v ? 1.0f : -1.0f;
     case LFO_SAW:    return lfo_slope(t, v);
     case LFO_RAMP:   return lfo_slope(t, 1.0f - v);
     case LFO_SH:

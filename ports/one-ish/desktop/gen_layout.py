@@ -381,7 +381,7 @@ def build(lay):
         ("arp_dir", "Octave Direction"), ("arp_oct_order", "Octave Order"), ("arp_pendulum", "Pendulum"),
         ("arp_pend_mode", "Pendulum Ends"), ("arp_rnd_mode", "Random Mode"), ("arp_sync", "Tempo Sync"),
         ("arp_div", "Rate (Synced)"), ("arp_timing", "Timing"), ("arp_rate", "Free Rate"), ("arp_gate", "Gate Length"),
-        ("arp_swing", "Swing"), ("arp_reset", "Note Reset")])
+        ("arp_swing", "Swing"), ("arp_follow_swing", "Follow Swing"), ("arp_reset", "Note Reset")])
 
     L.panel(412, YB, 58, HB, "CHORD", more="CHORD", keys=["chord_on"])
     L.ctl("chord_on", "toggle", 416, YA, 36, 14, "ON", SIDE)
@@ -446,7 +446,7 @@ def build(lay):
         ("clock_swing", "Master Swing"), ("seq_note_trig", "Note Trig"), ("seq_note_reset", "Note Reset"),
         ("seq_restart_trig", "Restart On Trig"), ("seq_restart_hold", "Restart On Hold"),
         ("seq_transpose", "Transpose"), ("seq_tr_mode", "Transpose Mode"), ("seq_one_shot", "One Shot"),
-        ("seq_pattern", "Factory Sequence")])
+        ("seq_pattern", "Factory Sequence"), ("seq_host_ss", "Host Start/Stop")])
 
     # ---- mixer ----
     X = DX
@@ -562,7 +562,11 @@ def build(lay):
         ("transpose", "Transpose"), ("octave_shift", "Octave Shift"), ("key_center", "Key Track Centre"),
         ("master_tune", "Master Tune"), ("fine_tune", "Fine Tune"), ("glide", "Glide"), ("glide_time", "Glide Rate"),
         ("glide_type", "Glide Type"), ("glide_legato", "Legato Glide"), ("glide_gated", "Gated Glide"),
-        ("glissando", "Glissando")])
+        ("glissando", "Glissando"),
+        # the X/Y pad and the saved wheel and pad positions (2026-10-29)
+        ("pad_polarity", "Pad Polarity"), ("pad_hold", "Pad X/Y Hold"), ("load_pos", "Load Saved Pos"),
+        ("wheel_pos", "Saved Mod Wheel"), ("pad_x_pos", "Saved Pad X"), ("pad_y_pos", "Saved Pad Y"),
+        ("eg_times", "EG Times (MIN, Syncs)")])   # the envelopes' MIN and 13 synced values (2026-10-29)
     L.page("RIBBON", "RIBBON", "The touch strip over the keys (MIDI CC 16 position, CC 17 touch).", [
         ("ribbon_dst", "Destination"), ("ribbon_amt", "Amount"), ("ribbon_mode", "Mode"), ("ribbon_origin", "Origin")])
     L.page("ANALOG", "ANALOG CHARACTER", "Per-voice differences, as between real analog voices. All 0 = exact.", [
@@ -589,12 +593,14 @@ def emit(lay, zones, out):
              "typedef struct { short param, kind, x, y, w, h, size; const char *label; const char *const *leds; } lay_ctl_t;"]
 
     # MORE pages: the items whose keys exist, the OTHER page for whatever is left, then the panel triangles
-    matrix = []
+    matrix, matrix_on = [], []
     for n in range(1, 33):
         keys = ["mod%d_%s" % (n, s) for s in MATRIX_COLS]
         if all(k in lay.index for k in keys[:4]):
             matrix.append("{%s}" % ", ".join(str(lay.index.get(k, -1)) for k in keys))
             lay.placed.update(k for k in keys if k in lay.index)
+            matrix_on.append(str(lay.index.get("mod%d_on" % n, -1)))   # the row's ENABLE: its number (2026-10-29)
+            lay.placed.add("mod%d_on" % n)
     on_pages = set()
     pages = []
     for pid, title, note, items, pic in lay.pages:
@@ -645,6 +651,7 @@ def emit(lay, zones, out):
     lines.append("enum { MX_SRC, MX_DST, MX_AMT, MX_VIA, MX_VIA_AMT, MX_XF, MX_XF_AMT, MX_COLS };")
     lines.append("LAY short MATRIX[][MX_COLS] = {%s};" % ", ".join(matrix or ["{-1, -1, -1, -1, -1, -1, -1}"]))
     lines.append("#define NMATRIX %d" % len(matrix))
+    lines.append("LAY short MATRIX_ON[] = {%s};   /* each row's ENABLE (-1: none) */" % ", ".join(matrix_on or ["-1"]))
 
     # the MORE pages: their items (a param, its label, and the option of another param it depends on)
     lines.append("typedef struct { short param, cond; unsigned mask; const char *label; } lay_item_t;   /* cond: "

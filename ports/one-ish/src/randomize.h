@@ -191,6 +191,7 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RCODE("mod*_via_amt", RS_MOD, -100, 100, 0), RCODE("mod*_xf_amt", RS_MOD, 0, 100, 0),
     RCODE("mod*_xf", RS_MOD, 0, 0, 0), RCODE("mod*_src", RS_MOD, 0, 0, 0), RCODE("mod*_dst", RS_MOD, 0, 0, 0),
     RCODE("mod*_via", RS_MOD, 0, 0, 0), RCODE("mod*_amt", RS_MOD, -100, 100, 0),
+    RDEF("mod*_on", RS_MOD, 0),                         /* (2026-10-29) every slot enabled again */
 
     /* ---- PERFORMANCE: voices, glide, unison, analog character, stereo ---- */
     RCODEW("voices", RS_PERF, NULL, 0), RCODEW("glide", RS_PERF, NULL, 0),

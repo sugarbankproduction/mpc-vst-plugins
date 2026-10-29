@@ -258,7 +258,7 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
     if (e->screen == SCR_MATRIX) {
         for (int m = e->sub * ROWS; m < (e->sub + 1) * ROWS && m < NMATRIX; m++)
             for (int k = 0; k < MX_COLS; k++)
-                if (MATRIX[m][k] == i) return 1;
+                if (MATRIX[m][k] == i || MATRIX_ON[m] == i) return 1;
         return 0;
     }
     if (e->screen == SCR_INDEX || lib_screen(e->screen)) return 0;   /* (the patch list, the library's pages) */
@@ -622,12 +622,16 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
             if (PtInRect(&r, pt)) return Z_RND_LOCK + k;
         }
     } else if (e->screen == SCR_MATRIX) {
-        for (int r = 0; r < ROWS && e->sub * ROWS + r < NMATRIX; r++)
+        for (int r = 0; r < ROWS && e->sub * ROWS + r < NMATRIX; r++) {
+            RECT nc = matrix_cell(r, 0);   /* the row's number: its ENABLE (2026-10-29) */
+            int on = MATRIX_ON[e->sub * ROWS + r];
+            if (on >= 0 && PtInRect(&nc, pt)) { e->hit_screen = 1; e->hit_rect = nc; return on; }
             for (int k = 0; k < MX_COLS; k++) {
                 RECT c = matrix_cell(r, k + 1);
                 int i = MATRIX[e->sub * ROWS + r][k];
                 if (i >= 0 && PtInRect(&c, pt)) { e->hit_screen = 1; e->hit_rect = c; return i; }
             }
+        }
     } else if (e->screen == SCR_SEQ) {
         return seq_hit(e, pt);
     } else if (e->screen == SCR_SETTINGS) {
@@ -756,12 +760,38 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
     else invalidate(e, NULL);
 }
 
+/* (2026-10-29) the pad and wheel as the engine has them: X/Y HOLD off sends the pad back to its rest when let go;
+ * LOAD SAVED POS puts the saved positions back when a sound loads (src/engine.c pad_release, positions_load) */
+enum { PP_POLARITY, PP_HOLD, PP_LOAD, PP_WHEEL, PP_X, PP_Y, PP_COUNT };
+static int pos_param(int k) {   /* Synth 1's index of each (the focused Synth's through ed_get) */
+    static const char *const KEY[PP_COUNT] = {"pad_polarity", "pad_hold", "load_pos", "wheel_pos", "pad_x_pos", "pad_y_pos"};
+    static int ix[PP_COUNT] = {-2, -2, -2, -2, -2, -2};
+    if (ix[k] == -2) {
+        ix[k] = -1;
+        for (int i = 0; i < NPARAMS; i++)
+            if (!strcmp(PARAMS[i].key, KEY[k])) { ix[k] = i; break; }
+    }
+    return ix[k];
+}
+static void pad_rest(ed_t *e) {
+    if (pos_param(PP_HOLD) < 0 || option_of(e, pos_param(PP_HOLD)) == 1) return;
+    e->pad_x = e->pad_y = pos_param(PP_POLARITY) >= 0 && option_of(e, pos_param(PP_POLARITY)) == 1 ? 0.5f : 0.0f;
+}
+static void positions_follow(ed_t *e) {   /* after a new sound, or a saved position changed */
+    int lp = pos_param(PP_LOAD) >= 0 ? option_of(e, pos_param(PP_LOAD)) : 0;
+    if ((lp & 1) && pos_param(PP_WHEEL) >= 0) e->wheel = real_of(e, pos_param(PP_WHEEL)) * 0.01f;
+    if ((lp & 2) && pos_param(PP_X) >= 0) {
+        e->pad_x = real_of(e, pos_param(PP_X)) * 0.01f;
+        e->pad_y = real_of(e, pos_param(PP_Y)) * 0.01f;
+    }
+}
+
 static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes off, the pitch wheel springs back */
     int m = e->mode;
     e->mode = M_NONE;   /* first: the preset list below takes the mouse, which comes back here */
     if (m == M_KEY) key_off(e);
     if (m == M_PITCH) { e->bend = 0; ui_midi(e, 0xE0, 0, 64); }
-    if (m == M_PAD) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); }
+    if (m == M_PAD) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); pad_rest(e); }
     if (m == M_RIBBON) { e->ribbon_on = 0; e->ribbon_cc = -1; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
     /* a click on the preset knob: what it points at (PRESET AUTOLOAD off), else the patch list */
     if (m == M_ENC && !e->enc_moved && !settings_cue_load(e)) patches_open(e);
@@ -947,6 +977,9 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             }
         }
         if (prog != e->shown_prog) { e->shown_prog = prog; changed = 1; }
+        for (int k = 0; k < moved && k < 16 && !changed; k++)   /* a saved wheel or pad position (LOAD SAVED POS) */
+            if (base_of(which[k]) >= pos_param(PP_LOAD) && base_of(which[k]) <= pos_param(PP_Y)) changed = 1;
+        if (changed || moved > 16) positions_follow(e);
         if (patches_tick(e)) changed = 1;   /* the edited mark, a message that ran out */
         if (seq_tick(e, changed || moved)) {   /* the playing step; the sequence while it is edited: the screen, its LEDs */
             invalidate(e, &L.screen);
