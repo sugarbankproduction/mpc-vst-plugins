@@ -25,7 +25,11 @@
 enum {
     MS_OFF, MS_FENV, MS_AENV, MS_MENV, MS_LFO1, MS_LFO2, MS_VEL, MS_WHEEL, MS_AT, MS_KEY, MS_RAND,
     MS_LFO3, MS_LFO4, MS_BEND, MS_GATE, MS_SUSTAIN, MS_EXP1, MS_EXP2, MS_RAND_UNI, MS_CONST,
-    MS_NOISE_EG, MS_SOSTENUTO, MS_RIBBON, MS_PAD_X, MS_PAD_Y, MS_PAD_GATE, MS_COUNT
+    MS_NOISE_EG, MS_SOSTENUTO, MS_RIBBON, MS_PAD_X, MS_PAD_Y, MS_PAD_GATE,
+    /* (2026-10-30) RAIN AND RIPPLES and MARKOV MELODY (src/gens_b_run.h gb_sources), all 0..1: a landing drop's pulse,
+     * the rings' energy, a pulse at each Markov note, the Markov note's height in its range */
+    MS_RAIN_DROP, MS_RIPPLE, MS_MK_STEP, MS_MK_HEIGHT,
+    MS_COUNT
 };
 
 enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };   /* transforms, params.json order */

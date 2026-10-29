@@ -5160,6 +5160,7 @@ static void arp_wav(const char *demo_path) {
 #include "seqx_check.c"    /* the sequencer leftovers: RTZ, a step's notes together, follow swing, host start/stop */
 #include "seqgen_check.c"  /* the sequence generator: patterns in the Synth's key and scale (2026-10-29) */
 #include "physgen_check.c"   /* the bouncing balls and particles (2026-10-29) */
+#include "gens_b_check.c"    /* (2026-10-30) rain and ripples, the Markov melody */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5922,11 +5923,18 @@ int main(int argc, char **argv) {
     E = mpc_engine();
     if (argc > 1 && !strcmp(argv[1], "bench")) {
         bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench(); tuning_bench(); lfoenv_bench(); physgen_bench();
+        gens_b_bench();   /* (2026-10-30) */
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "phys")) {   /* just the balls and particles: offline_check phys */
         physgen_checks();
         physgen_bench();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "gensb")) {   /* (2026-10-30) just the rain and the Markov melody */
+        gens_b_checks();
+        gens_b_bench();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -6037,6 +6045,7 @@ int main(int argc, char **argv) {
     seq_extras();
     seqgen_checks();
     physgen_checks();
+    gens_b_checks();   /* (2026-10-30) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

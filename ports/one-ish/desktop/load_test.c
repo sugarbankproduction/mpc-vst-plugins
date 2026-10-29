@@ -1186,6 +1186,48 @@ static void phys_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
+/* (2026-10-30) RAIN AND RIPPLES and MARKOV MELODY: each page opens from the MORE index, shows its params and its
+ * picture, and the picture moves (two pictures of it a little apart differ) */
+static void gens_b_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[220];
+    int ok = PG_RAIN >= 0 && PG_MARKOV >= 0 && PAGES[PG_RAIN].pic == PIC_RAIN && PAGES[PG_MARKOV].pic == PIC_MARKOV;
+    check(ok, "RAIN AND RIPPLES and MARKOV MELODY: a MORE page each, with its picture");
+    if (!ok) return;
+    check(page_has(fx, PG_RAIN, "rain_rate") && page_has(fx, PG_RAIN, "rain_echo") && page_has(fx, PG_RAIN, "rain_max") &&
+          page_has(fx, PG_MARKOV, "mkv_creat") && page_has(fx, PG_MARKOV, "mkv_order") &&
+          page_has(fx, PG_MARKOV, "mkv_forget"), "... their params are on them");
+    set_option(fx, "rain_on", "On");
+    set_option(fx, "mkv_on", "On");
+    fx->setParameter(fx, rnd_key("rain_rate"), 0.8f);    /* (busier, so a short look sees it move) */
+    set_option(fx, "mkv_rate", "1/16");
+    static const struct { int page; const char *suffix; } P[] = {{PG_RAIN, "_more_rain"}, {PG_MARKOV, "_more_markov"}};
+    int x0 = (int)((ZONE_SCREEN[0] + 8) * s), x1 = (int)((ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8) * s);
+    int y0 = (int)((ZONE_SCREEN[1] + 80 + 22 * (PT_ROWS - PIC_ROWS)) * s), y1 = (int)((ZONE_SCREEN[1] + 80 + 22 * PT_ROWS) * s);
+    for (int k = 0; k < 2; k++) {
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        int st0 = phys_grab(child, w, h, phys_px[0]);
+        open_page(child, s, P[k].page);
+        play(fx, 60, 512);
+        int st = phys_grab(child, w, h, phys_px[1]), opened = 0, moved = 0;
+        for (int y = y0; st && st0 && y < y1 && y < h; y++)
+            for (int x = x0; x < x1 && x < w; x++) opened += memcmp(&phys_px[0][y * st + 3 * x], &phys_px[1][y * st + 3 * x], 3) != 0;
+        memcpy(phys_px[0], phys_px[1], (size_t)st * h);
+        play(fx, 30, 512);
+        phys_grab(child, w, h, phys_px[1]);
+        for (int y = y0; st && y < y1 && y < h; y++)
+            for (int x = x0; x < x1 && x < w; x++) moved += memcmp(&phys_px[0][y * st + 3 * x], &phys_px[1][y * st + 3 * x], 3) != 0;
+        snprintf(what, sizeof what, "the %s page opens from the MORE index and draws its picture (%d pixels new), which "
+                 "moves (%d pixels changed 0.35 s later)", P[k].suffix + 6, opened, moved);
+        check(opened > 500 && moved > 20, what);
+        if (bmp) shot(child, w, h, bmp, P[k].suffix);
+    }
+    set_option(fx, "rain_on", "Off");
+    set_option(fx, "mkv_on", "Off");
+    fx->setParameter(fx, rnd_key("rain_rate"), 0.4f);
+    set_option(fx, "mkv_rate", "1/8");
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
 static void master_pages(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     char what[160];
     if (PG_DELAY < 0 || PG_REVERB < 0) return;
@@ -1322,6 +1364,7 @@ static void editor(AEffect *fx, const char *bmp) {
         ribbon_test(fx, child, cr.right / (float)BASE_W);
         random_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         phys_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        gens_b_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* (2026-10-30) */
         click_zone(child, cr.right / (float)BASE_W, ZONE_TAB_MATRIX);   /* the matrix's first rows again */
         fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);   /* back to the first preset for the pictures */
         play(fx, 400, 512);

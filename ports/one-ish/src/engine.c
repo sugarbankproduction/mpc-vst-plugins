@@ -70,6 +70,7 @@
 #include "seq.h"
 #include "keyscale.h"
 #include "physgen.h"
+#include "gens_b.h"   /* (2026-10-30) rain and ripples, the Markov melody */
 #include "stepseq.h"
 #include "macro.h"
 #include "tuning.h"
@@ -242,6 +243,11 @@ enum {
     P_PH_BALLS, P_PH_NBALLS, P_PH_SPEED, P_PH_GRAVITY, P_PH_SIZE, P_PH_BOUNCE, P_PH_PARTS, P_PH_RATE, P_PH_SPREAD,
     P_PH_LIFE, P_PH_ATTRACT, P_PH_TRIGGER, P_PH_KEYS, P_PH_RESTART, P_PH_SYNC, P_PH_LEN, P_PH_OCT, P_PH_RANGE, P_PH_MAX,
     P_PH_DYN,
+    /* (2026-10-30) RAIN AND RIPPLES and MARKOV MELODY (src/gens_b.h, src/gens_b_run.h) */
+    P_RAIN_ON, P_RAIN_RATE, P_RAIN_SYNC, P_RAIN_SPREAD, P_RAIN_SPEED, P_RAIN_LIFE, P_RAIN_ECHO, P_RAIN_STONES,
+    P_RAIN_KEYS, P_RAIN_LEN, P_RAIN_OCT, P_RAIN_RANGE, P_RAIN_MAX,
+    P_MKV_ON, P_MKV_ORDER, P_MKV_LEARN, P_MKV_FORGET, P_MKV_CREAT, P_MKV_RHYTHM, P_MKV_QUANT, P_MKV_RATE, P_MKV_GATE,
+    P_MKV_RANGE, P_MKV_KEYS, P_MKV_MAX,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -377,6 +383,11 @@ static const char *const KEYS[P_COUNT] = {
     "phys_balls_on", "phys_balls", "phys_speed", "phys_gravity", "phys_size", "phys_bounce", "phys_parts_on", "phys_rate",
     "phys_spread", "phys_life", "phys_attract", "phys_trigger", "phys_keys", "phys_restart", "phys_sync", "phys_len",
     "phys_octave", "phys_range", "phys_max", "phys_dyn",
+    /* (2026-10-30) rain and ripples, the Markov melody */
+    "rain_on", "rain_rate", "rain_sync", "rain_spread", "rain_speed", "rain_life", "rain_echo", "rain_stones",
+    "rain_keys", "rain_len", "rain_octave", "rain_range", "rain_max",
+    "mkv_on", "mkv_order", "mkv_learn", "mkv_forget", "mkv_creat", "mkv_rhythm", "mkv_quant", "mkv_rate", "mkv_gate",
+    "mkv_range", "mkv_keys", "mkv_max",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -652,12 +663,14 @@ typedef struct {
     int moved;               /* LOAD INTO SYNTH changed its values: the host is told (mpc_engine_changed) */
     tuning_t tun;            /* MICROTUNING (src/tuning.h): a Scala scale and keyboard map, saved with the sound */
     ph_run_t ph;             /* THE BOUNCING BALLS AND PARTICLES (src/physgen_run.h; runtime only, never saved) */
+    gb_run_t gb;             /* (2026-10-30) RAIN AND RIPPLES, MARKOV MELODY (src/gens_b_run.h; runtime only, never saved) */
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
 static int pool_room(one_t *s, const int *idx, int n);   /* src/synths.h */
 static unsigned next_age(one_t *s);
 static void synth_switch(one_t *s);
 static void ph_apply(one_t *s);   /* src/physgen_run.h */
+static void gb_apply(one_t *s);   /* src/gens_b_run.h */
 
 static int slot(const char *key) {
     for (int i = 0; i < P_COUNT; i++)
@@ -906,6 +919,7 @@ static void apply_perf(one_t *s) {
 static void apply(one_t *s) {
     apply_perf(s);
     ph_apply(s);
+    gb_apply(s);
     for (int n = 0; n < NOSC; n++) {
         const float *o = &s->val[P_O1_WAVE + OSC_STRIDE * n];
         s->ratio[n] = powf(2.0f, (o[O_OCT] - OCT_CENTRE) + o[O_FREQ] / 12.0f);
@@ -1650,7 +1664,7 @@ static const int CHANGED_SLOT[CHORD_MAX + 3] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CH
 
 static int route_of(const one_t *s) {
     if (s->val[P_CHORD_LEARN] > 0.5f) return ROUTE_LEARN;
-    if (s->seq_on || s->ph.held) return ROUTE_SEQ;   /* (the balls' HELD KEYS take the keys the same way) */
+    if (s->seq_on || s->ph.held || s->gb.rn_held || s->gb.mk_held) return ROUTE_SEQ;   /* (the balls' HELD KEYS take the keys the same way) */
     return s->val[P_CHORD_ON] > 0.5f ? ROUTE_CHORD : ROUTE_PLAIN;
 }
 
@@ -1705,6 +1719,7 @@ static void gen_stop(one_t *s) {
     s->gen_bypass = 0;
     s->npend = 0;
     s->ph.nq = 0;   /* the balls' and particles' notes still waiting */
+    s->gb.nq = 0;   /* (2026-10-30) the rain's and the Markov melody's */
     sq_forget(s);
     memset(s->cmem_n, 0, sizeof s->cmem_n);
     s->keys.n = s->phys = s->running = s->start_pending = 0;
@@ -1941,9 +1956,11 @@ static void seq_unlatch(one_t *s) {   /* latch or the pedal let go: the keys no 
 
 #include "stepseq_run.h"   /* THE STEP SEQUENCER: part of this file */
 #include "physgen_run.h"   /* THE BOUNCING BALLS AND PARTICLES: part of this file */
+#include "gens_b_run.h"    /* (2026-10-30) RAIN AND RIPPLES, MARKOV MELODY: part of this file */
 
 static void key_on(one_t *s, int note, int vel) {
     ph_key_on(s, note);   /* KEY RESTARTS: the balls and particles from their start */
+    gb_key_on(s, note, vel);   /* the Markov melody learns the keys played */
     if (sq_key_on(s, note, vel)) return;   /* NOTE TRIG / TRANSPOSE keys move the sequencer instead of sounding */
     switch (s->route) {
     case ROUTE_SEQ: seq_key_on(s, note, vel); return;
@@ -2006,6 +2023,7 @@ static void synth_song_pos(one_t *s, double ppq, double bpm, int playing, int fr
     s->sp_new = 1;
     s->sq.sp_new = 1;
     s->ph.sp_at = s->now;   /* (the balls' SYNC: the sample this song position is at) */
+    s->gb.sp_at = s->now;   /* (2026-10-30: the rain's and the Markov melody's) */
     /* RECEIVE START/STOP (seq_host_ss, 2026-10-29): the host's start plays the sequence (ON, the Synth on, NOTE TRIG
      * off), its stop stops it; PLAY follows and the host is told */
     if (s->val[P_SEQ_HOST_SS] < 0.5f || (!started && !stopped)) return;
@@ -2170,6 +2188,7 @@ static int fx_bank_text(const one_t *s, int b, int f, float v, char *buf, int n)
 /* "<key>_display": the text MPC shows for a knob whose 0..100 position is a log scale or a tempo division */
 static int display_text(const one_t *s, int k, char *buf, int n) {
     if (k >= P_PH_BALLS && k <= P_PH_DYN) return ph_display(s, k, buf, n);
+    if (k >= P_RAIN_ON && k <= P_MKV_MAX) return gb_display(s, k, buf, n);   /* (2026-10-30) */
     if (k == P_FLT_CUT || k == P_SVF_CUT) {
         float hz = cut_hz(s->val[k]);
         return hz < 1000.0f ? snprintf(buf, n, "%.0f Hz", hz) : snprintf(buf, n, "%.2f kHz", hz * 0.001f);
@@ -2240,6 +2259,8 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
 /* a readout of this Synth (src/synths.h get_param: its key without the "s2_" prefix) */
 static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);
+    if (!strcmp(key, "rain_view")) return gb_view_text(s, 0, buf, n);     /* (2026-10-30) the pond (the window's view) */
+    if (!strcmp(key, "markov_view")) return gb_view_text(s, 1, buf, n);   /* ... and the Markov melody's */
     if (!strcmp(key, "phys_view")) return ph_view_text(s, buf, n);   /* the balls and particles (the window's view) */   /* the sequencer's readout (a "display": "string" param) */
     if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
         int used = 0;
@@ -2551,6 +2572,7 @@ static void control_voice(one_t *s, voice_t *v) {
     src[MS_PAD_X] = pad_src(s, s->pad_x);
     src[MS_PAD_Y] = pad_src(s, s->pad_y);
     src[MS_PAD_GATE] = s->pad_gate;
+    gb_sources(s, src);   /* (2026-10-30) rain and ripples, the Markov melody */
     /* the voice's slots (none reaches an effect: those are the effect pass's); the MACRO destinations sit past them */
     memset(dm + MD_MAC_HARM, 0, sizeof(float) * (MD_COUNT - MD_MAC_HARM));
     mod_eval_list(&p[P_MOD_BASE], &p[P_MODX_BASE], s->mod_list, s->mod_n, src, s->bipolar, dm, MD_FX_FIRST);
@@ -2942,6 +2964,7 @@ static int fx_mod_step(one_t *s, uint64_t *dirty) {
         src[MS_PAD_X] = pad_src(s, s->pad_x);
         src[MS_PAD_Y] = pad_src(s, s->pad_y);
         src[MS_PAD_GATE] = s->pad_gate;
+        gb_sources(s, src);   /* (2026-10-30) */
         mod_eval_list(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->fx_list, s->fx_n, src, s->bipolar, dm, 0);
         int rd = (int)s->val[P_RIBBON_DST];
         if (rd >= MD_FX_FIRST && rd <= MD_FX_END) dm[rd] += src[MS_RIBBON] * s->val[P_RIBBON_AMT] * 0.01f;
@@ -3214,6 +3237,7 @@ static void synth_due(one_t *s, int *n) {
     if (live) seq_due(s);   /* steps and note ends at this sample, before the voices' control step */
     if (sql) sq_due(s);
     if (s->ph.on) { ph_due(s, n); live |= s->npend > 0; }   /* the balls' and particles' notes (their ends: above) */
+    if (s->gb.rn_on || s->gb.mk_on) { gb_due(s, n); live |= s->npend > 0; }   /* (2026-10-30) rain, Markov */
     if (live) {
         int64_t d = seq_next(s);
         if (d < *n) *n = (int)d;

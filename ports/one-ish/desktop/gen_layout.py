@@ -170,6 +170,7 @@ MFX_USES = [
 MFX_COMMON = [("mix", "Mix"), ("gain", "Gain")]
 # a MORE page's picture (more_pics.c), drawn over its last PIC_ROWS rows: an envelope, an LFO, the filters, the mixer
 PICS = {"ENV": 1, "LFO": 2, "FILTER": 3, "MIXER": 4, "PHYS": 5}   # PHYS: the box (2026-10-29)
+PICS.update({"RAIN": 6, "MARKOV": 7})   # (2026-10-30) the pond; the Markov melody's notes and choices
 PIC_ROWS = 3
 # the rate LEDs (rate_leds.c): what each flashes with
 RATE_KINDS = {"LFO": 0, "ARP": 1, "SEQ": 2, "TEMPO": 3}
@@ -412,6 +413,17 @@ def build(lay):
     L.page("PARTICLES", "PARTICLES", "Particles fall from the top: the LINE, a collision or their end plays a note.",
            [("phys_parts_on", "Particles On"), ("phys_rate", "Rate"), ("phys_spread", "Spread"), ("phys_life", "Life"),
             ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + world + shared, pic=("PHYS", "phys_"))
+    # (2026-10-30) rain and ripples, the Markov melody: a page each (in the MORE index), its picture moving
+    L.page("RAIN", "RAIN AND RIPPLES", "Drops fall on a pond: each plays a note in the KEY; meeting rings echo softly.", [
+        ("rain_on", "Rain On"), ("rain_rate", "Rate"), ("rain_sync", "Sync"), ("rain_spread", "Drop Size Spread"),
+        ("rain_speed", "Ripple Speed"), ("rain_life", "Ripple Life"), ("rain_echo", "Echo"), ("rain_stones", "Stones"),
+        ("rain_max", "Max Notes/s"), ("rain_len", "Note Length"), ("rain_keys", "Keys"), ("rain_octave", "Low Octave"),
+        ("rain_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")], pic=("RAIN", "rain_"))
+    L.page("MARKOV", "MARKOV MELODY", "Learns from what you play into this Synth, then improvises in that style.", [
+        ("mkv_on", "Markov On"), ("mkv_learn", "Learn"), ("mkv_forget", "Forget (Clear)"), ("mkv_order", "Order"),
+        ("mkv_creat", "Creativity"), ("mkv_rhythm", "Rhythm"), ("mkv_rate", "Rate"), ("mkv_gate", "Note Length"),
+        ("mkv_quant", "In Key"), ("mkv_range", "Octaves"), ("mkv_max", "Max Notes/s"), ("mkv_keys", "Keys"),
+        ("key_root", "Key"), ("key_scale", "Scale")], pic=("MARKOV", "mkv_"))
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
@@ -683,7 +695,8 @@ def emit(lay, zones, out):
     lines.append("#define NPAGES %d" % len(pages))
     for pid in ("LFO1", "LFO2", "LFO3", "LFO4", "OSC1", "OSC2", "OSC3", "POLY", "ARP", "CHORD", "GEN", "SFX", "MFX",
                 "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "SEQ", "ENV1", "ENV2", "ENV3", "MIXER",
-                "FILTERS", "OTHER", "BALLS", "PARTICLES"):
+                "FILTERS", "OTHER", "BALLS", "PARTICLES",
+                "RAIN", "MARKOV"):   # (2026-10-30)
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
     # the rate LEDs: what each flashes with (RL_*: an LFO's rate (n 0-3), the arpeggiator's, the sequencer's, the beat)
     lines.append("enum { %s };" % ", ".join("RL_%s = %d" % (k, v) for k, v in RATE_KINDS.items()))
