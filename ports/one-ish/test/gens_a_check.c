@@ -32,7 +32,7 @@ static void gens_a_checks(void) {
     {
         void *a = pg_patch(), *b = pg_patch();
         setkv(b, "life_rate=6,life_mode=0,life_rule=2,life_density=70,life_seed=9,life_notes=8,life_max=30,life_keys=0,"
-                 "orb_planets=6,orb_speed=100,orb_gravity=100,orb_ecc=80,orb_spokes=8,orb_sync=0,orb_max=30,"
+                 "orb_planets=6,orb_speed=100,orb_gravity=100,orb_ecc=80,orb_spokes=8,orb_quant=0,orb_max=30,"
                  "pend_count=12,pend_speed=32,pend_cycle=0,pend_trigger=2,pend_restart=1,pend_max=30");
         note(a, 1, 60, 100); note(b, 1, 60, 100);
         int same = 1, nb = 0;
@@ -49,7 +49,7 @@ static void gens_a_checks(void) {
     static const char *const MODES[] = {
         "life_on=1,life_mode=0", "life_on=1,life_mode=1", "life_on=1,life_mode=2,life_rule=1",
         "life_on=1,life_mode=0,life_rule=2,life_wrap=0", "life_on=1,life_rate=6,life_speed=70,life_notes=4",
-        "orb_on=1", "orb_on=1,orb_planets=6,orb_gravity=100,orb_ecc=80,orb_sync=0,orb_planet_to=1",
+        "orb_on=1", "orb_on=1,orb_planets=6,orb_gravity=100,orb_ecc=80,orb_quant=0,orb_planet_to=1",
         "pend_on=1", "pend_on=1,pend_trigger=1,pend_count=8,pend_damp=60", "pend_on=1,pend_trigger=2,pend_cycle=2"};
     for (unsigned m = 0; m < sizeof MODES / sizeof MODES[0]; m++) {
         void *a = pg_patch(), *b = pg_patch();
@@ -87,7 +87,7 @@ static void gens_a_checks(void) {
     /* MAX NOTES/S: each turned up to its busiest plays no more than it allows */
     static const char *const BUSY[3] = {
         "life_on=1,life_rate=3,life_mode=0,life_rule=2,life_notes=8,life_density=50,life_max=5",
-        "orb_on=1,orb_planets=6,orb_speed=100,orb_spokes=8,orb_sync=0,orb_ecc=60,orb_max=5",
+        "orb_on=1,orb_planets=6,orb_speed=100,orb_spokes=8,orb_quant=0,orb_ecc=60,orb_max=5",
         "pend_on=1,pend_count=12,pend_speed=32,pend_spread=4,pend_cycle=0,pend_trigger=2,pend_max=5"};
     for (int g = 0; g < 3; g++) {
         void *a = pg_patch();
@@ -187,7 +187,7 @@ static void gens_a_checks(void) {
     /* the tempo grid at 120 BPM: LIFE at 1/16 (scanning) and ORBITS synced to 1/16 put every note on a 16th; the
      * pendulums' first one, at 4 swings an 8-bar cycle, passes the centre every 4 beats */
     {
-        static const char *const G[3] = {"life_on=1,life_rate=2,life_mode=1", "orb_on=1,orb_sync=3,orb_planets=6",
+        static const char *const G[3] = {"life_on=1,life_rate=2,life_mode=1", "orb_on=1,orb_quant=3,orb_planets=6",
                                          "pend_on=1,pend_count=2,pend_spread=8"};
         for (int g = 0; g < 3; g++) {
             void *a = pg_patch();

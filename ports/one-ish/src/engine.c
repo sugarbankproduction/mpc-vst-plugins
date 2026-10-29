@@ -247,7 +247,7 @@ enum {
     P_LIFE_ON, P_LIFE_KEYS, P_LIFE_RATE, P_LIFE_SPEED, P_LIFE_MODE, P_LIFE_RULE, P_LIFE_DENSITY, P_LIFE_SEED,
     P_LIFE_WRAP, P_LIFE_NOTES, P_LIFE_LEN, P_LIFE_OCT, P_LIFE_RANGE, P_LIFE_MAX,
     P_ORB_ON, P_ORB_KEYS, P_ORB_PLANETS, P_ORB_SPEED, P_ORB_GRAVITY, P_ORB_ECC, P_ORB_SPREAD, P_ORB_SPOKES,
-    P_ORB_PLANET_TO, P_ORB_SYNC, P_ORB_LEN, P_ORB_OCT, P_ORB_RANGE, P_ORB_MAX,
+    P_ORB_PLANET_TO, P_ORB_QUANT, P_ORB_LEN, P_ORB_OCT, P_ORB_RANGE, P_ORB_MAX,
     P_PEND_ON, P_PEND_KEYS, P_PEND_COUNT, P_PEND_CYCLE, P_PEND_SPEED, P_PEND_SPREAD, P_PEND_DAMP, P_PEND_TRIGGER,
     P_PEND_RESTART, P_PEND_LEN, P_PEND_OCT, P_PEND_MAX, P_PEND_DYN,
     P_COUNT
@@ -389,7 +389,7 @@ static const char *const KEYS[P_COUNT] = {
     "life_on", "life_keys", "life_rate", "life_speed", "life_mode", "life_rule", "life_density", "life_seed",
     "life_wrap", "life_notes", "life_len", "life_octave", "life_range", "life_max",
     "orb_on", "orb_keys", "orb_planets", "orb_speed", "orb_gravity", "orb_ecc", "orb_spread", "orb_spokes",
-    "orb_planet_to", "orb_sync", "orb_len", "orb_octave", "orb_range", "orb_max",
+    "orb_planet_to", "orb_quant", "orb_len", "orb_octave", "orb_range", "orb_max",
     "pend_on", "pend_keys", "pend_count", "pend_cycle", "pend_speed", "pend_spread", "pend_damp", "pend_trigger",
     "pend_restart", "pend_len", "pend_octave", "pend_max", "pend_dyn",
 };

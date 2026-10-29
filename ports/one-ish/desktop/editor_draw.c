@@ -186,7 +186,7 @@ static const char *help_for(int i) {
         {"orb_spread", "Spread: how far apart the orbits are. 0: all at the same distance (the same speed)."},
         {"orb_spokes", "Spokes: how many lines from the sun play notes (1-8), each its own note."},
         {"orb_planet_to", "Planets as: Octave puts each planet an octave higher than the one before; Velocity plays them all in one octave, the first loudest."},
-        {"orb_sync", "Sync: puts each orbit note on the next beat line at the host's tempo (Off: as it crosses)."},
+        {"orb_quant", "Sync: puts each orbit note on the next beat line at the host's tempo (Off: as it crosses)."},
         {"orb_len", "Note length: how long each orbit note lasts."},
         {"orb_octave", "Low octave: where the first spoke's note is (with Free keys)."},
         {"orb_range", "Octaves: how many octaves the planets spread over (Planets as Octave)."},

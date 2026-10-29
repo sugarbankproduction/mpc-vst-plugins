@@ -423,7 +423,7 @@ def build(lay):
     L.page("ORBITS", "GRAVITY ORBITS", "Planets circle a sun: crossing a spoke plays a note in the KEY.",
            [("orb_on", "Orbits On"), ("orb_planets", "Planets"), ("orb_speed", "Speed"), ("orb_gravity", "Gravity"),
             ("orb_ecc", "Eccentricity"), ("orb_spread", "Spread"), ("orb_spokes", "Spokes"), ("orb_planet_to", "Planets As"),
-            ("orb_sync", "Sync"), ("orb_max", "Max Notes/s"), ("orb_len", "Note Length"), ("orb_keys", "Keys"),
+            ("orb_quant", "Sync"), ("orb_max", "Max Notes/s"), ("orb_len", "Note Length"), ("orb_keys", "Keys"),
             ("orb_octave", "Low Octave"), ("orb_range", "Octaves")] + scale, pic=("ORBITS", "orb_"))
     L.page("PEND", "PENDULUMS", "Pendulums drift out of step and meet again each CYCLE; each plays its note as it swings.",
            [("pend_on", "Pendulums On"), ("pend_count", "Pendulums"), ("pend_cycle", "Cycle"), ("pend_speed", "Swings"),

@@ -670,7 +670,7 @@ orb_ecc
 orb_spread
 orb_spokes
 orb_planet_to
-orb_sync
+orb_quant
 orb_len
 orb_octave
 orb_range
@@ -1751,7 +1751,7 @@ s2_orb_ecc
 s2_orb_spread
 s2_orb_spokes
 s2_orb_planet_to
-s2_orb_sync
+s2_orb_quant
 s2_orb_len
 s2_orb_octave
 s2_orb_range
@@ -1792,7 +1792,7 @@ s3_orb_ecc
 s3_orb_spread
 s3_orb_spokes
 s3_orb_planet_to
-s3_orb_sync
+s3_orb_quant
 s3_orb_len
 s3_orb_octave
 s3_orb_range

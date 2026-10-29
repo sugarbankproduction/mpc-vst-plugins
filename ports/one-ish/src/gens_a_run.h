@@ -27,7 +27,7 @@
  * locks or touches a file. */
 
 #define GA_BURST 2.0f      /* MAX NOTES/S: up to two notes at once, then that many a second */
-static const float GA_SYNC_BEATS[] = {0.0f, 1.0f, 0.5f, 0.25f, 0.125f, 1.0f / 3, 1.0f / 6};   /* "orb_sync" */
+static const float GA_SYNC_BEATS[] = {0.0f, 1.0f, 0.5f, 0.25f, 0.125f, 1.0f / 3, 1.0f / 6};   /* "orb_quant" */
 static const float LF_RATE_BEATS[] = {1.0f, 0.5f, 0.25f, 0.125f, 1.0f / 3, 1.0f / 6};       /* "life_rate" (then Free) */
 #define LF_FREE 6
 static const uint8_t LF_ROW_ORDER[LF_ROWS] = {0, 4, 2, 6, 1, 5, 3, 7};   /* NOTES PER STEP: spread over the rows ... */
@@ -250,7 +250,7 @@ static void ob_tick(one_t *s, int64_t t, int go) {
     ob_hit_t h[OB_HITS];
     int nh = ob_step(&r->ob, &r->oc, dt * ob_time(p), h), size = ga_scale_size(s);
     int range = (int)clampf(p[P_ORB_RANGE], 0, 3) + 1, as_vel = p[P_ORB_PLANET_TO] > 0.5f;
-    double g = GA_SYNC_BEATS[(int)clampf(p[P_ORB_SYNC], 0, 6)];
+    double g = GA_SYNC_BEATS[(int)clampf(p[P_ORB_QUANT], 0, 6)];
     for (int i = 0; i < nh; i++) {
         int d = h[i].spoke * size / r->oc.spokes + (as_vel ? 0 : size * (h[i].planet % range)), vel;
         if (as_vel) vel = 115 - 14 * h[i].planet;

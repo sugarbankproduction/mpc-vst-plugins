@@ -448,7 +448,7 @@ static void pic_orbits(HDC dc, ed_t *e, RECT a) {
     gfx_frame(x0, y0, side, side, 1.0f, C_RULE);
     if (!on) snprintf(t1, sizeof t1, "Off: switch ORBITS on");
     else snprintf(t1, sizeof t1, "%d planet%s, %d spoke%s", np, np == 1 ? "" : "s", ns, ns == 1 ? "" : "s");
-    snprintf(t2, sizeof t2, "planets as %s, sync %s", opt_name(e, ix("orb_", "planet_to")), opt_name(e, ix("orb_", "sync")));
+    snprintf(t2, sizeof t2, "planets as %s, sync %s", opt_name(e, ix("orb_", "planet_to")), opt_name(e, ix("orb_", "quant")));
     pic_key_line(e, "orb_", t3, sizeof t3);
     pic_lines(dc, pic_note_rect(a, x0 + side), t1, t2, t3);
 }
