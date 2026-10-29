@@ -334,7 +334,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      (an assert and a polarity check). 5 new `phys_*` params per Synth. Old sounds unchanged (golden check). CPU on the
      PC per 128-frame block: the world alone 0.04 us (8 balls), 1.0 us (32 particles); the engine with 4 held voices
      24.9-25.2 us, plus 8 balls and 32 particles 28.3-29.1 us (before: 24.8 / 28.1, the same within noise); with a
-     silent floor, an open wall and 3 slots from the new sources 35.6-37.3 us, against 36.3-39.1 us for the same 3
+     silent floor, an open wall and 3 slots from the new sources 35.6-37.3 us, against 36.3-44.3 us for the same 3
      slots from LFO 1 / Mod Env / Velocity: the new sources cost nothing beyond an ordinary slot.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
