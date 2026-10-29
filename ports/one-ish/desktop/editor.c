@@ -211,6 +211,12 @@ static void layout(void) {
     L.keys = zone(ZONE_KEYS);
     L.ribbon = zone(ZONE_RIBBON);
     L.euclid = zone(ZONE_EUCLID);
+    L.tab_gen = zone(ZONE_TAB_GEN);   /* the console's third row (hub.c) */
+    L.gen_off = zone(ZONE_GEN_OFF);
+    L.tempo = zone(ZONE_TEMPO);
+    L.tempo_host = zone(ZONE_TEMPO_HOST);
+    L.tempo_own = zone(ZONE_TEMPO_OWN);
+    L.vol_master = zone(ZONE_VOL_MASTER);
     for (int k = 0; k < NMORES; k++) {
         const short z[4] = {MORES[k].x, MORES[k].y, MORES[k].w, MORES[k].h};
         L.more[k] = zone(z);
@@ -312,6 +318,13 @@ static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control
     if (i < 0 || i >= NPARAMS) { invalidate(e, NULL); return; }
     if (i == rnd_key("syn_on") || i == rnd_key("syn_solo"))   /* the SYNTH buttons' M | S */
         for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]);
+    if (i == master_param() && rnd_key("volume") < NPARAMS) {   /* MASTER: the VOLUME knob may show it */
+        RECT r = L.ctl[rnd_key("volume")];
+        InflateRect(&r, sc(16), sc(6));
+        invalidate(e, &r);
+    }
+    for (int k = 0; k < NHUB; k++)   /* a generator's ON: GEN OFF's name (GEN BACK) may change */
+        if (HUB[k].on == i) { RECT g = L.gen_off; InflateRect(&g, sc(12), sc(4)); invalidate(e, &g); }
     if (!IsRectEmpty(&L.ctl[i])) {   /* on the panel: the control, its label and value (they spill a little) */
         RECT r = L.ctl[i];
         InflateRect(&r, sc(16), sc(6));
@@ -363,6 +376,11 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_EUCLID: r = &L.euclid; break;
     case Z_COMPARE: r = &L.compare; break;
     case Z_SNAPSHOT: r = &L.snapshot; break;
+    case Z_TAB_GEN: r = &L.tab_gen; break;   /* (the console's third row, hub.c) */
+    case Z_GEN_OFF: r = &L.gen_off; break;
+    case Z_VOL_MASTER: invalidate(e, &L.vol_master); r = &L.ctl[rnd_key("volume") < NPARAMS ? rnd_key("volume") : 0]; break;
+    case Z_TEMPO: case Z_TEMPO_HOST: case Z_TEMPO_OWN: invalidate(e, &L.tempo_host); invalidate(e, &L.tempo_own);
+        r = &L.tempo; break;
     }
     if (seq_zone(z)) r = &L.seq_leds;   /* the step editor (on the screen) or the SEQUENCER's page LEDs */
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES)   /* its triangle(s) */
@@ -417,13 +435,15 @@ int shared_param(int i) { fmap_init(); return i >= 0 && i < NPARAMS && FSHARED[i
 int synth_param(int i, int c) { fmap_init(); return i >= 0 && i < NPARAMS && c >= 0 && c < NSYNTHS ? FMAP[c][i] : i; }
 float ed_get(ed_t *e, int i) { return e->fx->getParameter(e->fx, fp(e, i)); }
 
-/* the params an edit of panel index i goes to: the focused Synth's, and every other Synth in focus (one: shared) */
+/* the params an edit of panel index i goes to: the focused Synth's, and every other Synth in focus (one: shared);
+ * with its LINK lit (hub.c), all three Synths' */
 static int edit_targets(ed_t *e, int i, int *t) {
     int n = 0;
     t[n++] = fp(e, i);
     if (e->abs || shared_param(i) || synth_of(i) || i < 0 || i >= NPARAMS) return n;
+    int all = link_lit(e, i);
     for (int c = 0; c < NSYNTHS; c++)
-        if (c != e->focus && (e->focus_mask >> c & 1u)) t[n++] = FMAP[c][i];
+        if (c != e->focus && (all || (e->focus_mask >> c & 1u))) t[n++] = FMAP[c][i];
     return n;
 }
 
@@ -514,6 +534,10 @@ static void edit_abs(ed_t *e, int i, float v) {   /* the same for a param's own 
     e->abs = was;
     for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]);
 }
+void ed_edit(ed_t *e, int i, float v) { edit_value(e, i, v); }       /* (for hub.c) */
+void ed_edit_abs(ed_t *e, int i, float v) { edit_abs(e, i, v); }
+static void show(ed_t *e, int screen, int sub);
+void ed_show(ed_t *e, int screen, int sub) { show(e, screen, sub); }
 
 /* ---- the randomiser: results go in param by param like knob moves; a history of sounds for UNDO / REDO ---- */
 static void rnd_snapshot(ed_t *e, float *v) {   /* the focused Synth's sound, in Synth 1's places */
@@ -723,6 +747,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
         }
     } else if (e->screen == SCR_SEQ) {
         return seq_hit(e, pt);
+    } else if (e->screen == SCR_GEN) {   /* the GENERATIVE hub page (hub.c) */
+        return hub_hit(e, pt);
     } else if (e->screen == SCR_SETTINGS) {
         return settings_hit(e, pt);
     } else if (e->screen == SCR_SETUP) {   /* a cell: a param's own index (Synth 1, 2 or 3's, or a shared one) */
@@ -763,10 +789,14 @@ static int hit(ed_t *e, int x, int y) {
     for (int k = 0; k < NMORES; k++)
         if (PtInRect(&L.more[k], pt)) return Z_PAGE + MORES[k].page;
     for (int c = 0; c < NCTLS; c++)
-        if (PtInRect(&L.ctl[CTLS[c].param], pt)) { e->hit_rect = L.ctl[CTLS[c].param]; return CTLS[c].param; }
+        if (PtInRect(&L.ctl[CTLS[c].param], pt)) {   /* (VOLUME with MASTER lit: master_level, hub.c) */
+            e->hit_rect = L.ctl[CTLS[c].param];
+            return panel_source(e, CTLS[c].param);
+        }
     int s = hit_on_screen(e, pt);
     if (s >= 0) return s;
     if ((s = seq_hit_panel(e, pt)) >= 0) return s;   /* the SEQUENCER module's page LEDs */
+    if ((s = hub_hit_console(pt)) >= 0) return s;    /* GENERATIVE, GEN OFF, TEMPO, HOST, OWN (hub.c) */
     for (int c = 0; c < NSYNTHS && NSYNTHS > 1; c++) {   /* a SYNTH button's M | S halves (a little taller to catch) */
         RECT m = focus_part(c, 1), so = focus_part(c, 2);
         m.bottom += sc(3);
@@ -852,6 +882,7 @@ static int qk_key(ed_t *e, WPARAM vk, int down, LPARAM lp) {   /* 1: the key was
 }
 
 static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a wheel, the pad or the ribbon */
+    if (e->mode == M_TEMPO) { tempo_drag(e, y, GetKeyState(VK_SHIFT) < 0); return; }   /* (the TEMPO readout) */
     if (e->mode == M_KEY) {
         int vel, n = key_at(e, x, y, &vel);
         if (n != e->key && n >= 0) {
@@ -938,6 +969,7 @@ static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes
     /* a click on the preset knob: what it points at (PRESET AUTOLOAD off), else the patch list */
     if (m == M_ENC && !e->enc_moved && !settings_cue_load(e)) patches_open(e);
     if (m == M_LIB) lib_release(e);   /* a set's number: let go early, it loads; held, it was assigned */
+    if (m == M_TEMPO) tempo_release(e);   /* the own tempo saved (once, not on every step of the drag) */
     InvalidateRect(e->wnd, NULL, FALSE);
 }
 
@@ -972,6 +1004,7 @@ static void octave_hold(ed_t *e) {
 static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangles, page entries, sub-page arrows */
     if (patches_press(e, z)) return;   /* the PATCHES page's buttons and entries */
     if (settings_press(e, z)) return;   /* the SETTINGS page's */
+    if (hub_press(e, z)) return;        /* the GENERATIVE hub page and the console's third row (hub.c) */
     if (z == Z_TAB_SETTINGS) { settings_open(e); return; }
     int subs = screen_subs(e);
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) {   /* again on an open page: its next sub-page */
@@ -1052,6 +1085,7 @@ static void press(ed_t *e, int x, int y) {
     case Z_ENCODER: e->mode = M_ENC; e->enc_y = y; e->enc_moved = 0; break;
     case Z_RND_AMOUNT: e->mode = M_RND_AMOUNT; break;
     case Z_RND_WILD: e->mode = M_RND_WILD; break;
+    case Z_TEMPO: tempo_press(e, y); break;   /* a drag sets the own tempo (hub.c) */
     default:
         if (i >= Z_KEYS) { press_zone(e, i); return; }
         break;
@@ -1188,6 +1222,13 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             lib_touch(e, NULL);   /* (committed after a pause) */
             if (seq_key(e, (int)wp, GetKeyState(VK_SHIFT) < 0)) return 0;
         }
+        if (e && e->screen != SCR_SEQ && e->mode == M_NONE && GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 &&
+            (wp == VK_LEFT || wp == VK_RIGHT || wp == VK_PRIOR || wp == VK_NEXT)) {   /* the screen's sub-pages, as its
+                                                                                       * title line's < > (2026-10-30) */
+            int subs = screen_subs(e), d = wp == VK_RIGHT || wp == VK_NEXT ? 1 : subs - 1;
+            if (subs > 1) show(e, e->screen, (e->sub + d) % subs);
+            return 0;
+        }
         if (e && GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 && GetKeyState(VK_SHIFT) >= 0 &&
             qk_key(e, wp, 1, lp))
             return 0;   /* a music key (Shift with a letter stays the window's: Shift+R, Shift+M) */
@@ -1254,6 +1295,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         int i = hit(e, pt.x, pt.y), dir = GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 1 : -1;
         if (i == Z_ENCODER) { patches_step(e, -dir); return 0; }
         if (settings_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;
+        if (tempo_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;   /* (hub.c) */
         if (seq_zone(i) || (e->screen == SCR_SEQ && PtInRect(&L.screen, pt) && (i < 0 || i >= NPARAMS))) {
             lib_touch(e, NULL);   /* (committed after a pause) */
             if (seq_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;
@@ -1452,6 +1494,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         }
         if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
         if (idx == TEST_SETTINGS && e && ptr) return settings_test(e, v, ptr, opt);   /* load_test: the settings */
+        if (idx == TEST_HUB && e) return hub_test(e, v, opt);   /* load_test: TEMPO, GEN OFF, LINK (hub.c) */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
             hr_set_legacy(e->hr, (int)v);
             fx->initialDelay = hr_latency(e->hr);

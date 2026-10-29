@@ -49,8 +49,9 @@ $CC "${FLAGS[@]}" -c "$P/desktop/scala.c" -o "$OUT/scala.o"
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/seq_page.c" -o "$OUT/seq_page.o"
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/more_pics.c" -o "$OUT/more_pics.o"
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/rate_leds.c" -o "$OUT/rate_leds.o"
+$CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/hub.c" -o "$OUT/hub.o"
 # -static: winpthreads and libgcc go inside the DLL, so it needs nothing else installed
-$LINK -shared "${OBJS[@]}" "$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/editor_draw.o" "$OUT/skin.o" "$OUT/patches.o" "$OUT/library.o" "$OUT/settings.o" "$OUT/scala.o" "$OUT/seq_page.o" "$OUT/more_pics.o" "$OUT/rate_leds.o" "$OUT/hostrate.o" "$OUT/resample.o" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
+$LINK -shared "${OBJS[@]}" "$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/editor_draw.o" "$OUT/skin.o" "$OUT/patches.o" "$OUT/library.o" "$OUT/settings.o" "$OUT/scala.o" "$OUT/seq_page.o" "$OUT/more_pics.o" "$OUT/rate_leds.o" "$OUT/hub.o" "$OUT/hostrate.o" "$OUT/resample.o" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
   -lcomdlg32 -lshell32 \
   -o "$OUT/ONE-ish.dll"
 $CC -O2 -std=gnu11 -Wall -Wextra "${CHUNK[@]}" -I"$OUT" -I"$P/build" "$P/desktop/load_test.c" "$P/desktop/rate_test.c" "$P/desktop/library_test.c" -static -lgdi32 -luser32 \

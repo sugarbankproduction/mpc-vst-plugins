@@ -24,7 +24,7 @@ the mod matrix goes to an OTHER page, and the build warns about it. The rate LED
 import json
 import sys
 
-BASE_W, BASE_H = 2162, 800
+BASE_W, BASE_H = 2162, 856   # (2026-10-30: 56 taller, for the console's TEMPO / GENERATIVE / MASTER row)
 LED_ROW, LED_EXTRA = 10, 30   # an LED list: one row per option, plus its red button and label
 SIDE = 1                      # a toggle's size: its label beside the button instead of under it
 DX = 102                      # the right-hand block sits this much further right than it used to
@@ -184,6 +184,7 @@ class Layout:
         self.placed, self.planned = set(), []
         self.pages = []   # (id, title, note, [(key, label, cond_key, types)], (picture, its key prefix) or None)
         self.rates = []   # rate LEDs: (kind, n, x, y, label) with x, y the LED's centre
+        self.tris = []    # MORE triangles placed by hand (tri): (x, y, page id)
 
     def nopts(self, key):
         return len(self.params[self.index[key]].get("options", []))
@@ -247,6 +248,10 @@ class Layout:
         to one of the option numbers in types. pic: (a PICS name, the key prefix it reads), drawn under the items"""
         self.pages.append((pid, title, note, [it if len(it) == 4 else (it[0], it[1], None, None) for it in items], pic))
 
+    def tri(self, x, y, pid):
+        """a MORE triangle at (x, y) (12 x 12) opening page pid, for a caption whose corner is taken (2026-10-30)"""
+        self.tris.append((x, y, pid))
+
     def rate_led(self, kind, n, x, y, label=""):
         """a rate LED centred on (x, y): it flashes at an LFO's (n: 0-3), the arpeggiator's or the sequencer's rate, or
         on the beat (TEMPO); a label is printed to its right"""
@@ -300,26 +305,28 @@ def mfx_page(lay, pre):
 def build(lay):
     L = lay
     # ---- the three panel blocks, the controller box and the keyboard ----
-    L.panel(34, 10, 716, 536, style="frame")
-    L.panel(758, 10, 424, 536, style="frame")
-    L.panel(1182, 10, 946, 536, style="frame")
-    L.panel(34, 560, 340, 230, style="frame", more="CTRL")
+    L.panel(34, 10, 716, 592, style="frame")
+    L.panel(758, 10, 424, 592, style="frame")
+    L.panel(1182, 10, 946, 592, style="frame")
+    L.panel(34, 616, 340, 230, style="frame", more="CTRL")
 
     # ---- LFOs: a column on the far left ----
     for n in range(1, 5):
-        y = 18 + 130 * (n - 1)
+        y = 18 + 144 * (n - 1)
         k = "lfo%d_" % n
-        L.panel(42, y, 128, 126, "LFO %d" % n, keys=[k + "rate", k + "wave"], more="LFO%d" % n)
+        L.panel(42, y, 128, 140, "LFO %d" % n, keys=[k + "rate", k + "wave"], more="LFO%d" % n)
         L.ctl(k + "rate", "knob", 44, y + 16, 60, 64, "RATE", 30)
-        L.ctl(k + "wave", "leds", 106, y + 16, 62, 104, "WAVE")
+        L.ctl(k + "wave", "leds", 106, y + 18, 62, 108, "WAVE")
         L.ctl(k + "sync", "toggle", 44, y + 82, 60, 40, "SYNC")
+        L.ctl("link_lfo%d" % n, "toggle", 50, y + 122, 54, 14, "LINK", SIDE)   # RATE the same in all 3 Synths
         if k + "rate" in L.index:
             L.rate_led("LFO", n - 1, 50, y + 22)   # top left of the RATE knob, clear of its scale
         L.page("LFO%d" % n, "LFO %d" % n, "Rate, wave and sync are on the panel too.", [
             (k + "rate", "Rate"), (k + "wave", "Wave"), (k + "sync", "Sync"), (k + "timing", "Sync Timing"),
             (k + "range", "Range"), (k + "polarity", "Polarity"), (k + "var", "Variation"), (k + "smooth", "Smoothing"),
             (k + "phase", "Start Phase"), (k + "reset", "Note Reset"), (k + "delay", "Delay"),
-            (k + "fade_in", "Fade In"), (k + "fade_out", "Fade Out"), (k + "repeats", "Repeats")], pic=("LFO", k))
+            (k + "fade_in", "Fade In"), (k + "fade_out", "Fade Out"), (k + "repeats", "Repeats"),
+            ("link_lfo%d" % n, "Link Rate (3 Synths)")], pic=("LFO", k))
 
     # ---- oscillators 1-3 ----
     for n in range(1, 4):
@@ -343,30 +350,47 @@ def build(lay):
                ([(o + "sync", "Hard Sync"), (o + "sync_src", "Sync Source")] if n > 1 else []))
 
     # ---- modulation row under the oscillators (a little lower than it was, to make room for the bottom row) ----
-    L.panel(176, 314, 142, 88, "PITCH MODULATION")
+    L.panel(176, 314, 142, 88, "PITCH MODULATION", more="PITCHMOD")
     L.ctl("pitch_lfo", "knob", 180, 328, 68, 72, "LFO 1 AMT")
     L.ctl("pitch_env", "knob", 248, 328, 68, 72, "MOD EG AMT")
-    L.panel(322, 314, 76, 88, "RING MOD")
+    L.panel(322, 314, 76, 88, "RING MOD", more="RINGMOD")
     L.ctl("ring_src", "leds", 326, 328, 68, 72, "SOURCES")
-    L.panel(402, 314, 142, 88, "WAVEFORM MOD", keys=["angle_lfo3", "pw_lfo3"])
+    L.panel(402, 314, 142, 88, "WAVEFORM MOD", keys=["angle_lfo3", "pw_lfo3"], more="WAVEMOD")
     L.ctl("angle_lfo3", "knob", 406, 328, 68, 72, "LFO3>ANGLE")
     L.ctl("pw_lfo3", "knob", 474, 328, 68, 72, "LFO3>PW")
-    L.panel(548, 314, 92, 88, "FREQ MOD")
+    L.panel(548, 314, 92, 88, "FREQ MOD", more="FMMOD")
     L.ctl("fm_amt", "knob", 550, 328, 48, 72, "FM AMT", 26)
     L.ctl("fm_route", "leds", 596, 328, 42, 72, "ROUTE")
 
     # ---- noise: a column right of the oscillators ----
-    L.panel(646, 18, 96, 384, "NOISE")
+    L.panel(646, 18, 96, 384, "NOISE", more="NOISE")
     L.ctl("noise_a", "knob", 650, 34, 88, 68, "ATTACK")
     L.ctl("noise_r", "knob", 650, 104, 88, 68, "RELEASE")
     L.ctl("noise_sus", "toggle", 650, 176, 44, 42, "SUSTAIN")
     L.ctl("noise_env", "toggle", 694, 176, 44, 42, "ENV")
     L.ctl("noise_color_mix", "knob", 650, 222, 88, 70, "COLOR MIX")
     L.ctl("noise_color_pair", "leds", 650, 296, 88, 102, "COLOR")
+    # (2026-10-30) the modulation row's and the noise column's MORE pages: each section's params, and what drives them
+    L.page("PITCHMOD", "PITCH MODULATION", "Vibrato from LFO 1 and pitch sweeps from the mod envelope.", [
+        ("pitch_lfo", "LFO 1 Amount"), ("pitch_env", "Mod EG Amount"), ("pitch_var", "Pitch Variance"),
+        ("lfo1_rate", "LFO 1 Rate"), ("lfo1_wave", "LFO 1 Wave"), ("lfo1_sync", "LFO 1 Sync"),
+        ("menv_a", "Mod EG Attack"), ("menv_d", "Mod EG Decay")])
+    L.page("RINGMOD", "RING MOD", "Two oscillators multiplied: bell and metal tones. Its level: the mixer.", [
+        ("ring_src", "Sources"), ("ring_level", "Level (Mixer)"), ("ring_svf", "To SVF"), ("ring_lad", "To Ladder")])
+    L.page("WAVEMOD", "WAVEFORM MOD", "LFO 3 moves the oscillators' wave angle and pulse width.", [
+        ("angle_lfo3", "LFO 3 > Angle"), ("pw_lfo3", "LFO 3 > Pulse Width"), ("lfo3_rate", "LFO 3 Rate"),
+        ("lfo3_wave", "LFO 3 Wave"), ("lfo3_sync", "LFO 3 Sync"), ("lfo3_range", "LFO 3 Range")])
+    L.page("FMMOD", "FREQ MOD", "One oscillator moves another's frequency (ROUTE); the filters' FM below.", [
+        ("fm_amt", "FM Amount"), ("fm_route", "Route"), ("svf_fm", "SVF FM Amount"), ("svf_fm_src", "SVF FM Source"),
+        ("lad_fm", "Ladder FM Amount"), ("lad_fm_src", "Ladder FM Source")])
+    L.page("NOISE", "NOISE", "The noise source: its colours, its own envelope, and where it goes.", [
+        ("noise_a", "Env Attack"), ("noise_r", "Env Release"), ("noise_sus", "Env Sustain"), ("noise_env", "Env On"),
+        ("noise_color_mix", "Color Mix"), ("noise_color_pair", "Color Pair"), ("noise_level", "Level (Mixer)"),
+        ("noise_svf", "To SVF"), ("noise_lad", "To Ladder")])
 
     # ---- the bottom row, as on the instrument: arpeggiator, chord, generative, polyphony. Each module: a line of
     # buttons (labels beside them) under its title, left of its MORE triangle, then its knobs and LED lists ----
-    YB, HB = 408, 132          # the row
+    YB, HB = 408, 188          # the row (2026-10-30: 56 taller, a third line under the controls)
     YA, YL, HL = 424, 442, 96  # the line of buttons; the line of controls under it and its height
     L.panel(176, YB, 232, HB, "ARPEGGIATOR", more="ARP", keys=["arp_on"])
     L.cells([("arp_on", "ON", 44), ("arp_latch", "LATCH", 59), ("arp_sync", "SYNC", 56)], 180, YA, 14, "toggle", SIDE)
@@ -376,12 +400,15 @@ def build(lay):
     L.cells([("arp_pattern", "PATTERN", 54, "leds"), ("arp_oct", "OCT", 42, "leds"),
              ("arp_dir", "DIRECTION", 54, "leds"), ("arp_div", "RATE", 44, "button")], 178, YL, HL)
     L.column([("arp_gate", "GATE"), ("arp_swing", "SWING")], 372, YL, 36, HL // 2, "small")
+    YX = YL + HL + 8   # (2026-10-30) the third line: LINK under RATE; BALLS and PARTICLES
+    L.ctl("link_arp", "toggle", 340, YX, 50, 14, "LINK", SIDE)   # the arp's RATE the same in all 3 Synths
     L.page("ARP", "ARPEGGIATOR", "Plays the held keys in turn; RATE is each step's note value.", [
         ("arp_on", "On"), ("arp_latch", "Latch"), ("arp_pattern", "Pattern"), ("arp_oct", "Octaves"),
         ("arp_dir", "Octave Direction"), ("arp_oct_order", "Octave Order"), ("arp_pendulum", "Pendulum"),
         ("arp_pend_mode", "Pendulum Ends"), ("arp_rnd_mode", "Random Mode"), ("arp_sync", "Tempo Sync"),
         ("arp_div", "Rate (Synced)"), ("arp_timing", "Timing"), ("arp_rate", "Free Rate"), ("arp_gate", "Gate Length"),
-        ("arp_swing", "Swing"), ("arp_follow_swing", "Follow Swing"), ("arp_reset", "Note Reset")])
+        ("arp_swing", "Swing"), ("arp_follow_swing", "Follow Swing"), ("arp_reset", "Note Reset"),
+        ("link_arp", "Link Rate (3 Synths)")])
 
     L.panel(412, YB, 58, HB, "CHORD", more="CHORD", keys=["chord_on"])
     L.ctl("chord_on", "toggle", 416, YA, 36, 14, "ON", SIDE)
@@ -401,17 +428,24 @@ def build(lay):
         ("gen_euclid_on", "Euclid On"), ("gen_steps", "Euclid Steps"), ("gen_hits", "Euclid Hits"),
         ("gen_rot", "Euclid Rotation"), ("gen_prob", "Step Probability"), ("gen_vel_rand", "Velocity Random"),
         ("gen_tm_on", "Turing On"), ("gen_tm_len", "Turing Length"), ("gen_tm_change", "Turing Change"),
-        ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves"), ("key_root", "Key"), ("key_scale", "Scale")])
+        ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves"), ("key_root", "Key"), ("link_key", "Link Key"),
+        ("key_scale", "Scale"), ("link_scale", "Link Scale")])
+    # (2026-10-30) BALLS and PARTICLES on the third line, each its ON and its MORE triangle
+    for k, (key, label, pid) in enumerate((("phys_balls_on", "BALLS", "BALLS"), ("phys_parts_on", "PARTICLES", "PARTICLES"))):
+        y0 = YX - 2 + 22 * k
+        L.ctl(key, "toggle", 480, y0 + 2, 110, 14, label, SIDE)
+        L.panel(476, y0 - 7, 140, 14, "", style="caption", keys=[key], more=pid)
     # the bouncing balls and particles (2026-10-29): two pages (the MORE index lists them), each with the box moving
     shared = [("phys_max", "Max Notes/s"), ("phys_dyn", "Dynamics"), ("phys_len", "Note Length"), ("phys_sync", "Sync"),
               ("phys_keys", "Keys"), ("phys_restart", "Key Restarts"), ("phys_octave", "Low Octave"),
               ("phys_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")]
     world = [("phys_speed", "Speed"), ("phys_gravity", "Gravity"), ("phys_size", "Box Size"), ("phys_bounce", "Bounce")]
+    link = [("link_phys", "Link (3 Synths)")]   # (2026-10-30) every phys_* setting the same in all three
     L.page("BALLS", "BOUNCING BALLS", "Balls bounce in a box: each wall they hit plays a note in the KEY.",
-           [("phys_balls_on", "Balls On"), ("phys_balls", "Balls")] + world + shared, pic=("PHYS", "phys_"))
+           [("phys_balls_on", "Balls On"), ("phys_balls", "Balls")] + link + world + shared, pic=("PHYS", "phys_"))
     L.page("PARTICLES", "PARTICLES", "Particles fall from the top: the LINE, a collision or their end plays a note.",
            [("phys_parts_on", "Particles On"), ("phys_rate", "Rate"), ("phys_spread", "Spread"), ("phys_life", "Life"),
-            ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + world + shared, pic=("PHYS", "phys_"))
+            ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + link + world + shared, pic=("PHYS", "phys_"))
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
@@ -431,23 +465,31 @@ def build(lay):
              # PANEL FOCUS: which Synth the panel shows and edits (multitimbral), and the SETUP page of all three
              # (on the row above's grid, so the SETTINGS page's button fits at the end: desktop/settings.c)
              "FOCUS1": (769, 432, 48, 42), "FOCUS2": (817, 432, 48, 42), "FOCUS3": (865, 432, 48, 42),
-             "TAB_SETUP": (913, 432, 48, 42), "TAB_SETTINGS": (961, 432, 44, 42)}
+             "TAB_SETUP": (913, 432, 48, 42), "TAB_SETTINGS": (961, 432, 44, 42),
+             # (2026-10-30) the third row: GENERATIVE (the generators' hub page, hub.c) and GEN OFF (every generator
+             # off in all three Synths; again: back on); the global TEMPO readout with HOST / OWN (the SETTINGS
+             # page's RECEIVE MIDI CLOCK and TEMPO)
+             "TAB_GEN": (769, 478, 96, 42), "GEN_OFF": (865, 478, 48, 42), "TEMPO": (924, 482, 84, 24),
+             "TEMPO_HOST": (1020, 481, 54, 15), "TEMPO_OWN": (1020, 498, 54, 15)}
     # Synth 2 and 3's copies are reached through the Panel Focus; the setup keys live on the SETUP page
     L.placed.update(k for k in L.index if k.startswith(("s2_", "s3_")))
-    L.placed.update(k for k in ("syn_on", "syn_ch", "key_lo", "key_hi", "master_level", "seq_all", "midi_ch",
+    L.placed.update(k for k in ("syn_on", "syn_ch", "key_lo", "key_hi", "seq_all", "midi_ch",
                                 "learn_mode") if k in L.index)
+    if "arp_on" in L.index:
+        L.rate_led("TEMPO", 0, 1082, 491)   # (2026-10-30) the beat, beside the TEMPO readout
     # the step sequencer: ON, PLAY, REC, NOTE TRIG, TRANSPOSE, STEP MOD; the page LEDs (the step editor's pages, the
     # playing one lit); LENGTH and RATE. Its MORE triangle: the settings; the SEQ button: the step editor
-    L.panel(764, 476, 412, 62, "SEQUENCER", more="SEQ", keys=["seq_on"])
-    L.column([("seq_on", "ON"), ("seq_note_trig", "TRIG")], 768, 492, 66, 22, "toggle", SIDE)
-    L.column([("seq_play", "PLAY"), ("seq_transpose", "TRANSP")], 834, 492, 74, 22, "toggle", SIDE)
-    L.column([("seq_rec", "REC"), ("seq_step_mod", "STEP MOD")], 908, 492, 70, 22, "toggle", SIDE)
+    L.panel(764, 532, 412, 62, "SEQUENCER", more="SEQ", keys=["seq_on"])
+    L.column([("seq_on", "ON"), ("seq_note_trig", "TRIG")], 768, 548, 62, 22, "toggle", SIDE)
+    L.column([("seq_play", "PLAY"), ("seq_transpose", "TRANSP")], 830, 548, 72, 22, "toggle", SIDE)
+    L.column([("seq_rec", "REC"), ("seq_step_mod", "STEP MOD")], 902, 548, 70, 22, "toggle", SIDE)
     if "seq_on" in L.index:
-        zones["SEQ_LEDS"] = (976, 490, 82, 46)
-    L.ctl("seq_length", "small", 1058, 488, 52, 50, "LENGTH")
-    L.ctl("seq_div", "button", 1108, 491, 50, 46, "RATE")
+        zones["SEQ_LEDS"] = (970, 546, 80, 46)
+    L.ctl("seq_length", "small", 1050, 544, 48, 50, "LENGTH")
+    L.ctl("seq_div", "button", 1098, 547, 46, 46, "RATE")
     if "seq_div" in L.index:
-        L.rate_led("SEQ", 0, 1158, 516)   # right of RATE's red button
+        L.rate_led("SEQ", 0, 1141, 572)   # right of RATE's red button
+    L.ctl("link_seq", "toggle", 1146, 547, 30, 46, "LINK")   # (2026-10-30) RATE the same in all 3 Synths
     L.placed.add("seq_pos")   # the readout: the step editor and the page LEDs show it
     L.page("SEQ", "SEQUENCER", "Settings; the steps: the SEQ button. Synced: RATE is each step's note value.", [
         ("seq_on", "On"), ("seq_play", "Play"), ("seq_rec", "Record"), ("seq_rec_mode", "Record Mode"),
@@ -456,11 +498,11 @@ def build(lay):
         ("clock_swing", "Master Swing"), ("seq_note_trig", "Note Trig"), ("seq_note_reset", "Note Reset"),
         ("seq_restart_trig", "Restart On Trig"), ("seq_restart_hold", "Restart On Hold"),
         ("seq_transpose", "Transpose"), ("seq_tr_mode", "Transpose Mode"), ("seq_one_shot", "One Shot"),
-        ("seq_pattern", "Factory Sequence"), ("seq_host_ss", "Host Start/Stop")])
+        ("seq_pattern", "Factory Sequence"), ("seq_host_ss", "Host Start/Stop"), ("link_seq", "Link Rate (3 Synths)")])
 
     # ---- mixer ----
     X = DX
-    L.panel(X + 1086, 18, 138, 522, "MIXER", more="MIXER")
+    L.panel(X + 1086, 18, 138, 578, "MIXER", more="MIXER")
     L.page("MIXER", "MIXER: EXTERNAL INPUT", "The plugin's audio input (connect it in the host) into every "
            "sounding voice's filters.", [("ext_level", "Ext In Level"), ("ext_route", "Ext In Route")])
     chans = [("o1", "OSC 1"), ("o2", "OSC 2"), ("o3", "OSC 3"), ("mac", "MACRO"), ("ring", "RING MOD"), ("noise", "NOISE")]
@@ -471,7 +513,7 @@ def build(lay):
                                                    (src + "_svf", label.title().replace("Osc", "OSC") + " > SVF"),
                                                    (src + "_lad", label.title().replace("Osc", "OSC") + " > Ladder"))],
            pic=("MIXER", ""))
-    step = 100 if len(chans) <= 5 else 84   # the macro oscillator's channel makes six
+    step = 111 if len(chans) <= 5 else 94   # the macro oscillator's channel makes six
     for k, (src, label) in enumerate(chans):
         y = 38 + step * k
         L.ctl(src + "_level", "knob", X + 1088, y, 62, 70, label, 30)
@@ -500,8 +542,13 @@ def build(lay):
     L.ctl("flt_route", "leds", X + 1356, 216, 54, 88, "ROUTE")
     L.ctl("flt_mode", "leds", X + 1414, 216, 54, 88, "MODE")
     L.ctl("flt_slope", "leds", X + 1474, 216, 58, 88, "SLOPE")
-    L.panel(X + 1230, 314, 306, 226, "CUTOFF MODULATION")
-    for y, f, cap in ((330, "svf", "SVF"), (434, "lad", "LADDER")):
+    L.panel(X + 1230, 314, 306, 282, "CUTOFF MODULATION", more="CUTMOD")
+    L.page("CUTMOD", "CUTOFF MODULATION", "What moves each filter's cutoff: envelope, LFO 2, the keys, an oscillator.", [
+        ("svf_env", "SVF EG Amount"), ("svf_lfo", "SVF LFO 2 Amount"), ("svf_kbd", "SVF Key Track"),
+        ("svf_fm", "SVF FM Amount"), ("svf_fm_src", "SVF FM Source"), ("key_center", "Key Track Centre"),
+        ("lad_env", "Ladder EG Amount"), ("lad_lfo", "Ladder LFO 2 Amount"), ("lad_kbd", "Ladder Key Track"),
+        ("lad_fm", "Ladder FM Amount"), ("lad_fm_src", "Ladder FM Source")])
+    for y, f, cap in ((330, "svf", "SVF"), (462, "lad", "LADDER")):
         L.panel(X + 1238, y, 120, 14, cap, style="caption")
         L.row([(f + "_env", "EG AMT"), (f + "_lfo", "LFO 2 AMT"), (f + "_kbd", "KEY TRK"), (f + "_fm", "FM AMT"),
                (f + "_fm_src", "FM SRC", "leds")], X + 1234, y + 12, 60, 90)
@@ -509,8 +556,8 @@ def build(lay):
     # ---- envelopes: a row each, buttons over the time knobs, curve / scaling knobs at the right ----
     for k, (p, title) in enumerate([("fenv", "FILTER ENVELOPE"), ("amp", "AMPLIFIER ENVELOPE"),
                                     ("menv", "MODULATION ENVELOPE")]):
-        yt = 18 + 104 * k
-        L.panel(X + 1542, yt, 478, 100, title, more="ENV%d" % (k + 1))
+        yt = 18 + 112 * k
+        L.panel(X + 1542, yt, 478, 108, title, more="ENV%d" % (k + 1))
         L.page("ENV%d" % (k + 1), title, "Its shape below: stage times as their knobs, curves, sustain.", [
             (p + "_delay", "Delay"), (p + "_a", "Attack"), (p + "_hold", "Hold"), (p + "_d", "Decay"),
             (p + "_s", "Sustain"), (p + "_r", "Release"), (p + "_acurve", "Attack Curve"),
@@ -526,22 +573,28 @@ def build(lay):
         L.row([(p + "_scale", "KEY SCL"), (p + "_vel", "VEL AMT")], X + 1882, yt + 56, 52, 42, "small")
 
     # ---- synth effect and master effects (send levels); delay, reverb and output under them ----
-    L.panel(X + 1542, 334, 238, 102, "SYNTH EFFECT", more="SFX")
+    L.panel(X + 1542, 354, 238, 110, "SYNTH EFFECT", more="SFX")
     L.cells([("modfx_on", "ON", 40, "toggle"), ("modfx_type", "TYPE", 66, "button"), ("modfx_ctrl1", "CTRL 1", 44),
-             ("modfx_ctrl2", "CTRL 2", 44), ("modfx_mix", "MIX", 42)], X + 1544, 354, 64)
-    L.panel(X + 1784, 334, 236, 102, "MASTER EFFECTS - SHARED", more="MFX")
+             ("modfx_ctrl2", "CTRL 2", 44), ("modfx_mix", "MIX", 42)], X + 1544, 378, 64)
+    L.panel(X + 1784, 354, 236, 110, "MASTER EFFECTS - SHARED", more="MFX")
     L.cells([("mfx_on", "ON", 40, "toggle"), ("mfx_send1", "SEND 1", 46), ("mfx_send2", "SEND 2", 46),
-             ("mfx_series", "SERIES", 50), ("mfx_width", "WIDTH", 50)], X + 1786, 354, 64)
+             ("mfx_series", "SERIES", 50), ("mfx_width", "WIDTH", 50)], X + 1786, 378, 64)
+    L.ctl("link_send", "toggle", X + 1832, 446, 90, 14, "LINK SENDS", SIDE)   # (2026-10-30) the sends alike
     # the two master effect slots, any type each (by default a stereo delay and a plate): TYPE and the two knobs their
     # default types are played by most; every control of the chosen type is on the slot's MORE page
-    L.panel(X + 1542, 440, 162, 100, "MASTER FX 1 - SHARED", more="DELAY")
-    L.cells([("dly_type", "TYPE", 60, "button"), ("dly_time", "TIME", 50), ("dly_fb", "FDBK", 50)], X + 1544, 452, 84)
-    L.panel(X + 1708, 440, 162, 100, "MASTER FX 2 - SHARED", more="REVERB")
-    L.cells([("rev_type", "TYPE", 60, "button"), ("rev_decay", "DECAY", 50), ("rev_size", "SIZE", 50)], X + 1710, 452,
+    L.panel(X + 1542, 468, 162, 128, "MASTER FX 1 - SHARED", more="DELAY")
+    L.cells([("dly_type", "TYPE", 60, "button"), ("dly_time", "TIME", 50), ("dly_fb", "FDBK", 50)], X + 1544, 488, 84)
+    L.panel(X + 1708, 468, 162, 128, "MASTER FX 2 - SHARED", more="REVERB")
+    L.cells([("rev_type", "TYPE", 60, "button"), ("rev_decay", "DECAY", 50), ("rev_size", "SIZE", 50)], X + 1710, 488,
             84)
-    L.panel(X + 1874, 440, 146, 100, "SYNTH OUTPUT")
-    L.ctl("volume", "knob", X + 1876, 456, 54, 78, "VOLUME", 34)
-    L.cells([("pan", "PAN", 46), ("spread", "SPREAD", 44)], X + 1930, 456, 78)
+    L.panel(X + 1874, 468, 146, 128, "SYNTH OUTPUT", more="OUTPUT")
+    L.ctl("volume", "knob", X + 1876, 490, 54, 78, "VOLUME", 34)
+    L.cells([("pan", "PAN", 46), ("spread", "SPREAD", 44)], X + 1930, 490, 78)
+    if "master_level" in L.index:   # (2026-10-30) lit: VOLUME is MASTER (master_level, all three Synths; hub.c)
+        zones["VOL_MASTER"] = (X + 1880, 572, 60, 14)
+    L.page("OUTPUT", "SYNTH OUTPUT", "This Synth's level, place and sends; MASTER (the console) is all three's.", [
+        ("volume", "Volume"), ("pan", "Pan"), ("spread", "Spread"), ("mfx_send1", "Send 1 (FX 1)"),
+        ("mfx_send2", "Send 2 (FX 2)"), ("master_level", "Master (All Synths)")])
     L.page("SFX", "SYNTH EFFECT", "The controls of the selected type (TYPE changes the list).", sfx_page(L))
     mac = [("mac_model", "Model"), ("mac_harm", "Harmonics"), ("mac_timbre", "Timbre"), ("mac_morph", "Morph"),
            ("mac_oct", "Octave"), ("mac_freq", "Frequency"), ("mac_aux", "Aux Mix"), ("mac_level", "Level"),
@@ -552,21 +605,28 @@ def build(lay):
            mac)
     L.page("MFX", "MASTER EFFECTS", "Two effects on two sends after the synth effects, shared by the Synths.", [
         ("mfx_on", "On"), ("mfx_buss", "Buss Mode"), ("mfx_send1", "Send 1 (FX 1)"), ("mfx_send2", "Send 2 (FX 2)"),
-        ("mfx_series", "FX 1 > FX 2"), ("mfx_width", "Width")])
+        ("mfx_series", "FX 1 > FX 2"), ("mfx_width", "Width"), ("link_send", "Link Sends (3 Synths)")])
     L.page("DELAY", "MASTER FX 1", "Its type's controls (TYPE changes the list). Fed by SEND 1.", mfx_page(L, "dly_"))
     L.page("REVERB", "MASTER FX 2", "Its type's controls (TYPE changes the list). Fed by SEND 2.", mfx_page(L, "rev_"))
 
     # ---- left-hand controller: octave, glide, wheels, X/Y pad, bend range; the ribbon over the keys ----
-    zones.update({"OCT_LEDS": (50, 576, 116, 26), "OCT_DOWN": (64, 606, 36, 16), "OCT_UP": (118, 606, 36, 16),
-                  "PITCH": (56, 650, 36, 112), "MODW": (110, 650, 36, 112), "PAD": (166, 650, 126, 112),
-                  "KEYS": (384, 584, 1744, 200), "RIBBON": (384, 556, 1744, 20)})   # shorter with a MORE page
-    L.ctl("glide_time", "knob", 172, 570, 64, 70, "GLIDE RATE")
-    L.ctl("glide", "toggle", 236, 576, 42, 56, "ON")
-    L.ctl("glide_type", "leds", 278, 568, 52, 76, "TYPE")
-    L.column([("glide_legato", "LEGATO"), ("glide_gated", "GATED"), ("glissando", "GLISS")], 298, 650, 72, 22,
+    zones.update({"OCT_LEDS": (50, 632, 116, 26), "OCT_DOWN": (64, 662, 36, 16), "OCT_UP": (118, 662, 36, 16),
+                  "PITCH": (56, 706, 36, 112), "MODW": (110, 706, 36, 112), "PAD": (166, 706, 126, 112),
+                  "KEYS": (384, 640, 1744, 200), "RIBBON": (384, 612, 1744, 20)})   # shorter with a MORE page
+    L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
+    L.ctl("glide", "toggle", 236, 632, 42, 56, "ON")
+    L.ctl("glide_type", "leds", 278, 624, 52, 76, "TYPE")
+    L.column([("glide_legato", "LEGATO"), ("glide_gated", "GATED"), ("glissando", "GLISS")], 298, 706, 72, 22,
              "toggle", SIDE)   # the other glide options, beside the pad
-    L.panel(298, 714, 72, 12, "BEND RANGE", style="caption", keys=["bend_up", "bend_down"])
-    L.cells([("bend_up", "UP", 36, "small"), ("bend_down", "DOWN", 36, "small")], 298, 724, 44, "small", 18)
+    L.panel(298, 770, 72, 12, "BEND RANGE", style="caption", keys=["bend_up", "bend_down"])
+    if "bend_up" in L.index:
+        L.tri(358, 770, "BEND")   # (2026-10-30) after its caption (the knobs fill the corner)
+    L.cells([("bend_up", "UP", 36, "small"), ("bend_down", "DOWN", 36, "small")], 298, 780, 44, "small", 18)
+    L.page("BEND", "BEND RANGE", "How far the pitch wheel bends, up and down, and each oscillator's own offset.", [
+        ("bend_up", "Bend Up"), ("bend_down", "Bend Down"), ("o1_bend_up_off", "OSC 1 Up Offset"),
+        ("o1_bend_dn_off", "OSC 1 Down Offset"), ("o2_bend_up_off", "OSC 2 Up Offset"),
+        ("o2_bend_dn_off", "OSC 2 Down Offset"), ("o3_bend_up_off", "OSC 3 Up Offset"),
+        ("o3_bend_dn_off", "OSC 3 Down Offset")])
     L.page("CTRL", "CONTROLLERS AND TUNING", "Keyboard, wheels, glide and tuning.", [
         ("bend_up", "Bend Up"), ("bend_down", "Bend Down"), ("vel_curve", "Velocity Curve"),
         ("transpose", "Transpose"), ("octave_shift", "Octave Shift"), ("key_center", "Key Track Centre"),
@@ -586,6 +646,42 @@ def build(lay):
 
 
 MATRIX_COLS = ("src", "dst", "amt", "via", "via_amt", "xf", "xf_amt")
+
+# (2026-10-30) the GENERATIVE hub page (desktop/hub.c): one row per generator, its ON and the MORE page it opens. The
+# pages other branches add (ids below) join by themselves: a row per two-option "..._on" item on the page.
+HUB_FIXED = [("EUCLID", "GEN", "gen_euclid_on"), ("TURING", "GEN", "gen_tm_on"),
+             ("BOUNCING BALLS", "BALLS", "phys_balls_on"), ("PARTICLES", "PARTICLES", "phys_parts_on")]
+HUB_LATER = ("LIFE", "ORBITS", "PEND", "RAIN", "MARKOV")
+# the LINKs (shared params): which settings each one keeps the same in all three Synths
+LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
+               ("link_arp", ("arp_div", "arp_timing", "arp_sync", "arp_rate")),
+               ("link_seq", ("seq_div", "seq_timing", "seq_sync", "seq_rate")),
+               ("link_send", ("mfx_send1", "mfx_send2"))] + \
+              [("link_lfo%d" % n, tuple("lfo%d_%s" % (n, s) for s in ("rate", "sync", "timing"))) for n in range(1, 5)]
+
+
+def hub_and_links(lay, pages, page_ix, lines):
+    """HUB[]: the generators (label, page, ON param); LINK_OF[]: {param, its LINK param}"""
+    rows = []
+    for label, pid, key in HUB_FIXED:
+        if pid in page_ix and key in lay.index:
+            rows.append((label, page_ix[pid], lay.index[key]))
+    for pid in HUB_LATER:
+        if pid not in page_ix:
+            continue
+        _, title, _, got, _ = pages[page_ix[pid]]
+        ons = [it for it in got if it[0].endswith("_on") and lay.nopts(it[0]) == 2]
+        for it in ons or [(None, title)]:
+            rows.append((title if len(ons) <= 1 else it[1].upper(), page_ix[pid], lay.index[it[0]] if it[0] else -1))
+    lines.append("typedef struct { const char *label; short page, on; } lay_hub_t;   /* a generator: its ON (-1: none) */")
+    lines.append("LAY lay_hub_t HUB[] = {%s};" % ", ".join("{%s, %d, %d}" % (c_str(a), b, c) for a, b, c in rows or
+                                                          [("", -1, -1)]))
+    lines.append("#define NHUB %d" % len(rows))
+    groups = LINK_GROUPS + [("link_phys", tuple(k for k in lay.index if k.startswith("phys_")))]
+    pairs = [(lay.index[k], lay.index[g]) for g, keys in groups if g in lay.index for k in keys if k in lay.index]
+    lines.append("LAY short LINK_OF[][2] = {%s};   /* a setting, and the LINK that keeps it the same in all 3 Synths */"
+                 % ", ".join("{%d, %d}" % pr for pr in pairs or [(-1, -1)]))
+    lines.append("#define NLINKOF %d" % len(pairs))
 
 
 def c_str(s):
@@ -651,6 +747,7 @@ def emit(lay, zones, out):
         eu = [-1] * 4
     zones["EUCLID"] = lay.euclid_at or (0, 0, 0, 0)
     zones.setdefault("SEQ_LEDS", (0, 0, 0, 0))   # (an empty zone without a sequencer)
+    zones.setdefault("VOL_MASTER", (0, 0, 0, 0))
     sp = [lay.index.get(k, -1) for k in ("seq_on", "seq_play", "seq_rec", "seq_length", "seq_pos", "seq_step_mod",
                                          "seq_div", "seq_timing")]
     lines.append("LAY short SEQ_P[8] = {%s};   /* on, play, rec, length, readout, step mod, div, timing (-1: absent) */"
@@ -683,7 +780,8 @@ def emit(lay, zones, out):
     lines.append("#define NPAGES %d" % len(pages))
     for pid in ("LFO1", "LFO2", "LFO3", "LFO4", "OSC1", "OSC2", "OSC3", "POLY", "ARP", "CHORD", "GEN", "SFX", "MFX",
                 "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "SEQ", "ENV1", "ENV2", "ENV3", "MIXER",
-                "FILTERS", "OTHER", "BALLS", "PARTICLES"):
+                "FILTERS", "OTHER", "BALLS", "PARTICLES", "PITCHMOD", "RINGMOD", "WAVEMOD", "FMMOD", "NOISE", "CUTMOD",
+                "OUTPUT", "BEND") + HUB_LATER:
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
     # the rate LEDs: what each flashes with (RL_*: an LFO's rate (n 0-3), the arpeggiator's, the sequencer's, the beat)
     lines.append("enum { %s };" % ", ".join("RL_%s = %d" % (k, v) for k, v in RATE_KINDS.items()))
@@ -696,6 +794,7 @@ def emit(lay, zones, out):
     for x, y, w, h, t, s, m in lay.panels:
         if m in page_ix:
             tris.append((x + w - 16, y + (16 if s == "module" else 10), 12, 12, page_ix[m]))
+    tris += [(x, y, 12, 12, page_ix[pid]) for x, y, pid in lay.tris if pid in page_ix]
     if "RIBBON" in page_ix:   # the ribbon makes room for its triangle at its right end
         rx, ry, rw_, rh_ = zones["RIBBON"]
         zones["RIBBON"] = (rx, ry, rw_ - 26, rh_)
@@ -706,6 +805,7 @@ def emit(lay, zones, out):
     lines.append("LAY lay_more_t MORES[] = {%s};" % ", ".join("{%d, %d, %d, %d, %d}" % t for t in tris or
                                                               [(0, 0, 0, 0, -1)]))
     lines.append("#define NMORES %d" % len(tris))
+    hub_and_links(lay, pages, page_ix, lines)
     open(out, "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")
     return other, pages
 
