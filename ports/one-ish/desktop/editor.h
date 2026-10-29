@@ -55,6 +55,8 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_FOCUS1, Z_FOCUS2, Z_FOCUS3,
        Z_TAB_SETUP, Z_TAB_SETTINGS, Z_RND_ALL, Z_MUTE1, Z_MUTE2, Z_MUTE3, Z_SOLO1, Z_SOLO2, Z_SOLO3,
        Z_RND_WILD, Z_RND_ALSO,   /* Z_RND_ALSO + 0..2: the ARPEGGIATOR, GENERATIVE and SEQUENCER tick buttons */
+       Z_OCT_PICK = 100045,   /* (2026-10-30) a click on the octave LEDs: that octave */
+       Z_PANIC,               /* (2026-10-30) PANIC: every note off (as holding an OCTAVE button 2 s) */
        Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
@@ -108,6 +110,7 @@ typedef struct {
     RECT vol_master;                          /* SYNTH OUTPUT's MASTER button (hub.c) */
     RECT together, undo, redo;                /* (2026-10-30) the third row's TOGETHER, UNDO, REDO (hub.c) */
     RECT qm_hands, kb_hint;                   /* the controller's DEST (quickmod.c); the computer keyboard's hint */
+    RECT panic;                               /* the controller's PANIC */
 } layout_t;
 extern layout_t L;
 

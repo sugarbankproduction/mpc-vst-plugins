@@ -655,7 +655,8 @@ def build(lay):
                   "KEYS": (384, 640, 1744, 200), "RIBBON": (384, 612, 1744, 20),   # shorter with a MORE page
                   # (2026-10-30) the controller's DEST button, top left: modulate from the wheels, the X/Y pad,
                   # the ribbon or the keyboard (quickmod.c); the computer keyboard's hint on the front rail
-                  "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14)})
+                  "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14),
+                  "PANIC": (236, 691, 54, 13)})   # (2026-10-30) every note off, under glide's ON
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     L.ctl("glide", "toggle", 236, 632, 42, 56, "ON")
     L.ctl("glide_type", "leds", 278, 624, 52, 76, "TYPE")

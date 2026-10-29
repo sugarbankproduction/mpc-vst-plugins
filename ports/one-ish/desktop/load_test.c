@@ -2643,7 +2643,31 @@ static void seq_plain_test(AEffect *fx, HWND child, float s, const char *bmp, in
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
+/* the octave LEDs pick an octave with a click; PANIC (no 2-second hold) sends every note off */
+static void oct_panic_test(AEffect *fx, HWND child, float s) {
+    char what[300];
+    unsigned char log[64][3];
+    play(fx, 2, 512);
+    fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0);
+    click(child, s, ZONE_OCT_LEDS[0] + ZONE_OCT_LEDS[2] * 0.7f, ZONE_OCT_LEDS[1] + 6);   /* the "+1" LED */
+    click_white(fx, child, s, 0);   /* the lowest C */
+    int n = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0), note = -1;
+    for (int k = 0; k < n; k++)
+        if ((log[k][0] & 0xF0) == 0x90 && log[k][2]) note = log[k][1];
+    snprintf(what, sizeof what, "a click on the octave LED +1 shifts the keyboard: its lowest C plays note %d (C3, 48)", note);
+    check(note == 48, what);
+    click(child, s, ZONE_OCT_LEDS[0] + ZONE_OCT_LEDS[2] * 0.5f, ZONE_OCT_LEDS[1] + 6);   /* "0": back */
+    click_zone(child, s, ZONE_PANIC);
+    play(fx, 2, 512);
+    n = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0);
+    int off = 0;
+    for (int k = 0; k < n; k++) off += (log[k][0] & 0xF0) == 0xB0 && log[k][1] == 123;
+    snprintf(what, sizeof what, "PANIC: a plain click sends All Notes Off on every channel (%d of 16)", off);
+    check(off == 16, what);
+}
+
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    oct_panic_test(fx, child, s);
     together_test(fx, child, s, bmp, w, h);
     undo_buttons_test(fx, child, s);
     qm_plain_test(fx, child, s, bmp, w, h);

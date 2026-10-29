@@ -314,8 +314,12 @@ static const char *zone_help(ed_t *e, int z) {
                        "aftertouch (the source Aftertouch, back to 0 when you let go). To modulate from X, Y or its gate: "
                        "the DEST button at the top left of this panel.";
     case Z_OCT_DOWN: case Z_OCT_UP:
-        return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Hold one: 1 s back to the "
-               "default octave, 2 s a MIDI panic (all notes off).";
+        return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Click an LED above for that "
+               "octave at once (0: the default); PANIC (under glide's ON) stops every note. Shortcut: hold one, 1 s the "
+               "default octave, 2 s PANIC.";
+    case Z_OCT_PICK: return "Octave LEDs: the keyboard's octave (lit). Click one to go straight to it; 0 is the default.";
+    case Z_PANIC: return "PANIC: stops every note at once (all notes and sounds off on every MIDI channel, the pedals up). "
+                         "Use it when a note hangs. Shortcut: hold an OCTAVE button for 2 s.";
     case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the factory presets, then your own "
                            "patches; click it for the patch list.";
     case Z_PREV: case Z_NEXT: return "Previous / next patch: the factory presets (F), then your own (U).";
@@ -1208,6 +1212,13 @@ static void draw_controller(HDC dc, ed_t *e) {
         }
     if (vis(&L.oct_down, sc(6))) red_button(&L.oct_down, e->hover == Z_OCT_DOWN);
     if (vis(&L.oct_up, sc(6))) red_button(&L.oct_up, e->hover == Z_OCT_UP);
+    if (vis(&L.panic, sc(4)) && !IsRectEmpty(&L.panic)) {   /* (2026-10-30) PANIC: a small black cap, its name beside */
+        const RECT *r = &L.panic;
+        int bh = sc(10), bw = sc(18), hot = e->hover == Z_PANIC;
+        skin_button((float)r->left + 1, (r->top + r->bottom - bh) / 2.0f, (float)bw, (float)bh, SK_BLACK, hot ? SK_HOT : SK_UP);
+        RECT tr = {r->left + bw + sc(5), r->top, r->right + sc(6), r->bottom};
+        text(dc, &tr, "PANIC", font_label, hot ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
     wheel(dc, &L.pitch, e->bend, "PITCH", e->hover == Z_PITCH);
     wheel(dc, &L.modw, e->wheel * 2 - 1, "MOD", e->hover == Z_MODW);
     RECT *p = &L.pad;

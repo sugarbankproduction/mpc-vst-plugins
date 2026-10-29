@@ -229,6 +229,7 @@ static void layout(void) {
     L.redo = zone(ZONE_REDO);
     L.qm_hands = zone(ZONE_QM_HANDS);
     L.kb_hint = zone(ZONE_KB_HINT);
+    L.panic = zone(ZONE_PANIC);
     for (int k = 0; k < NMORES; k++) {
         const short z[4] = {MORES[k].x, MORES[k].y, MORES[k].w, MORES[k].h};
         L.more[k] = zone(z);
@@ -373,6 +374,8 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_MODW: r = &L.modw; break;
     case Z_PAD: r = &L.pad; break;
     case Z_OCT_DOWN: r = &L.oct_down; break;
+    case Z_OCT_PICK: r = &L.oct_leds; break;
+    case Z_PANIC: r = &L.panic; break;
     case Z_OCT_UP: r = &L.oct_up; break;
     case Z_PREV: case Z_NEXT: invalidate(e, &L.bprev); r = &L.bnext; break;
     case Z_ENCODER: r = &L.encoder; break;
@@ -835,7 +838,7 @@ static int hit(ed_t *e, int x, int y) {
     }
     static const struct { RECT *r; int z; } Z[] = {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
-        {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
+        {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.oct_leds, Z_OCT_PICK}, {&L.panic, Z_PANIC}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
         {&L.focus[0], Z_FOCUS1}, {&L.focus[1], Z_FOCUS2}, {&L.focus[2], Z_FOCUS3}, {&L.tab_setup, Z_TAB_SETUP},
@@ -1116,6 +1119,12 @@ static void press(ed_t *e, int x, int y) {
         e->oct_stage = 0;
         SetCapture(e->wnd);
         return;
+    case Z_OCT_PICK: {   /* an octave LED: that octave (the middle one: the default) */
+        int k = rw(&L.oct_leds) > 0 ? (x - L.oct_leds.left) * 5 / rw(&L.oct_leds) : 2;
+        set_octave(e, (k < 0 ? 0 : k > 4 ? 4 : k) - 2);
+        return;
+    }
+    case Z_PANIC: panic(e); InvalidateRect(e->wnd, NULL, FALSE); return;   /* (the held keys drawn up again) */
     case Z_KEYS: e->mode = M_KEY; break;
     case Z_PITCH: e->mode = M_PITCH; break;
     case Z_MODW: e->mode = M_MODW; break;
