@@ -401,7 +401,7 @@ def build(lay):
         ("gen_euclid_on", "Euclid On"), ("gen_steps", "Euclid Steps"), ("gen_hits", "Euclid Hits"),
         ("gen_rot", "Euclid Rotation"), ("gen_prob", "Step Probability"), ("gen_vel_rand", "Velocity Random"),
         ("gen_tm_on", "Turing On"), ("gen_tm_len", "Turing Length"), ("gen_tm_change", "Turing Change"),
-        ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves")])
+        ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves"), ("key_root", "Key"), ("key_scale", "Scale")])
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)

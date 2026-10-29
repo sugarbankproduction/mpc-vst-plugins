@@ -628,6 +628,8 @@
   {"key": "arp_follow_swing", "name": "Arp Follow Swing", "options": ["Off", "On"], "default": "Off"},
   {"key": "seq_host_ss", "name": "Seq Host Start/Stop", "options": ["Off", "On"], "default": "Off"},
   {"key": "syn_solo", "name": "Synth Solo", "options": ["Off", "On"], "default": "Off"},
+  {"key": "key_root", "name": "Key", "options": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": "C"},
+  {"key": "key_scale", "name": "Scale", "options": ["Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian", "Harmonic Minor", "Melodic Minor", "Pent Major", "Pent Minor", "Blues", "Whole Tone", "Chromatic"], "default": "Minor"},
   {"key": "s2_o1_wave", "name": "S2 Osc 1 Wave", "options": ["Tri", "Saw"], "default": "Saw"},
   {"key": "s2_amp_a", "name": "S2 Amp Attack", "min": 0, "max": 100, "default": 17.5, "dynamic_display": true},
   {"key": "s2_amp_d", "name": "S2 Amp Decay", "min": 0, "max": 100, "default": 61.9, "dynamic_display": true},
@@ -1623,7 +1625,11 @@
   {"key": "s3_arp_follow_swing", "name": "S3 Arp Follow Swing", "options": ["Off", "On"], "default": "Off"},
   {"key": "s3_seq_host_ss", "name": "S3 Seq Host Start/Stop", "options": ["Off", "On"], "default": "Off"},
   {"key": "s2_syn_solo", "name": "S2 Synth Solo", "options": ["Off", "On"], "default": "Off"},
-  {"key": "s3_syn_solo", "name": "S3 Synth Solo", "options": ["Off", "On"], "default": "Off"}
+  {"key": "s3_syn_solo", "name": "S3 Synth Solo", "options": ["Off", "On"], "default": "Off"},
+  {"key": "s2_key_root", "name": "S2 Key", "options": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": "C"},
+  {"key": "s2_key_scale", "name": "S2 Scale", "options": ["Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian", "Harmonic Minor", "Melodic Minor", "Pent Major", "Pent Minor", "Blues", "Whole Tone", "Chromatic"], "default": "Minor"},
+  {"key": "s3_key_root", "name": "S3 Key", "options": ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": "C"},
+  {"key": "s3_key_scale", "name": "S3 Scale", "options": ["Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian", "Harmonic Minor", "Melodic Minor", "Pent Major", "Pent Minor", "Blues", "Whole Tone", "Chromatic"], "default": "Minor"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -1692,7 +1698,7 @@
   {"label": "RIBBON", "keys": ["ribbon_dst", "ribbon_amt", "ribbon_mode", "ribbon_origin"]},
   {"label": "ARP", "keys": ["arp_on", "arp_pattern", "arp_oct", "arp_dir", "arp_oct_order", "arp_pendulum", "arp_pend_mode", "arp_rnd_mode", "arp_sync", "arp_rate", "arp_div", "arp_timing", "arp_gate", "arp_swing", "arp_latch", "arp_reset"]},
   {"label": "CHORD", "keys": ["chord_on", "chord_shape", "chord_learn", "chord_iv1", "chord_iv2", "chord_iv3", "chord_iv4", "chord_iv5"]},
-  {"label": "GENERATIVE", "keys": ["gen_euclid_on", "gen_steps", "gen_hits", "gen_rot", "gen_prob", "gen_vel_rand", "gen_tm_on", "gen_tm_len", "gen_tm_change", "gen_scale", "gen_range"]},
+  {"label": "GENERATIVE", "keys": ["gen_euclid_on", "gen_steps", "gen_hits", "gen_rot", "gen_prob", "gen_vel_rand", "gen_tm_on", "gen_tm_len", "gen_tm_change", "gen_scale", "gen_range", "key_root", "key_scale"]},
   {"label": "MACRO OSC", "keys": ["mac_model", "mac_harm", "mac_timbre", "mac_morph", "mac_oct", "mac_freq", "mac_aux", "mac_level", "mac_svf", "mac_lad"]},
   {"label": "SYNTH FX RESONATOR II", "keys": ["modfx_model", "modfx_pitch", "modfx_follow", "modfx_struct", "modfx_pos"]},
   {"label": "SYNTH FX GRANULAR", "keys": ["modfx_gmode", "modfx_quality", "modfx_size", "modfx_density", "modfx_texture", "modfx_freeze"]},

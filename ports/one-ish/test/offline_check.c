@@ -4960,6 +4960,7 @@ static void arp_wav(const char *demo_path) {
 #include "ext_check.c"     /* the audio input: the EXT channel and the vocoders */
 #include "midi_check.c"    /* MIDI settings, learn, NRPN */
 #include "tuning_check.c"  /* microtuning (Scala scales and keyboard maps) */
+#include "keyscale_check.c"   /* KEY and SCALE per Synth (src/keyscale.h) */
 #include "modx_check.c"    /* modulation extras: the step-mod destinations, slot ENABLE, the pad (2026-10-29) */
 #include "lfoenv_check.c"  /* LFO and envelope fidelity: the High range, pulse width, transport start, MIN, 13 syncs */
 #include "seqx_check.c"    /* the sequencer leftovers: RTZ, a step's notes together, follow swing, host start/stop */
@@ -5827,6 +5828,7 @@ int main(int argc, char **argv) {
     midi_settings();
     midi_learn_nrpn();
     microtuning();
+    keyscale_checks();
     mod_extras();
     lfo_env_fidelity();
     seq_extras();

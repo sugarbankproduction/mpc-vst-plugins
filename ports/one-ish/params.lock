@@ -625,6 +625,8 @@ eg_times
 arp_follow_swing
 seq_host_ss
 syn_solo
+key_root
+key_scale
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1621,3 +1623,7 @@ s3_arp_follow_swing
 s3_seq_host_ss
 s2_syn_solo
 s3_syn_solo
+s2_key_root
+s2_key_scale
+s3_key_root
+s3_key_scale

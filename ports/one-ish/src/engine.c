@@ -68,6 +68,7 @@
 #include "modmatrix.h"
 #include "fx.h"
 #include "seq.h"
+#include "keyscale.h"
 #include "stepseq.h"
 #include "macro.h"
 #include "tuning.h"
@@ -235,6 +236,7 @@ enum {
     P_PAD_Y_POS, P_EG_TIMES,   /* (2026-10-29) the envelopes' MIN and 13 synced values */
     P_ARP_FOLLOW_SWING, P_SEQ_HOST_SS,   /* (2026-10-29) the arp's FOLLOW SWING; the sequencer on the host's start, stop */
     P_SYN_SOLO,          /* (2026-10-29) the Synth soloed (src/synths.h; never saved) */
+    P_KEY_ROOT, P_KEY_SCALE,   /* (2026-10-29) the key the generators play in (src/keyscale.h) */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -366,7 +368,7 @@ static const char *const KEYS[P_COUNT] = {
     "mod1_on", "mod2_on", "mod3_on", "mod4_on", "mod5_on", "mod6_on", "mod7_on", "mod8_on", "mod9_on", "mod10_on",
     "mod11_on", "mod12_on", "mod13_on", "mod14_on", "mod15_on", "mod16_on", "pad_polarity", "pad_hold", "load_pos",
     "wheel_pos", "pad_x_pos", "pad_y_pos", "eg_times", "arp_follow_swing", "seq_host_ss",
-    "syn_solo",
+    "syn_solo", "key_root", "key_scale",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
