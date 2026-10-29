@@ -617,7 +617,7 @@ static void press_button(ed_t *e, int b) {
  * (the options with the seed shown) and RE-ROLL (a new seed) in the buttons' row. One click = one undo step. ---- */
 static const char *const GEN_LABELS[GEN_ROWS] = {"STYLE", "RHYTHM", "DENSITY", "RANGE", "VARIATION", "ACCENT", "FILLS",
                                                  "MODS"};
-static const char *const GEN_STYLES[SG_STYLES] = {"BASS", "ARP", "MELODY", "CHORDS", "RANDOM"};
+static const char *const GEN_STYLES[SG_STYLES] = {"BASS", "ARP", "LEAD", "STAB", "RAND"};   /* (melody, chords, random) */
 static const char *const GEN_RHYTHMS[SG_RHYTHMS] = {"STRAIGHT", "SYNCO", "EUCLID"};
 static const char *const GEN_RANGES[4] = {"1 OCT", "2 OCT", "3 OCT", "4 OCT"};
 static int gen_synth(ed_t *e) { return e->focus >= 0 && e->focus < SQ_GEN_SYNTHS ? e->focus : 0; }
@@ -912,12 +912,11 @@ static void txt(HDC dc, RECT r, const char *s, HFONT f, COLORREF c, UINT fmt) {
     SetBkMode(dc, TRANSPARENT);
     DrawTextA(dc, s, -1, &r, fmt | DT_NOPREFIX | DT_SINGLELINE);
 }
-static void button_f(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f) {
+static void button(HDC dc, RECT r, const char *label, int lit, int hot) {
     gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), lit ? C_LCD : 0xFF0F2230);
     gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f, hot ? 0xFFFFFFFF : lit ? C_LCD : 0xFF3E6273);
-    txt(dc, r, label, f, lit ? T_DARK : hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER);
+    txt(dc, r, label, font_cell, lit ? T_DARK : hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER);
 }
-static void button(HDC dc, RECT r, const char *label, int lit, int hot) { button_f(dc, r, label, lit, hot, font_cell); }
 static void field(HDC dc, ed_t *e, int f, const char *label, const char *value, int active) {
     RECT r = field_rect(e, f);
     int hot = e->hover == (e->sq.view == V_GEN ? Z_GEN_FIELD : Z_FIELD) + f;
@@ -1019,7 +1018,7 @@ static void gen_draw(HDC dc, ed_t *e) {
             float sw = (rw(&c) - (n - 1) * sc(2)) / (float)n;
             for (int k = 0; k < n; k++) {
                 RECT sr = {c.left + (int)(k * (sw + sc(2))), c.top, c.left + (int)(k * (sw + sc(2)) + sw), c.bottom};
-                button_f(dc, sr, names[k], k == v, 0, n > 4 ? font_tiny : font_cell);   /* (five styles: smaller) */
+                button(dc, sr, names[k], k == v, 0);
             }
         } else {   /* a bar, 0-100% */
             gfx_rect((float)c.left, (float)c.top, (float)rw(&c), (float)rh(&c), 0xFF0F2230);
@@ -1202,8 +1201,8 @@ const char *seq_zone_help(ed_t *e, int z) {
                                     "the KEY and SCALE of the Synth in focus (each Synth has its own).";
     if (z >= Z_GEN_ROW && z < Z_GEN_ROW + GEN_ROWS) {
         static const char *const GH[GEN_ROWS] = {
-            "STYLE: BASS (on the chord's root, fifths and octaves), ARP (through the chord's notes), MELODY (steps through "
-            "the scale, chord notes on the beat), CHORDS (stabs), RANDOM (anything in the scale).",
+            "STYLE: BASS (on the chord's root, fifths and octaves), ARP (through the chord's notes), LEAD (a melody: steps "
+            "through the scale, chord notes on the beat), STAB (chords), RAND (anything in the scale).",
             "RHYTHM: STRAIGHT (the beats first), SYNCO (off-beat, a 3-3-2 feel) or EUCLID (the notes spread as evenly as "
             "they go).",
             "DENSITY: how many of the steps play (click or drag the bar; the wheel: 5%, SHIFT: 1%).",

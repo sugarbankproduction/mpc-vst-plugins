@@ -366,6 +366,7 @@ static void undo_tests(void) {
         snprintf(what, sizeof what, "GEN: two wheel clicks on KEY move Synth 2's key up a tone (%d -> %d), Synth 1's stays",
                  (int)lroundf(k2 * 11), key2);
         check(key2 == ((int)lroundf(k2 * 11) + 2) % 12 && fx->getParameter(fx, kr) == k1, what);
+        click_base(x0 + 58 + 182 / 5.0f * 2.5f, ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 11);   /* STYLE: LEAD (a melody) */
         seq_texts(t1);
         s0 = steps();
         click_base(x0 + bw + 2, help + 24 + 9);   /* GENERATE */
