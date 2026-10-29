@@ -844,14 +844,16 @@ int lib_view_index(ed_t *e, int pos) {   /* where list position pos is in its co
 }
 int lib_step_filtered(ed_t *e, int d) {
     if (!lib_filtering(e)) return 0;
-    int nf = lib_view_count(e, 0), n = nf + lib_view_count(e, 1), pos = patches_pos(e), at = -1;
+    /* (PRESET AUTOLOAD off: from where the knob points, and only pointing: settings.c) */
+    int nf = lib_view_count(e, 0), n = nf + lib_view_count(e, 1), pos = settings_cue_from(e, patches_pos(e)), at = -1;
     if (!n) { say(e, "No patch has the tags the filters ask for (TAGS: CLEAR)."); return 1; }
     for (int k = 0; k < n && at < 0; k++)
         if ((k < nf ? lib_view_pos(e, 0, k) : lib_view_pos(e, 1, k - nf)) == pos) at = k;
     int to = at < 0 ? (d > 0 ? 0 : n - 1) : at + d;
     if (to < 0) to = 0;
     if (to > n - 1) to = n - 1;
-    if (to != at) patches_load_pos(e, to < nf ? lib_view_pos(e, 0, to) : lib_view_pos(e, 1, to - nf));
+    int p = to < nf ? lib_view_pos(e, 0, to) : lib_view_pos(e, 1, to - nf);
+    if (to != at && !settings_cue_step(e, p)) patches_load_pos(e, p);
     return 1;
 }
 int lib_load_pos(ed_t *e, int pos) { return patches_load_pos(e, pos); }
@@ -1791,6 +1793,7 @@ static void draw_set(HDC dc, ed_t *e) {
         snprintf(t, sizeof t, "%c%d", 'A' + L_->bank, row + 1);
         label(dc, tr, t, font_cell, sl->kind ? C_LCD : C_DARK, DT_LEFT);
         tr.left += sc(30);
+        if (!settings_bank_preview() && k != L_->cur_slot) continue;   /* SHOW BANK PREVIEW off: the numbers only */
         label(dc, tr, sl->kind ? sl->name : "(empty)", font_cell, sl->kind ? (k == L_->cur_slot || hot ? C_HOT : C_LCD) : C_DARK, DT_LEFT);
         kr.right -= sc(6);
         if (sl->kind) label(dc, kr, sl->kind == 'F' ? "FACTORY" : "USER", font_tiny, C_DIM, DT_RIGHT);

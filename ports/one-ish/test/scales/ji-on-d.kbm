@@ -1,0 +1,27 @@
+! ji-on-d.kbm: the just scale with D (key 62) as its first degree, A (69) at 440 Hz,
+! and the augmented fourth (G#, key 68) left out
+! map size
+12
+! first and last keys
+0
+127
+! middle key (degree 0)
+62
+! reference key and frequency
+69
+440.0
+! formal octave degree
+12
+! the map
+0
+1
+2
+3
+4
+5
+x
+7
+8
+9
+10
+11

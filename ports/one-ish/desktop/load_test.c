@@ -24,6 +24,7 @@
 #define TEST_FOCUS 0x4F314643      /* as editor.h: the Panel Focus */
 #include "patches.h"   /* TEST_PATCH and its operations, for the user patch tests */
 #include "seq_page.h"   /* TEST_SEQ and its operations, for the step sequencer's page */
+#include "settings.h"   /* TEST_SETTINGS and its operations, for the SETTINGS page */
 #include "../src/stepseq.h"   /* to read back the sequence the engine holds */
 
 typedef struct AEffect AEffect;
@@ -1038,6 +1039,7 @@ static void rate_led_test(AEffect *fx, HWND child, int w, int h) {
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
     check(fx->flags & 1, "the plugin says it has an editor window");
@@ -1131,10 +1133,234 @@ static void editor(AEffect *fx, const char *bmp) {
         seq_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         focus_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         failures += library_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* undo, compare, sets ... */
+        settings_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
     }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
     DestroyWindow(parent);
+}
+
+/* ---- the SETTINGS page (desktop/settings.c): its file in the temporary folder (ONEISH_SETTINGS) ---- */
+static char settings_file[MAX_PATH];
+static intptr_t st(AEffect *fx, int op, const char *in, char *out, float opt) {   /* a TEST_SETTINGS operation */
+    static char buf[1024];
+    snprintf(buf, sizeof buf, "%s", in ? in : "");
+    intptr_t r = fx->dispatcher(fx, 50, TEST_SETTINGS, op, buf, opt);
+    if (out) snprintf(out, 1024, "%s", buf);
+    return r;
+}
+static int file_has(const char *path, const char *text) {   /* the settings file holds this line */
+    char t[4096] = "";
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    size_t n = fread(t, 1, sizeof t - 1, f);
+    fclose(f);
+    t[n] = 0;
+    return strstr(t, text) != NULL;
+}
+static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char buf[1024], what[300];
+    (void)s;
+    check(st(fx, STT_RESTORE, NULL, NULL, 0) == 1 && file_has(settings_file, "autoload=1")
+              && file_has(settings_file, "ONE-ish settings 1"),
+          "SETTINGS: RESTORE DEFAULT SETTINGS writes the settings file (ONEISH_SETTINGS) with the defaults");
+    st(fx, STT_PATH, NULL, buf, 0);
+    snprintf(what, sizeof what, "SETTINGS: the file is where ONEISH_SETTINGS says (%s)", buf);
+    check(!_stricmp(buf, settings_file), what);
+
+    /* PRESET AUTOLOAD off: NEXT only points; a click on the PRESET knob loads it */
+    pt(fx, PT_LOAD_POS, NULL, NULL, 2);
+    int pos0 = (int)pt(fx, PT_POS, NULL, NULL, 0);
+    check(st(fx, STT_SET, "autoload=0", NULL, 0) == 1 && file_has(settings_file, "autoload=0"),
+          "SETTINGS: PRESET AUTOLOAD off is saved at once");
+    int after = (int)pt(fx, PT_STEP, NULL, NULL, 1), cue = (int)st(fx, STT_CUE, NULL, NULL, 0);
+    pt(fx, PT_STEP, NULL, NULL, 1);
+    int cue2 = (int)st(fx, STT_CUE, NULL, NULL, 0);
+    pt(fx, PT_TITLE, NULL, buf, 0);
+    snprintf(what, sizeof what, "autoload off: NEXT twice leaves patch %d loaded and points at %d, then %d (\"%s\")",
+             after, cue, cue2, buf);
+    check(after == pos0 && cue == pos0 + 1 && cue2 == pos0 + 2 && buf[0] == '>', what);
+    check(st(fx, STT_CUE_LOAD, NULL, NULL, 0) == 1 && pt(fx, PT_POS, NULL, NULL, 0) == pos0 + 2
+              && st(fx, STT_CUE, NULL, NULL, 0) == -1,
+          "autoload off: a click on the PRESET knob loads the one it points at");
+    st(fx, STT_SET, "autoload=1", NULL, 0);
+    check(file_has(settings_file, "bank_preview=1") && st(fx, STT_SET, "bank_preview=0", NULL, 0) == 1
+              && file_has(settings_file, "bank_preview=0") && st(fx, STT_SET, "bank_preview=1", NULL, 0) == 1,
+          "SETTINGS: SHOW BANK PREVIEW (the SET page's) is a setting, on by default");
+    check(pt(fx, PT_STEP, NULL, NULL, 1) == pos0 + 3 && st(fx, STT_CUE, NULL, NULL, 0) == -1,
+          "autoload on: NEXT loads at once, as before");
+
+    /* MIDI I/O FROM PRESET off: a loaded patch keeps the MIDI channel */
+    int ch = rnd_key("midi_ch");
+    if (ch < NPARAMS) {
+        float omni = 0.0f, five = 5.0f / (PARAMS[ch].nopts - 1);
+        fx->setParameter(fx, ch, omni);
+        pt(fx, PT_SAVE_AS, "MIDI IO Test", NULL, 1);
+        fx->setParameter(fx, ch, five);
+        st(fx, STT_SET, "midi_io_preset=0", NULL, 0);
+        pt(fx, PT_LOAD, "MIDI IO Test", NULL, 0);
+        float kept = fx->getParameter(fx, ch);
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);
+        float kept2 = fx->getParameter(fx, ch);
+        st(fx, STT_SET, "midi_io_preset=1", NULL, 0);
+        pt(fx, PT_LOAD, "MIDI IO Test", NULL, 0);
+        float loaded = fx->getParameter(fx, ch);
+        snprintf(what, sizeof what, "MIDI I/O FROM PRESET: off, a patch and a preset keep MIDI channel 5 (%.3f, %.3f); "
+                 "on, the patch's Omni loads (%.3f)", kept, kept2, loaded);
+        check(fabsf(kept - five) < 1e-4f && fabsf(kept2 - five) < 1e-4f && fabsf(loaded - omni) < 1e-4f, what);
+        pt(fx, PT_DELETE, NULL, NULL, 0);
+    }
+
+    /* the pedals: a fixed CC is skipped; the engine follows a new sustain number */
+    st(fx, STT_SET, "sustain_cc=66", NULL, 0);
+    check(file_has(settings_file, "sustain_cc=67"), "pedals: SUSTAIN can't take CC 66 (sostenuto): it moves on to 67");
+    st(fx, STT_SET, "exp1_cc=67", NULL, 0);
+    check(file_has(settings_file, "exp1_cc=68"), "pedals: two pedals can't share a CC (EXP 1 goes on to 68)");
+    st(fx, STT_SET, "sustain_cc=69", NULL, 0);
+    fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
+    play(fx, 400, 512);
+    send_midi(fx, 0xB0, 69, 127);
+    send_midi(fx, 0x90, 60, 100);
+    play(fx, 20, 512);
+    send_midi(fx, 0x80, 60, 0);
+    play(fx, 200, 512);
+    double held = play(fx, 10, 512);
+    send_midi(fx, 0xB0, 69, 0);
+    play(fx, 400, 512);
+    double gone = play(fx, 10, 512);
+    send_midi(fx, 0xB0, 64, 127);   /* the old number now does nothing */
+    send_midi(fx, 0x90, 60, 100);
+    play(fx, 20, 512);
+    send_midi(fx, 0x80, 60, 0);
+    play(fx, 400, 512);
+    double old = play(fx, 10, 512);
+    send_midi(fx, 0xB0, 64, 0);
+    snprintf(what, sizeof what, "pedals: sustain on CC 69 holds the note (rms %.4f), lets go (%.5f); CC 64 doesn't "
+             "hold any more (%.5f)", held, gone, old);
+    check(held > 0.01 && gone < held / 20 && old < held / 20, what);
+
+    /* the file is read again as a new process would; unknown lines are skipped */
+    FILE *f = fopen(settings_file, "wb");
+    if (f) { fputs("ONE-ish settings 1\r\nautoload=1\r\ntempo=99\r\nrx_clock=0\r\nnonsense line\r\nfuture_key=3\r\n", f); fclose(f); }
+    st(fx, STT_RELOAD, NULL, NULL, 0);
+    st(fx, STT_GET, NULL, buf, 0);
+    check(strstr(buf, "tempo=99") && strstr(buf, "rx_clock=0") && strstr(buf, "sustain_cc=64"),
+          "SETTINGS: a hand-edited file loads (unknown lines skipped, the rest at their defaults)");
+
+    /* MIDI LEARN: LEARN, a control, a CC from the host: that CC moves it (and the host hears of it) */
+    st(fx, STT_RESTORE, NULL, NULL, 0);
+    int cut = rnd_key("flt_cut"), svf2 = -1, wave = rnd_key("lfo1_wave");
+    for (int i = 0; i < NPARAMS; i++)
+        if (!strcmp(PARAMS[i].key, "s2_svf_cut")) svf2 = i;
+    if (cut < NPARAMS && svf2 >= 0 && wave < NPARAMS) {
+        st(fx, STT_LEARN, NULL, NULL, 0);
+        int picked = (int)st(fx, STT_LEARN_PICK, NULL, NULL, (float)cut);
+        send_midi(fx, 0xB0, 64, 100);   /* reserved (the sustain pedal): refused, still waiting */
+        int stage = (int)st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        send_midi(fx, 0xB0, 64, 0);   /* (the pedal up again: it went to the engine as the sustain pedal) */
+        st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        st(fx, STT_MESSAGE, NULL, buf, 0);
+        snprintf(what, sizeof what, "LEARN: a reserved CC is refused (\"%s\")", buf);
+        check(picked == 1 && stage == 2 && strstr(buf, "reserved"), what);
+        send_midi(fx, 0xB0, 74, 10);
+        stage = (int)st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        int nmap = (int)st(fx, STT_MAP, NULL, buf, 0);
+        snprintf(what, sizeof what, "LEARN: CC 74 is learned for the ladder cutoff (\"%s\"), saved in the file", buf);
+        check(stage == 0 && nmap == 1 && !strcmp(buf, "74,flt_cut,7;") && file_has(settings_file, "map=74,flt_cut,7"),
+              what);
+        int told = automated[cut];
+        send_midi(fx, 0xB0, 74, 127);
+        play(fx, 8, 512);
+        float hi = fx->getParameter(fx, cut);
+        send_midi(fx, 0xB0, 74, 0);
+        play(fx, 8, 512);
+        snprintf(what, sizeof what, "LEARN: CC 74 then moves the cutoff through the DLL (%.3f, %.3f), the host told (%d)",
+                 hi, fx->getParameter(fx, cut), automated[cut] - told);
+        check(hi == 1.0f && fx->getParameter(fx, cut) == 0.0f && automated[cut] > told, what);
+        st(fx, STT_LEARN, NULL, NULL, 0);   /* 14-bit: the CC's LSB (CC + 32) follows it */
+        st(fx, STT_LEARN_PICK, NULL, NULL, (float)svf2);
+        send_midi(fx, 0xB0, 7, 64);
+        send_midi(fx, 0xB0, 39, 0);
+        st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        st(fx, STT_LEARN, NULL, NULL, 0);
+        st(fx, STT_LEARN_PICK, NULL, NULL, (float)wave);
+        send_midi(fx, 0xB0, 21, 0);
+        st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        st(fx, STT_MAP, NULL, buf, 0);
+        send_midi(fx, 0xB0, 7, 100);
+        send_midi(fx, 0xB0, 39, 50);
+        play(fx, 4, 512);
+        float v14 = fx->getParameter(fx, svf2);
+        snprintf(what, sizeof what, "LEARN: CC 7+39 is found to be 14-bit for Synth 2's SVF cutoff (%.5f), CC 21 an "
+                 "option (\"%s\")", v14, buf);
+        check(strstr(buf, "7,s2_svf_cut,14;") && strstr(buf, "21,lfo1_wave,7;")
+                  && fabsf(v14 - (100 * 128 + 50) / 16383.0f) < 1e-4f, what);
+        st(fx, STT_MAP_BITS, NULL, NULL, 0);   /* CC 74 can't be 14-bit; CC 7 goes back to 7; CC 21 to 14 */
+        st(fx, STT_MAP_BITS, NULL, NULL, 1);
+        st(fx, STT_MAP_BITS, NULL, NULL, 2);
+        st(fx, STT_MAP, NULL, buf, 0);
+        snprintf(what, sizeof what, "LEARN: 7/14-BIT toggles, 14 only on CC 0-31 (\"%s\")", buf);
+        check(strstr(buf, "74,flt_cut,7;") && strstr(buf, "7,s2_svf_cut,7;") && strstr(buf, "21,lfo1_wave,14;"), what);
+        st(fx, STT_SET, "exp1_cc=21", NULL, 0);   /* a pedal moved onto a learned CC: the pedal wins */
+        st(fx, STT_MAP, NULL, buf, 0);
+        check(!strstr(buf, "21,"), "LEARN: a pedal moved onto a learned CC takes it (the mapping goes)");
+        st(fx, STT_SET, "exp1_cc=11", NULL, 0);
+        /* NRPN after the manual's table reaches the engine through the DLL (the wrapper's own NRPN is off) */
+        send_midi(fx, 0xB0, 99, 1150 >> 7);
+        send_midi(fx, 0xB0, 98, 1150 & 127);
+        send_midi(fx, 0xB0, 6, 64);
+        send_midi(fx, 0xB0, 38, 0);
+        play(fx, 4, 512);
+        snprintf(what, sizeof what, "NRPN 1150 (ladder cutoff) sets it through the DLL (%.4f)", fx->getParameter(fx, cut));
+        check(fabsf(fx->getParameter(fx, cut) - 8192 / 16383.0f) < 1e-3f, what);
+        if (bmp) {
+            st(fx, STT_TAB, NULL, NULL, (float)ST_MIDI);
+            st(fx, STT_LEARN, NULL, NULL, 0);
+            shot(child, w, h, bmp, "_settings_midi");
+        }
+        st(fx, STT_MAP_CLEAR, NULL, NULL, 0);
+        check(st(fx, STT_MAP, NULL, NULL, 0) == 0 && !file_has(settings_file, "map="), "LEARN: CLEAR ALL empties the map");
+    }
+
+    /* MICROTUNING: a Scala scale and keyboard map from the repo's test files into Synth 1, kept in the project and in a
+     * patch file; the TUNING tab's picture shows them (then they are cleared) */
+    const char *scl = "ports/one-ish/test/scales/ji-5-limit.scl", *kbm = "ports/one-ish/test/scales/ji-on-d.kbm";
+    if (GetFileAttributesA(scl) != INVALID_FILE_ATTRIBUTES) {
+        int ok1 = (int)st(fx, STT_TUN_LOAD, scl, NULL, 0), ok2 = (int)st(fx, STT_TUN_LOAD, kbm, NULL, 1);
+        st(fx, STT_TUN_NAMES, NULL, buf, 0);
+        void *chunk = NULL;
+        intptr_t n = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+        int in_project = n > 0 && chunk && strstr(chunk, ";tun_scl=ji-5-limit|12,") && strstr(chunk, ";tun_kbm=ji-on-d|");
+        snprintf(what, sizeof what, "TUNING: a .scl and a .kbm load into Synth 1 (\"%s\") and go into the project", buf);
+        check(ok1 == 1 && ok2 == 1 && !strcmp(buf, "ji-5-limit|ji-on-d") && in_project, what);
+        pt(fx, PT_SAVE_AS, "Tuning Test", NULL, 1);
+        st(fx, STT_TUN_CLEAR, NULL, NULL, 0);
+        st(fx, STT_TUN_CLEAR, NULL, NULL, 1);
+        st(fx, STT_TUN_NAMES, NULL, buf, 0);
+        int cleared = !strcmp(buf, "|");
+        pt(fx, PT_LOAD, "Tuning Test", NULL, 0);
+        st(fx, STT_TUN_NAMES, NULL, buf, 0);
+        snprintf(what, sizeof what, "TUNING: CLEAR takes them off (%s); a user patch brings them back (\"%s\")",
+                 cleared ? "yes" : "NO", buf);
+        check(cleared && !strcmp(buf, "ji-5-limit|ji-on-d"), what);
+        check(st(fx, STT_TUN_LOAD, "ports/one-ish/test/scales/ji-on-d.kbm", NULL, 0) == 0,
+              "TUNING: a keyboard map loaded as a scale is refused");
+    } else {
+        printf("     (TUNING: the test scales aren't here; run from the repo root to check them)\n");
+    }
+
+    if (bmp) {
+        for (int t = 0; t < ST_TABS; t++) {
+            static const char *const SUFFIX[ST_TABS] = {"_settings", "_settings_midi_empty", "_settings_library",
+                                                        "_settings_tuning"};
+            st(fx, STT_TAB, NULL, NULL, (float)t);
+            shot(child, w, h, bmp, SUFFIX[t]);
+        }
+    }
+    if (pt(fx, PT_LOAD, "Tuning Test", NULL, 0) == PE_OK) pt(fx, PT_DELETE, NULL, NULL, 0);
+    st(fx, STT_TUN_CLEAR, NULL, NULL, 0);
+    st(fx, STT_TUN_CLEAR, NULL, NULL, 1);
+    st(fx, STT_RESTORE, NULL, NULL, 0);
 }
 
 /* ---- PANEL FOCUS (multitimbral): the panel shows the focused Synth's values ---- */
@@ -1321,6 +1547,8 @@ int main(int argc, char **argv) {
     CreateDirectoryA(seq_dir, NULL);
     empty_dir(seq_dir);
     SetEnvironmentVariableA("ONEISH_SEQ_DIR", seq_dir);
+    snprintf(settings_file, sizeof settings_file, "%s\\Settings.txt", patch_dir);   /* (removed with the folder) */
+    SetEnvironmentVariableA("ONEISH_SETTINGS", settings_file);
     HMODULE dll = LoadLibraryA(argc > 1 ? argv[1] : "ONE-ish.dll");
     if (!dll) { printf("FAIL LoadLibrary (error %lu)\n", GetLastError()); return 1; }
     AEffect *(*entry)(audioMasterCallback) = (AEffect * (*)(audioMasterCallback))(void *)GetProcAddress(dll, "VSTPluginMain");

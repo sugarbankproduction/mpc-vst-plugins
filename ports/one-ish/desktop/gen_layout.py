@@ -419,8 +419,9 @@ def build(lay):
              "ENCODER": (1008, 384, 64, 92), "PREV": (1078, 390, 44, 40), "NEXT": (1124, 390, 44, 40),
              "BRAND": (1076, 438, 94, 28),
              # PANEL FOCUS: which Synth the panel shows and edits (multitimbral), and the SETUP page of all three
-             "FOCUS1": (769, 432, 56, 42), "FOCUS2": (825, 432, 56, 42), "FOCUS3": (881, 432, 56, 42),
-             "TAB_SETUP": (945, 432, 58, 42)}
+             # (on the row above's grid, so the SETTINGS page's button fits at the end: desktop/settings.c)
+             "FOCUS1": (769, 432, 48, 42), "FOCUS2": (817, 432, 48, 42), "FOCUS3": (865, 432, 48, 42),
+             "TAB_SETUP": (913, 432, 48, 42), "TAB_SETTINGS": (961, 432, 44, 42)}
     # Synth 2 and 3's copies are reached through the Panel Focus; the setup keys live on the SETUP page
     L.placed.update(k for k in L.index if k.startswith(("s2_", "s3_")))
     L.placed.update(k for k in ("syn_on", "syn_ch", "key_lo", "key_hi", "master_level", "seq_all", "midi_ch",

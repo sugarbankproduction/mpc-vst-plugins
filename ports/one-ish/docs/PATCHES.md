@@ -9,7 +9,9 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
 - **The name on the centre screen** shows what is playing: `F 004  Acid Line` is factory preset 4, `U  Bright Pad`
   is one of your own, `-  Other` is a sound that is no longer saved anywhere (its patch was deleted, or a project from
   before this feature). A `*` after the name means the sound has changed since it was loaded or saved.
-- **`<` `>`, PREV / NEXT and the PRESET knob** step through the 27 factory presets, then your patches A to Z.
+- **`<` `>`, PREV / NEXT and the PRESET knob** step through the 27 factory presets, then your patches A to Z. With
+  PRESET AUTOLOAD off (SETTINGS page, `docs/SETTINGS.md`, 2026-10-29) they only point (`> F 004  Name ?`); a click on
+  the PRESET knob or the name then loads it.
 - **Click the name** (or click the PRESET knob) for the PATCHES page: factory presets on the left, yours on the right,
   7 at a time (`<` `>` on its title line, or the mouse wheel, for more). Click one to load it. Click the name again to
   go back to the matrix.
@@ -74,7 +76,7 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
 ## Performance sets (2026-10-29, offline)
 
 - 128 sets of 64 patches each, banks A-H x numbers 1-8 (a factory preset or a user patch in each).
-- **SET** (the current set): the bank buttons A-H show that bank's eight patches below (bank preview: nothing loads; a
+- **SET** (the current set): the bank buttons A-H show that bank's eight patches below (bank preview: nothing loads; SHOW BANK PREVIEW off on the SETTINGS page shows only the numbers; a
   dark letter is an empty bank). Click a number to load its patch (the number lights); **hold it 0.6 s to put the
   current patch there** (a sound that isn't saved must be saved first; an edited patch is assigned as saved). ASSIGN and
   CLEAR act on the selected number; `<` `>` step through the sets.
@@ -137,6 +139,8 @@ o2_wave=0
   case, every parameter off its default (its output gives the bytes), and fails when it leaves less than 15% of the
   desktop chunk free or no longer fits the MPC's in either form (2026-10-28, offline). A state too big for the chunk is
   never saved cut short: nothing is saved, the engine says so on stderr and the window on its screen.
+- A Synth's microtuning (2026-10-29, `docs/SETTINGS.md`), when it has one, is one or two more lines, `tun_scl=` and
+  `tun_kbm=` (`s2_` / `s3_` for Synths 2 and 3), in the engine's compact form (`src/tuning.h`).
 - The step sequencer's steps, when there are any, are one more line, `seq=<text>` (the engine's own form, see
   `docs/SEQUENCER.md`): a patch keeps its sequence, and loading a patch without the line empties the sequencer
   (2026-10-27, offline). A typical sequence adds a few hundred characters.

@@ -4958,6 +4958,8 @@ static void arp_wav(const char *demo_path) {
 #include "stepseq_check.c"
 #include "multi_check.c"   /* multitimbral: three Synths */
 #include "ext_check.c"     /* the audio input: the EXT channel and the vocoders */
+#include "midi_check.c"    /* MIDI settings, learn, NRPN */
+#include "tuning_check.c"  /* microtuning (Scala scales and keyboard maps) */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5719,7 +5721,7 @@ static void fx2_wavs(const char *demo_path) {
 int main(int argc, char **argv) {
     E = mpc_engine();
     if (argc > 1 && !strcmp(argv[1], "bench")) {
-        bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench();
+        bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench(); tuning_bench();
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "extbench")) { ext_bench(); voc_bench(); return 0; }   /* the input's bench lines */
@@ -5727,6 +5729,13 @@ int main(int argc, char **argv) {
         ext_input();
         vocoders();
         voc_wav(argv[2]);
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "midi")) {   /* just the MIDI settings, learn, NRPN, tuning: offline_check midi x */
+        midi_settings();
+        midi_learn_nrpn();
+        microtuning();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -5805,6 +5814,9 @@ int main(int argc, char **argv) {
     multitimbral();
     ext_input();
     vocoders();
+    midi_settings();
+    midi_learn_nrpn();
+    microtuning();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

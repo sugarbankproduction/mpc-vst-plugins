@@ -70,6 +70,7 @@
 #include "seq.h"
 #include "stepseq.h"
 #include "macro.h"
+#include "tuning.h"
 
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
@@ -606,6 +607,7 @@ typedef struct {
     uint8_t kin[128];        /* the keys it took (each key's release goes where the key went) */
     int64_t quiet;           /* samples since a voice of it last sounded */
     int moved;               /* LOAD INTO SYNTH changed its values: the host is told (mpc_engine_changed) */
+    tuning_t tun;            /* MICROTUNING (src/tuning.h): a Scala scale and keyboard map, saved with the sound */
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
 static int pool_room(one_t *s, const int *idx, int n);   /* src/synths.h */
@@ -854,10 +856,18 @@ static float voice_key(const one_t *s, const voice_t *v) {
     return (s->val[P_GLISSANDO] > 0.5f ? roundf(v->pitch) : v->pitch) + s->shift;
 }
 
-/* the voice's base frequency: its key, pitch variance and place in the unison stack (detune follows the knob live),
- * tuned to the master tune */
+/* MICROTUNING: a key's pitch in semitones through the Synth's scale (src/tuning.h); without one, the key itself (the
+ * same arithmetic as before, so a sound without a scale plays sample for sample as it did) */
+static float tuned(const one_t *s, float key) { return s->tun.on ? tun_pitch(&s->tun, key) : key; }
+/* the voice's key against the key track centre, both through the scale: pitch tracking scales this distance */
+static float key_from_centre(const one_t *s, const voice_t *v) {
+    return s->tun.on ? tuned(s, voice_key(s, v)) - tuned(s, s->center) : voice_key(s, v) - s->center;
+}
+
+/* the voice's base frequency: its key (through the scale, if any), pitch variance and place in the unison stack
+ * (detune follows the knob live), tuned to the master tune */
 static void update_note_hz(const one_t *s, voice_t *v) {
-    float st = voice_key(s, v) + v->pvar + v->uni_pos * s->val[P_UNI_DETUNE] * 0.01f * UNI_DETUNE_ST;
+    float st = tuned(s, voice_key(s, v)) + v->pvar + v->uni_pos * s->val[P_UNI_DETUNE] * 0.01f * UNI_DETUNE_ST;
     v->note_hz = s->tune_hz * exp2f((st - 69.0f) / 12.0f);
 }
 
@@ -924,7 +934,7 @@ static int mac_heard(const voice_t *v) {
  * variance, unison detune, master tune) moved by the channel's octave and frequency knobs, by oscillator 1's pitch
  * tracking, and by `semis` (pitch modulation, bend, drift and the voice card's tuning: oscillator 1's) */
 static float mac_pitch(const one_t *s, const voice_t *v, float semis) {
-    return 69.0f + 12.0f * log2f(v->note_hz * (1.0f / 440.0f)) + s->mac_st + (voice_key(s, v) - s->center) * s->track[0]
+    return 69.0f + 12.0f * log2f(v->note_hz * (1.0f / 440.0f)) + s->mac_st + key_from_centre(s, v) * s->track[0]
            + semis;
 }
 
@@ -940,7 +950,7 @@ static float bend_semis(const one_t *s, int osc) {
  * shared and per oscillator), plus its beat frequency in Hz (the knob and the matrix). PITCH TRACKING scales the
  * key's distance from the key track centre (100%: as played, 0%: the centre note whatever the key) */
 static void set_pitch(const one_t *s, voice_t *v, float semis, const float *osc_semis) {
-    float from_centre = voice_key(s, v) - s->center;
+    float from_centre = key_from_centre(s, v);
     for (int n = 0; n < NOSC; n++) {
         float track = from_centre * s->track[n];
         float hz = v->note_hz * s->ratio[n] * exp2f((semis + osc_semis[n] + track) / 12.0f) + s->val[P_O1_BEAT + OSC_STRIDE * n]
@@ -1106,6 +1116,7 @@ static one_t *synth_create(struct inst *in, int idx, const short *pidx) {
             if (!strcmp(PARAMS[i].key, KEYS[FXMD_SLOT[k]])) { s->fx_lo[k] = PARAMS[i].min; s->fx_hi[k] = PARAMS[i].max; }
     }
     sq_init(s);   /* the step sequencer: an empty sequence; STEP MOD's map (after the effect ranges) */
+    tun_clear(&s->tun);   /* no scale: the usual tuning */
     s->grng = 0x1b873593u;   /* fixed: the same generative choices in every instance, from the same start */
     for (int i = 0; i < TM_MAX; i++) s->tm_reg[i] = (uint8_t)(seq_rand(&s->grng) >> 24);
     s->bps = 120.0 / 60.0 / SR;
@@ -1872,6 +1883,8 @@ static void synth_midi(one_t *s, const uint8_t *m, int len) {
     int st = m[0] & 0xf0, d1 = m[1] & 0x7f, d2 = len > 2 ? m[2] & 0x7f : 0;
     if (st == 0xd0) { s->aftertouch = d1 / 127.0f; return; }   /* channel pressure: two bytes */
     if (len < 3) return;
+    if (st == 0x90 && d2 && s->tun.on && !s->tun.play[(int)clampf(d1 + s->shift, 0, 127)]) return;   /* a key the
+                                                                     * keyboard map leaves out: silent */
     if (st == 0x90 && d2) key_on(s, d1, d2);
     else if (st == 0x80 || st == 0x90) key_off(s, d1);
     else if (st == 0xe0) s->bend = (((d2 << 7) | d1) - 8192) / 8192.0f;

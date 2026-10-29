@@ -76,7 +76,7 @@ user patch files (2026-10-27, offline).
 | MORE pages: a second layer of parameters per module [UI] | p11, every module | Have | The window's MORE triangles open each module's second layer on the centre screen (sub-pages past 16 items) | - | none |
 | DEST button on each LFO and EG: next touched control becomes a destination [UI] | p11, p43, p47, p68 | Missing | Matrix slots set by hand on the MATRIX page | M | none |
 | HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Partial | The name line shows the patch (F/U, `*` when edited); each page's title the Synth in focus; the SETUP page the three Synths' on/off, channels and key ranges (2026-10-28, offline and the desktop window); the home line under the name its tags, NOTES and the host's tempo (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no timbre names | S | none |
-| SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Partial | MATRIX (the MOD screen), the PATCHES page's SAVE / DELETE, and COMPARE and SNAPSHOT on the console (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no SETTINGS | see 22 | none |
+| SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Have | MATRIX (the MOD screen), the PATCHES page's SAVE / DELETE, and COMPARE and SNAPSHOT on the console (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); SETTINGS on the console (2026-10-29, the desktop window; `docs/SETTINGS.md`) | - | none |
 | SHIFT: fine resolution on soft knobs, latching shift [UI] | p14 | Have | Shift-drag is the fine resolution on every knob (`editor.c`); a latching shift isn't needed with a keyboard modifier | - | none |
 | New initialised preset (SHIFT + COMPARE) | p14 | Have | The "Init" program | - | none |
 | Panel Focus: SYNTH 1/2/3, multi-select for joint edits, SHIFT = solo [UI][MULTI] | p14-15 | Partial | SYNTH 1/2/3 buttons on the console: the panel, MORE pages, matrix, step editor and randomiser show and edit that Synth; Ctrl-click edits several together (the last picked shown); shared sections marked SHARED (2026-10-28, offline and the desktop window); no solo | S (solo) | none |
@@ -98,7 +98,7 @@ user patch files (2026-10-27, offline).
 | EXT INPUT jacks: XLR/TRS combo, TRIM -9 dB to +65 dB; LINE input [HW] | p20 | Missing | The jacks and trim are hardware; a desktop VST2 instrument can take audio input from the host (see 6) | - | none |
 | CV IN 1-2, CV OUT 1-4; pedal jacks usable as CV inputs [HW] | p20-21 | Missing | - | - | none |
 | MIDI IN/THRU/OUT (DIN), USB MIDI, USB host, LAN [HW] | p20-21 | Partial | MIDI from the host only | - | none |
-| Pedal jacks: SUSTAIN, EXP 1, EXP 2, assignable | p21, p140 | Partial | Sustain (CC 64) and sostenuto (CC 66); CC 11 and CC 4 are the matrix sources Exp 1 and Exp 2; no pedal CC choice | S | none |
+| Pedal jacks: SUSTAIN, EXP 1, EXP 2, assignable | p21, p140 | Have | Sustain and sostenuto (CC 66); the matrix sources Exp 1 and Exp 2; the SETTINGS page sets the sustain, EXP 1 and EXP 2 pedals' CC numbers (default 64, 11, 4; a moved pedal no longer answers to its old number) (2026-10-29, offline and the desktop window) | - | none |
 
 ## 3. Oscillators (p22-26)
 
@@ -725,11 +725,11 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| SETTINGS page: GLOBAL, LIBRARY and TUNING tabs, kept apart from presets [UI] | p124 | Missing | Master tune and fine tune are ordinary params saved with each sound; no global settings store | M | none |
+| SETTINGS page: GLOBAL, LIBRARY and TUNING tabs, kept apart from presets [UI] | p124 | Have | The window's SETTINGS page (`desktop/settings.c`, `docs/SETTINGS.md`): GLOBAL, LIBRARY and TUNING tabs; its settings live in `Settings.txt` beside the Patches folder, never in a sound or project. TUNING shows master tune and fine tune, which stay part of the sound as before (2026-10-29, the desktop window) | - | none |
 | KNOB MODE [HW] | Absolute, Pass Through, Relative (p125) | Missing | Mouse knobs always edit relatively | - | none |
 | CHORD MEMORY learn mode | Silent Learn, Audible Learn (p125) | Have | `learn_mode` (shared; the SETUP page) (2026-10-28, offline) | - | none |
 | LCD BRIGHTNESS, PANEL LED BRIGHTNESS [HW] | 0% to 100% (p125) | Missing | - | - | none |
-| SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Partial | The PRESET knob and PREV/NEXT load as they step (autoload always on, no switch); the SET page's bank letters always preview a bank (no switch) (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | S | none |
+| SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Have | PRESET AUTOLOAD on the SETTINGS page: on, the PRESET knob and PREV/NEXT (tag filters too) load as they step (as before); off, they point at a patch ("> F 004 ... ?") and a click on the knob or the name loads it (2026-10-29, the desktop window; `docs/SETTINGS.md`); SHOW BANK PREVIEW on the SETTINGS page: on, the SET page's bank letters show their eight patches (as before, `docs/PATCHES.md`); off, only the numbers (2026-10-29, the desktop window) | - | none |
 | DUPLICATE NAMES ON IMPORT / EXPORT [UI] | Ignore, Overwrite, Auto Rename, Manual Rename (p126) | Partial | IMPORT asks before overwriting a same-named patch; no auto-rename or ignore choice | S | none |
 | STEP EDIT AUTO-SCROLL [UI] | off/on (p126) | Missing | (with the sequencer) | S | none |
 | NOISE REDUCTION between notes [ANALOG][HW] | -24 dB to 0 dB, default -12 dB (p126) | Missing | Not needed: no analog hiss (ONE-ish adds only a -100 dB floor) | - | none |
@@ -740,9 +740,9 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| RECEIVE MIDI CLOCK | off/on (p128) | Partial | Always the host's tempo; no switch to ignore it | S | none |
+| RECEIVE MIDI CLOCK | off/on (p128) | Have | SETTINGS page: on (default), the host's tempo and song position; off, both are ignored and the Synths run free at the page's own TEMPO (10-280 BPM) (2026-10-29, offline and the desktop window) | - | none |
 | RECEIVE MIDI START/STOP | off/on (p128) | Partial | The host's playing flag reaches the engine (`song_pos`); the arp and the sequencer follow the song position while it plays (no LFO reset; the host's start and stop don't start or stop the sequence) | S | none |
-| MIDI I/O LOAD FROM PRESET [UI] | off/on (p129) | Missing | - | S | none |
+| MIDI I/O LOAD FROM PRESET [UI] | off/on (p129) | Have | SETTINGS page: on (default, as before), a loaded preset or patch brings its MIDI channels; off, `midi_ch` and each Synth's `syn_ch` stay as set (a project still restores everything) (2026-10-29, the desktop window) | - | none |
 | MIDI IN PORTS [HW] | DIN, USB, DIN & USB (p129) | Missing | Host | - | none |
 | MIDI IN CHANNEL ALL (one channel for the whole preset) | Off, 1-16 (p129) | Have | `midi_ch`: Omni (the default: every channel, as before) or 1-16 for every Synth; the window plays on it (2026-10-28, offline) | - | none |
 | MIDI IN ROUTE PER SYNTH: a channel for each Synth [MULTI] | Off, 1-16 each (p129) | Have | `midi_ch` Per Synth: each Synth's `syn_ch` (Omni or 1-16; default 1, 2, 3); a key's release goes where the key went (2026-10-28, offline and the desktop window) | - | none |
@@ -764,8 +764,8 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | LIGHT SHOW, UPDATE FIRMWARE, IP ADDRESS [HW] | p133-134 | Missing | - | - | none |
-| RESTORE DEFAULT SETTINGS [UI] | p133 | Missing | (with a settings page) | S | none |
-| Firmware / UI version, build date and info [UI] | p134 | Missing | The host shows the plugin version | S | none |
+| RESTORE DEFAULT SETTINGS [UI] | p133 | Have | SETTINGS > LIBRARY, after a question; patches and sounds untouched (2026-10-29, the desktop window) | - | none |
+| Firmware / UI version, build date and info [UI] | p134 | Have | SETTINGS > LIBRARY: version, params, build date and time, and where the patches and settings file live (with buttons that open the folders) (2026-10-29, the desktop window) | - | none |
 | USER SPACES: switch, create (factory or empty), rename, copy [UI] | p134-135 | Missing | One patch folder (`ONEISH_PATCH_DIR` can point elsewhere) | M | none |
 | EXPORT / IMPORT to USB: presets, sequences, sets, effect presets, matrix presets, globals, all [UI] | p136-137 | Partial | One patch at a time to or from any folder (the PATCHES page); nothing else exists to export yet | M | none |
 | Edit CATEGORY, MOOD, GROUP tag lists [UI] | p137-138 | Have | The TAGS page: ADD, RENAME, DELETE (the patches that carry a tag follow); `tags.oneishtags` beside the patches (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
@@ -803,10 +803,10 @@ Cross-reference only: these rows repeat items already counted above and are left
 |---|---|---|---|---|---|
 | USB computer keyboard for naming and Panel Focus shortcuts (SHIFT/CTRL + F5-F7) [UI][MULTI] | p143 | Have | The computer keyboard types names in the window; Shift+F5/F6/F7 pick the Synth in focus (Ctrl too: add it) (2026-10-28, offline and the desktop window) | - | none |
 | MIDI CONTROL OUTPUT: panel moves sent as CC, MIDI MAP or NRPN; ALWAYS SEND NRPN NUM [HW] | p144 | Missing | The host records knob moves as automation (`audioMasterAutomate`) | - | none |
-| LEARN MIDI CC: map a CC to any panel control, 7- or 14-bit, CLEAR / ADD MAPPING | p145-146 | Partial | Every parameter is a host-automatable VST parameter, so hosts with MIDI learn can map it; the plugin has no MIDI learn of its own | M | none |
-| EDIT MIDI MAPPING list, reserved CCs [UI] | p147-148 | Partial | Host side only | (with learn) | none |
-| NRPN input for every parameter per Synth (table p149-158: LFO wave and free/synced rate; oscillator octave, frequency, beat, saw, triangle, PW, mix, wave, sync; pitch mod; ring mod source; wave mod; FM; noise; polyphony; mixer; filters; cutoff mod; three envelopes with free and synced times, multi trig, sync, loop, latch; VCA; output) | p149-158 | Missing | Only CC 1, 4, 11, 16, 17, 64, 66, 120, 121, 123, pitch bend and channel pressure are read | M | none |
-| 14-bit parameter resolution over MIDI | p145 | Missing | Host parameter resolution (VST2 parameters are floats) | S (with learn) | none |
+| LEARN MIDI CC: map a CC to any panel control, 7- or 14-bit, CLEAR / ADD MAPPING | p145-146 | Have | SETTINGS > MIDI: LEARN, click any control (of the Synth in focus), move a CC; 14-bit found by itself (the CC's LSB, CC + 32, following it) and switchable to 7; a CC learned again or a control learned again replaces its old mapping; CANCEL. The map is kept in the settings file (the manual keeps it with the global settings, not per sound) and reaches every instance's engine as a fixed 128-entry table; a mapped CC moves its param as host automation would, and the host is told (2026-10-29, offline and the desktop window, `docs/SETTINGS.md`) | - | none |
+| EDIT MIDI MAPPING list, reserved CCs [UI] | p147-148 | Have | SETTINGS > MIDI lists every mapping (CC, control, 7-BIT / 14-BIT, DELETE, CLEAR ALL) and the reserved CCs (0-3, 6, 16-18, 32, 38, 66, 96-101, 120-127 and the pedals'); a reserved CC is refused while learning, and a pedal moved onto a learned CC takes it (2026-10-29, the desktop window) | - | none |
+| NRPN input for every parameter per Synth (table p149-158: LFO wave and free/synced rate; oscillator octave, frequency, beat, saw, triangle, PW, mix, wave, sync; pitch mod; ring mod source; wave mod; FM; noise; polyphony; mixer; filters; cutoff mod; three envelopes with free and synced times, multi trig, sync, loop, latch; VCA; output) | p149-158 | Have | Every number of the table for all three Synths (Synth 2 = Synth 1 + 3840, Synth 3 + 7680; MASTER VOLUME the shared master level; HEADPHONES not a plugin's), on any channel, CC 99/98 then 6/38, 14 bits: options in the manual's bands mapped onto ONE-ish's lists (LFO TRI/PULSE/SAW/S&H, SVF LP/HP/BP/NOTCH ...), free times and rates only while unsynced and synced ones only while synced, MONO as 1 voice / back to the default. The oscillators' SAW and TRIANGLE both set ONE-ish's one wave angle. The wrapper's own NRPN (number = param index) is off for ONE-ish (`"nrpn": false`) (2026-10-29, offline and the desktop DLL) | - | none |
+| 14-bit parameter resolution over MIDI | p145 | Have | 14-bit learned CCs and NRPN data set params at 1/16383 of their range (2026-10-29, offline) | - | none |
 
 ---
 
@@ -820,10 +820,10 @@ outside Carla's fixed settings.
 |---|---|---|---|
 | Plays in tune at any host sample rate (44.1, 48, 88.2, 96 kHz) | Have (2026-10-27, desktop, offline): the engine still runs at 44.1 kHz and `desktop/hostrate.c` converts it to the host's rate (`desktop/resample.c`, a 72-tap windowed sinc: flat to 20 kHz, images 103 dB down), reporting the converter's latency (40 samples at 48 kHz, 79 at 96 kHz). A4 within 0.01 cent at 44.1/48/96 kHz, synced arp steps on the host's timeline (`desktop/rate_test.c`) | - | Wrapper and MPC unchanged. CPU about 40 us per 512-frame block for the converter (0.4% of real time at 48 kHz) |
 | Full-resolution output | Have (2026-10-27, desktop, offline): float samples from the engine (`one_ish_render_float`, the int16 path's samples before its last step), through a desktop-only engine table the wrapper is compiled against; 44.1 kHz output matches the old 16-bit output sample for sample when quantised | - | Shared wrapper not changed (only renamed symbols at compile time, desktop build) |
-| Microtuning: Scala `.scl` / `.kbm` files | Missing (only master tune and fine tune) | M | Not in this manual; common in desktop synths. Per-voice pitch already comes from one function (`update_note_hz`), so a table lookup is cheap |
 | Undo / redo of any edit in the window | Have (2026-10-29, offline and the desktop window; `docs/PATCHES.md`): every edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, randomiser, loads) is a step of the whole state; a drag or a wheel burst is one; 100 steps; Ctrl+Z / Ctrl+Y and the SNAPSHOTS page's UNDO / REDO | - | Host automation is not a step |
+| Microtuning: Scala `.scl` / `.kbm` files | Have (2026-10-29, offline and the desktop window): SETTINGS > TUNING loads a scale and a keyboard map into the Synth in focus (read on the window's thread, `desktop/scala.c`); kept per Synth in the sound's state (`tun_scl`, `tun_kbm`; a 12-note just scale with a map about 220 bytes), in patches and with SAVE / INTO SYNTH; master tune and fine tune still apply; a 12-TET scale gives exactly the usual samples (`src/tuning.h`, `test/tuning_check.c`) | - | A table lookup per control step: +0.12 us a voice on the PC (8 voices 63.60 against 62.63 us per block); no scale, no change at all |
 | The 14 open-source effect params on the window | Missing (generic host editor only) | S | `desktop/gen_layout.py` |
-| MIDI learn in the plugin | Missing | M | Same as the LEARN MIDI CC row (24) |
+| MIDI learn in the plugin | Have (2026-10-29, the SETTINGS page's MIDI tab) | - | Same as the LEARN MIDI CC row (24) |
 | Poly aftertouch / MPE | Not read (channel pressure only, as on the Moog One) | M | Not a Moog One feature; owner's call |
 
 ---
@@ -837,8 +837,8 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | Module | Have | Partial | Missing | Missing [HW] | Missing [UI] |
 |---|---|---|---|---|---|
 | 0. Architecture and overview (p8-10) | 8 | 2 | 0 | 0 | 0 |
-| 1. Front panel, centre console, keyboard (p10-18) | 7 | 5 | 4 | 1 | 2 |
-| 2. Rear panel (p19-21) | 0 | 3 | 3 | 3 | 0 |
+| 1. Front panel, centre console, keyboard (p10-18) | 8 | 4 | 4 | 1 | 2 |
+| 2. Rear panel (p19-21) | 1 | 2 | 3 | 3 | 0 |
 | 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
 | 5. Noise (p29-30) | 8 | 1 | 0 | 0 | 0 |
@@ -858,9 +858,9 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 19. Left Hand Controller (p17-18, p112-117) | 15 | 1 | 3 | 1 | 0 |
 | 20. Browser, presets and timbres (p118-121) | 6 | 1 | 0 | 0 | 0 |
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
-| 22. Settings (p124-139) | 7 | 5 | 19 | 11 | 6 |
-| 24. Appendices A and B (p143-158) | 1 | 2 | 3 | 1 | 0 |
-| **Total** | **381** | **38** | **56** | **27** | **13** |
+| 22. Settings (p124-139) | 13 | 3 | 15 | 11 | 2 |
+| 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
+| **Total** | **393** | **32** | **50** | **27** | **9** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -898,7 +898,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after packages 8, 14a and 16: 34 and 35). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -990,8 +990,12 @@ that LFO: it needs a per-sample path).
 
 **8. Settings page and MIDI, part 1** (sections 1, 2, 14, 19, 22). Effort M. CPU: none.
 - Done in part 2026-10-28 (offline and the desktop window): `midi_ch` (Omni, 1-16, Per Synth), silent or audible chord
-  learn (`learn_mode`), the window's OCTAVE buttons held for the default octave and then a panic. Left: the SETTINGS
-  page and its file, receive clock, MIDI I/O load from preset, the pedal CC numbers, preset autoload.
+  learn (`learn_mode`), the window's OCTAVE buttons held for the default octave and then a panic. The rest done
+  2026-10-29 (offline and the desktop window; `docs/SETTINGS.md`): the SETTINGS page (GLOBAL, LIBRARY, TUNING) and its
+  file `Settings.txt` beside the Patches folder, RESTORE DEFAULT SETTINGS, the version, RECEIVE MIDI CLOCK with an own
+  tempo, MIDI I/O LOAD FROM PRESET, the sustain / EXP 1 / EXP 2 pedal CC numbers (engine: `src/midi_in*.h`, the
+  "midicfg" command), PRESET AUTOLOAD. Left: the sustain pedal's target Synth [MULTI], bank preview (with
+  performance sets).
 - A SETTINGS page (GLOBAL, LIBRARY, TUNING) with settings kept outside the sounds, in a file beside the patches (UI
   thread only); RESTORE DEFAULT SETTINGS; the version.
 - MIDI: the receive channel (Off, 1-16; today every channel plays), receive clock on or off, MIDI I/O load from
@@ -1077,8 +1081,8 @@ effect: up to 3 synth effects and 2 master effects at once).
   and two sends per Synth into the shared master effects; Panel Focus with multi-select and Shift/Ctrl+F5-F7; a SETUP
   page; INTO S1/2/3 and SAVE S1/2/3 on the PATCHES page; PLAY ALL; the randomiser per Synth; three factory
   performances. Left: per-Synth outputs (MAIN / SUB), solo, setting a range by pressing a key, sequencer OUTPUT to
-  another Synth, the sustain pedal's target, timbre names on the home line, NRPN for Synths 2 and 3, the master
-  effects moved by Synth 2 and 3's matrices.
+  another Synth, the sustain pedal's target, timbre names on the home line, the master effects moved by Synth 2 and
+  3's matrices (NRPN for Synths 2 and 3: done with package 14a, 2026-10-29).
 - Three timbres per preset, each with every sound setting, its own arp and sequencer; split, layer and zones (per
   Synth ON, LOW and HIGH RANGE, full range); Panel Focus (one Synth, several together, solo; the computer keyboard's
   SHIFT/CTRL + F5-F7 shortcuts); a MIDI channel per Synth (MIDI IN ROUTE PER SYNTH); a shared voice pool with each
@@ -1095,7 +1099,10 @@ effect: up to 3 synth effects and 2 master effects at once).
 
 **14. MIDI, part 2: learn, NRPN, MIDI out** (sections 22b, 24). Effort M each. CPU: none.
 - 14a MIDI learn in the plugin (click a control, move a CC; 7- or 14-bit; clear, add; the mapping list with reserved
-  CCs), and NRPN input after the manual's table (p149-158) for Synth 1 (2 and 3 with package 13).
+  CCs), and NRPN input after the manual's table (p149-158) for Synth 1 (2 and 3 with package 13). Done 2026-10-29
+  (offline and the desktop window; `docs/SETTINGS.md`): the SETTINGS page's MIDI tab, the map in the settings file
+  and in each engine as a fixed table (`src/midi_in*.h`, set by the "midicfg" command), NRPN for all three Synths;
+  the wrapper's own NRPN (param index) is off for ONE-ish (`vst.json` `"nrpn": false`). Left: 14b.
 - 14b MIDI out of the plugin's own notes (keys, arp, sequencer) on a chosen channel, for desktop hosts (MPC ignores
   it). Needs the wrapper to send events to the host.
 - Depends on: package 8 (the settings page holds the mapping).
@@ -1109,6 +1116,9 @@ doubles a voice).
 - Files: `src/osc.h`, `src/ladder.h`, `src/svf.h`, the voice loop in `src/engine.c`.
 
 **16. Optional: microtuning** (beyond the manual). Effort M. CPU: none (a table lookup per note).
+- Done 2026-10-29 (offline and the desktop window; `docs/SETTINGS.md`): per Synth, in the sound's state, loaded on
+  the SETTINGS page's TUNING tab; tested with 12-TET (identical samples), 19-EDO and 5-limit just intonation with a
+  keyboard map (`test/scales/`). Keyboard tracking of the filters and the Keyboard source still count keys, not pitch.
 - Scala `.scl` scales and `.kbm` keyboard maps, loaded from the window and saved with the sound; master tune and fine
   tune still apply.
 - Depends on: package 8 (where a global tuning lives).

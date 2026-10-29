@@ -186,6 +186,9 @@ static const char *help_for(int i) {
 
 static const char *zone_help(ed_t *e, int z) {
     if (seq_zone(z)) return seq_zone_help(e, z);   /* the step editor, the page LEDs */
+    if (z >= Z_SET_BASE && z < Z_SET_END) return settings_zone_help(e, z);   /* the SETTINGS page */
+    if (z == Z_TAB_SETTINGS) return "SETTINGS: the instrument's own settings, kept apart from the sounds: preset "
+                                    "autoload, MIDI clock and channels, pedals, MIDI learn, the library and tuning.";
     if (z >= Z_PATCH_ACT) return patches_zone_help(z);   /* the PATCHES page */
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) return "MORE: shows this module's other controls on the screen (click again for its next page, if any).";
     switch (z) {
@@ -595,7 +598,7 @@ static void title_line(HDC dc, ed_t *e, const char *t, int subs) {
     RECT r = L.tabline;
     if (subs > 1) r.right = L.sub_prev.left - sc(4);
     char st[200], who[16] = "";
-    if (e->screen != SCR_SETUP && e->screen != SCR_PATCHES) {   /* which Synth the page shows (and edits) */
+    if (e->screen != SCR_SETUP && e->screen != SCR_PATCHES && e->screen != SCR_SETTINGS) {   /* the Synth it shows */
         int n = 0;
         for (int c = 0; c < NSYNTHS; c++)
             if (e->focus_mask >> c & 1u) n += snprintf(who + n, sizeof who - n, n ? "+%d" : "SYNTH %d", c + 1);
@@ -800,10 +803,17 @@ static void draw_screen(HDC dc, ed_t *e) {
     }
     else if (lib_screen(e->screen)) lib_draw(dc, e);   /* PATCHES and the library's pages, with their tabs */
     else if (e->screen == SCR_SETUP) draw_setup(dc, e, subs);
+    else if (e->screen == SCR_SETTINGS) {   /* (settings.c) */
+        char t[64];
+        settings_title(e, t, sizeof t);
+        title_line(dc, e, t, subs);
+        settings_draw(dc, e);
+    }
     else draw_page(dc, e, subs);
     /* help: what the control under the mouse does */
     char help[480];
-    const char *zh = zone_help(e, e->hover), *pm = patches_message(e);
+    const char *zh = zone_help(e, e->hover), *pm = patches_message(e), *sm = settings_message(e);
+    if (sm && (!pm || e->screen == SCR_SETTINGS)) pm = sm;   /* (the SETTINGS page's own first, on that page) */
     if (pm) {   /* what the last patch operation did (or why it couldn't) */
         snprintf(help, sizeof help, "%s", pm);
     } else if ((e->hover >= 0 && e->hover < NPARAMS) || (e->hover >= Z_ABS && e->hover < Z_ABS + NPARAMS)) {
@@ -824,6 +834,8 @@ static void draw_screen(HDC dc, ed_t *e) {
                                     "Save it in your host (a preset or the project).");
     } else if (lib_screen(e->screen)) {
         lib_help(e, help, sizeof help);
+    } else if (e->screen == SCR_SETTINGS) {
+        settings_help(e, help, sizeof help);
     } else if (e->screen == SCR_SEQ) {
         seq_help(e, help, sizeof help);
     } else if (e->screen == SCR_MATRIX) {
@@ -868,6 +880,7 @@ static void draw_console(HDC dc, ed_t *e) {
     for (int c = 0; c < NSYNTHS; c++)   /* PANEL FOCUS: lit = the panel shows (and edits) that Synth */
         panel_button(dc, &L.focus[c], FOCUS_NAME[c], e->focus_mask >> c & 1u, e->hover == Z_FOCUS1 + c);
     panel_button(dc, &L.tab_setup, "SETUP", e->screen == SCR_SETUP, e->hover == Z_TAB_SETUP);
+    panel_button(dc, &L.tab_settings, "SETTINGS", e->screen == SCR_SETTINGS, e->hover == Z_TAB_SETTINGS);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     panel_button(dc, &L.compare, "COMPARE", lib_comparing(e), e->hover == Z_COMPARE);   /* (library.c) */

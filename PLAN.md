@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 381 have,
-  38 partial, 56 missing, 27 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 393 have,
+  32 partial, 50 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -221,7 +221,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      66.07 before: within 3%); 16 voices 135 us (8.4 a voice); 16 voices of a busy patch with a chorus 124 us in Synth 1
      alone, 134 us shared 6/5/5 by three Synths with a chorus each (+8%: two more synth effects).
      Left: per-Synth outputs, solo, sequencer OUTPUT to another Synth, the sustain pedal's target, a range set by
-     pressing a key, the SETTINGS page, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
+     pressing a key, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
   13. The library (audit packages 5, 12a, 12b). Done 2026-10-29 (offline and the desktop window; `desktop/library.c`,
      `docs/PATCHES.md`): UNDO / REDO of any edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, the
      randomiser, loads; a drag or a wheel burst is one step; 100 steps; Ctrl+Z / Ctrl+Y), COMPARE and SNAPSHOT on the
@@ -231,7 +231,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      format version 2; version 1 still loads); 128 performance sets of 64 (SET with A-H / 1-8, a long press assigns, bank
      preview; ALL SETS; ARRANGE); MIDI bank select and program change reach user patches and sets (a hidden window loads
      them when the editor is closed). No engine change and no new params. Left: the library's parts (12c: effect and
-     matrix presets, sequences), user spaces and bulk export (12d), a PRESET AUTOLOAD and BANK PREVIEW switch (settings).
+     matrix presets, sequences), user spaces and bulk export (12d). (PRESET AUTOLOAD and SHOW BANK PREVIEW: on the SETTINGS page, item 16.)
   14. Audio input and the EXT channel (audit package 11, first half). Done 2026-10-29 (offline and the desktop DLL): the
      desktop plugin has a stereo audio input (two VST2 inputs, declared by the desktop layer: the shared wrapper and the
      MPC build are unchanged). The host's rate is converted to 44.1 kHz (`desktop/hostrate.c`, the rate converter run
@@ -252,6 +252,20 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      128-frame block): about 12 us (10 bands), 18-19 us (16 bands). Demo: `test/out/vocoder_demo.wav` (a synthetic voice,
      then a chord played by it through each vocoder). To try it in Carla: route a voice recording into ONE-ish as above,
      set SYNTH EFFECT TYPE to 16 Band Vocoder (the MORE page has its controls), MIX 100%, hold a chord.
+  16. Settings and MIDI (audit packages 8, 14a, 16). Done 2026-10-29 (offline and the desktop window;
+     `ports/one-ish/docs/SETTINGS.md`): a SETTINGS page (console button next to SETUP; GLOBAL, LIBRARY, TUNING) whose
+     settings live in `Settings.txt` beside the Patches folder, never in a sound: PRESET AUTOLOAD (off: PREV/NEXT and
+     the PRESET knob point, a click loads), SHOW BANK PREVIEW (the SET page), RECEIVE MIDI CLOCK with an own tempo, MIDI I/O FROM PRESET (off: loads keep
+     the MIDI channels), the sustain / EXP 1 / EXP 2 pedal CC numbers, RESTORE DEFAULT SETTINGS, the version and the
+     folders. Defaults behave exactly as before. No CPU cost (nothing in the audio path but a pedal number lookup).
+     MIDI learn on the page's MIDI tab (LEARN, click a control of the Synth in focus, move a CC; 7- or 14-bit; the map
+     with 7/14-BIT, DELETE, CLEAR ALL and the reserved CCs), kept in the settings file and sent to every engine as a
+     fixed 128-entry table; NRPN input after the manual's table for all three Synths (the wrapper's own param-index NRPN
+     is off for ONE-ish). A learned CC or an NRPN moves its param as host automation would, and the host is told.
+     Microtuning on the TUNING tab: a Scala `.scl` scale and `.kbm` keyboard map per Synth, read by the window, kept
+     in the sound (state, patches, SAVE / INTO SYNTH); master tune and fine tune still apply; tested offline with
+     12-TET (identical samples), 19-EDO and just intonation with a keyboard map (`ports/one-ish/test/scales/`).
+     Left: MIDI out of the plugin's notes (package 14b); the sustain pedal's target Synth; the owner's check in Carla.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
