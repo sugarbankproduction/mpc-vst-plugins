@@ -3814,7 +3814,8 @@ static void matrix_wiring(void) {
             set(a, p->key, v);
         }
         /* (not in a saved state on purpose: the sequencer's PLAY, REC and STEP MOD, its step readout, and SOLO) */
-        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos", "seq_all", "syn_solo"};
+        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos", "seq_all", "syn_solo",
+                                                "life_reseed" /* (2026-10-30) a button the engine sets back off */};
         int kept = 0;
         for (int i = 0; i < NPARAMS; i++) kept += s1_key(PARAMS[i].key);
         for (int i = 0; i < NPARAMS; i++) {

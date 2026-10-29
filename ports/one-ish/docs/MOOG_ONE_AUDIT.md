@@ -49,7 +49,7 @@ with its own quick assignment; the ANALOG CHARACTER voice cards (`an_*`); the MA
 Plaits, 24 models, `mac_*`, a sixth mixer channel); open-source synth effect types (Rings, Clouds, Airwindows tape,
 density, console) and the Space reverb (Airwindows Galactic); the GENERATIVE section (`gen_*`: Euclid, probability,
 velocity random, Turing machine; 2026-10-29 the bouncing balls and particles, `phys_*`, playing in each Synth's KEY and
-SCALE); 14 built-in chord shapes; the patch randomiser (RANDOM page, mutate, locks, undo, WILD, arp / GENERATIVE / sequencer ticks);
+SCALE; 2026-10-30 GAME OF LIFE, GRAVITY ORBITS and PENDULUMS, `life_*`, `orb_*`, `pend_*`, with five matrix sources); 14 built-in chord shapes; the patch randomiser (RANDOM page, mutate, locks, undo, WILD, arp / GENERATIVE / sequencer ticks);
 user patch files (2026-10-27, offline).
 
 ---

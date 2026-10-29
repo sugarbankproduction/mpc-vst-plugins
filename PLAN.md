@@ -322,6 +322,26 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      1.0 us (32 particles colliding); the engine with 4 held voices 24.8 us, plus 8 balls and 32 particles playing into
      the voices 28.1 us. Off: no work at all. Left: the MPC's 8 KB chunk overflows in the every-param-changed test (8424
      bytes, the lead's call); a panel button for the pages; an optional modulation output of the particles.
+  22. (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS (the GENERATIVE section, beyond the Moog One). Done
+     2026-10-30 (offline and the desktop window; `src/gens_a.h`, `src/gens_a_run.h`, `test/gens_a_check.c`, load_test):
+     per Synth, in its KEY and SCALE, notes the Euclid / Turing way (`play_step`, so CHORD works). LIFE: a 16 x 8 grid
+     (rules Life, HighLife, Seeds; wrap edges), stepping at 1/4 .. 1/32 (triplets) or a free rate; BIRTHS, SCAN COLUMN or
+     SCAN ROW play (row or column the degree), NOTES PER STEP, DENSITY, SEED and a RESEED button (a dead or looping
+     grid seeds itself again). ORBITS: 1-6 planets round a sun (SPEED, GRAVITY between the planets, ECCENTRICITY,
+     SPREAD), 1-8 spokes (a spoke a degree; PLANETS AS octave or velocity), SYNC to a grid. PENDULUMS: 2-12 pendulums,
+     pendulum i swinging SWINGS + i x SPREAD times per CYCLE of bars at the host's tempo (they meet again at each cycle's
+     end), playing at the centre, the ends or both, DAMPING, KEY RESTARTS, DYNAMICS. Each: FREE / HELD KEYS, MAX
+     NOTES/S, NOTE LENGTH, LOW OCTAVE (42 `life_*`, `orb_*`, `pend_*` params per Synth). Five matrix sources at the end
+     of the list (Life Population, Orbit 1 X, Orbit 1 Y, Pendulum 1, Pendulum Sync, 0 .. 1); the matrix's bipolar flags
+     are now 64 bits. Three MORE pages (GAME OF LIFE, GRAVITY ORBITS, PENDULUMS; ids LIFE, ORBITS, PEND) show each moving,
+     read from `life_view`, `orbit_view`, `pend_view` through seqlocks. Deterministic (LIFE and ORBITS from a seed per
+     Synth; the pendulums from the beat); positions never saved; off: no work. Old sounds unchanged (golden check), and
+     the randomiser draws exactly as before (`orb_quant`, not `orb_sync`: the randomiser's `o*_sync` rule would have
+     caught it). CPU on the PC (O2, per 128-frame block): the worlds alone, LIFE 1.28 us per generation (0.07 us a block
+     at its fastest, 1/32 at 300 BPM), ORBITS 1.08 us (6 planets pulling on each other, 8 spokes), PENDULUMS 0.70 us (12
+     pendulums); the engine with 4 held voices 24.9 us, plus LIFE 22.8 (within the noise), ORBITS 27.5, PENDULUMS 27.0,
+     all three at once 43.1 us (most of it the extra notes, each generator up to 8 a second into the voices).
+     Left: an MPC page; a panel button for the pages (the GENERATIVE hub page, another helper's).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

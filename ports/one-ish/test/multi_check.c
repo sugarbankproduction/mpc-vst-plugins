@@ -36,7 +36,8 @@ static double off_default(int i) {
 static int is_transient(const char *k) {   /* not kept in a state on purpose (or readouts) */
     const char *r = !strncmp(k, "s2_", 3) || !strncmp(k, "s3_", 3) ? k + 3 : k;
     return !strcmp(r, "seq_play") || !strcmp(r, "seq_rec") || !strcmp(r, "seq_step_mod") || !strcmp(r, "seq_pos")
-           || !strcmp(r, "seq_all") || !strcmp(r, "syn_solo");
+           || !strcmp(r, "seq_all") || !strcmp(r, "syn_solo")
+           || !strcmp(r, "life_reseed");   /* (2026-10-30) LIFE's RESEED: a button the engine sets back off */
 }
 static int log_notes(void *e, const char *key) {   /* note-ons in a Synth's "gen_log" since the last read */
     static char b[8192];
