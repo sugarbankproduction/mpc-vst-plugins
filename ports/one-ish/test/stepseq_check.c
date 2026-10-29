@@ -479,7 +479,7 @@ static void step_sequencer(void) {
          * left out, with the readout saying so; a larger chunk (the desktop build) keeps them */
         for (int i = 0; i < NPARAMS; i++) {
             const param_t *p = &PARAMS[i];
-            if (p->string_display || !strncmp(p->key, "seq_", 4)) continue;
+            if (p->string_display || !strncmp(p->key, "seq_", 4) || !s1_key(p->key)) continue;
             char v[32];
             snprintf(v, sizeof v, "%g", p->nopts ? (p->def > 0.5f ? 0.0 : 1.0) : p->min + (p->max - p->min) * (p->def > 0.5f ? 0.123 : 0.877));
             E->set_param(a, p->key, v);

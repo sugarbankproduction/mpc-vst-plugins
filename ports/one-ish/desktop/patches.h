@@ -11,7 +11,7 @@
 enum { PATCH_NAME_MAX = 32, PATCH_STATE_MAX = VST2_CHUNK_MAX };   /* a name's characters; the engine's state and the chunk */
 enum { SCR_PATCHES = -10 };                             /* the centre screen showing the patch list (see SCR_MATRIX) */
 enum { Z_PATCH_ACT = 100300, Z_PATCH_ITEM = 200000 };   /* hit codes: an action button (+ PA_), a list entry (+ pos) */
-enum { PA_SAVE, PA_SAVE_AS, PA_RENAME, PA_DELETE, PA_IMPORT, PA_EXPORT, PA_COUNT };
+enum { PA_SAVE, PA_SAVE_AS, PA_RENAME, PA_DELETE, PA_IMPORT, PA_EXPORT, PA_INTO, PA_SAVE_SYNTH, PA_COUNT };
 enum { effGetChunk = 23, effSetChunk = 24 };              /* VST2 opcodes editor.h doesn't name */
 enum { BANK_NONE, BANK_FACTORY, BANK_USER };            /* where the current sound came from */
 /* results of the patch operations (patches.c) */
@@ -21,7 +21,7 @@ enum { PE_OK = 1, PE_FAIL = 0, PE_EXISTS = -1, PE_BADNAME = -2, PE_NOT_USER = -3
  * buffer (a name or a path in, a title or a message out), opt = a number (a step, or 1 to allow overwriting) */
 #define TEST_PATCH 0x4F315054
 enum { PT_SAVE = 1, PT_SAVE_AS, PT_RENAME, PT_DELETE, PT_IMPORT, PT_EXPORT, PT_LOAD, PT_STEP, PT_TITLE, PT_EDITED,
-       PT_COUNT, PT_DIR, PT_MESSAGE, PT_LOAD_POS, PT_POS };
+       PT_COUNT, PT_DIR, PT_MESSAGE, PT_LOAD_POS, PT_POS, PT_INTO_POS, PT_SAVE_SYNTH };
 
 #ifdef NPARAMS   /* the editor (params.h); load_test only needs the numbers above */
 typedef struct {
@@ -29,6 +29,7 @@ typedef struct {
     char name[PATCH_NAME_MAX + 1];         /* the user patch's name (BANK_USER), or the unsaved sound's */
     int forced_edit;                       /* edited, whatever the values say (a project saved with edits, a deleted file) */
     int edited;                            /* the last check (patches_tick) */
+    int into;                              /* INTO SYNTH: a pick from the list loads into the focused Synth only */
     float base[NPARAMS];                   /* the values when the patch was loaded or saved: edited = any differs */
     char (*list)[PATCH_NAME_MAX + 1];      /* the user patches in the folder, A to Z (UI thread only) */
     int count, cap;

@@ -20,15 +20,17 @@
  * spread, and every continuous effect control (a second pass per control step, from the global sources: see
  * fx_mod_step); mod wheel, aftertouch, pitch bend (separate up and down amounts, plus per-oscillator offsets), sustain
  * and sostenuto pedals, HOLD, two expression CCs (11 and 4), a ribbon (CC 16 position, CC 17 touch: spring or hold,
- * centre or left origin, with a quick assignment of its own), an X/Y pad (CC 2 X, CC 3 Y, CC 18 touch). Up to 8
+ * centre or left origin, with a quick assignment of its own), an X/Y pad (CC 2 X, CC 3 Y, CC 18 touch). Up to 16
  * voices: a new note takes an idle voice, else one by the stealing mode (default: the quietest releasing one, else
  * the oldest held one); the same key replays its own voice. Mono (1 voice) plays
  * legato with low, high or last-note priority. Velocity curves, transpose, octave shift, key-track centre, master
  * tune; per oscillator pitch tracking, note-on phase reset and a choice of hard sync source. Glide (portamento): each
  * voice slides from its own
  * last pitch at a constant rate (LCR), in a constant time (LCT) or exponentially (EXP); optionally only on legato
- * notes, paused while the key is up (gated), or in semitone steps (glissando). Unison stacks 2-8 voices on each note
- * (a stack is allocated and stolen as one), detuned unevenly around the centre; pitch variance gives each new note a
+ * notes, paused while the key is up (gated), or in semitone steps (glissando). Unison stacks 2-16 voices on each note
+ * (a stack is allocated and stolen as one; when the keys held need more voices than whole stacks leave, the voice count
+ * is shared out among them, as on the instrument: 8 voices, count 8, one key 8, two keys 4 each), detuned unevenly
+ * around the centre; pitch variance gives each new note a
  * small random pitch offset. Analog character (all off at 0): drift, each oscillator's pitch (and each voice's
  * cutoffs) wandering slowly at random; each voice slot a "voice card" with its own fixed tolerances in cutoff,
  * resonance, envelope times, level and oscillator tuning, scaled by a knob each; and a non-linear ladder (src/ladder.h).
@@ -48,7 +50,10 @@
  * Audio runs per sample; modulation (envelopes 1 and 3, LFOs, the matrix, pitch, cutoffs) every CR samples, with levels and the
  * filter mix ramped across each step so no knob or mod move steps audibly.
  * Implements mpc_engine() (wrapper/engine.h): 44.1 kHz, interleaved int16 stereo, up to 128 frames per render().
- * Everything is allocated in create(); render() and midi() never allocate, lock or touch files. */
+ * Everything is allocated in create(); render() and midi() never allocate, lock or touch files.
+ * MULTITIMBRAL: one_t below is ONE SYNTH (a timbre: everything above, its own arp and sequencer); an instance holds up
+ * to three of them sharing a 16-voice pool, the master effects and a few settings (src/synths.h, included at the end:
+ * the engine API, the voice pool, MIDI routing, the state, the mix). */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,8 +74,10 @@
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
 #define MAX_HELD 16
-#define MAX_VOICES 8
+#define POOL_VOICES 16      /* the voices every Synth of an instance shares (src/synths.h) */
+#define MAX_VOICES 16       /* the instrument's 16-voice model (the "voices" list: Mono, 2 .. 16) */
 #define NOSC 3
+#define CARD_SET 8         /* voice cards are made in sets of eight (create()) */
 #define NSRC 6             /* the mixer's channels: oscillators 1-3, noise, ring mod, MACRO (Plaits: src/macro.h) */
 #define NLFO 4
 #define HEADROOM 0.5f      /* one full-scale saw at full velocity and volume peaks at -6 dBFS */
@@ -213,6 +220,10 @@ enum {
     P_SEQ_ON, P_SEQ_PLAY, P_SEQ_REC, P_SEQ_STEP_MOD, P_SEQ_SYNC, P_SEQ_RATE, P_SEQ_DIV, P_SEQ_TIMING, P_SEQ_LENGTH,
     P_SEQ_FOLLOW_SWING, P_CLOCK_SWING, P_SEQ_NOTE_TRIG, P_SEQ_NOTE_RESET, P_SEQ_RESTART_HOLD, P_SEQ_RESTART_TRIG,
     P_SEQ_TRANSPOSE, P_SEQ_TR_MODE, P_SEQ_ONE_SHOT, P_SEQ_REC_MODE, P_SEQ_PATTERN,
+    /* settings: the MIDI channel the instrument listens on (Omni: every channel), and CHORD LEARN heard or silent */
+    P_MIDI_CH, P_LEARN_MODE,
+    /* multitimbral (src/synths.h): each Synth's setup (ON, MIDI channel, key range); master level and PLAY ALL (shared) */
+    P_SYN_ON, P_SYN_CH, P_KEY_LO, P_KEY_HI, P_MASTER_LEVEL, P_SEQ_ALL,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -333,6 +344,8 @@ static const char *const KEYS[P_COUNT] = {
     "seq_on", "seq_play", "seq_rec", "seq_step_mod", "seq_sync", "seq_rate", "seq_div", "seq_timing", "seq_length",
     "seq_follow_swing", "clock_swing", "seq_note_trig", "seq_note_reset", "seq_restart_hold", "seq_restart_trig",
     "seq_transpose", "seq_tr_mode", "seq_one_shot", "seq_rec_mode", "seq_pattern",
+    "midi_ch", "learn_mode",
+    "syn_on", "syn_ch", "key_lo", "key_hi", "master_level", "seq_all",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -475,6 +488,7 @@ typedef struct {
     float mac_note;          /* its pitch (a MIDI note number, modulation included) */
     float mac_harm, mac_timbre, mac_morph;   /* its three knobs with the matrix's modulation, 0..1 */
     int mac_trig;            /* a note-on it hasn't seen yet (kept until the channel is heard) */
+    int dying;               /* stolen for another Synth (the pool, src/synths.h): fading out, not counted as sounding */
 } voice_t;
 
 typedef struct {
@@ -482,11 +496,11 @@ typedef struct {
     float def[P_COUNT];      /* the defaults, so a saved state lists only what differs from them */
     float ratio[NOSC];       /* each oscillator's pitch against the played note (octave and frequency) */
     voice_t voice[MAX_VOICES];
-    unsigned age;            /* counts note starts */
     int voices;              /* the voices in use last applied (a change lets go of voices past it) */
     float glide_frac;        /* one control step as a fraction of the glide time (>= 1: no glide) */
     float glide_exp;         /* EXP glide: the fraction of the remaining distance covered per control step */
-    fx_t fx;                 /* effect buffers (about 4.4 MB) */
+    fx_syn_t fx;             /* the synth effect's buffers (about 1 MB; the master effects are the instance's) */
+    fx_send_t snd;           /* its two sends into the master effects, as last ramped */
     int sustain;             /* the pedal (CC 64) is down */
     lfo_t lfo[NLFO];         /* the free-running LFOs */
     float lfo_val[NLFO];     /* this control step's free-running LFO outputs (polarity and smoothing applied) */
@@ -534,7 +548,6 @@ typedef struct {
     float track[NOSC];       /* each oscillator's pitch tracking - 1 (0 at 100%) */
     float bend_off[NOSC][2]; /* each oscillator's bend up / down offset, whole semitones */
     float mac_st;            /* the MACRO channel's octave and frequency knobs, semitones */
-    char state_buf[STATE_MAX];   /* set_state's working copy (allocated with the instance, not per call) */
     /* THE PERFORMANCE SECTION (arpeggiator, chord memory, generative steps): see its functions below */
     int route;               /* where keys go (ROUTE_*), as last applied */
     int seq_on;              /* the step clock plays (arp, Euclid or Turing machine on) */
@@ -553,7 +566,7 @@ typedef struct {
     uint8_t tm_reg[TM_MAX];  /* the Turing machine's loop */
     int tm_pos;
     uint32_t grng;           /* the generative choices' random numbers */
-    struct { int64_t at; int note; } pend[64];   /* generated notes' releases, by sample */
+    struct { int64_t at; int note; } pend[128];  /* generated notes' releases, by sample */
     int npend;
     int64_t now;             /* samples rendered since create() */
     /* the step clock: beat position pos0 + clk * bps; steps fall on k * step (+ swing on odd k) */
@@ -572,9 +585,20 @@ typedef struct {
     short sq_md[P_COUNT];    /* the matrix destination a knob's move records into (-1: none) ... */
     float sq_sc[P_COUNT];    /* ... and how far one unit of the knob moves it (1 = the destination's whole +-100%) */
     char sq_text[SQ_TEXT_MAX];   /* get_state's encoding of the sequence */
-    int heal, heals;         /* a non-finite sample reached the output: heal() before the next piece; how many times */
+    int heals;               /* how often heal() ran (src/synths.h) */
+    /* THE SYNTHS (src/synths.h): this Synth in its instance */
+    struct inst *in;         /* the instance, and this Synth's place in it (0: Synth 1) */
+    int idx;
+    const short *pidx;       /* each slot's params.json entry for this Synth (its own copies; the shared ones Synth 1's) */
+    int on;                  /* ON, as last applied */
+    uint8_t kin[128];        /* the keys it took (each key's release goes where the key went) */
+    int64_t quiet;           /* samples since a voice of it last sounded */
+    int moved;               /* LOAD INTO SYNTH changed its values: the host is told (mpc_engine_changed) */
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
+static int pool_room(one_t *s, const int *idx, int n);   /* src/synths.h */
+static unsigned next_age(one_t *s);
+static void synth_switch(one_t *s);
 
 static int slot(const char *key) {
     for (int i = 0; i < P_COUNT; i++)
@@ -591,26 +615,28 @@ static inline float white(uint32_t *x) {   /* xorshift32: -1..1 */
     return (int32_t)*x * (1.0f / 2147483648.0f);
 }
 
-/* store a value in its param's range; NaN, infinities and unknown keys leave the old value (a damaged project) */
-static void store(one_t *s, const char *key, const char *text) {
-    int k = slot(key);
+/* the retired keys an older project may hold (1: it was one) */
+static int store_retired(one_t *s, const char *key, const char *text) {
     float v = (float)atof(text);
     if (!strcmp(key, "dly_pp") && isfinite(v)) {   /* retired: the ping-pong switch is now master effect 1's type */
         s->val[P_DLY_TYPE] = v >= 0.5f ? MFX_PINGPONG : MFX_SDELAY;
-        return;
+        return 1;
     }
     if (!strcmp(key, "bend_range") && isfinite(v)) {   /* retired: an older project's one range, both ways */
         s->val[P_BEND_UP] = clampf(v, 0.0f, 24.0f);
         s->val[P_BEND_DOWN] = -s->val[P_BEND_UP];
-        return;
+        return 1;
     }
-    if (k < 0 || !isfinite(v)) return;
-    for (int i = 0; i < NPARAMS; i++) {
-        const param_t *p = &PARAMS[i];
-        if (strcmp(p->key, key)) continue;
-        s->val[k] = p->nopts ? clampf(roundf(v), 0, p->nopts - 1) : clampf(v, p->min, p->max);
-        return;
-    }
+    return 0;
+}
+
+/* store a value in slot k's range (this Synth's params.json entry); NaN, infinities and unknown slots leave the old
+ * value (a damaged project) */
+static void store_k(one_t *s, int k, const char *text) {
+    float v = (float)atof(text);
+    if (k < 0 || s->pidx[k] < 0 || !isfinite(v)) return;
+    const param_t *p = &PARAMS[s->pidx[k]];
+    s->val[k] = p->nopts ? clampf(roundf(v), 0, p->nopts - 1) : clampf(v, p->min, p->max);
 }
 
 /* knob (0..100) to units */
@@ -788,8 +814,8 @@ static void apply(one_t *s) {
     s->mac_st = 12.0f * (s->val[P_MAC_OCT] - OCT_CENTRE) + s->val[P_MAC_FREQ];
 }
 
-static const int VOICE_COUNTS[] = {1, 2, 3, 4, 5, 6, 7, 8};   /* the "voices" options */
-static int voice_count(const one_t *s) { return VOICE_COUNTS[(int)clampf(s->val[P_VOICES], 0, 7)]; }
+/* the "voices" options: Mono, then 2 .. 16 (index i: i + 1 voices) */
+static int voice_count(const one_t *s) { return (int)clampf(s->val[P_VOICES], 0, MAX_VOICES - 1) + 1; }
 static int is_mono(const one_t *s) { return voice_count(s) == 1; }
 
 /* voices stacked on each note: 1 without unison; the unison count, at most the voice count except in mono (mono +
@@ -983,19 +1009,21 @@ static void ribbon_cc(one_t *s, int cc, int v) {
 }
 
 static void load_defaults(one_t *s) {
-    for (int i = 0; i < NPARAMS; i++) {
-        const param_t *p = &PARAMS[i];
-        int k = slot(p->key);
-        if (k < 0) continue;
+    for (int k = 0; k < P_COUNT; k++) {
+        if (s->pidx[k] < 0) continue;
+        const param_t *p = &PARAMS[s->pidx[k]];
         s->val[k] = p->nopts ? roundf(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
     }
 }
 
-static void *create(const char *data_dir) {
-    (void)data_dir;
+/* one Synth of instance `in` (src/synths.h), at place idx, its params.json entries pidx */
+static one_t *synth_create(struct inst *in, int idx, const short *pidx) {
     one_t *s = calloc(1, sizeof *s);
     if (!s) return NULL;
-    fx_init(&s->fx);   /* the effect buffers' pages, mapped now rather than in the audio thread */
+    s->in = in;
+    s->idx = idx;
+    s->pidx = pidx;
+    fx_touch(&s->fx, sizeof s->fx);   /* the effect buffers' pages, mapped now rather than in the audio thread */
     load_defaults(s);
     memcpy(s->def, s->val, sizeof s->def);
     for (int i = 0; i < MAX_VOICES; i++) {
@@ -1020,20 +1048,27 @@ static void *create(const char *data_dir) {
             return NULL;
         }
     }
-    /* the voice cards, as in an analog polysynth where no two voices match: for each part, the eight cards take the
-     * eight evenly spaced values -1 .. 1 in an order shuffled per part (so at 100% the whole range is in use, and a
-     * card's parts don't follow each other). A fixed seed: every instance, and every session, has the same cards. */
-    uint32_t rng = 0x3c6ef372u;
+    /* the voice cards, as in an analog polysynth where no two voices match: for each part, the first eight cards take
+     * the eight evenly spaced values -1 .. 1 in an order shuffled per part (so at 100% the whole range is in use, and a
+     * card's parts don't follow each other); cards 9-16 take the eight values -0.875 .. 0.875 (between those), shuffled
+     * with a second seed, so the first eight are exactly the cards of the
+     * 8-voice version (old sounds keep their voices). A fixed seed: every instance, and every session, has the same cards. */
+    uint32_t rng = 0x3c6ef372u, rng2 = 0x9b05688cu;
     for (int c = 0; c < AC_COUNT; c++) {
-        int order[MAX_VOICES];
-        for (int i = 0; i < MAX_VOICES; i++) order[i] = i;
-        for (int i = MAX_VOICES - 1; i > 0; i--) {   /* Fisher-Yates */
-            white(&rng);
-            int j = (int)(rng % (uint32_t)(i + 1)), t = order[i];
-            order[i] = order[j];
-            order[j] = t;
+        for (int half = 0; half < 2; half++) {
+            int order[CARD_SET];
+            uint32_t *r = half ? &rng2 : &rng;
+            for (int i = 0; i < CARD_SET; i++) order[i] = i;
+            for (int i = CARD_SET - 1; i > 0; i--) {   /* Fisher-Yates */
+                white(r);
+                int j = (int)(*r % (uint32_t)(i + 1)), t = order[i];
+                order[i] = order[j];
+                order[j] = t;
+            }
+            for (int i = 0; i < CARD_SET; i++)
+                s->voice[half * CARD_SET + i].card[c] =
+                    half ? (2.0f * order[i] + 1.0f) / CARD_SET - 1.0f : 2.0f * order[i] / (CARD_SET - 1) - 1.0f;
         }
-        for (int i = 0; i < MAX_VOICES; i++) s->voice[i].card[c] = 2.0f * order[i] / (MAX_VOICES - 1) - 1.0f;
     }
     for (int n = 0; n < NLFO; n++) lfo_init(&s->lfo[n], 0x2545f491u * (n + 1));
     s->bpm = 120.0f;
@@ -1062,13 +1097,13 @@ static void *create(const char *data_dir) {
     s->adirty = 1;
     apply(s);
     s->rib = s->rib_to = ribbon_origin(s);
+    s->on = s->val[P_SYN_ON] > 0.5f;
     return s;
 }
 
-static void destroy(void *inst) {
-    one_t *s = inst;
+static void synth_destroy(one_t *s) {
     for (int i = 0; i < MAX_VOICES; i++) macro_destroy(s->voice[i].mac);
-    free(inst);
+    free(s);
 }
 
 /* legato: another key is held as this note starts. The voice glides from its own last pitch when glide is on, it has
@@ -1076,6 +1111,7 @@ static void destroy(void *inst) {
 static void start_note(one_t *s, voice_t *v, int note, int legato) {
     static const float no_mod[MD_COUNT];
     int glide = s->val[P_GLIDE] > 0.5f && v->note >= 0 && (legato || s->val[P_GLIDE_LEGATO] < 0.5f);
+    v->dying = 0;   /* (a voice the pool was taking away is this Synth's again) */
     if (glide) v->glide_span = fabsf((float)note - v->pitch);
     else v->pitch = (float)note;
     v->gliding = glide && v->glide_span > 0.0f;
@@ -1276,24 +1312,97 @@ static void lfo_note_on(one_t *s, voice_t *v) {
     }
 }
 
+/* UNISON in poly, when the keys held need more voices than whole stacks leave: the voice count shared out among the
+ * held keys and the new one (each at most the unison count), as the manual has it (8 voices, count 8: one key 8, two
+ * keys 4 each, three keys 2 each and the rest as they fall). The new note takes idle voices first, then released ones
+ * (quietest first), then the outermost voices of the stacks bigger than its share (biggest stack first); a stack that
+ * gives voices up is spread again over what it keeps. Fills idx with the new note's voices and returns how many (0:
+ * none to take), or -1 when whole stacks fit (the usual allocation, pick_stack, then applies). */
+static int uni_take(one_t *s, int note, int *idx) {
+    int unit = stack_size(s), pool = voice_count(s), nst = 0, per, n = 0;
+    unsigned ages[MAX_VOICES];
+    for (int i = 0; i < pool; i++) {   /* the stacks of held keys (another key than this one) */
+        const voice_t *v = &s->voice[i];
+        if (!v->gate || v->env[ENV_AMP].stage == ENV_IDLE || v->note == note) continue;
+        int seen = 0;
+        for (int k = 0; k < nst; k++) seen |= ages[k] == v->age;
+        if (!seen) ages[nst++] = v->age;
+    }
+    per = pool / (nst + 1);
+    if (per >= unit) return -1;
+    if (per < 1) per = 1;
+    uint32_t taken = 0;
+    for (int i = 0; i < pool && n < per; i++)   /* this key's own stack, replayed */
+        if (s->voice[i].note == note && s->voice[i].gate && s->voice[i].env[ENV_AMP].stage != ENV_IDLE) {
+            idx[n++] = i;
+            taken |= 1u << i;
+        }
+    for (int i = 0; i < pool && n < per; i++)
+        if (s->voice[i].env[ENV_AMP].stage == ENV_IDLE && !(taken >> i & 1)) { idx[n++] = i; taken |= 1u << i; }
+    while (n < per) {   /* released voices, quietest first */
+        int best = -1;
+        for (int i = 0; i < pool; i++) {
+            const voice_t *v = &s->voice[i];
+            if ((taken >> i & 1) || v->gate) continue;
+            if (best < 0 || v->env[ENV_AMP].level < s->voice[best].env[ENV_AMP].level) best = i;
+        }
+        if (best < 0) break;
+        idx[n++] = best;
+        taken |= 1u << best;
+    }
+    uint32_t moved = 0;   /* stacks that gave voices up (bit: their first voice) */
+    while (n < per) {   /* the biggest stack over its share gives up its outermost voice */
+        int big = -1, bigc = per;
+        unsigned bage = 0;
+        for (int k = 0; k < nst; k++) {
+            int c = 0;
+            for (int i = 0; i < pool; i++) c += !(taken >> i & 1) && s->voice[i].gate && s->voice[i].age == ages[k];
+            if (c > bigc || (c == bigc && big >= 0 && ages[k] < bage)) { big = k; bigc = c; bage = ages[k]; }
+        }
+        if (big < 0) break;
+        int out = -1;
+        for (int i = 0; i < pool; i++) {
+            const voice_t *v = &s->voice[i];
+            if ((taken >> i & 1) || !v->gate || v->age != ages[big]) continue;
+            if (out < 0 || fabsf(v->uni_pos) > fabsf(s->voice[out].uni_pos)) out = i;
+        }
+        idx[n++] = out;
+        taken |= 1u << out;
+        moved |= 1u << big;
+    }
+    for (int k = 0; k < nst; k++) {   /* the stacks that gave voices up: spread again over the voices they keep */
+        if (!(moved >> k & 1)) continue;
+        int keep[MAX_VOICES], c = 0;
+        for (int i = 0; i < pool; i++)
+            if (!(taken >> i & 1) && s->voice[i].gate && s->voice[i].age == ages[k]) keep[c++] = i;
+        for (int j = 0; j < c; j++) stack_voice(&s->voice[keep[j]], j, c);
+    }
+    return n;
+}
+
 static void note_on(one_t *s, int note, int vel) {
     if (s->nheld == 0) release_held(s, 0);   /* a non-legato note under HOLD (no pedal down) replaces what it latched */
     forget(s, note);              /* a repeated key moves to the top instead of being held twice */
     if (s->nheld == MAX_HELD) forget(s, s->held[0]);   /* drop the oldest key */
     s->held[s->nheld++] = note;
-    int legato = s->nheld > 1, first = 0;
+    int legato = s->nheld > 1, first = 0, stack = stack_size(s), idx[MAX_VOICES];
     if (is_mono(s)) {   /* the priority key: a new key that loses to a held one changes nothing */
         int key = mono_key(s);
         if (key != note && s->voice[0].gate && s->voice[0].note == key) return;
         note = key;
+    } else if (stack > 1 && (first = uni_take(s, note, idx)) >= 0) {
+        if (!(stack = first)) return;   /* nothing to take */
+        first = -1;
     } else if ((first = pick_stack(s, note)) < 0) {
         return;   /* No Stealing and every voice held */
     }
-    int stack = stack_size(s);
-    unsigned age = ++s->age;
+    if (first >= 0)
+        for (int k = 0; k < stack; k++) idx[k] = first + k;
+    if (!pool_room(s, idx, stack)) return;   /* the instance's 16 voices: room made in any Synth, or none */
+    unsigned age = next_age(s);
     float var = s->val[P_PITCH_VAR] * 0.01f;   /* cents to semitones */
     for (int k = 0; k < stack; k++) {
-        voice_t *v = &s->voice[first + k];
+        voice_t *v = &s->voice[idx[k]];
         if (v->env[ENV_AMP].stage != ENV_IDLE)   /* NOTE-ON RESET (a voice from silence starts at phase 0 anyway) */
             for (int n = 0; n < NOSC; n++)
                 if (s->val[P_O1_RESET + XO_STRIDE * n] > 0.5f) v->reset_pend |= 1 << n;
@@ -1543,7 +1652,7 @@ static void clock_block(one_t *s) {
 }
 
 static void pend_add(one_t *s, int note, int64_t at) {
-    if (s->npend == PEND_MAX) {   /* full (never with 8 voices): the first one ends now */
+    if (s->npend == PEND_MAX) {   /* full (never in practice): the first one ends now */
         out_off(s, s->pend[0].note, 1);
         s->pend[0] = s->pend[--s->npend];
     }
@@ -1695,7 +1804,10 @@ static void key_on(one_t *s, int note, int vel) {
     switch (s->route) {
     case ROUTE_SEQ: seq_key_on(s, note, vel); return;
     case ROUTE_CHORD: chord_key_on(s, note, vel); return;
-    case ROUTE_LEARN: learn_key(s, note); note_on(s, note, vel); return;   /* heard as played (not a silent learn) */
+    case ROUTE_LEARN:   /* heard as played, or with SILENT LEARN (a setting) not at all */
+        learn_key(s, note);
+        if (s->val[P_LEARN_MODE] < 0.5f) note_on(s, note, vel);
+        return;
     default: note_on(s, note, vel); return;
     }
 }
@@ -1727,8 +1839,7 @@ static void perf_after_set(one_t *s, int k) {
 }
 
 /* the host's song position at each block (HAS_SONG_POS): the step clock follows it while synced and playing */
-static void song_pos(void *inst, double ppq, double bpm, int playing, int frames) {
-    one_t *s = inst;
+static void synth_song_pos(one_t *s, double ppq, double bpm, int playing, int frames) {
     (void)frames;
     s->sp_ppq = ppq;
     s->sp_bpm = bpm;
@@ -1737,18 +1848,8 @@ static void song_pos(void *inst, double ppq, double bpm, int playing, int frames
     s->sq.sp_new = 1;
 }
 
-/* engine.h: the params CHORD LEARN set, one key per call, so the host's controls follow */
-int mpc_engine_changed(void *inst, char *key, int len) {
-    one_t *s = inst;
-    if (!s->changed) return 0;
-    int i = __builtin_ctz(s->changed);
-    s->changed &= s->changed - 1;
-    snprintf(key, (size_t)len, "%s", KEYS[CHANGED_SLOT[i]]);
-    return 1;
-}
-
-static void midi(void *inst, const uint8_t *m, int len) {
-    one_t *s = inst;
+/* a MIDI message for this Synth (src/synths.h chose which Synths, by channel and key range) */
+static void synth_midi(one_t *s, const uint8_t *m, int len) {
     if (len < 2) return;
     int st = m[0] & 0xf0, d1 = m[1] & 0x7f, d2 = len > 2 ? m[2] & 0x7f : 0;
     if (st == 0xd0) { s->aftertouch = d1 / 127.0f; return; }   /* channel pressure: two bytes */
@@ -1782,84 +1883,6 @@ static void midi(void *inst, const uint8_t *m, int len) {
     }
 }
 
-/* "state": every value as key=value;... (the wrapper saves it with the project) */
-static void set_state(one_t *s, const char *str) {
-    char *buf = s->state_buf;
-    if (strlen(str) >= sizeof s->state_buf) return;   /* never restore half a state */
-    strcpy(buf, str);
-    load_defaults(s);   /* a state saved before a param existed leaves that param at its default */
-    sq_clear(&s->sq.q);   /* and one saved without a sequence has none */
-    char *save = NULL, key[64] = "";
-    for (char *kv = strtok_r(buf, ";", &save); kv; kv = strtok_r(NULL, ";", &save)) {
-        char *eq = strchr(kv, '=');
-        if (!eq) continue;
-        *eq = 0;
-        if (kv[0] == '~') {   /* "v=2": the previous key's prefix (up to its first '_') and this suffix */
-            char *u = strchr(key, '_');
-            if (!u || (size_t)(u + 1 - key) + strlen(kv + 1) >= sizeof key) continue;
-            strcpy(u + 1, kv + 1);
-        } else if (strlen(kv) < sizeof key) {
-            strcpy(key, kv);
-        } else {
-            continue;
-        }
-        if (!strcmp(key, "seq")) sq_decode(eq + 1, &s->sq.q, MD_COUNT, MS_COUNT);   /* the steps (damaged: none) */
-        else store(s, key, eq + 1);
-    }
-    s->sq.lost = 0;
-    sq_lanes_changed(s);
-}
-
-/* only the values that differ from their defaults (set_state starts from the defaults), so a state of hundreds of
- * params fits the wrapper's chunk (STATE_MAX: 8 KB on the MPC); "v=1" first keeps it non-empty (an empty state would
- * be no chunk at all). When that would not fit (hundreds of params off their defaults at once), "v=2" writes a key that
- * shares the previous one's prefix (up to its first '_') as "~" and the rest: about a fifth smaller. The sequencer's
- * PLAY, REC and STEP MOD are not kept (a project opens stopped); its steps follow as "seq=<text>" (src/stepseq.h) when
- * there are any. Should the whole not fit, the sound is saved without the steps (the readout says so; the window can
- * save them as a .oneseq file). Should the sound alone not fit even so, it is never handed out cut short: buf is left
- * empty, 0 is returned (the host then saves no chunk) and stderr says so, with the size it needed. Not called from
- * render() or midi(). */
-static int state_keeps(const one_t *s, int i) {
-    return KEYS[i][0] && s->val[i] != s->def[i] && i != P_SEQ_PLAY && i != P_SEQ_REC && i != P_SEQ_STEP_MOD;
-}
-static int state_put(char *buf, int n, int used, const char *fmt, const char *key, float v) {   /* counts past n */
-    return used + snprintf(used < n ? buf + used : NULL, used < n ? (size_t)(n - used) : 0, fmt, key, v);
-}
-static int get_state(one_t *s, char *buf, int n) {
-    int used = snprintf(buf, n, "v=1");
-    for (int i = 0; i < P_COUNT && used < n; i++)
-        if (state_keeps(s, i)) used = state_put(buf, n, used, ";%s=%g", KEYS[i], s->val[i]);
-    if (used >= n) {
-        used = snprintf(buf, n, "v=2");
-        const char *prev = NULL;
-        for (int i = 0; i < P_COUNT; i++) {   /* (on to the end: used is then the full size, for the message) */
-            if (!state_keeps(s, i)) continue;
-            const char *u = strchr(KEYS[i], '_');
-            size_t pl = u ? (size_t)(u + 1 - KEYS[i]) : 0;
-            if (pl && prev && !strncmp(prev, KEYS[i], pl) && strchr(prev, '_') == prev + pl - 1)
-                used = state_put(buf, n, used, ";~%s=%g", KEYS[i] + pl, s->val[i]);
-            else
-                used = state_put(buf, n, used, ";%s=%g", KEYS[i], s->val[i]);
-            prev = KEYS[i];
-        }
-        if (used >= n) {
-            if (n > 0) buf[0] = 0;
-            fprintf(stderr, "ONE-ish: the sound's state is %d bytes, more than the %d-byte chunk: NOT SAVED\n", used + 1,
-                    n);
-            return 0;
-        }
-    }
-    s->sq.lost = 0;
-    int lanes = 0;
-    for (int l = 0; l < SQ_ML; l++) lanes |= s->sq.q.m[l].dest;
-    if (sq_used_steps(&s->sq.q) || lanes) {
-        int len = sq_encode(&s->sq.q, s->sq_text, sizeof s->sq_text);
-        if (used + 5 + len < n) used += snprintf(buf + used, n - used, ";seq=%s", s->sq_text);
-        else s->sq.lost = 1;
-    }
-    return used;
-}
-
 /* LINK CUTOFF, after param k was set (-1: a whole state): with link on, a cutoff knob's move takes the other knob
  * along at the offset they had when link went on. A knob pushed to its end stays there and the offset comes back
  * once it leaves the end. A state restores both knobs as saved (store() never links). */
@@ -1869,26 +1892,17 @@ static void link_cutoffs(one_t *s, int k) {
     else if (k == P_SVF_CUT) s->val[P_FLT_CUT] = clampf(s->val[P_SVF_CUT] - s->link_off, 0.0f, 100.0f);
 }
 
-static void set_param(void *inst, const char *key, const char *val) {
-    one_t *s = inst;
-    if (!strcmp(key, "lfo_bpm")) {   /* the host's tempo (HAS_LFO_BPM), not a param: only synced envelopes need it applied */
-        float bpm = (float)atof(val);
-        if (isfinite(bpm) && bpm >= 20.0f && bpm <= 400.0f && bpm != s->bpm) {
-            s->bpm = bpm;
-            apply_envs(s);   /* synced envelope times and LFO rates follow the tempo */
-            apply_lfos(s);
-            s->fx_stale = 1;   /* and synced effect times and rates */
-        }
-        return;
-    }
-    if (!strcmp(key, "state") && !strncmp(val, "seqcmd\n", 7)) {   /* an edit from the window (src/stepseq_run.h) */
-        sq_command(s, val + 7);
-        return;
-    }
-    int k = slot(key);
-    if (sq_step_mod(s, k, val)) return;   /* STEP MOD: the knob's move goes into the sequence, the knob stays */
-    if (!strcmp(key, "state")) set_state(s, val);
-    else store(s, key, val);
+/* the host's tempo (HAS_LFO_BPM "lfo_bpm", not a param): synced envelopes, LFOs and effects follow */
+static void synth_bpm(one_t *s, float bpm) {
+    if (bpm == s->bpm) return;
+    s->bpm = bpm;
+    apply_envs(s);
+    apply_lfos(s);
+    s->fx_stale = 1;
+}
+
+/* everything a change of slot k (-1: a whole state) moves */
+static void synth_after(one_t *s, int k) {
     if (k == P_SEQ_PATTERN) sq_load_factory(s, (int)s->val[k]);   /* (a state restores its own steps instead) */
     link_cutoffs(s, k);
     apply(s);
@@ -1911,6 +1925,16 @@ static void set_param(void *inst, const char *key, const char *val) {
             if (!s->ecfg[n].latch && s->voice[i].env[n].held && !s->voice[i].gate) env_release(&s->voice[i].env[n]);
     perf_after_set(s, k);
     sq_sync_params(s);
+    synth_switch(s);   /* ON off: everything it plays lets go */
+}
+
+/* a param of this Synth (slot k) set from the host or the window */
+static void synth_set(one_t *s, int k, const char *val) {
+    if (sq_step_mod(s, k, val)) return;   /* STEP MOD: the knob's move goes into the sequence, the knob stays */
+    float was = s->val[k];
+    store_k(s, k, val);
+    if (s->val[k] == was && k != P_SEQ_PATTERN) return;   /* unchanged (a preset sets every param): nothing moves */
+    synth_after(s, k);
 }
 
 static int hz_text(char *buf, int n, float hz) {
@@ -1984,9 +2008,9 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
         if (s->val[P_FENV_SYNC + EX_STRIDE * e] > 0.5f) return snprintf(buf, n, "%s", SYNC_DIV[env_div(s->val[k])].name);
         return time_text(buf, n, env_ms(s->val[k]));
     }
-    if (k == P_KEY_CENTER) {   /* a note name, middle C (60) as C4, and the MIDI note number */
+    if (k == P_KEY_CENTER || k == P_KEY_LO || k == P_KEY_HI) {   /* a note name, middle C (60) as C4, and the MIDI note number */
         static const char *const NAMES[12] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-        int note = (int)s->center;
+        int note = k == P_KEY_CENTER ? (int)s->center : (int)roundf(s->val[k]);
         return snprintf(buf, n, "%s%d (%d)", NAMES[note % 12], note / 12 - 1, note);
     }
     if (k == P_NOISE_A || k == P_NOISE_R) return time_text(buf, n, env_ms(s->val[k]));
@@ -2033,9 +2057,8 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
     return 0;
 }
 
-static int get_param(void *inst, const char *key, char *buf, int n) {
-    one_t *s = inst;
-    if (!strcmp(key, "state")) return get_state(s, buf, n);
+/* a readout of this Synth (src/synths.h get_param: its key without the "s2_" prefix) */
+static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);   /* the sequencer's readout (a "display": "string" param) */
     if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
         int used = 0;
@@ -2048,7 +2071,11 @@ static int get_param(void *inst, const char *key, char *buf, int n) {
         }
         return used;
     }
-    if (!strcmp(key, "heals")) return snprintf(buf, n, "%d", s->heals);   /* ... how often heal() ran ... */
+    if (!strcmp(key, "voices_sounding")) {   /* ... the voices not idle (a test readout) ... */
+        int c = 0;
+        for (int i = 0; i < MAX_VOICES; i++) c += s->voice[i].env[ENV_AMP].stage != ENV_IDLE;
+        return snprintf(buf, n, "%d", c);
+    }
     if (!strcmp(key, "gen_euclid")) {   /* ... and the Euclidean pattern as x and . */
         int i = 0;
         for (; i < s->eu_n && i < n - 1; i++) buf[i] = s->eu[i] ? 'x' : '.';
@@ -2790,110 +2817,72 @@ static void fx_note_step(one_t *s, fx_params_t *f) {
     f->sfx.note = (f->sfx.follow ? (s->fx_age ? s->fx_key : 60.0f) : 60.0f) + f->sfx.pitch_st;
 }
 
-/* a non-finite sample reached the output (masked to 0 there): whatever holds it would otherwise keep the output at 0
- * for good (a delay line or reverb tank full of NaN, a filter's state). Before the next piece: the synth effect and
- * both master effect slots stop and clear their memory (fx.h's own path for a type switch: silent while it clears, a
- * part per block, then they start again with their input fading in; no allocation) and every voice's filters, noise
- * colours and FM feedback start clean. */
-static void heal(one_t *s) {
-    s->heal = 0;
-    s->heals++;
-    fxlife_t *life[3] = {&s->fx.ss, &s->fx.m[0].s, &s->fx.m[1].s};
-    for (int k = 0; k < 3; k++) {
-        if (life[k]->state == FS_OFF) continue;
-        life[k]->state = FS_CLEAR;
-        life[k]->at = 0;
-        life[k]->switching = 1;
-        life[k]->tone[0] = life[k]->tone[1] = 0.0f;
-    }
-    for (int i = 0; i < MAX_VOICES; i++) {
-        voice_t *v = &s->voice[i];
-        ladder_reset(&v->lad);
-        svf2_reset(&v->svf);
-        v->red = v->wprev = v->fm_prev = 0.0f;
-    }
-}
-
-/* one block into out (int16, the MPC's format) or, when out is NULL, into fout (float, the same samples before the
- * int16 step: one_ish_render_float) */
-static void render_to(void *inst, int16_t *out, float *fout, int frames) {
-    one_t *s = inst;
-    float acc[128], xl[128], xr[128], l[128], r[128];   /* the voices: mono sum, panned voices' offsets; the output */
-    fx_params_t *fxp = &s->fxp;
+/* ---- one Synth's audio (src/synths.h render_to runs the Synths piece by piece, in lockstep) ---- */
+/* once per render while the Synth is live: its effect settings, its clocks */
+static void synth_block(one_t *s) {
     if (s->fx_stale) {   /* a knob moved (or the tempo): every effect setting again, the modulation included */
         s->fx_stale = 0;
-        fx_params(s, fxp);
+        fx_params(s, &s->fxp);
     }
     if (s->seq_on) clock_block(s);
     if (sq_live(s) || s->sq.start_pending) sq_block(s);   /* the step sequencer's clock */
-    int done = 0;
-    while (done < frames) {
-        if (s->heal) heal(s);
-        int live = s->seq_on || s->npend > 0;   /* the step clock plays, or its last notes are still to end */
-        int sql = sq_live(s);   /* the step sequencer runs, or has notes to start or end */
-        if (live) seq_due(s);   /* steps and note ends at this sample, before the voices' control step */
-        if (sql) sq_due(s);
-        int first = s->phase == 0;
-        int n = CR - s->phase;
-        if (n > frames - done) n = frames - done;
-        if (live) {   /* stop this piece at the next step or note end: they fall on their exact sample */
-            int64_t d = seq_next(s);
-            if (d < n) n = (int)d;
-        }
-        if (sql) {
-            int64_t d = sq_next(s);
-            if (d < n) n = (int)d;
-        }
-        if (first) { control_lfos(s); ribbon_step(s); }
-        if (n > 128) n = 128;
-        memset(acc, 0, sizeof(float) * n);
-        memset(xl, 0, sizeof(float) * n);
-        memset(xr, 0, sizeof(float) * n);
-        int side = 0;   /* a voice is off the centre */
-        for (int k = 0; k < MAX_VOICES; k++) {   /* voices past the current count still finish their release */
-            voice_t *v = &s->voice[k];
-            if (v->env[ENV_AMP].stage == ENV_IDLE) continue;
-            if (first) control_voice(s, v);
-            side |= render_voice(s, v, acc, xl, xr, n, first);
-        }
-        if (side)   /* the dry path in stereo: every voice at its place */
-            for (int i = 0; i < n; i++) { xl[i] += acc[i]; xr[i] += acc[i]; }
-        if (first) {   /* the effect pass, after the voices' sources: only the settings it moves */
-            uint64_t dirty[MDF_WORDS];
-            if (fx_mod_step(s, dirty)) fx_params_mod(s, fxp, dirty);
-            fx_note_step(s, fxp);
-        }
-        fxp->ramp = CR - s->phase;   /* the effect gains ramp across the whole control step, however the host splits it */
-        fx_process(&s->fx, fxp, acc, side ? xl : acc, side ? xr : acc, l, r, n);   /* synth effect: mono in */
-        fxp->sfx.strum = 0;
-        int bad = 0;
-        for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host (and heal what made it: see heal()) */
-            int okl = isfinite(l[i]), okr = isfinite(r[i]);
-            bad |= !okl || !okr;
-            float yl = okl ? soft_limit(l[i]) : 0.0f, yr = okr ? soft_limit(r[i]) : 0.0f;
-            if (out) {
-                out[2 * (done + i)] = (int16_t)(yl * 32767.0f);
-                out[2 * (done + i) + 1] = (int16_t)(yr * 32767.0f);
-            } else {
-                fout[2 * (done + i)] = yl;
-                fout[2 * (done + i) + 1] = yr;
-            }
-        }
-        s->heal |= bad;
-        done += n;
-        s->phase = (s->phase + n) % CR;
-        s->now += n;
-        s->clk += n;
-        s->sq.clk += n;
+}
+
+/* the steps and note ends due at this sample; *n shortened to the next one (they fall on their exact sample) */
+static void synth_due(one_t *s, int *n) {
+    int live = s->seq_on || s->npend > 0;   /* the step clock plays, or its last notes are still to end */
+    int sql = sq_live(s);   /* the step sequencer runs, or has notes to start or end */
+    if (live) seq_due(s);   /* steps and note ends at this sample, before the voices' control step */
+    if (sql) sq_due(s);
+    if (live) {
+        int64_t d = seq_next(s);
+        if (d < *n) *n = (int)d;
+    }
+    if (sql) {
+        int64_t d = sq_next(s);
+        if (d < *n) *n = (int)d;
     }
 }
 
-static void render(void *inst, int16_t *out, int frames) { render_to(inst, out, NULL, frames); }
+/* n samples of the Synth: its voices and its synth effect, into l, r */
+static void synth_piece(one_t *s, int n, float *l, float *r) {
+    float acc[128], xl[128], xr[128];   /* the voices: mono sum, panned voices' offsets */
+    fx_params_t *fxp = &s->fxp;
+    int first = s->phase == 0;
+    if (first) { control_lfos(s); ribbon_step(s); }
+    memset(acc, 0, sizeof(float) * n);
+    memset(xl, 0, sizeof(float) * n);
+    memset(xr, 0, sizeof(float) * n);
+    int side = 0, sounding = 0;   /* a voice is off the centre; any sounds */
+    for (int k = 0; k < MAX_VOICES; k++) {   /* voices past the current count still finish their release */
+        voice_t *v = &s->voice[k];
+        if (v->env[ENV_AMP].stage == ENV_IDLE) continue;
+        sounding = 1;
+        if (first) control_voice(s, v);
+        side |= render_voice(s, v, acc, xl, xr, n, first);
+    }
+    if (side)   /* the dry path in stereo: every voice at its place */
+        for (int i = 0; i < n; i++) { xl[i] += acc[i]; xr[i] += acc[i]; }
+    if (first) {   /* the effect pass, after the voices' sources: only the settings it moves */
+        uint64_t dirty[MDF_WORDS];
+        if (fx_mod_step(s, dirty)) fx_params_mod(s, fxp, dirty);
+        fx_note_step(s, fxp);
+    }
+    fxp->ramp = CR - s->phase;   /* the effect gains ramp across the whole control step, however the host splits it */
+    fx_synth(&s->fx, fxp, acc, side ? xl : acc, side ? xr : acc, l, r, n);   /* synth effect: mono in */
+    fxp->sfx.strum = 0;
+    s->quiet = sounding ? 0 : s->quiet + n;
+}
 
-/* Not in the engine contract (wrapper/engine.h): the desktop build's float output (desktop/hostrate.c). The same as
- * render() before its int16 step: interleaved L R in -1..1, where render() writes (int16_t)(x * 32767). Called under
- * the wrapper's engine lock, in render()'s place; the MPC build never calls it. */
-void one_ish_render_float(void *inst, float *out_lr, int frames) { render_to(inst, NULL, out_lr, frames); }
+static void synth_advance(one_t *s, int n) {   /* every Synth, live or not: the clocks move on */
+    s->phase = (s->phase + n) % CR;
+    s->now += n;
+    s->clk += n;
+    s->sq.clk += n;
+}
 
-static const mpc_engine_t ENGINE = {create, destroy, midi, set_param, get_param, render, NULL, song_pos};
-const mpc_engine_t *mpc_engine(void) { return &ENGINE; }
+static unsigned next_age(one_t *s);
+
+#include "synths.h"   /* THE SYNTHS: the instance, the engine API */
+
+static unsigned next_age(one_t *s) { return ++s->in->age; }

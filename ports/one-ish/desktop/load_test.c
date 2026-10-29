@@ -20,6 +20,7 @@
 #include "params.h"   /* build/params.h: the parameters' keys, in VST order */
 #include "../src/randomize.h"   /* which lock section each parameter is in */
 #define TEST_MIDI_LOG 0x4F314D4C   /* as editor.h: effVendorSpecific index for the MIDI the window passed on */
+#define TEST_FOCUS 0x4F314643      /* as editor.h: the Panel Focus */
 #include "patches.h"   /* TEST_PATCH and its operations, for the user patch tests */
 #include "seq_page.h"   /* TEST_SEQ and its operations, for the step sequencer's page */
 #include "../src/stepseq.h"   /* to read back the sequence the engine holds */
@@ -605,7 +606,7 @@ static void click_answered(HWND child, float s, float x, float y, const answer_t
 static void patch_page(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     float sx = ZONE_SCREEN[0], sy = ZONE_SCREEN[1];
     dialog_bmp = bmp;
-    float act_y = sy + 6 + 36 + 20 + 9, act_w = (384 - 20) / 6.0f + 4;   /* the PATCHES page's button row (patches.c) */
+    float act_y = sy + 6 + 36 + 20 + 9, act_w = (384 - 4 * (PA_COUNT - 1)) / (float)PA_COUNT + 4;   /* the PATCHES page's buttons (patches.c) */
     click(child, s, sx + 200, sy + 23);   /* the patch name: the list */
     static const answer_t save_as = {"Save as", "UI Lead", IDOK}, yes = {"ONE-ish", NULL, IDYES};
     click_answered(child, s, sx + 8 + act_w * PA_SAVE_AS + act_w / 2 - 2, act_y, &save_as);
@@ -872,6 +873,7 @@ static void gdi_test(AEffect *fx) {
 
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
+static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
     check(fx->flags & 1, "the plugin says it has an editor window");
@@ -955,10 +957,150 @@ static void editor(AEffect *fx, const char *bmp) {
         SendMessageA(child, WM_LBUTTONUP, 0, 0);
         patch_page(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         seq_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        focus_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
     }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
     DestroyWindow(parent);
+}
+
+/* ---- PANEL FOCUS (multitimbral): the panel shows the focused Synth's values ---- */
+static unsigned char *grab(HWND child, int w, int h) {   /* the window as 24-bit pixels (free() them) */
+    int stride = (w * 3 + 3) & ~3;
+    unsigned char *px = malloc((size_t)stride * h);
+    HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+    HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+    HGDIOBJ old = SelectObject(dc, bm);
+    SendMessageA(child, WM_PRINTCLIENT, (WPARAM)dc, PRF_CLIENT);
+    BITMAPINFOHEADER bi = {sizeof bi, w, -h, 1, 24, BI_RGB, 0, 0, 0, 0, 0};
+    if (px) GetDIBits(dc, bm, 0, h, px, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+    SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
+    return px;
+}
+static int region_same(const unsigned char *a, const unsigned char *b, int w, RECT r) {   /* r in pixels */
+    int stride = (w * 3 + 3) & ~3;
+    for (int y = r.top; y < r.bottom; y++)
+        if (memcmp(a + y * stride + r.left * 3, b + y * stride + r.left * 3, (size_t)(r.right - r.left) * 3)) return 0;
+    return 1;
+}
+static void diff_box(const unsigned char *a, const unsigned char *b, int w, RECT r, const char *what) {   /* (a FAIL's why) */
+    int stride = (w * 3 + 3) & ~3, x0 = 1 << 30, y0 = 1 << 30, x1 = -1, y1 = -1;
+    for (int y = r.top; y < r.bottom; y++)
+        for (int x = r.left; x < r.right; x++)
+            if (memcmp(a + y * stride + x * 3, b + y * stride + x * 3, 3)) {
+                if (x < x0) x0 = x;
+                if (y < y0) y0 = y;
+                if (x > x1) x1 = x;
+                if (y > y1) y1 = y;
+            }
+    if (x1 >= 0) printf("     %s: pixels differ in x %d-%d, y %d-%d (of %ld-%ld, %ld-%ld)\n", what, x0, x1, y0, y1,
+                        (long)r.left, (long)r.right, (long)r.top, (long)r.bottom);
+}
+static RECT ctl_px(const char *key, float s) {   /* a panel control's cell, in pixels, less a margin (neighbours spill) */
+    RECT r = {0, 0, 0, 0};
+    int i = rnd_key(key);
+    for (int c = 0; c < NCTLS; c++)
+        if (CTLS[c].param == i)
+            SetRect(&r, (int)(CTLS[c].x * s) + 6, (int)(CTLS[c].y * s), (int)((CTLS[c].x + CTLS[c].w) * s) - 6,
+                    (int)((CTLS[c].y + CTLS[c].h) * s));
+    return r;
+}
+static void setkey(AEffect *fx, const char *key, float v) { if (rnd_key(key) < NPARAMS) fx->setParameter(fx, rnd_key(key), v); }
+static float getkey(AEffect *fx, const char *key) { return rnd_key(key) < NPARAMS ? fx->getParameter(fx, rnd_key(key)) : -1; }
+static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[256];
+    RECT k = ctl_px("flt_cut", s), sw = ctl_px("o1_wave", s), scr;
+    SetRect(&scr, (int)(ZONE_SCREEN[0] * s), (int)((ZONE_SCREEN[1] + 80) * s), (int)((ZONE_SCREEN[0] + ZONE_SCREEN[2]) * s),
+            (int)((ZONE_SCREEN[1] + 80 + 8 * 22) * s));   /* the screen's rows (the matrix) */
+    /* three different sounds: cutoff 10 / 90 / 50%, osc 1 tri / saw / tri, matrix row 1's amount */
+    setkey(fx, "flt_cut", 0.10f); setkey(fx, "s2_flt_cut", 0.90f); setkey(fx, "s3_flt_cut", 0.50f);
+    setkey(fx, "o1_wave", 0.0f); setkey(fx, "s2_o1_wave", 1.0f); setkey(fx, "s3_o1_wave", 0.0f);
+    for (int m = 1; m <= 9; m += 8) {   /* (rows 1 and 9: the matrix page may show either half) */
+        char k1[16], k2[16], k3[16];
+        snprintf(k1, sizeof k1, "mod%d_amt", m); snprintf(k2, sizeof k2, "s2_mod%d_amt", m); snprintf(k3, sizeof k3, "s3_mod%d_amt", m);
+        setkey(fx, k1, 0.55f); setkey(fx, k2, 0.95f); setkey(fx, k3, 0.20f);
+    }
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    unsigned char *px[4];
+    for (int c = 0; c < 3; c++) {   /* the SYNTH buttons, clicked */
+        click_zone(child, s, c == 0 ? ZONE_FOCUS1 : c == 1 ? ZONE_FOCUS2 : ZONE_FOCUS3);
+        intptr_t f = fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0);
+        snprintf(what, sizeof what, "SYNTH %d button: the panel shows Synth %d (focus %d, mask %d)", c + 1, c + 1,
+                 (int)(f % 4), (int)(f / 4));
+        check(f % 4 == c && f / 4 == 1 << c, what);
+        px[c] = grab(child, w, h);
+        if (c == 1 && bmp) shot(child, w, h, bmp, "_focus2");
+    }
+    click_zone(child, s, ZONE_FOCUS1);
+    px[3] = grab(child, w, h);
+    int ok = px[0] && px[1] && px[2] && px[3];
+    if (ok) {
+        int back = region_same(px[0], px[3], w, k), k12 = region_same(px[0], px[1], w, k), k23 = region_same(px[1], px[2], w, k);
+        int w12 = region_same(px[0], px[1], w, sw), w13 = region_same(px[0], px[2], w, sw);
+        int m12 = region_same(px[0], px[1], w, scr), m23 = region_same(px[1], px[2], w, scr);
+        snprintf(what, sizeof what, "switching focus redraws the cutoff knob (1/2 %s, 2/3 %s, back to 1 the same: %s), "
+                 "the osc 1 wave button (1/2 %s, 1/3 %s) and the matrix on the screen (1/2 %s, 2/3 %s)",
+                 k12 ? "same" : "differ", k23 ? "same" : "differ", back ? "yes" : "no", w12 ? "same" : "differ",
+                 w13 ? "same" : "differ", m12 ? "same" : "differ", m23 ? "same" : "differ");
+        ok = back && !k12 && !k23 && !w12 && w13 && !m12 && !m23;
+        if (!w13) diff_box(px[0], px[2], w, sw, "osc 1 wave, Synth 1 vs 3");
+        check(ok, what);
+        /* the drawn value is Synth 2's: Synth 1 set to Synth 2's values draws exactly what focus 2 drew */
+        setkey(fx, "flt_cut", 0.90f); setkey(fx, "o1_wave", 1.0f); setkey(fx, "mod1_amt", 0.95f); setkey(fx, "mod9_amt", 0.95f);
+        unsigned char *p1 = grab(child, w, h);
+        snprintf(what, sizeof what, "Synth 1 given Synth 2's cutoff, wave and matrix amount draws them exactly as focus "
+                 "on Synth 2 did (the panel showed Synth 2's values)");
+        if (p1) { diff_box(p1, px[1], w, k, "cutoff"); diff_box(p1, px[1], w, sw, "wave"); diff_box(p1, px[1], w, scr, "matrix"); }
+        check(p1 && region_same(p1, px[1], w, k) && region_same(p1, px[1], w, sw) && region_same(p1, px[1], w, scr), what);
+        free(p1);
+    } else {
+        check(0, "pictures of the window for the focus test");
+    }
+    for (int c = 0; c < 4; c++) free(px[c]);
+    /* a knob turned with Synth 2 in focus moves Synth 2 only; with Synths 2 and 3 both in focus, both */
+    fx->dispatcher(fx, 50, TEST_FOCUS, 2, NULL, 1.0f);
+    float s1 = getkey(fx, "flt_res"), s3 = getkey(fx, "s3_flt_res");
+    RECT r = ctl_px("flt_res", s);
+    POINT at = {(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(at.x, at.y));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(at.x, at.y - 60));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(at.x, at.y - 60));
+    float s2 = getkey(fx, "s2_flt_res");
+    snprintf(what, sizeof what, "a knob turned with Synth 2 in focus moves Synth 2's (%.2f) and not Synth 1's (%.2f = "
+             "%.2f) or 3's (%.2f = %.2f)", s2, getkey(fx, "flt_res"), s1, getkey(fx, "s3_flt_res"), s3);
+    check(s2 > 0.2f && getkey(fx, "flt_res") == s1 && getkey(fx, "s3_flt_res") == s3, what);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 6, NULL, 1.0f);   /* Synths 2 and 3 (Ctrl-click) */
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(at.x, at.y));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(at.x, at.y + 20));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(at.x, at.y + 20));
+    snprintf(what, sizeof what, "with Synths 2 and 3 in focus a knob moves both (%.2f, %.2f), Synth 1 stays (%.2f)",
+             getkey(fx, "s2_flt_res"), getkey(fx, "s3_flt_res"), getkey(fx, "flt_res"));
+    check(fabsf(getkey(fx, "s2_flt_res") - getkey(fx, "s3_flt_res")) < 1e-6f && getkey(fx, "s3_flt_res") != s3
+          && getkey(fx, "flt_res") == s1, what);
+    /* a shared control (the master delay's feedback) is the same whatever the focus */
+    float d1 = getkey(fx, "dly_fb");
+    unsigned char *a = grab(child, w, h);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
+    unsigned char *b = grab(child, w, h);
+    RECT fb = ctl_px("dly_fb", s);
+    check(a && b && region_same(a, b, w, fb) && getkey(fx, "dly_fb") == d1, "a SHARED control (master delay feedback) "
+          "draws the same with Synth 1 and Synth 3 in focus");
+    free(a); free(b);
+    /* SETUP: the three Synths side by side; a click on Synth 2's ON switches Synth 2 on */
+    click_zone(child, s, ZONE_TAB_SETUP);
+    float on2 = getkey(fx, "s2_syn_on");
+    float cx = ZONE_SCREEN[0] + 8 + 384 * 0.30f + (384 - 384 * 0.30f) / 3 * 1.5f, cy = ZONE_SCREEN[1] + 80 + 11;
+    click(child, s, cx, cy);
+    snprintf(what, sizeof what, "SETUP page: a click on Synth 2's ON cell switches Synth 2 %s -> %s; Synth 1 stays on",
+             on2 > 0.5f ? "on" : "off", getkey(fx, "s2_syn_on") > 0.5f ? "on" : "off");
+    check((getkey(fx, "s2_syn_on") > 0.5f) != (on2 > 0.5f) && getkey(fx, "syn_on") > 0.5f, what);
+    if (bmp) shot(child, w, h, bmp, "_setup");
+    click_zone(child, s, ZONE_TAB_SETUP);   /* its second page: pan, sends, synth effect, the shared settings */
+    if (bmp) shot(child, w, h, bmp, "_setup2");
+    click(child, s, cx, cy);   /* (Synth 2's pan: a drag cell; a click leaves it) */
+    setkey(fx, "s2_syn_on", 0.0f);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
+    click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
 /* a host unloading the DLL and loading it again (Carla after a rebuild): nothing of the old DLL stays registered, and

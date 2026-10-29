@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 """Writes ../presets.json from the patches below: every preset sets every parameter (params.json defaults, then the
-patch's changes), so loading one never leaves a value from the last. Patches are written in musical units and turned
+patch's changes), so loading one never leaves a value from the last. A patch is Synth 1's sound (Synths 2 and 3 off);
+PERFORMANCES at the end put patches into Synths 2 and 3 too (multitimbral: synth() below). Patches are written in musical units and turned
 into each knob's 0..100 position here: envelope times in ms, cutoffs and LFO rates in Hz, tempo divisions by name.
 The first preset is the plugin's default sound. Original sounds, not copies of any manufacturer's factory presets.
     python3 ports/one-ish/presets/make_presets.py"""
 import json
 import math
 import os
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+from make_synths import is_global   # noqa: E402  (the shared params: one copy, Synth 1's)
 PARAMS = json.load(open(os.path.join(HERE, "..", "params.json"), encoding="utf-8"))["params"]
 DIVS = ["4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"]   # engine.c SYNC_DIV
 LFO_DIVS = ["16 bars", "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128",
@@ -312,26 +316,52 @@ PATCHES = [
 ]
 
 
+def patch(name):   # a patch above by its name (its values)
+    return dict(next(p for n, p in PATCHES if n == name))
+
+
+def synth(n, values):   # values for Synth n (2 or 3): its own copies; the shared ones (master effects ...) are Synth 1's
+    return {"s%d_%s" % (n, k): v for k, v in values.items() if not is_global(k)}
+
+
+# PERFORMANCES (multitimbral): several Synths at once. A split puts each Synth on its own part of the keyboard (key_lo,
+# key_hi); a layer plays them together. The master effects are the first Synth's patch's.
+PATCHES += [
+    ("Split Bass + Lead", {**patch("Fat Bass"), "key_hi": 59, "volume": 66,
+                           **synth(2, {**patch("Sync Lead"), "syn_on": "On", "key_lo": 60, "volume": 60}),
+                           **delay("1/8T", 30, 0, True), **reverb(12)}),
+    ("Layer Pad + Pluck", {**patch("Warm Pad"), "volume": 52,
+                           **synth(2, {**patch("Glass Keys"), "syn_on": "On", "volume": 58, "mfx_send2": 25,
+                                       "pan": 20}), "pan": -15}),
+    ("Split Bass, Pad + Bells", {**patch("Pluck Bass"), "key_hi": 52, "volume": 62,
+                                 **synth(2, {**patch("Warm Pad"), "syn_on": "On", "key_lo": 53, "volume": 45,
+                                             "pan": -25}),
+                                 **synth(3, {**patch("Modal Bells"), "syn_on": "On", "key_lo": 53, "volume": 50,
+                                             "pan": 25, "mfx_send2": 30}),
+                                 **reverb(30, 3.0)}),
+]
+
+
 def main():
     by_key = {p["key"]: p for p in PARAMS}
     presets = []
-    for name, patch in PATCHES:
-        for k in patch:
+    for name, pv in PATCHES:
+        for k in pv:
             if k not in by_key:
                 raise SystemExit("%s: %r is not a parameter" % (name, k))
         # Link Cutoff ties the two cutoff knobs together as each one is set, and the wrapper sets a preset's values in
         # file order. So it comes first and is always Off in a preset: both cutoffs then land as written, whatever the
         # sound before had. (On, the second cutoff would move the first.)
-        if patch.get("flt_link", "Off") != "Off":
+        if any(pv.get(k, "Off") != "Off" for k in ("flt_link", "s2_flt_link", "s3_flt_link")):
             raise SystemExit("%s: presets keep flt_link Off (it would move the cutoffs while they load)" % name)
         values = {}
         # STEP MOD is set second, and Off: while it is on, a knob's move is recorded into the sequence instead of setting
         # the knob, so the preset's other values would not land
-        first = ("flt_link", "seq_step_mod")
-        for p in sorted(PARAMS, key=lambda p: first.index(p["key"]) if p["key"] in first else 2):   # then VST order
+        first = ("flt_link", "s2_flt_link", "s3_flt_link", "seq_step_mod", "s2_seq_step_mod", "s3_seq_step_mod")
+        for p in sorted(PARAMS, key=lambda p: first.index(p["key"]) if p["key"] in first else len(first)):   # VST order
             if p.get("display") == "string":   # a readout (seq_pos), not a setting
                 continue
-            v = patch.get(p["key"], p.get("default", p.get("min", 0)))
+            v = pv.get(p["key"], p.get("default", p.get("min", 0)))
             if "options" in p and isinstance(v, (int, float)):
                 v = p["options"][int(v)]
             values[p["key"]] = v

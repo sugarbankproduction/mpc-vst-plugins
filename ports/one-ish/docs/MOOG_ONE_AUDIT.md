@@ -7,7 +7,8 @@ cfb10b8 (branch `one-ish`): `ports/one-ish/params.json` (461 params), `src/engin
 window (`desktop/editor.c`, `editor_draw.c`, `gen_layout.py`, `patches.c`), `presets.json` (35 factory presets),
 `docs/PATCHES.md` and `PLAN.md`. Every row below was checked against that code, not against the row's earlier text.
 The 64-step sequencer (section 17) was built after cfb10b8 (2026-10-27, `docs/SEQUENCER.md`); its rows, and the ones
-it changed in sections 13, 14 and 22b, were updated against that code.
+it changed in sections 13, 14 and 22b, were updated against that code. Packages 8 (in part), 9 and 13 (MIDI channel,
+16 voices, three Synths; 2026-10-28, `docs/MULTITIMBRAL.md`) updated the rows they touched and the counts below.
 
 Manual wording is summarised, not quoted; only parameter names and ranges are copied.
 
@@ -56,11 +57,11 @@ user patch files (2026-10-27, offline).
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | All-analog voice path; digital FX can be bypassed for a 100% analog path [ANALOG] | p8, p96, p140 | Partial | Virtual-analog models: PolyBLEP oscillators, zero-delay-feedback ladder (optionally per-stage tanh, `an_ladder`), TPT SVF pair; no oversampling. The effects bypass exactly (`modfx_on`, `mfx_on` Off) | L (to deepen the models) | medium-high |
-| Polyphony | 8 or 16 voices (p8, p140) | Partial | `voices` Mono, 2-8 (MAX_VOICES 8); no 16-voice option | M (16 voice slots, voice cards, state) | high (each voice) |
-| Three-part multitimbral: up to 3 Synths per Preset, split, layered or zoned [MULTI] | p8-9 | Missing | One part (one Synth per instance; three instances on three host tracks get close) | L | high (voices are shared) |
-| Per-Synth Timbre: own sound, note range, voice count, MIDI channel, arp, sequencer [MULTI] | p9 | Missing | - | L | none |
-| Hardware voices shared between Synths at will [MULTI] | p9 | Missing | - | M | none |
-| One Synth Effect per Synth plus two Master Effects on sends | p9, p96-101 | Partial | One synth effect slot (20 types) and two master sends; the master slots are fixed (send 1 a delay, send 2 a reverb) and there is one Synth | M | none/voice; shared medium |
+| Polyphony | 8 or 16 voices (p8, p140) | Have | `voices` Mono, 2-16 (MAX_VOICES 16; the voice cards 1-8 as before, 9-16 between them); an instance's three Synths share one 16-voice pool (2026-10-28, offline and the desktop window) | - | high (each voice) |
+| Three-part multitimbral: up to 3 Synths per Preset, split, layered or zoned [MULTI] | p8-9 | Have | Three Synths per instance (`src/synths.h`, `docs/MULTITIMBRAL.md`): Synth 1's keys as before, Synths 2 and 3 as `s2_` / `s3_` copies; split and layer by key range, three factory performances (2026-10-28, offline and the desktop window) | - | high (voices are shared) |
+| Per-Synth Timbre: own sound, note range, voice count, MIDI channel, arp, sequencer [MULTI] | p9 | Have | Each Synth has every sound setting, `key_lo`/`key_hi`, `voices`, `syn_ch`, its own arp, chord memory, generative steps and sequencer (2026-10-28, offline and the desktop window) | - | none |
+| Hardware voices shared between Synths at will [MULTI] | p9 | Have | One pool of 16: each Synth within its POLY COUNT, voices of any Synth stolen when the pool is full (released first, then by the new note's Synth's stealing mode; No Stealing drops the note) (2026-10-28, offline and the desktop window) | - | none |
+| One Synth Effect per Synth plus two Master Effects on sends | p9, p96-101 | Have | A synth effect per Synth (`modfx_*`, its own on, type, controls, mix; its own matrix moves it) and two master effects of any type on the Synths' sends (`mfx_send1/2` per Synth); five at once (2026-10-28, offline and the desktop window) | - | none/voice; shared medium |
 | Voice: 3 VCOs, ring mod, noise, external input, mixer to SVF pair and ladder, VCA | p9-10 | Partial | 3 oscillators, ring mod, noise (and MACRO) into the SVF pair and the ladder, then the VCA; no external input | M (audio input) | none |
 | Each Synth: 4 LFOs and 3 EGs per voice (manual wording p10) | p10 | Have | 3 EGs and 4 LFOs per voice: an LFO runs per voice when it restarts per note or the matrix moves it per voice, else every voice follows one free-running LFO (2026-10-27, offline) | - | - |
 | Modulation: hard-wired, Quick Assign (DEST buttons), Mod Matrix with controllers and transforms | p10, p67 | Partial | Hard-wired amounts, a 16-slot matrix with controllers and the four transforms; no DEST / Expression Assign quick assign (only the ribbon's own quick assignment) | M | low |
@@ -73,17 +74,17 @@ user patch files (2026-10-27, offline).
 | Traditional knobs, soft knobs, master encoder; lit and red buttons [HW] | p11 | Missing | The window's drawn knobs, buttons and PRESET knob stand in (mouse) | - | none |
 | MORE pages: a second layer of parameters per module [UI] | p11, every module | Have | The window's MORE triangles open each module's second layer on the centre screen (sub-pages past 16 items) | - | none |
 | DEST button on each LFO and EG: next touched control becomes a destination [UI] | p11, p43, p47, p68 | Missing | Matrix slots set by hand on the MATRIX page | M | none |
-| HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Partial | The centre screen's name line shows the patch (F/U, `*` when edited); no timbres, key ranges, tempo or tags | S (more with parts) | none |
+| HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Partial | The name line shows the patch (F/U, `*` when edited); each page's title the Synth in focus; the SETUP page the three Synths' on/off, channels and key ranges (2026-10-28, offline and the desktop window); no timbre names, tempo or tags | S | none |
 | SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Partial | MATRIX (the MOD screen) and the PATCHES page's SAVE / DELETE exist; no SETTINGS, SNAPSHOT or COMPARE | see 21, 22 | none |
 | SHIFT: fine resolution on soft knobs, latching shift [UI] | p14 | Have | Shift-drag is the fine resolution on every knob (`editor.c`); a latching shift isn't needed with a keyboard modifier | - | none |
 | New initialised preset (SHIFT + COMPARE) | p14 | Have | The "Init" program | - | none |
-| Panel Focus: SYNTH 1/2/3, multi-select for joint edits, SHIFT = solo [UI][MULTI] | p14-15 | Missing | - | M | none |
-| Keyboard Control: per-Synth ON, LOW/HIGH RANGE key zone, both = full G0..C10 [MULTI] | p15 | Missing | - (a host's key-range filter can stand in) | S (with parts) | none |
+| Panel Focus: SYNTH 1/2/3, multi-select for joint edits, SHIFT = solo [UI][MULTI] | p14-15 | Partial | SYNTH 1/2/3 buttons on the console: the panel, MORE pages, matrix, step editor and randomiser show and edit that Synth; Ctrl-click edits several together (the last picked shown); shared sections marked SHARED (2026-10-28, offline and the desktop window); no solo | S (solo) | none |
+| Keyboard Control: per-Synth ON, LOW/HIGH RANGE key zone, both = full G0..C10 [MULTI] | p15 | Partial | `syn_on`, `key_lo`, `key_hi` per Synth (SETUP page), as note names (2026-10-28, offline and the desktop window); set by value, not by pressing LOW RANGE and then a key | S | none |
 | Expression Assign buttons: MW, PAD X, PAD Y, KB, VEL, AT, EXP 1 [UI] | p15, p68 | Missing | Matrix slots set by hand | M | none |
 | Selecting presets from the browser (list, timbre pane, tag pane, tag filters) [UI] | p15-16 | Partial | The PATCHES page lists factory presets and user patches and loads on a click; PREV/NEXT and the PRESET knob step through them; no timbre pane, no tags or filters | see 20 | none |
 | 61-key keybed, velocity and aftertouch [HW] | p17, p140 | Have | Via MIDI: velocity, channel pressure; the window's 61-key keyboard plays velocity by click height | - | none |
 | Selectable velocity curves | p17, p116 | Have | `vel_curve` (see 19) | - | none |
-| OCTAVE buttons; both = default octave; hold both = MIDI panic | p17, p112 | Partial | `octave_shift` -2..+2 is an engine param (see 19); the window's OCTAVE buttons only move the on-screen keys, with no both-buttons reset and no hold-for-panic (the engine does handle CC 120/121/123) | S | none |
+| OCTAVE buttons; both = default octave; hold both = MIDI panic | p17, p112 | Have | `octave_shift` -2..+2 per Synth; the window's OCTAVE buttons: held 1 s back to the default octave, 2 s a MIDI panic (pedals up, All Notes Off, All Sound Off on every channel) (2026-10-28, the desktop window) | - | none |
 | Oscillator OLED waveform displays [UI] | p10, p22 | Have | Each oscillator panel draws its wave from wave, angle, pulse width and mix (`draw_wave`), static as on the instrument | - | none |
 | Mod wheel position saved with the preset | p18, p113 | Missing | The wheel's position is MIDI state, not saved (see LOAD SAVED POS, 19) | S | none |
 
@@ -253,7 +254,7 @@ user patch files (2026-10-27, offline).
 |---|---|---|---|---|---|
 | LEVEL of the active Synth | 0 to 10 (p51) | Have | `volume`; matrix "Amp Level" | - | - |
 | PAN of the active Synth | Left to Right (p51) | Have | `pan` -100..100%, equal power (centre exactly as the old mono sum, hard left +3 dB on the left); the synth effect's wet sits at the pan (2026-10-27, offline) | - | none |
-| VCA MORE: level and pan of all three Synths on one page [MULTI][UI] | 0-100%, 100% L to 100% R (p52) | Missing | - | S (with parts) | none |
+| VCA MORE: level and pan of all three Synths on one page [MULTI][UI] | 0-100%, 100% L to 100% R (p52) | Have | The SETUP page: each Synth's `volume`, `pan`, sends, synth effect on, side by side; `master_level` after the mix (2026-10-28, offline and the desktop window) | - | none |
 | SPREAD: per-voice stereo placement around the pan | 0% to 100% (p52) | Have | `spread`: each new note takes the next place in an alternating pattern (+-1, +-0.5, +-0.75, +-0.25) around the pan; a unison stack fans out by its place in the stack; mono stays on the pan (2026-10-27, offline) | - | low |
 | Per-voice pan as a matrix destination | p76, p96 | Have | "Pan" (+-100% = the centre to a side) and "Spread" (+-the knob), per voice (2026-10-27, offline) | - | low |
 
@@ -297,13 +298,13 @@ user patch files (2026-10-27, offline).
 |---|---|---|---|---|---|
 | HOLD: latch held notes; legato adds, non-legato replaces; with sustain it adds; latches the arp | on/off (p63) | Have | `hold`: as the manual; off lets go of what it latched (the pedals keep theirs); latches the arp's keys (2026-10-27, offline) | - | none |
 | CHORD memory: one key plays a stored interval stack, first note is the root | on/off (p63) | Have | `chord_on`, `chord_shape` (Custom = the learned chord in `chord_iv1..5`, +-24 st; or 14 built-in shapes), root first; voices as the chord needs (2026-10-27, offline) | - | high (multiplies sounding voices) |
-| CHORD LEARN, saved per Synth; silent or audible learn (Settings) [UI] | p63, p125 | Partial | `chord_learn` on/off param: first key clears and is the root, up to 5 more; off stores it and picks Custom; saved with the preset; always audible (no silent learn) (2026-10-27, offline) | S | none |
+| CHORD LEARN, saved per Synth; silent or audible learn (Settings) [UI] | p63, p125 | Have | `chord_learn` on/off per Synth: first key clears and is the root, up to 5 more; off stores it and picks Custom; saved with the preset; `learn_mode` Audible or Silent (2026-10-28, offline) | - | none |
 | Chord is applied after the arp and sequencer | p63 | Have | Every arp / generative note and every sequencer note plays its chord (2026-10-27, offline) | - | none |
 | MONO | on/off (p64) | Have | `voices` = Mono, legato, with the note priority below | - | - |
-| UNISON: all voices stack, divided among held keys | on/off (p64) | Partial | `unison`: fixed stacks of `uni_count` voices per note, a stack allocated and stolen whole (8 voices, count 4: two notes); stacks don't re-divide as keys are added (2026-10-27, offline) | M | high (each stacked voice costs a full voice) |
+| UNISON: all voices stack, divided among held keys | on/off (p64) | Have | `unison`: stacks of `uni_count` voices; when the held keys need more voices than whole stacks leave, the poly count is shared out among them (16 voices, count 16: one key 16, two keys 8 each), the biggest stacks giving up their outermost voices (2026-10-28, offline) | - | high (each stacked voice costs a full voice) |
 | DETUNE of the unison stack, uneven spread around the centre | 0 to 10 (p64) | Have | `uni_detune` 0-100%: voices at u*sqrt(abs(u)) of +-50 cents (u evenly -1..1), symmetric, the centre voice stays put; stacks scaled by 1/sqrt(n) in level (2026-10-27, offline) | - | none |
-| UNISON COUNT (also works in poly mode) | 2 to POLY COUNT (p65) | Have | `uni_count` 2-8, capped at the voice count in poly; mono + unison stacks it on one note (2026-10-27, offline) | - | high |
-| POLY COUNT | 2 to hardware voices (p65) | Have | `voices` Mono, 2, 3, 4, 5, 6, 7, 8 (2026-10-27, offline) | - | high per voice |
+| UNISON COUNT (also works in poly mode) | 2 to POLY COUNT (p65) | Have | `uni_count` 2-16, capped at the voice count in poly; mono + unison stacks it on one note (2026-10-28, offline) | - | high |
+| POLY COUNT | 2 to hardware voices (p65) | Have | `voices` Mono, 2-16 per Synth, all three within the shared 16 (2026-10-28, offline) | - | high per voice |
 | VOICE STEALING MODE | No Stealing, Oldest, Quietest, Newest (p66) | Have | `steal_mode`, after an idle voice: Oldest (default: quietest releasing, then oldest held by a pedal or HOLD, then oldest held), Quietest (lowest level x velocity of all), Newest (quietest releasing, then newest), No Stealing (quietest releasing, else the note is dropped) (2026-10-27, offline) | - | none |
 | MONOPHONIC NOTE PRIORITY | Low, High, Last (p66) | Have | `note_priority`; a key that loses to a held one changes nothing; releasing the sounding key moves to the next by priority, without a retrigger (2026-10-27, offline) | - | none |
 | PITCH VARIANCE: random pitch per new note | 0 to 50 cents (p66) | Have | `pitch_var` 0-50 cents, uniform, drawn per voice for each new note (2026-10-27, offline) | - | none |
@@ -482,7 +483,7 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | ONE SHOT | off/on (p94) | Have | `seq_one_shot` (PLAY goes off at the end) (2026-10-27, offline) | - | none |
 | RECORDING MODE | Replace, Overdub, Focused (p94) | Have | `seq_rec_mode`; step recording stopped, real time running (gate as held) (2026-10-27, offline) | - | none |
 | OUTPUT: which Synth(s) the sequence plays [MULTI] | Synth 1/2/3, All Synths (p94) | Missing | - | S | none |
-| Start several Synths' sequences together (Panel Focus multi-select) [MULTI] | p83 | Missing | - | S | none |
+| Start several Synths' sequences together (Panel Focus multi-select) [MULTI] | p83 | Have | PLAY ALL (`seq_all`, the SETUP page): every Synth that is on with its sequencer ON starts (or stops) on the same sample (2026-10-28, offline and the desktop window) | - | none |
 | CLEAR SEQUENCE, DUPLICATE X-Y [UI] | p94 | Have | the step editor's CLEAR (asks) and DUP (2026-10-27, offline) | - | none |
 | LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Partial | `.oneseq` files from the step editor (the Windows file dialog sorts by name or date); no performance notes (2026-10-27, offline) | M | none |
 
@@ -500,8 +501,8 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 | Synth Effect ON button | on/off (p96) | Have | `modfx_on` | - | none |
 | CTRL 1 and CTRL 2 knobs, re-assignable to any effect parameter | p96-97 | Have | `modfx_ctrl1`/`modfx_ctrl2`: +-100% of the target's range on top of its knob; target `modfx_c1_dst`/`modfx_c2_dst`, Auto = the manual's pre-assignment per type | - | none |
 | Effect presets per type: load, save, initialise to the type's defaults [UI] | p97-98, p101 | Missing | - | M | none |
-| Up to 5 effects at once (3 synth + 2 master) | p96 | Partial | 3 at once: one synth effect (one part) plus the two master effects | (with parts) | shared medium |
-| MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Have | One part: `mfx_send1` into master effect 1, `mfx_send2` into master effect 2; returns added to the dry signal | - | shared |
+| Up to 5 effects at once (3 synth + 2 master) | p96 | Have | Three synth effects (one per Synth) and the two master effects (2026-10-28, offline and the desktop window) | - | shared medium |
+| MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Have | Each Synth's `mfx_send1` / `mfx_send2` into the shared master effects (their sum, `fx_master_multi`); returns added to the mix (2026-10-28, offline and the desktop window) | - | shared |
 | Master Effects ON button | on/off (p99) | Have | `mfx_on` | - | none |
 | MASTER EFFECT 1 / 2 TYPE: any type from the synth-effect list, plus the Eventide reverbs (synth effect presets usable as master effects and back) | p96, p101 | Have | `dly_type` / `rev_type`: 23 types in either slot (Plate, Room, Hall, Space, Shimmer, Blackhole, Stereo Delay, Ping Pong and the manual's 15 synth types; the 5 open-source synth types stay synth-only); each slot has its own controls (slot 1 the `dly_*` params, slot 2 the `rev_*`), MIX and GAIN; switching a type fades the old one out, clears its memory a block at a time and fades the new one in (2026-10-27, offline). Effect presets: package 12c | - | none/voice; shared, by type |
 | MASTER BUSS MODE | Dual Mono (two effects), Stereo (one effect) (p100) | Have | `mfx_buss`: Dual Mono (both effects, on SEND 1 and SEND 2) or Stereo (effect 1 alone on SEND 1, stereo in). ONE-ish keeps each voice's place in Dual Mono's inputs too (the instrument's mono buss loses it), so the earlier sounds are unchanged | - | shared |
@@ -677,7 +678,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | OCTAVE SHIFT | -2 to +2 (p112) | Have | `octave_shift` (an engine param; follows live, keyboard tracking too) (2026-10-27, offline) | - | none |
-| MIDI panic (hold both octave buttons) | p112 | Partial | The engine handles CC 120/123 (all off) and 121 (reset controllers); the window has no panic gesture or button | S | - |
+| MIDI panic (hold both octave buttons) | p112 | Have | The engine handles CC 120/123 (all off) and 121 (reset controllers); holding a window OCTAVE button 2 s sends them on every channel (2026-10-28, the desktop window) | - | - |
 | GLIDE on/off | p112 | Have | `glide`; each voice glides from its own last pitch (a fresh voice doesn't), at the control rate; keyboard tracking and the Keyboard source follow it (2026-10-27, offline) | - | none |
 | GLIDE RATE | 0 ms to 10.0 s (p112) | Have | `glide_time` 0 ms, then 1 ms to 10 s on a log knob (2026-10-27, offline) | - | none |
 | GLIDE TYPE | LCR (constant rate), LCT (constant time), EXP (exponential) (p116) | Have | `glide_type`: LCR takes the glide time per octave, LCT the glide time for any interval, EXP 95% of the way in the glide time (2026-10-27, offline) | - | none |
@@ -703,9 +704,9 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Preset store (tens of thousands), browse and load | p118-119, p140 | Have | 35 factory programs plus any number of user patch files (`Documents\ONE-ish\Patches`, `docs/PATCHES.md`), browsed together on the PATCHES page and with PREV/NEXT | - | none |
 | Tags: TYPE (Single, Layer, Split, Multi), CATEGORY, MOOD, GROUP; filter the browser by tags [UI] | p118-120 | Partial | A patch file may carry `category=` and `author=` lines (kept on save); nothing sets them in the window, no mood/group/type, no filters | M | none |
 | Notes saved with a preset; SHOW NOTES on the HOME screen [UI] | p118, p120 | Missing | - | S | none |
-| Load a Timbre from any preset into any Synth [MULTI] | p119 | Missing | - | M | none |
+| Load a Timbre from any preset into any Synth [MULTI] | p119 | Have | PATCHES page INTO S1/2/3: a factory preset or user patch loads into the focused Synth only (its setup kept), the engine's `synthload` (2026-10-28, offline and the desktop window) | - | none |
 | SAVE PRESET / SAVE PRESET AS, unique names, overwrite prompt [UI] | p120 | Have | The PATCHES page: SAVE, SAVE AS (asks before replacing a same-named patch; names compare case-insensitively), RENAME, DELETE (2026-10-27, offline) | - | none |
-| SAVE TIMBRE to a new single-Timbre preset [UI][MULTI] | p121 | Missing | - | S (with parts) | none |
+| SAVE TIMBRE to a new single-Timbre preset [UI][MULTI] | p121 | Have | PATCHES page SAVE S1/2/3: the focused Synth's sound as a user patch (2026-10-28, offline and the desktop window) | - | none |
 | A preset restores everything (sequences, matrices, arps, effects, held wheel and pad) | p119 | Partial | The state restores every ONE-ish parameter; not the held mod wheel or pad (and no sequences yet) | S | none |
 
 ## 21. Editing and saving (p122-123)
@@ -725,7 +726,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 |---|---|---|---|---|---|
 | SETTINGS page: GLOBAL, LIBRARY and TUNING tabs, kept apart from presets [UI] | p124 | Missing | Master tune and fine tune are ordinary params saved with each sound; no global settings store | M | none |
 | KNOB MODE [HW] | Absolute, Pass Through, Relative (p125) | Missing | Mouse knobs always edit relatively | - | none |
-| CHORD MEMORY learn mode | Silent Learn, Audible Learn (p125) | Missing | Chord learn is always audible (see 14) | S | none |
+| CHORD MEMORY learn mode | Silent Learn, Audible Learn (p125) | Have | `learn_mode` (shared; the SETUP page) (2026-10-28, offline) | - | none |
 | LCD BRIGHTNESS, PANEL LED BRIGHTNESS [HW] | 0% to 100% (p125) | Missing | - | - | none |
 | SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Partial | The PRESET knob and PREV/NEXT load as they step (autoload always on, no switch); no bank preview (no performance sets) | S | none |
 | DUPLICATE NAMES ON IMPORT / EXPORT [UI] | Ignore, Overwrite, Auto Rename, Manual Rename (p126) | Partial | IMPORT asks before overwriting a same-named patch; no auto-rename or ignore choice | S | none |
@@ -742,8 +743,8 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | RECEIVE MIDI START/STOP | off/on (p128) | Partial | The host's playing flag reaches the engine (`song_pos`); the arp and the sequencer follow the song position while it plays (no LFO reset; the host's start and stop don't start or stop the sequence) | S | none |
 | MIDI I/O LOAD FROM PRESET [UI] | off/on (p129) | Missing | - | S | none |
 | MIDI IN PORTS [HW] | DIN, USB, DIN & USB (p129) | Missing | Host | - | none |
-| MIDI IN CHANNEL ALL (one channel for the whole preset) | Off, 1-16 (p129) | Missing | Omni: the channel nibble is ignored, every channel plays | S | none |
-| MIDI IN ROUTE PER SYNTH: a channel for each Synth [MULTI] | Off, 1-16 each (p129) | Missing | - | S (with parts) | none |
+| MIDI IN CHANNEL ALL (one channel for the whole preset) | Off, 1-16 (p129) | Have | `midi_ch`: Omni (the default: every channel, as before) or 1-16 for every Synth; the window plays on it (2026-10-28, offline) | - | none |
+| MIDI IN ROUTE PER SYNTH: a channel for each Synth [MULTI] | Off, 1-16 each (p129) | Have | `midi_ch` Per Synth: each Synth's `syn_ch` (Omni or 1-16; default 1, 2, 3); a key's release goes where the key went (2026-10-28, offline and the desktop window) | - | none |
 | MIDI OUT PORTS [HW] | DIN, USB, DIN & USB (p129) | Missing | Host | - | none |
 | MIDI OUT ROUTE and channels: the Synths' notes (keys, arp, sequencer) out | All or Per Synth, Off, 1-16 (p129-130) | Missing | The plugin sends no MIDI; a desktop VST2 can send the arp's and sequencer's notes to the host (MPC ignores plugin MIDI out) | M | none |
 
@@ -799,7 +800,7 @@ Cross-reference only: these rows repeat items already counted above and are left
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| USB computer keyboard for naming and Panel Focus shortcuts (SHIFT/CTRL + F5-F7) [UI][MULTI] | p143 | Partial | The computer keyboard types names in the window; no Panel Focus shortcuts (no parts) | S (with parts) | none |
+| USB computer keyboard for naming and Panel Focus shortcuts (SHIFT/CTRL + F5-F7) [UI][MULTI] | p143 | Have | The computer keyboard types names in the window; Shift+F5/F6/F7 pick the Synth in focus (Ctrl too: add it) (2026-10-28, offline and the desktop window) | - | none |
 | MIDI CONTROL OUTPUT: panel moves sent as CC, MIDI MAP or NRPN; ALWAYS SEND NRPN NUM [HW] | p144 | Missing | The host records knob moves as automation (`audioMasterAutomate`) | - | none |
 | LEARN MIDI CC: map a CC to any panel control, 7- or 14-bit, CLEAR / ADD MAPPING | p145-146 | Partial | Every parameter is a host-automatable VST parameter, so hosts with MIDI learn can map it; the plugin has no MIDI learn of its own | M | none |
 | EDIT MIDI MAPPING list, reserved CCs [UI] | p147-148 | Partial | Host side only | (with learn) | none |
@@ -834,8 +835,8 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 
 | Module | Have | Partial | Missing | Missing [HW] | Missing [UI] |
 |---|---|---|---|---|---|
-| 0. Architecture and overview (p8-10) | 2 | 5 | 3 | 0 | 0 |
-| 1. Front panel, centre console, keyboard (p10-18) | 6 | 4 | 6 | 1 | 3 |
+| 0. Architecture and overview (p8-10) | 7 | 3 | 0 | 0 | 0 |
+| 1. Front panel, centre console, keyboard (p10-18) | 7 | 5 | 4 | 1 | 2 |
 | 2. Rear panel (p19-21) | 0 | 3 | 3 | 3 | 0 |
 | 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
@@ -844,21 +845,21 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 7. Filters (p33-39) | 22 | 1 | 1 | 0 | 1 |
 | 8. Envelopes (p40-45) | 17 | 2 | 2 | 0 | 2 |
 | 9. LFOs (p46-49) | 17 | 3 | 3 | 0 | 2 |
-| 10. VCA (p50-52) | 4 | 0 | 1 | 0 | 1 |
+| 10. VCA (p50-52) | 5 | 0 | 0 | 0 | 0 |
 | 11. Output (p53-56) | 0 | 0 | 6 | 4 | 0 |
 | 12. Performance Sets and text entry (p57-60) | 1 | 2 | 2 | 0 | 2 |
 | 13. Master Clock (p60-62) | 3 | 1 | 4 | 3 | 1 |
-| 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 10 | 2 | 0 | 0 | 0 |
-| 15. Modulation (p67-77) | 71 | 3 | 14 | 2 | 3 |
+| 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
+| 15. Modulation (p67-77) | 74 | 3 | 11 | 2 | 3 |
 | 16. Arpeggiator (p78-81) | 16 | 1 | 0 | 0 | 0 |
-| 17. Sequencer (p82-95) | 27 | 4 | 2 | 0 | 0 |
-| 18. Effects (p96-111) | 84 | 1 | 3 | 0 | 1 |
-| 19. Left Hand Controller (p17-18, p112-117) | 14 | 2 | 3 | 1 | 0 |
-| 20. Browser, presets and timbres (p118-121) | 2 | 2 | 3 | 0 | 2 |
+| 17. Sequencer (p82-95) | 28 | 4 | 1 | 0 | 0 |
+| 18. Effects (p96-111) | 85 | 0 | 3 | 0 | 1 |
+| 19. Left Hand Controller (p17-18, p112-117) | 15 | 1 | 3 | 1 | 0 |
+| 20. Browser, presets and timbres (p118-121) | 4 | 2 | 1 | 0 | 1 |
 | 21. Editing and saving (p122-123) | 1 | 0 | 3 | 0 | 2 |
-| 22. Settings (p124-139) | 3 | 5 | 23 | 11 | 7 |
-| 24. Appendices A and B (p143-158) | 0 | 3 | 3 | 1 | 0 |
-| **Total** | **337** | **49** | **89** | **27** | **28** |
+| 22. Settings (p124-139) | 6 | 5 | 20 | 11 | 7 |
+| 24. Appendices A and B (p143-158) | 1 | 2 | 3 | 1 | 0 |
+| **Total** | **359** | **42** | **74** | **27** | **25** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -895,7 +896,8 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
-"Beyond the manual". Grouped below into work packages that can be built and tested one at a time (desktop first, as
+"Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
+42 Partial). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -978,6 +980,9 @@ that LFO: it needs a per-sample path).
 - Files: `desktop/editor_draw.c`, `desktop/gen_layout.py`.
 
 **8. Settings page and MIDI, part 1** (sections 1, 2, 14, 19, 22). Effort M. CPU: none.
+- Done in part 2026-10-28 (offline and the desktop window): `midi_ch` (Omni, 1-16, Per Synth), silent or audible chord
+  learn (`learn_mode`), the window's OCTAVE buttons held for the default octave and then a panic. Left: the SETTINGS
+  page and its file, receive clock, MIDI I/O load from preset, the pedal CC numbers, preset autoload.
 - A SETTINGS page (GLOBAL, LIBRARY, TUNING) with settings kept outside the sounds, in a file beside the patches (UI
   thread only); RESTORE DEFAULT SETTINGS; the version.
 - MIDI: the receive channel (Off, 1-16; today every channel plays), receive clock on or off, MIDI I/O load from
@@ -989,6 +994,8 @@ that LFO: it needs a per-sample path).
 
 **9. Voices: 16, and unison that re-divides** (sections 0, 14). Effort M. CPU: high per added voice (16 voices cost
 about twice what 8 do; fine on the desktop, the MPC keeps its benched default).
+- Done 2026-10-28 (offline): MAX_VOICES 16, `voices` and `uni_count` to 16, voice cards 9-16 between the first 8 (which
+  are unchanged), unison stacks shared out as keys are added. The CPU per voice is in PLAN.md.
 - MAX_VOICES 16 (voice cards for 16, the `voices` list to 16, the state); unison that stacks every voice on one key
   and shares them out as keys are added (8 voices: one key 8, two keys 4 each), as the manual describes.
 - Depends on: nothing; must come before package 13 (three Synths share the pool).
@@ -1033,6 +1040,15 @@ voice for the EXT channel; shared medium (10-band) to medium-high (16-band) for 
 **13. Multitimbral: three Synths per preset** (sections 0, 1, 10, 11, 17, 18, 20, 22, 24). Effort L (two to three
 weeks). CPU: high (the voices are shared, so the voice count stays; each Synth's own synth effect adds a shared
 effect: up to 3 synth effects and 2 master effects at once).
+- Done 2026-10-28 (offline and the desktop window; `docs/MULTITIMBRAL.md`). Owner's decision (2026-10-28, option A):
+  every Synth's params are host parameters (1,529 in all: 468 per Synth, 125 shared), Synth 1's keys unchanged and
+  Synths 2 and 3 as `s2_` / `s3_` copies. Built: three Synths each with every sound setting, its own arp, chord memory
+  and sequencer; ON, key range, MIDI channel per Synth; one 16-voice pool with each Synth's poly count; a synth effect
+  and two sends per Synth into the shared master effects; Panel Focus with multi-select and Shift/Ctrl+F5-F7; a SETUP
+  page; INTO S1/2/3 and SAVE S1/2/3 on the PATCHES page; PLAY ALL; the randomiser per Synth; three factory
+  performances. Left: per-Synth outputs (MAIN / SUB), solo, setting a range by pressing a key, sequencer OUTPUT to
+  another Synth, the sustain pedal's target, timbre names on the home line, NRPN for Synths 2 and 3, the master
+  effects moved by Synth 2 and 3's matrices.
 - Three timbres per preset, each with every sound setting, its own arp and sequencer; split, layer and zones (per
   Synth ON, LOW and HIGH RANGE, full range); Panel Focus (one Synth, several together, solo; the computer keyboard's
   SHIFT/CTRL + F5-F7 shortcuts); a MIDI channel per Synth (MIDI IN ROUTE PER SYNTH); a shared voice pool with each

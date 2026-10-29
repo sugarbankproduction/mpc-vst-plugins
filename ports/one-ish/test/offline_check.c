@@ -130,6 +130,8 @@
 
 static const mpc_engine_t *E;
 static int failures;
+/* a key of Synth 1 (or a shared one): not a Synth 2 or 3 copy (multitimbral, test/multi_check.c) */
+static int s1_key(const char *k) { return strncmp(k, "s2_", 3) && strncmp(k, "s3_", 3); }
 
 static void check(int ok, const char *what) {
     printf("%s %s\n", ok ? "ok  " : "FAIL", what);
@@ -1473,6 +1475,33 @@ static void keys(void) {
     E->midi(e, cc120, 3);
     check(silent_after(e, 10), "All Sound Off (CC 120) is silent within 10 ms (a 2 ms fade, no click)");
     E->destroy(e);
+
+    /* MIDI CHANNEL: Omni (the default) plays every channel; a channel plays only its own */
+    double on[3];
+    for (int k = 0; k < 3; k++) {
+        e = patch(SAW, 0, 100, 100, 50);
+        if (k) set(e, "midi_ch", 3);
+        uint8_t m[3] = {(uint8_t)(0x90 | (k == 2 ? 2 : 0)), 60, 100};   /* channel 1, or channel 3 */
+        E->midi(e, m, 3);
+        on[k] = rms_of(e, SR / 10);
+        E->destroy(e);
+    }
+    char what[160];
+    snprintf(what, sizeof what, "MIDI channel: Omni plays channel 1 (rms %.3f); set to 3, channel 1 is ignored (%.4f) and "
+             "channel 3 plays (%.3f)", on[0], on[1], on[2]);
+    check(on[0] > 0.01 && on[1] < 1e-4 && on[2] > 0.01, what);
+
+    /* SILENT LEARN: chord learn makes no sound, and still learns the chord */
+    e = patch(SAW, 0, 100, 100, 50);
+    set(e, "learn_mode", 1); set(e, "chord_learn", 1);
+    note(e, 1, 60, 100); note(e, 1, 64, 100); note(e, 1, 67, 100);
+    double quiet = rms_of(e, SR / 10);
+    note(e, 0, 60, 0); note(e, 0, 64, 0); note(e, 0, 67, 0);
+    set(e, "chord_learn", 0);
+    snprintf(what, sizeof what, "silent chord learn: nothing heard while learning (rms %.5f); the chord kept: +%.0f +%.0f",
+             quiet, get(e, "chord_iv1"), get(e, "chord_iv2"));
+    check(quiet < 1e-4 && get(e, "chord_iv1") == 4 && get(e, "chord_iv2") == 7, what);
+    E->destroy(e);
 }
 
 /* one envelope on its own (env.h): times in ms (delay, attack, hold, decay, release), sustain 0..1, curves -1..1 */
@@ -1922,7 +1951,7 @@ static void glide_unison(void) {
              "%.0f%% at 100%%; %.1f%% of it within 66 cents", inner[0] * 100, inner[1] * 100, outer * 100);
     check(inner[0] > 0.97 && inner[1] < 0.7 && outer > 0.97, what);
 
-    static const int keys3[] = {48, 52, 55};   /* 8 voices, count 4: two notes, a third steals a whole stack */
+    static const int keys3[] = {48, 52, 55};   /* 8 voices, count 4: two notes; a third re-divides the voices 3/3/2 */
     double hz3[3] = {note_hz(48), note_hz(52), note_hz(55)}, db2[3], db3[3];
     e = patch(SAW, 0, 1, 100, 10);
     set(e, "voices", 7); set(e, "unison", 1); set(e, "uni_count", 2); set(e, "uni_detune", 0);
@@ -1933,12 +1962,32 @@ static void glide_unison(void) {
     note(e, 1, keys3[2], 100);
     render_f(e, x, N + 8192);
     powers_db(x + 8192, hz3, 3, db3);
-    snprintf(what, sizeof what, "unison 4 of 8 voices: C3 + E3 held both sound (%.0f, %.0f dB); adding G3 steals C3's "
-             "stack (C3 %.0f | E3 %.0f, G3 %.0f dB)", db2[0], db2[1], db3[0], db3[1], db3[2]);
-    check(db2[0] > -6 && db2[1] > -6 && db3[0] < -25 && db3[1] > -6 && db3[2] > -6, what);
-    note(e, 0, 52, 0); note(e, 0, 55, 0);
+    snprintf(what, sizeof what, "unison 4 of 8 voices: C3 + E3 held both sound (%.0f, %.0f dB); adding G3 shares the "
+             "voices out, all three sound (C3 %.0f | E3 %.0f, G3 %.0f dB)", db2[0], db2[1], db3[0], db3[1], db3[2]);
+    check(db2[0] > -6 && db2[1] > -6 && db3[0] > -9 && db3[1] > -9 && db3[2] > -9, what);
+    note(e, 0, 48, 0); note(e, 0, 52, 0); note(e, 0, 55, 0);
     check(silent_after(e, 1000), "releasing the keys lets go of every voice in their stacks");
     E->destroy(e);
+
+    {   /* the manual's example: count = voices = 16: one key gets all 16, four keys 4 each; never over 16 */
+        static const int k4[] = {48, 55, 60, 64};
+        double all4[4], h4[4] = {note_hz(48), note_hz(55), note_hz(60), note_hz(64)};
+        char v1[16], v4[16];
+        e = patch(SAW, 0, 1, 100, 10);
+        set(e, "voices", 15); set(e, "unison", 1); set(e, "uni_count", 14); set(e, "uni_detune", 0);
+        set(e, "flt_cut", knob_for_hz(600)); set(e, "volume", 10);
+        note(e, 1, 48, 100);
+        render_f(e, x, 2048);
+        E->get_param(e, "voices_sounding", v1, sizeof v1);
+        for (int k = 1; k < 4; k++) note(e, 1, k4[k], 100);
+        render_f(e, x, N + 8192);
+        powers_db(x + 8192, h4, 4, all4);
+        E->get_param(e, "voices_sounding", v4, sizeof v4);
+        snprintf(what, sizeof what, "unison 16 of 16 voices: one key sounds %s voices (want 16); four keys all sound "
+                 "(%.0f %.0f %.0f %.0f dB) on %s voices (want 16)", v1, all4[0], all4[1], all4[2], all4[3], v4);
+        check(atoi(v1) == 16 && all4[0] > -12 && all4[1] > -12 && all4[2] > -12 && all4[3] > -12 && atoi(v4) == 16, what);
+        E->destroy(e);
+    }
 
     double mono_lvl[2];   /* mono + unison: one note stacked; a second key moves the whole stack */
     for (int u = 0; u < 2; u++) {
@@ -3013,8 +3062,8 @@ static void fx2_bench(void);
 static void bench(void) {
     enum { BLOCKS = 50000 };
     int16_t buf[256];
-    static const int counts[] = {1, 4, 8}, opt[] = {0, 3, 7};
-    for (int c = 0; c < 3; c++) {
+    static const int counts[] = {1, 4, 8, 16}, opt[] = {0, 3, 7, 15};
+    for (int c = 0; c < 4; c++) {
         void *e = patch(SAW, 5, 300, 70, 250);
         set(e, "voices", opt[c]); set(e, "o2_level", 80); set(e, "o3_level", 60);
         route(e, "o1", 2); set(e, "flt_route", 1); set(e, "lad_env", 40); set(e, "flt_res", 50);
@@ -3718,7 +3767,7 @@ static void matrix_wiring(void) {
         E->destroy(a); E->destroy(b);
     }
 
-    /* the worst state: every param off its default, the continuous ones at six significant digits. It must fit this
+    /* the worst state (Synth 1 and the shared params; test/multi_check.c: all three Synths): every param off its default, the continuous ones at six significant digits. It must fit this
      * build's chunk with 15% to spare (the editor's ui_patch tag included), and fit the MPC's 8 KB chunk; a buffer too
      * small gets no state at all, never a cut one */
     {
@@ -3727,16 +3776,19 @@ static void matrix_wiring(void) {
         int changed = 0;
         for (int i = 0; i < NPARAMS; i++) {
             const param_t *p = &PARAMS[i];
+            if (!s1_key(p->key)) continue;
             double def = p->nopts ? round(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
             double v = p->nopts ? fmod(def + 1, p->nopts) : p->min + (p->max - p->min) * 0.123457;
             if (!p->nopts && fabs(v - def) < 1e-3) v = p->min + (p->max - p->min) * 0.876543;
             set(a, p->key, v);
         }
         /* (not in a saved state on purpose: the sequencer's PLAY, REC and STEP MOD, and its step readout) */
-        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos"};
-        int kept = NPARAMS;
+        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos", "seq_all"};
+        int kept = 0;
+        for (int i = 0; i < NPARAMS; i++) kept += s1_key(PARAMS[i].key);
         for (int i = 0; i < NPARAMS; i++) {
             const param_t *p = &PARAMS[i];
+            if (!s1_key(p->key)) continue;
             int skip = 0;
             for (unsigned t = 0; t < sizeof TRANSIENT / sizeof TRANSIENT[0]; t++) skip |= !strcmp(p->key, TRANSIENT[t]);
             if (skip) { kept--; continue; }
@@ -4885,6 +4937,7 @@ static void arp_wav(const char *demo_path) {
 
 /* ---- the step sequencer (its own file: src/stepseq.h, src/stepseq_run.h) ---- */
 #include "stepseq_check.c"
+#include "multi_check.c"   /* multitimbral: three Synths */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5463,7 +5516,7 @@ static void effects_master(void) {
             for (int at = 0; at < SR * 2; at += 128) {
                 if (at == sw) fx2_lively(&p.mfx[slot], SW[k][2]);
                 fx_process(&fxs, &p, NULL, sine + at, sine + at, l + at, r + at, 128);
-                if (at >= sw && ran < 0 && fxs.m[slot].s.state == FS_RUN && fxs.m[slot].s.type == SW[k][2]) ran = at - sw;
+                if (at >= sw && ran < 0 && fxs.mst.m[slot].s.state == FS_RUN && fxs.mst.m[slot].s.type == SW[k][2]) ran = at - sw;
             }
             float before = 0, around = 0;   /* (before: the largest step of the old type and of the new one, settled) */
             for (int i = SR / 2; i < sw; i++) before = fmaxf(before, fabsf((l[i] - sine[i]) - (l[i - 1] - sine[i - 1])));
@@ -5486,7 +5539,7 @@ static void effects_master(void) {
         for (int i = SR / 2; i < sw; i++) before = fmaxf(before, fabsf(l[i] - l[i - 1]));
         for (int i = sw + SR / 5; i < SR * 2; i++) before = fmaxf(before, fabsf(l[i] - l[i - 1]));
         for (int i = sw; i < sw + SR / 10; i++) around = fmaxf(around, fabsf(l[i] - l[i - 1]));
-        ok &= around <= 1.2f * before + 1e-3f && fxs.ss.state == FS_RUN && fxs.ss.type == SFX_PHASER6;
+        ok &= around <= 1.2f * before + 1e-3f && fxs.syn.ss.state == FS_RUN && fxs.syn.ss.type == SFX_PHASER6;
         snprintf(what, sizeof what, "type switches without a click (largest step around / before, then when the new type "
                  "ran):%s; synth chorus>phaser %.3f/%.3f", line, around, before);
         check(ok, what);
@@ -5544,9 +5597,9 @@ static void effects_master(void) {
         for (int i = 0; i < NPARAMS; i++) {
             const char *k = PARAMS[i].key;
             size_t kl = strlen(k);
-            if (kl > 4 && !strcmp(k + kl - 4, "_dst") && strncmp(k, "modfx", 5)) {
+            if (kl > 4 && !strcmp(k + kl - 4, "_dst") && strncmp(k, "modfx", 5) && s1_key(k)) {
                 lists += PARAMS[i].nopts == MD_COUNT;
-                named += !strcmp(PARAMS[i].opts[MD_FX_FIRST + MDF_F2_GRAVITY], "FX2 Gravity")
+                named += PARAMS[i].nopts == MD_COUNT && !strcmp(PARAMS[i].opts[MD_FX_FIRST + MDF_F2_GRAVITY], "FX2 Gravity")
                          && !strcmp(PARAMS[i].opts[MD_MAC_HARM], "Macro Harmonics");
             }
         }
@@ -5645,7 +5698,12 @@ static void fx2_wavs(const char *demo_path) {
 
 int main(int argc, char **argv) {
     E = mpc_engine();
-    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); return 0; }
+    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); multi_bench(); return 0; }
+    if (argc > 2 && !strcmp(argv[1], "multi")) {   /* just the multitimbral checks: offline_check multi <dir>/demo.wav */
+        multitimbral();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "macro")) {   /* just the MACRO channel: offline_check macro <dir>/demo.wav */
         macro_osc();
         macro_nan();
@@ -5713,6 +5771,7 @@ int main(int argc, char **argv) {
     randomiser();
     arp_generative();
     step_sequencer();
+    multitimbral();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

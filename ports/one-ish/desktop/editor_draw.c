@@ -195,7 +195,9 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_PAD: return "X/Y pad: drag inside it. Left/right is the matrix source Pad X (MIDI CC 2), up/down Pad Y (CC 3); "
                        "both stay where you let go. Pad Gate (CC 18) is on while you touch it. Up/down also sends "
                        "aftertouch (the source Aftertouch, back to 0 when you let go).";
-    case Z_OCT_DOWN: case Z_OCT_UP: return "Octave: shifts the on-screen keyboard down or up, two octaves each way.";
+    case Z_OCT_DOWN: case Z_OCT_UP:
+        return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Hold one: 1 s back to the "
+               "default octave, 2 s a MIDI panic (all notes off).";
     case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the factory presets, then your own "
                            "patches; click it for the patch list.";
     case Z_PREV: case Z_NEXT: return "Previous / next patch: the factory presets (F), then your own (U).";
@@ -205,6 +207,12 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_TAB_MORE: return "MORE: the list of every module's MORE page. The small triangles on the modules open them directly.";
     case Z_TAB_ANALOG: return "ANALOG: the analog character page (drift and per-voice differences).";
     case Z_TAB_RANDOM: return "RANDOM: the patch randomiser. New sounds to play with, variations of this one, locks, undo.";
+    case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3:
+        return "SYNTH 1 / 2 / 3 (Panel Focus): the panel, the MORE pages, the matrix and the step editor show and edit this "
+               "Synth. Ctrl-click to edit several together (Shift+F5/F6/F7 too). Sections marked SHARED are the same "
+               "for all three.";
+    case Z_TAB_SETUP: return "SETUP: the three Synths side by side: on, MIDI channel, key range (splits and layers), "
+                             "transpose, octave, voices, level, pan, sends; then MIDI, master level, PLAY ALL.";
     case Z_TAB_SEQ: return "SEQ: the step sequencer's step editor (64 steps in four pages, note lanes and modulation lanes). "
                            "Click again for its other view.";
     case Z_RND_GO: return "RANDOMISE: a new sound, made to be playable (heard, not harsh, in tune). Locked sections stay as "
@@ -368,7 +376,7 @@ static void draw_knob(HDC dc, ed_t *e, int i) {
     int small = L.kind[i] == K_SMALL, lh = sc(12), vh = small ? 0 : sc(11), ly;
     float cx, cy, r;
     knob_geom(i, &cx, &cy, &r, &ly);
-    float v = e->fx->getParameter(e->fx, i);
+    float v = ed_get(e, i);   /* the focused Synth's (Panel Focus) */
     knob(cx, cy, r, v, PARAMS[i].min < 0 && PARAMS[i].max > 0);
     int tw = rw(b) > sc(76) ? rw(b) : sc(76);
     text_c(dc, (int)cx, ly, tw, lh + 2, L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
@@ -549,7 +557,7 @@ static void draw_wave(ed_t *e, const lay_wave_t *w) {   /* the oscillator's wave
 static void screen_amount(HDC dc, ed_t *e, int i, RECT c, int active, int compact) {   /* a bar and the value */
     char val[64];
     param_text(e, i, val, sizeof val);
-    float v = e->fx->getParameter(e->fx, i);
+    float v = ed_get(e, i);
     int bip = PARAMS[i].min < 0 && PARAMS[i].max > 0;
     COLORREF col = active ? T_LCD : T_LCD_DIM;
     DWORD fill = active ? 0xFF96D7E8 : 0xFF5A8291;
@@ -583,6 +591,14 @@ static void screen_menu(HDC dc, ed_t *e, int i, RECT c, int active, HFONT f) {  
 static void title_line(HDC dc, ed_t *e, const char *t, int subs) {
     RECT r = L.tabline;
     if (subs > 1) r.right = L.sub_prev.left - sc(4);
+    char st[200], who[16] = "";
+    if (e->screen != SCR_SETUP && e->screen != SCR_PATCHES) {   /* which Synth the page shows (and edits) */
+        int n = 0;
+        for (int c = 0; c < NSYNTHS; c++)
+            if (e->focus_mask >> c & 1u) n += snprintf(who + n, sizeof who - n, n ? "+%d" : "SYNTH %d", c + 1);
+        snprintf(st, sizeof st, "%s  |  %s", who, t);
+        t = st;
+    }
     text(dc, &r, t, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     if (subs <= 1) return;
     char n[16];
@@ -656,6 +672,40 @@ static void draw_index(HDC dc, ed_t *e, int subs) {
     }
 }
 
+/* SETUP: the three Synths side by side (on, MIDI channel, key range, transpose, octave, voices, level, pan, sends,
+ * synth effect), then the shared settings across all three columns. Each cell is that Synth's own param. */
+static void draw_setup(HDC dc, ed_t *e, int subs) {
+    title_line(dc, e, "SETUP:  the three Synths side by side (split, layer, mix)", subs);
+    for (int c = 0; c < NSYNTHS; c++) {   /* column heads: the focused Synth bright */
+        RECT h = setup_cell(0, c);
+        h.top = L.head.top;
+        h.bottom = L.head.bottom;
+        char t[16];
+        snprintf(t, sizeof t, "SYNTH %d", c + 1);
+        text(dc, &h, t, font_tiny, (e->focus_mask >> c & 1u) ? T_LCD : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    int keys[ROWS], was = e->abs;
+    setup_rows(e->sub, keys);
+    e->abs = 1;   /* the cells name their own params */
+    for (int r = 0; r < ROWS; r++) {
+        if (keys[r] < 0) continue;
+        RECT lr = setup_cell(r, -1);
+        lr.left += sc(2);
+        text(dc, &lr, SETUP_LABEL[e->sub * ROWS + r], font_cell, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        int shared = shared_param(keys[r]);
+        for (int c = 0; c < (shared ? 1 : NSYNTHS); c++) {
+            RECT cell = setup_cell(r, shared ? NSYNTHS : c);
+            int i = synth_param(keys[r], c);   /* this Synth's own copy (a shared one: itself) */
+            int on = shared || e->sub || keys[0] < 0 || e->fx->getParameter(e->fx, synth_param(keys[0], c)) > 0.5f;
+            if (PARAMS[i].nopts) screen_menu(dc, e, i, cell, on, font_cell);
+            else screen_amount(dc, e, i, cell, on, 1);
+            if (e->hover == Z_ABS + i)
+                gfx_frame((float)cell.left - 1, (float)cell.top, (float)rw(&cell) + 2, (float)rh(&cell), 1.0f, 0xFF96D7E8);
+        }
+    }
+    e->abs = was;
+}
+
 /* a button on the screen: framed, filled when lit */
 static void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f) {
     gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), lit ? 0xFF96D7E8 : 0xFF0F2230);
@@ -670,7 +720,7 @@ static void draw_random(HDC dc, ed_t *e) {
     else snprintf(t, sizeof t, "RANDOM:  new sounds to play with");
     title_line(dc, e, t, 1);
     float cur[NPARAMS];
-    for (int i = 0; i < NPARAMS; i++) cur[i] = e->fx->getParameter(e->fx, i);
+    for (int i = 0; i < NPARAMS; i++) cur[i] = ed_get(e, i);   /* the focused Synth's sound */
     rnd_describe(cur, d, sizeof d);
     text(dc, &L.head, d, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     screen_button(dc, rnd_rect(Z_RND_GO), "RANDOMISE", 0, e->hover == Z_RND_GO, font_big);
@@ -732,17 +782,22 @@ static void draw_screen(HDC dc, ed_t *e) {
         title_line(dc, e, "PATCHES:  factory presets and your own sounds", subs);
         patches_draw(dc, e);
     }
+    else if (e->screen == SCR_SETUP) draw_setup(dc, e, subs);
     else draw_page(dc, e, subs);
     /* help: what the control under the mouse does */
     char help[480];
     const char *zh = zone_help(e, e->hover), *pm = patches_message(e);
     if (pm) {   /* what the last patch operation did (or why it couldn't) */
         snprintf(help, sizeof help, "%s", pm);
-    } else if (e->hover >= 0 && e->hover < NPARAMS) {
+    } else if ((e->hover >= 0 && e->hover < NPARAMS) || (e->hover >= Z_ABS && e->hover < Z_ABS + NPARAMS)) {
         char val[64];
-        param_text(e, e->hover, val, sizeof val);
-        const char *h = help_for(e->hover);
-        snprintf(help, sizeof help, "%s: %s%s%s", PARAMS[e->hover].name, val, h ? "\n" : "", h ? h : "");
+        int absolute = e->hover >= Z_ABS, i = absolute ? e->hover - Z_ABS : e->hover, was = e->abs;
+        e->abs = absolute;
+        param_text(e, i, val, sizeof val);
+        const char *h = help_for(base_of(i));
+        snprintf(help, sizeof help, "%s: %s%s%s%s", PARAMS[fp(e, i)].name, val,
+                 shared_param(i) ? "   (shared: the same for all three Synths)" : "", h ? "\n" : "", h ? h : "");
+        e->abs = was;
     } else if (zh) {
         snprintf(help, sizeof help, "%s", zh);
     } else if (e->screen == SCR_RANDOM) {
@@ -791,6 +846,10 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.tab_analog, "ANALOG", PG_ANALOG >= 0 && e->screen == PG_ANALOG, e->hover == Z_TAB_ANALOG);
     panel_button(dc, &L.tab_random, "RANDOM", e->screen == SCR_RANDOM, e->hover == Z_TAB_RANDOM);
     panel_button(dc, &L.tab_seq, "SEQ", e->screen == SCR_SEQ, e->hover == Z_TAB_SEQ);
+    static const char *const FOCUS_NAME[NSYNTHS] = {"SYNTH 1", "SYNTH 2", "SYNTH 3"};
+    for (int c = 0; c < NSYNTHS; c++)   /* PANEL FOCUS: lit = the panel shows (and edits) that Synth */
+        panel_button(dc, &L.focus[c], FOCUS_NAME[c], e->focus_mask >> c & 1u, e->hover == Z_FOCUS1 + c);
+    panel_button(dc, &L.tab_setup, "SETUP", e->screen == SCR_SETUP, e->hover == Z_TAB_SETUP);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     if (vis(&L.encoder, sc(12))) {
@@ -1094,6 +1153,8 @@ static int paint_rects(HDC out, RECT *rs, int max) {
 
 void paint(ed_t *e, HDC out) {
     RECT all = {0, 0, L.w, L.h}, rs[16];
+    int was = e->abs;
+    e->abs = 0;   /* the panel shows the focused Synth (a SETUP cell being dragged keeps its own flag) */
     int n = paint_rects(out, rs, 16);
     if (n == 0) {   /* no region: the clip box, or everything */
         if (GetClipBox(out, &rs[0]) == ERROR || IsRectEmpty(&rs[0])) rs[0] = all;
@@ -1101,4 +1162,5 @@ void paint(ed_t *e, HDC out) {
     }
     for (int k = 0; k < n; k++)
         if (IntersectRect(&rs[k], &rs[k], &all)) paint_rect(e, out, &rs[k]);
+    e->abs = was;
 }

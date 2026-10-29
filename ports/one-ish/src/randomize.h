@@ -3,8 +3,9 @@
  * Self-contained: it works on the plugin's parameter array in VST order, in normalized form (0..1, what setParameter and
  * getParameter use), and knows the params only by key (params.h's PARAMS: range, default, options). It allocates
  * nothing, does no I/O, and is deterministic for a given seed (its own xorshift). The editor calls it on the UI thread;
- * the audio thread never does. Multitimbral parts later: a part's block of params can be passed the same way, through a
- * small key map (the rules below name keys, not slots).
+ * the audio thread never does. Multitimbral: it works on Synth 1's keys; the window hands it the focused Synth's values
+ * in Synth 1's places (and puts the result back into that Synth's own "s2_" / "s3_" copies), so it never touches the
+ * copies itself.
  *
  * How RANDOMISE makes a sound (rnd_generate):
  *   1. every param in an unlocked section starts from its default, so nothing odd is left over from the last sound;
@@ -284,6 +285,8 @@ static inline int rnd_match(const char *pat, const char *key) {
     return kl >= pre + suf && !strncmp(key, pat, pre) && !strcmp(key + kl - suf, star + 1);
 }
 static inline int rnd_rule_of(int i) {
+    const char *k = PARAMS[i].key;
+    if (k[0] == 's' && k[1] >= '2' && k[1] <= '9' && k[2] == '_') return 255;   /* another Synth's copy: never */
     for (int r = 0; r < RND_NRULES; r++)
         if (rnd_match(RND_RULES[r].pat, PARAMS[i].key)) return r;
     return 255;

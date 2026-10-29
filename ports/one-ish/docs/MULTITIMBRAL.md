@@ -1,0 +1,102 @@
+# ONE-ish multitimbral: three Synths in one instance
+
+Added 2026-10-28, tested offline (`test/multi_check.c` and `test/golden_check.c` through `test/run.sh`; the window
+through `load_test.exe` on Windows), not yet on a device. After the manual's description of a preset's three Synths
+(p8-9, p14-15, p63-66, p96-101, p129). Code: `src/synths.h` (the instance, key routing, voice pool, MIDI routing,
+state), `src/engine.c` (one Synth), `src/fx.h` (`fx_master_multi`), `presets/make_synths.py` (the params of Synths 2
+and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patches.c`).
+
+## Playing it (desktop window)
+
+- **SYNTH 1 / 2 / 3** (console buttons, or Shift+F5 / F6 / F7): the Synth you edit. The lit button and the title line
+  (`SYNTH 2 | ...`) show it. Every knob, button, LED, option list, the MORE pages, the matrix, the step editor and the
+  randomiser show and change that Synth. Ctrl-click (or Ctrl+F5-F7) adds a Synth: a knob then moves the same control
+  on every Synth picked (the last picked is the one drawn).
+- **Shared** sections stay the same whichever Synth is in focus, and say so on the panel: MASTER EFFECTS, DELAY and
+  REVERB (the two master effects) are marked SHARED. SYNTH OUTPUT (level, pan, spread) belongs to the Synth, and so
+  do the SEND 1 and SEND 2 knobs in the MASTER EFFECTS panel: how much of the Synth in focus goes into each.
+- **SETUP** (next to the SYNTH buttons): the three Synths side by side: ON, MIDI CHANNEL, LOWEST KEY, HIGHEST KEY,
+  TRANSPOSE, OCTAVE, VOICES, LEVEL, PAN, SEND 1, SEND 2, SYNTH EFFECT, and the shared MIDI IN (ALL), MASTER LEVEL,
+  PLAY ALL SEQS, CHORD LEARN mode.
+- **Split:** Synth 1 HIGHEST KEY B3, Synth 2 ON with LOWEST KEY C4. **Layer:** both on, full range. Factory
+  performances: "Split Bass + Lead", "Layer Pad + Pluck", "Split Bass, Pad + Bells".
+- **PATCHES page:** INTO S1/2/3 loads the picked preset or patch into the Synth in focus only (that Synth keeps its
+  ON, channel and key range; the other Synths and the master effects stay). SAVE S1/2/3 saves the Synth in focus as
+  its own user patch. SAVE and SAVE AS keep the whole instance (all three Synths: a performance).
+- **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample.
+
+## Params (owner's choice A, 2026-10-28)
+
+Every Synth's params are host parameters, so the host automates any Synth directly (the other choice, one set that
+follows the focus, would have let automation reach only the focused Synth). 1,529 params in all:
+
+- Synth 1: the 593 keys from before (468 of its own plus the 125 shared), unchanged, in the same slots.
+- Synths 2 and 3: 468 each, the same keys with `s2_` / `s3_` in front (`s2_flt_cut`), appended after Synth 1's in
+  `params.json` and `params.lock`, named "S2 ..." / "S3 ...". `presets/make_synths.py` writes them; run it (and
+  `GEN_VST_RELOCK=1`, `gen_vst --params-h`) after adding a param.
+- Shared, one copy (Synth 1's key, mirrored into the others): the master effects (`dly_*`, `rev_*`, `mfx_on`,
+  `mfx_series`, `mfx_width`, `mfx_buss`), `clock_swing`, `master_tune`, `fine_tune`, `midi_ch`, `learn_mode`,
+  `master_level`, `seq_all` (`engine_global()` in `src/synths.h`; `is_global()` in `make_synths.py` keeps the same
+  list).
+- Per Synth, beyond the sound: `syn_on` (Synth 1 On, 2 and 3 Off), `syn_ch` (1, 2, 3), `key_lo` / `key_hi` (0-127,
+  shown as note names), and its own `transpose`, `octave_shift`, `voices`, `volume`, `pan`, `mfx_send1/2`, the synth
+  effect (`modfx_*`), arp, chord memory and sequencer. A Synth's matrix moves its own params, its synth effect
+  included; the master effects' matrix destinations follow Synth 1's matrix.
+
+## Voices
+
+One pool of 16 shared by the Synths. Each Synth stays within its own VOICES. When a new note would take the pool past
+16, a voice is stolen from any Synth: released voices first (the quietest), then by the new note's Synth's stealing
+mode; with No Stealing the note is dropped. A stolen voice fades in a few ms. Unison counts against the pool the same
+way.
+
+## MIDI
+
+- `midi_ch` (shared): Omni (every channel: the default, as before), 1-16 (every Synth listens on that channel), or Per
+  Synth (each Synth on its own `syn_ch`, Omni or 1-16).
+- A note goes to every Synth that is on, listens on its channel and has the key in its range. Its release goes to the
+  Synths the key went to, even if the range or channel changed meanwhile, so no note hangs. Controllers, pitch bend and
+  pressure go to every Synth on the channel.
+- The window's keyboard plays on `midi_ch`, or on the focused Synth's `syn_ch` when it is Per Synth.
+
+## State (projects and patches)
+
+- The engine state stays `key=value;...` (`v=1`, or the compact `v=2` when it would not fit): Synth 1's keys as
+  before, then `s2_...` and `s3_...` values that differ from their defaults, then `seq=`, `s2_seq=`, `s3_seq=` for
+  the sequences. A project, patch or preset saved before multitimbral loads as Synth 1 with Synths 2 and 3 off, and
+  sounds sample for sample as before (`test/golden_check.c`: 37 presets and 24 random sounds).
+- Sizes (2026-10-28, offline): the worst case, every param of all three Synths off its default, is 39,506 bytes of the
+  desktop's 256 KB chunk; a typical three-Synth performance is about 4 KB.
+- The MPC's 8 KB chunk: when the whole state doesn't fit even as `v=2`, Synth 3 is left out, then Synth 2; Synth 1 and
+  the shared values always fit (worst case 7,736 bytes). The engine says on stderr which Synths were not saved.
+- Commands through the chunk call (as the sequencer's): `seqcmdN` (the sequencer commands for Synth N), `synthloadN`
+  (INTO SYNTH: a single-Synth state into Synth N). Readouts: `synth_stateN` (SAVE SYNTH), `voices_total`,
+  `voices_sounding`.
+
+## CPU
+
+A Synth that is off and silent costs nothing. On the PC (128-frame block, 2026-10-29, `test/run.sh`'s bench and
+`test/multi_check.c` `multi_bench`):
+
+- Synths 2 and 3 off: 1, 4, 8 voices 9.40, 33.91, 67.20 us, against 9.15, 33.69, 66.07 us for the single-Synth engine
+  (within 3%). 16 voices: 135 us (8.4 a voice).
+- 16 voices of a busy patch with a chorus: 124 us in Synth 1 alone, 134 us shared 6 / 5 / 5 by three Synths with a
+  chorus each (+8%: the two extra synth effects). The voices cost the same wherever they are; each Synth that is on
+  adds its synth effect.
+- The MPC's numbers need `tools/bench.sh` on a device.
+
+## Builds
+
+`ONEISH_SYNTHS` (1 to 3, default 3) sets the Synths per instance at compile time (vst.json `defines`). With 1, the
+`s2_` / `s3_` params still exist but do nothing; a state's Synth 2 and 3 values are skipped. Whether the MPC build
+gets three Synths (and how its page shows them) is the owner's later call.
+
+## Not built
+
+- Per-Synth outputs (MAIN / SUB as extra VST2 output pairs), SUB VOLUME.
+- SHIFT + SYNTH (solo a Synth).
+- Setting a key range by pressing LOW RANGE and then a key (the range is set as a value).
+- The master effects' matrix destinations follow Synth 1's matrix only.
+- Sequencer OUTPUT to another Synth or all of them; the sustain pedal's target Synth.
+- NRPN for Synths 2 and 3; timbre names on the home line.
+- The randomiser's undo history starts again when the focus changes.
