@@ -28,6 +28,9 @@
  * pages next to PATCHES; MIDI program and bank change from the host load user patches and set slots (noted on the
  * host's thread, loaded on the window's: a hidden window's timer does it while the editor is closed).
  *
+ * QUICK ASSIGN (quickmod.c): a DEST button (LFOs, envelopes, NOISE) or Alt-click / right-click on a source, then a
+ * click on a knob connects them in the matrix and its drag sets the amount; rings show what is modulated.
+ *
  * It sits in front of the shared wrapper: wrapper/vst2_wrap.c is compiled with -DVSTPluginMain=one_ish_wrapped_main,
  * and this file's VSTPluginMain adds the editor opcodes and passes everything else on. Where each control sits comes
  * from desktop/gen_layout.py (build/desktop/layout.h), by parameter key. The editor talks to the plugin through the
