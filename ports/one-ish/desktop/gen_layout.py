@@ -505,16 +505,16 @@ def build(lay):
              # hub.c), GENERATIVE (the generators' hub page) and GEN OFF (every generator off in all three Synths;
              # again: back on); the global TEMPO readout with HOST / OWN (the SETTINGS page's RECEIVE MIDI CLOCK and
              # TEMPO); UNDO and REDO (library.c's undo, as Ctrl+Z / Ctrl+Y). Spaced for their labels, not the grid.
-             "TOGETHER": (769, 478, 54, 42), "TAB_GEN": (827, 478, 62, 42), "GEN_OFF": (895, 478, 50, 42),
-             "TEMPO": (950, 482, 72, 24), "TEMPO_HOST": (1028, 481, 54, 15), "TEMPO_OWN": (1028, 498, 54, 15),
-             "UNDO": (1100, 478, 35, 42), "REDO": (1135, 478, 35, 42)}
+             "TOGETHER": (769, 478, 54, 42), "TAB_GEN": (827, 478, 62, 42), "GEN_OFF": (893, 478, 48, 42),
+             "TEMPO": (946, 482, 80, 24), "TEMPO_HOST": (1032, 481, 54, 15), "TEMPO_OWN": (1032, 498, 54, 15),
+             "UNDO": (1102, 478, 34, 42), "REDO": (1136, 478, 34, 42)}
     # Synth 2 and 3's copies are reached through the Panel Focus; the setup keys live on the SETUP page
     L.placed.update(k for k in L.index if k.startswith(("s2_", "s3_")))
     # (syn_solo: the S half of each SYNTH button, editor.c; never saved with the sound, so no MORE page row)
     L.placed.update(k for k in ("syn_on", "syn_ch", "key_lo", "key_hi", "seq_all", "midi_ch",
                                 "learn_mode", "syn_solo") if k in L.index)
     if "arp_on" in L.index:
-        L.rate_led("TEMPO", 0, 1090, 491)   # (2026-10-30) the beat, beside the TEMPO readout
+        L.rate_led("TEMPO", 0, 1094, 491)   # (2026-10-30) the beat, beside the TEMPO readout
     # the step sequencer: ON, PLAY, REC, NOTE TRIG, TRANSPOSE, STEP MOD; the page LEDs (the step editor's pages, the
     # playing one lit); LENGTH and RATE. Its MORE triangle: the settings; the SEQ button: the step editor
     L.panel(764, 532, 412, 62, "SEQUENCER", more="SEQ", keys=["seq_on"])

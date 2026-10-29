@@ -33,7 +33,7 @@
  * lists the source's connections meanwhile (- / +, REMOVE, MATRIX); rings show what is modulated.
  *
  * (2026-10-30) Every feature works with a plain click on something visible; Shift-, Ctrl-, Alt-, double- and
- * right-clicks and the keys are shortcuts on top (docs/PLAN item 26 lists each with its visible way).
+ * right-clicks and the keys are shortcuts on top (PLAN.md item 26 lists each with its visible way).
  *
  * It sits in front of the shared wrapper: wrapper/vst2_wrap.c is compiled with -DVSTPluginMain=one_ish_wrapped_main,
  * and this file's VSTPluginMain adds the editor opcodes and passes everything else on. Where each control sits comes
@@ -838,7 +838,8 @@ static int hit(ed_t *e, int x, int y) {
     }
     static const struct { RECT *r; int z; } Z[] = {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
-        {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.oct_leds, Z_OCT_PICK}, {&L.panic, Z_PANIC}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
+        {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.oct_leds, Z_OCT_PICK}, {&L.panic, Z_PANIC},
+        {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
         {&L.focus[0], Z_FOCUS1}, {&L.focus[1], Z_FOCUS2}, {&L.focus[2], Z_FOCUS3}, {&L.tab_setup, Z_TAB_SETUP},
@@ -1124,7 +1125,11 @@ static void press(ed_t *e, int x, int y) {
         set_octave(e, (k < 0 ? 0 : k > 4 ? 4 : k) - 2);
         return;
     }
-    case Z_PANIC: panic(e); InvalidateRect(e->wnd, NULL, FALSE); return;   /* (the held keys drawn up again) */
+    case Z_PANIC:   /* the computer keyboard's notes too; the held keys drawn up again */
+        qk_all_off(e);
+        panic(e);
+        InvalidateRect(e->wnd, NULL, FALSE);
+        return;
     case Z_KEYS: e->mode = M_KEY; break;
     case Z_PITCH: e->mode = M_PITCH; break;
     case Z_MODW: e->mode = M_MODW; break;

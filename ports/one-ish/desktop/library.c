@@ -1106,7 +1106,7 @@ static int slot_load(ed_t *e, int k) {
     L->bank = k / 8;
     redraw(e);
     if (!s->kind) {
-        say(e, "%c%d is empty: hold it down (or ASSIGN) to put the current patch there.", 'A' + k / 8, k % 8 + 1);
+        say(e, "%c%d is empty: ASSIGN (or hold it down) puts the current patch there.", 'A' + k / 8, k % 8 + 1);
         return PE_FAIL;
     }
     if (s->kind == 'F') {
@@ -1130,7 +1130,7 @@ static int slot_assign(ed_t *e, int k) {
     sets_ensure(e);
     if (!L->nsets || k < 0 || k >= SET_SLOTS) return PE_FAIL;
     if (e->pt.bank == BANK_NONE) {
-        say(e, "A set holds saved patches: SAVE AS this sound first, then hold %c%d again.", 'A' + k / 8, k % 8 + 1);
+        say(e, "A set holds saved patches: SAVE AS this sound first, then ASSIGN %c%d again.", 'A' + k / 8, k % 8 + 1);
         return PE_NOT_USER;
     }
     slot_t *s = &L->sets[L->cur_set].slot[k];
