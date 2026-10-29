@@ -29,11 +29,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include "params.h"
+#include "stepseq.h"   /* the sequencer's modulation lanes (rnd_seq_lanes); modmatrix.h's MS_* / MD_* */
 
-/* the lock sections (bit n of `locks` keeps section n as it is) */
-enum { RS_OSC, RS_MIX, RS_FILTER, RS_ENV, RS_MOD, RS_FX, RS_PERF, RS_COUNT, RS_NEVER = 255 };
-__attribute__((unused)) static const char *const RND_SECTION[RS_COUNT] = {"OSCILLATORS", "MIXER", "FILTERS", "ENVELOPES", "MODULATION",
-                                                  "EFFECTS", "PERFORMANCE"};
+/* the lock sections (bit n of `locks` keeps section n as it is). RS_COUNT of them have a LOCK button; the three after
+ * (the arpeggiator, the GENERATIVE section, the sequencer's settings) are the opposite: kept unless their tick button
+ * asks for them (rnd_opts_t.also), so a call without options never touches them. */
+enum { RS_OSC, RS_MIX, RS_FILTER, RS_ENV, RS_MOD, RS_FX, RS_PERF, RS_COUNT, RS_ARP = RS_COUNT, RS_GEN, RS_SEQ, RS_ALL,
+       RS_NEVER = 255 };
+#define RND_ALSO_MASK (((1u << RS_ALL) - 1u) & ~((1u << RS_COUNT) - 1u))
+__attribute__((unused)) static const char *const RND_SECTION[RS_ALL] = {"OSCILLATORS", "MIXER", "FILTERS", "ENVELOPES",
+                                                  "MODULATION", "EFFECTS", "PERFORMANCE", "ARPEGGIATOR", "GENERATIVE",
+                                                  "SEQUENCER"};
+/* the window's further choices: WILD 0..1 (0: exactly the tame randomiser; 1: any source to any destination, every
+ * matrix slot, odd routings...), the tick buttons (bit RS_ARP / RS_GEN / RS_SEQ: randomise that section too), and
+ * whether the sequence has notes (only then may the keys trigger or transpose it: else they would play nothing) */
+typedef struct { float wild; unsigned also; int seq_notes; } rnd_opts_t;
 enum { RA_BASS, RA_LEAD, RA_PAD, RA_PLUCK, RA_POLY, RA_TEXTURE, RA_COUNT };
 __attribute__((unused)) static const char *const RND_ARCH[RA_COUNT] = {"Bass", "Lead", "Pad", "Pluck", "Poly", "Texture"};
 
@@ -201,6 +211,38 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RBELL("uni_detune", RS_PERF, 10, 40, 0, 0, 0.05f), RUNI("pitch_var", RS_PERF, 1, 8, 0.8f, 0, 0.02f),
     RCODEZ("an_*", RS_PERF, 0, 70, 0, 0.05f), RCODEZ("drift", RS_PERF, 0, 70, 0, 0.05f),
     RCODEZ("spread", RS_PERF, 0, 90, 0, 0.06f), RDEF("pan", RS_PERF, 0),
+
+    /* ---- ARPEGGIATOR (its tick button): pattern, octaves, division, gate, swing (set by rnd_gen_arp) ---- */
+    RCODEW("arp_on", RS_ARP, "1 1", 1),
+    ROPT("arp_pattern", RS_ARP, "4 2 2 3", 1),           /* Up, Down, Order, Random */
+    ROPT("arp_oct", RS_ARP, "3 3 2 1", 1), ROPT("arp_dir", RS_ARP, "4 1 2 1", 1),
+    ROPT("arp_oct_order", RS_ARP, "3 1", 1), ROPT("arp_pendulum", RS_ARP, "3 1", 1), ROPT("arp_pend_mode", RS_ARP, "1 1", 1),
+    ROPT("arp_rnd_mode", RS_ARP, "1 1", 1), RDEF("arp_sync", RS_ARP, 0), RDEF("arp_rate", RS_ARP, 0.02f),
+    RCODEW("arp_div", RS_ARP, "0 0 0.5 3 5 1 0 0", 1),   /* mostly 1/8 and 1/16 */
+    ROPT("arp_timing", RS_ARP, "6 1.5 2", 1), RCODE("arp_gate", RS_ARP, 20, 100, 0.08f),
+    RBELL("arp_swing", RS_ARP, 50, 66, 0.6f, 50, 0.04f), RDEF("arp_latch", RS_ARP, 0), ROPT("arp_reset", RS_ARP, "1 3", 1),
+    ROPT("arp_follow_swing", RS_ARP, "2 1", 1),
+
+    /* ---- GENERATIVE (its tick button): the Euclidean rhythm, probability, the Turing melody, KEY and SCALE ---- */
+    RCODEW("gen_euclid_on", RS_GEN, "1 1", 1), RCODE("gen_steps", RS_GEN, 3, 16, 0.04f), RCODE("gen_hits", RS_GEN, 1, 16, 0.04f),
+    RCODE("gen_rot", RS_GEN, 0, 15, 0.04f), RBELL("gen_prob", RS_GEN, 60, 100, 0.6f, 100, 0.05f),
+    RUNI("gen_vel_rand", RS_GEN, 0, 40, 0.5f, 0, 0.05f), RCODEW("gen_tm_on", RS_GEN, "1 1", 1),
+    RCODE("gen_tm_len", RS_GEN, 3, 16, 0.05f), RBELL("gen_tm_change", RS_GEN, 5, 50, 0, 0, 0.05f),
+    RCODEW("gen_scale", RS_GEN, "3 0.3 1 1 1 1 1 1 1", 1), ROPT("gen_range", RS_GEN, "3 3 1.5 0.5", 1),
+    ROPT("key_root", RS_GEN, NULL, 0),                    /* MUTATE leaves the key and the scale alone */
+    ROPT("key_scale", RS_GEN, "4 4 2 1 1 2 0.5 1 0.5 2 2 1 0.3 0.2", 0),
+
+    /* ---- SEQUENCER (its tick button): its own settings (the steps' notes are not made here: rnd_seq_lanes and the
+     * window do the modulation lanes; the transport, recording and the factory sequences are never touched) ---- */
+    RNEVER("seq_play"), RNEVER("seq_rec"), RNEVER("seq_step_mod"), RNEVER("seq_rec_mode"), RNEVER("seq_pattern"),
+    RNEVER("seq_pos"), RNEVER("seq_all"), RNEVER("seq_host_ss"),
+    RCODEW("seq_on", RS_SEQ, "1 1", 1), RDEF("seq_sync", RS_SEQ, 0), RDEF("seq_rate", RS_SEQ, 0.02f),
+    RCODEW("seq_div", RS_SEQ, "0 0 0.5 3 5 1 0 0", 1), ROPT("seq_timing", RS_SEQ, "6 1 1.5", 1),
+    RCODE("seq_length", RS_SEQ, 4, 32, 0.02f), ROPT("seq_follow_swing", RS_SEQ, "2 1", 1),
+    RBELL("clock_swing", RS_SEQ, 50, 66, 0.6f, 50, 0.03f),
+    RCODEW("seq_note_trig", RS_SEQ, "1 1", 1), ROPT("seq_note_reset", RS_SEQ, "1 3", 1),
+    ROPT("seq_restart_hold", RS_SEQ, "3 1", 1), ROPT("seq_restart_trig", RS_SEQ, "1 3", 1),
+    RCODEW("seq_transpose", RS_SEQ, "2 1", 1), ROPT("seq_tr_mode", RS_SEQ, "1 1", 1), ROPT("seq_one_shot", RS_SEQ, "8 1", 1),
 };
 #define RND_NRULES ((int)(sizeof RND_RULES / sizeof RND_RULES[0]))
 
@@ -232,6 +274,8 @@ typedef struct {
     unsigned locks;
     uint32_t *seed;
     int arch;
+    float wild;                    /* rnd_opts_t.wild (0: every step below exactly as without WILD) */
+    int seq_notes;                 /* rnd_opts_t.seq_notes */
 } rnd_ctx_t;
 
 static inline float rnd_u(rnd_ctx_t *c) {   /* xorshift32: 0..1 */
@@ -340,10 +384,13 @@ static inline int rnd_is(const rnd_ctx_t *c, const char *key, const char *opt) {
 static inline void rnd_max(rnd_ctx_t *c, const char *key, float hi) { if (rnd_get(c, key) > hi) rnd_set(c, key, hi); }
 static inline void rnd_min(rnd_ctx_t *c, const char *key, float lo) { if (rnd_get(c, key) < lo) rnd_set(c, key, lo); }
 
-static inline void rnd_init(rnd_ctx_t *c, const float *cur, unsigned locks, uint32_t *seed) {
-    c->locks = locks;
+/* locks: the LOCK buttons' bits; o (may be NULL): WILD, the tick buttons (a section not ticked is kept like a locked one) */
+static inline void rnd_init(rnd_ctx_t *c, const float *cur, unsigned locks, uint32_t *seed, const rnd_opts_t *o) {
+    c->locks = (locks & ((1u << RS_COUNT) - 1u)) | (RND_ALSO_MASK & ~(o ? o->also : 0u));
     c->seed = seed;
     c->arch = RA_POLY;
+    c->wild = o ? rnd_clamp(o->wild, 0.0f, 1.0f) : 0.0f;
+    c->seq_notes = o ? o->seq_notes : 0;
     for (int i = 0; i < NPARAMS; i++) {
         c->rule[i] = (unsigned char)rnd_rule_of(i);
         c->w[i] = rnd_real(i, cur[i]);
@@ -766,6 +813,348 @@ static inline void rnd_gen_mod(rnd_ctx_t *c) {
     }
 }
 
+/* ---- WILD: stranger choices on top of the tame ones. s: how strange (RANDOMISE: WILD; MUTATE: AMOUNT x WILD); every
+ * chance below is s times a weight, so nothing here runs at WILD 0 (the callers do not even call it then). ---- */
+static inline const char *rnd_dst_name(int d) {   /* a matrix destination's name ("" if none) */
+    int d1 = rnd_key("mod1_dst");
+    return d1 < NPARAMS && d > 0 && d < PARAMS[d1].nopts ? PARAMS[d1].opts[d] : "";
+}
+static inline int rnd_is_vocoder(const rnd_ctx_t *c, const char *key) {   /* a vocoder needs an input: not at random */
+    int i = rnd_key(key), o = i < NPARAMS ? (int)c->w[i] : -1;
+    return o >= 0 && o < PARAMS[i].nopts && strstr(PARAMS[i].opts[o], "Vocoder");
+}
+/* an effect type at random, any but the vocoders */
+static inline void rnd_any_type(rnd_ctx_t *c, const char *key) {
+    int i = rnd_key(key);
+    if (i >= NPARAMS || !rnd_free_i(c, i)) return;
+    for (int t = 0; t < 8; t++) {
+        c->w[i] = (float)((int)(rnd_u(c) * PARAMS[i].nopts) % PARAMS[i].nopts);
+        if (!rnd_is_vocoder(c, key)) return;
+    }
+    c->w[i] = rnd_real(i, PARAMS[i].def);
+}
+/* may a WILD matrix row move destination d now: heard, and not one that runs away (feedback, gain) or silences the
+ * sound (the amp envelope's switches), nor the MACRO and EXT channels (often off) */
+static inline int rnd_wild_dst_ok(const rnd_ctx_t *c, int d) {
+    const char *n = rnd_dst_name(d);
+    if (!*n || (d >= MD_MAC_HARM && d <= MD_EXT_LEVEL)) return 0;
+    if (strstr(n, "Feedback") || strstr(n, "Gain") || !strcmp(n, "Amp Env Sync") || !strcmp(n, "Amp Env Latch") ||
+        !strcmp(n, "Amp Env Multi Trig") || !strcmp(n, "Amp Env Delay"))
+        return 0;
+    rnd_route_t r = rnd_route(c);
+    if (!strncmp(n, "Synth FX", 8)) return rnd_on(c, "modfx_on");
+    if (!strncmp(n, "FX1 >", 5) || !strncmp(n, "Send", 4) || !strncmp(n, "Master FX", 9)) return rnd_on(c, "mfx_on");
+    if (!strncmp(n, "FX1", 3)) return rnd_on(c, "mfx_on") && rnd_get(c, "mfx_send1") > 0.0f;
+    if (!strncmp(n, "FX2", 3))
+        return rnd_on(c, "mfx_on") && (rnd_get(c, "mfx_send2") > 0.0f || (rnd_get(c, "mfx_send1") > 0.0f && rnd_get(c, "mfx_series") > 0.0f));
+    if (!strncmp(n, "Ladder", 6)) return rnd_lad_used(&r);
+    if (!strncmp(n, "SVF", 3)) return rnd_svf_used(&r);
+    return 1;
+}
+/* matrix sources by how often WILD picks them (pedals and the pad's gate rarely: they are mostly at rest) */
+#define RND_WILD_SRC "0 3 2 3 3 3 2 1.5 1 2 2 3 3 0.5 1 0.2 0.3 0.3 1.5 1 1.5 0.1 0.5 0.8 0.8 0.3"
+static inline int rnd_src_unipolar(int s) {   /* 0..1 sources (an LFO set to Unipolar counts as bipolar here) */
+    return s != MS_LFO1 && s != MS_LFO2 && s != MS_LFO3 && s != MS_LFO4 && s != MS_KEY && s != MS_RAND && s != MS_BEND &&
+           s != MS_RIBBON;
+}
+/* matrix row k: any source to any destination that fits, now and then through a controller (VIA) and a transform */
+static inline void rnd_put_wild(rnd_ctx_t *c, int k, float s) {
+    int si = rnd_keyf("mod%d_src", k), di = rnd_keyf("mod%d_dst", k);
+    if (!rnd_free_i(c, si) || si >= NPARAMS || di >= NPARAMS) return;
+    int nd = PARAMS[di].nopts, d = 0;
+    for (int t = 0; t < 24 && !d; t++) {   /* the voice's own destinations most, the effects' least */
+        int x = 1 + (int)(rnd_u(c) * (nd - 1)) % (nd - 1);
+        float acc = x < MD_FENV_DELAY ? 1.0f : x <= MD_LFO_END ? 0.6f : x < MD_FX_FIRST ? 0.7f : x <= MD_FX_END ? 0.35f : 0.5f;
+        if (rnd_chance(c, acc) && rnd_wild_dst_ok(c, x)) d = x;
+    }
+    if (!d) return;
+    int src = 1 + rnd_pickw(c, RND_WILD_SRC + 2, PARAMS[si].nopts - 1);   /* (the weights after "Off") */
+    float mag = rnd_logr(c, 5.0f, 20.0f + 80.0f * s), sign = rnd_chance(c, 0.5f) ? 1.0f : -1.0f;
+    if (d >= MD_PITCH && d <= MD_O3_PITCH) mag = rnd_logr(c, 0.5f, 3.0f + 20.0f * s);   /* the safety pass caps it */
+    else if (d >= MD_O1_OCT && d <= MD_O3_OCT) mag = fminf(mag, 25.0f);                 /* an octave or so */
+    int level = (d >= MD_O1_LEVEL && d <= MD_RING_LEVEL) || d == MD_AMP || d == MD_FLT_MIX;
+    if (level && rnd_src_unipolar(src)) sign = 1.0f;   /* a held key not turned down to nothing */
+    if (src == MS_CONST) mag = fminf(mag, 25.0f);       /* a constant: a fixed offset, a small one */
+    rnd_seti(c, si, (float)src);
+    rnd_seti(c, di, (float)d);
+    rnd_seti(c, rnd_keyf("mod%d_amt", k), sign * mag);
+    int via = rnd_chance(c, 0.5f * s) ? 1 + rnd_pickw(c, RND_WILD_SRC + 2, PARAMS[si].nopts - 1) : 0;
+    rnd_seti(c, rnd_keyf("mod%d_via", k), (float)via);
+    rnd_seti(c, rnd_keyf("mod%d_via_amt", k), via ? (rnd_chance(c, 0.75f) ? 1.0f : -1.0f) * rnd_range(c, 30, 100) : 100.0f);
+    int xf = rnd_chance(c, 0.4f * s) ? 1 + (int)(rnd_u(c) * 4) % 4 : 0;   /* limit low / high, squared, cubed */
+    rnd_seti(c, rnd_keyf("mod%d_xf", k), (float)xf);
+    rnd_seti(c, rnd_keyf("mod%d_xf_amt", k), xf ? rnd_range(c, 20, 90) : 0.0f);
+}
+/* one envelope anywhere: times from 1 ms to several seconds, odd curves, a loop now and then */
+static inline void rnd_wild_env(rnd_ctx_t *c, const char *e, float s, int amp) {
+    char k[24];
+    snprintf(k, sizeof k, "%s_a", e); rnd_set(c, k, rnd_ms(rnd_logr(c, 1.0f, amp ? 2500.0f : 5000.0f)));
+    snprintf(k, sizeof k, "%s_d", e); rnd_set(c, k, rnd_ms(rnd_logr(c, 5.0f, 8000.0f)));
+    snprintf(k, sizeof k, "%s_s", e); rnd_set(c, k, rnd_range(c, 0, 100));
+    snprintf(k, sizeof k, "%s_r", e); rnd_set(c, k, rnd_ms(rnd_logr(c, 10.0f, 6000.0f)));
+    snprintf(k, sizeof k, "%s_acurve", e); rnd_set(c, k, rnd_range(c, -100, 100));
+    snprintf(k, sizeof k, "%s_dcurve", e); rnd_set(c, k, rnd_range(c, 0, 100));
+    if (rnd_chance(c, 0.3f * s)) { snprintf(k, sizeof k, "%s_loop", e); rnd_seto(c, k, "On"); }
+    if (!amp && rnd_chance(c, 0.25f * s)) { snprintf(k, sizeof k, "%s_delay", e); rnd_set(c, k, rnd_ms(rnd_logr(c, 20, 800))); }
+    if (rnd_chance(c, 0.25f * s)) { snprintf(k, sizeof k, "%s_hold", e); rnd_set(c, k, rnd_ms(rnd_logr(c, 10, 600))); }
+}
+/* the WILD pass, section by section (each only what its locks allow) */
+static inline void rnd_gen_wild(rnd_ctx_t *c, float s) {
+    if (rnd_open(c, RS_OSC)) {
+        if (rnd_chance(c, 0.45f * s)) {   /* hard sync: osc 2 (and maybe 3) pitched up against osc 1 */
+            rnd_seto(c, "o2_sync", "On");
+            rnd_set(c, "o2_oct", rnd_get(c, "o1_oct") + (rnd_chance(c, 0.3f) ? 1.0f : 0.0f));
+            rnd_set(c, "o2_freq", rnd_range(c, 1.0f, 7.0f));
+        }
+        if (rnd_chance(c, 0.25f * s)) rnd_seto(c, "o3_sync", "On");
+        if (rnd_chance(c, 0.5f * s)) {   /* FM, any route */
+            rnd_set(c, "fm_amt", rnd_range(c, 15.0f, 45.0f + 25.0f * s));
+            rnd_set(c, "fm_route", (float)((int)(rnd_u(c) * 3) % 3));
+        }
+        if (rnd_chance(c, 0.3f * s)) rnd_set(c, "ring_src", (float)((int)(rnd_u(c) * 2) % 2));
+        for (int n = 1; n <= 3; n++) {
+            if (rnd_chance(c, 0.3f * s)) {   /* any shape */
+                rnd_seti(c, rnd_keyf("o%d_wave", n), (float)((int)(rnd_u(c) * 2) % 2));
+                rnd_seti(c, rnd_keyf("o%d_mix", n), rnd_range(c, 0, 100));
+                rnd_seti(c, rnd_keyf("o%d_pw", n), rnd_range(c, 5, 95));
+                rnd_seti(c, rnd_keyf("o%d_angle", n), rnd_range(c, 0, 100));
+            }
+            if (n > 1 && rnd_chance(c, 0.3f * s)) {   /* far apart: any footage, any interval (kept in tune) */
+                rnd_seti(c, rnd_keyf("o%d_oct", n), (float)((int)(rnd_u(c) * 5) % 5));
+                rnd_seti(c, rnd_keyf("o%d_freq", n), roundf(rnd_range(c, -7, 7)));
+            }
+        }
+    }
+    if (rnd_open(c, RS_MIX)) {
+        if (rnd_chance(c, 0.4f * s)) rnd_set(c, "ring_level", rnd_range(c, 30, 80));
+        if (rnd_chance(c, 0.3f * s)) rnd_set(c, "noise_level", rnd_range(c, 10, 50));
+        if (rnd_chance(c, 0.3f * s)) {   /* any balance of the oscillators */
+            rnd_set(c, "o2_level", rnd_range(c, 0, 100));
+            rnd_set(c, "o3_level", rnd_range(c, 0, 100));
+        }
+        if (rnd_chance(c, 0.3f * s)) {
+            rnd_set(c, "noise_color_pair", (float)((int)(rnd_u(c) * 3) % 3));
+            rnd_set(c, "noise_color_mix", rnd_range(c, 0, 100));
+        }
+        if (rnd_chance(c, 0.4f * s)) {   /* each source to either filter, both or neither */
+            static const char *const SRC[5] = {"o1", "o2", "o3", "noise", "ring"};
+            for (int k = 0; k < 5; k++) {
+                char ks[24], kl[24];
+                int b = rnd_pickw(c, "1 1 1.5 0.3", 4);   /* SVF, ladder, both, neither */
+                snprintf(ks, sizeof ks, "%s_svf", SRC[k]);
+                snprintf(kl, sizeof kl, "%s_lad", SRC[k]);
+                rnd_set(c, ks, (float)(b == 0 || b == 2));
+                rnd_set(c, kl, (float)(b == 1 || b == 2));
+            }
+        }
+    }
+    if (rnd_open(c, RS_FILTER)) {
+        if (rnd_chance(c, 0.5f * s)) {   /* odd routings: series or parallel at any mix, any shapes */
+            rnd_seto(c, "flt_route", rnd_chance(c, 0.5f) ? "Series" : "Parallel");
+            rnd_set(c, "flt_mix", rnd_range(c, 0, 100));
+            rnd_set(c, "svf_mode", (float)((int)(rnd_u(c) * 4) % 4));
+            rnd_set(c, "flt_slope", (float)((int)(rnd_u(c) * 4) % 4));
+            rnd_set(c, "svf_pair", (float)((int)(rnd_u(c) * 2) % 2));
+            rnd_set(c, "svf_space", rnd_range(c, -100, 100));
+        }
+        if (rnd_chance(c, 0.25f * s)) rnd_seto(c, "flt_mode", "HP");
+        if (rnd_chance(c, 0.3f * s)) { rnd_set(c, "flt_res", rnd_range(c, 55, 90)); rnd_set(c, "svf_res", rnd_range(c, 50, 85)); }
+        if (rnd_chance(c, 0.4f * s)) { rnd_set(c, "lad_env", rnd_range(c, -80, 100)); rnd_set(c, "svf_env", rnd_range(c, -80, 100)); }
+        if (rnd_chance(c, 0.3f * s)) { rnd_set(c, "lad_lfo", rnd_range(c, -80, 80)); rnd_set(c, "svf_lfo", rnd_range(c, -80, 80)); }
+        if (rnd_chance(c, 0.35f * s)) {   /* filter FM from an oscillator */
+            rnd_set(c, rnd_chance(c, 0.5f) ? "lad_fm" : "svf_fm", rnd_range(c, 10, 50));
+            rnd_set(c, "lad_fm_src", (float)((int)(rnd_u(c) * 3) % 3));
+            rnd_set(c, "svf_fm_src", (float)((int)(rnd_u(c) * 3) % 3));
+        }
+        if (rnd_chance(c, 0.3f * s)) { rnd_set(c, "lad_kbd", rnd_range(c, -20, 100)); rnd_set(c, "svf_kbd", rnd_range(c, -20, 100)); }
+    }
+    if (rnd_open(c, RS_ENV)) {
+        if (rnd_chance(c, 0.5f * s)) rnd_wild_env(c, "fenv", s, 0);
+        if (rnd_chance(c, 0.5f * s)) rnd_wild_env(c, "menv", s, 0);
+        if (rnd_chance(c, 0.3f * s)) rnd_wild_env(c, "amp", s, 1);
+        if (rnd_chance(c, 0.2f * s)) rnd_seto(c, rnd_chance(c, 0.5f) ? "fenv_sync" : "menv_sync", "On");
+    }
+    if (rnd_open(c, RS_FX)) {
+        if (rnd_chance(c, 0.6f * s)) {   /* any synth effect, its controls anywhere */
+            rnd_seto(c, "modfx_on", "On");
+            rnd_any_type(c, "modfx_type");
+            for (int i = 0; i < NPARAMS; i++) {
+                const char *k = PARAMS[i].key;
+                if (strncmp(k, "modfx_", 6) || PARAMS[i].nopts || !rnd_free_i(c, i) || strstr(k, "gain") || strstr(k, "lvl") ||
+                    strstr(k, "ctrl") || strstr(k, "fb") || !rnd_chance(c, 0.5f))
+                    continue;
+                c->w[i] = rnd_range(c, PARAMS[i].min, PARAMS[i].max);
+            }
+            rnd_set(c, "modfx_mix", rnd_range(c, 20, 60));
+        }
+        if (rnd_chance(c, 0.3f * s)) { rnd_any_type(c, "dly_type"); rnd_set(c, "mfx_send1", rnd_range(c, 10, 40)); }
+        if (rnd_chance(c, 0.3f * s)) { rnd_any_type(c, "rev_type"); rnd_set(c, "mfx_send2", rnd_range(c, 15, 45)); }
+        if (rnd_chance(c, 0.25f * s)) rnd_set(c, "mfx_series", rnd_range(c, 15, 50));
+    }
+    if (rnd_open(c, RS_MOD)) {
+        for (int n = 1; n <= 4; n++) {   /* LFOs up into the High range (audio rate), any wave */
+            if (rnd_chance(c, 0.35f * s)) {
+                rnd_seti(c, rnd_keyf("lfo%d_range", n), rnd_chance(c, 0.7f) ? 3.0f : 2.0f);   /* High or Medium */
+                rnd_seti(c, rnd_keyf("lfo%d_sync", n), 0.0f);
+                rnd_seti(c, rnd_keyf("lfo%d_rate", n), rnd_range(c, 0, 100));
+            }
+            if (rnd_chance(c, 0.3f * s)) rnd_seti(c, rnd_keyf("lfo%d_wave", n), (float)((int)(rnd_u(c) * 7) % 7));
+            if (rnd_chance(c, 0.25f * s)) rnd_seti(c, rnd_keyf("lfo%d_polarity", n), (float)((int)(rnd_u(c) * 2) % 2));
+            if (rnd_chance(c, 0.25f * s)) rnd_seti(c, rnd_keyf("lfo%d_var", n), rnd_range(c, 0, 100));
+        }
+        if (rnd_chance(c, 0.2f * s)) rnd_set(c, "pitch_env", (rnd_chance(c, 0.5f) ? 1.0f : -1.0f) * rnd_range(c, 5, 20));
+        int want = (int)roundf(s * rnd_range(c, 0.35f, 1.0f) * 15.0f);   /* more rows: at WILD 100%, often every slot */
+        for (int k = 2; k <= 16 && want > 0; k++) {
+            if (rnd_row_active(c, k)) {   /* a row already there: a controller or a transform now and then */
+                if (rnd_chance(c, 0.3f * s)) rnd_seti(c, rnd_keyf("mod%d_via", k), (float)(1 + rnd_pickw(c, RND_WILD_SRC + 2, 25)));
+                if (rnd_chance(c, 0.2f * s)) {
+                    rnd_seti(c, rnd_keyf("mod%d_xf", k), (float)(1 + (int)(rnd_u(c) * 4) % 4));
+                    rnd_seti(c, rnd_keyf("mod%d_xf_amt", k), rnd_range(c, 20, 90));
+                }
+                continue;
+            }
+            if (rnd_chance(c, s)) rnd_put_wild(c, k, s);   /* any to any, or (less as WILD rises) a tried pairing */
+            else {
+                int m = rnd_pick_mod(c);
+                if (m >= 0) rnd_put_mod(c, k, &RND_MODS[m], 1.0f);
+            }
+            want--;
+        }
+    }
+    if (rnd_open(c, RS_PERF)) {
+        if (rnd_chance(c, 0.25f * s)) {
+            rnd_seto(c, "unison", "On");
+            rnd_set(c, "uni_count", (float)((int)(rnd_u(c) * 4) % 4));
+            rnd_set(c, "uni_detune", rnd_range(c, 15, 50));
+        }
+        if (rnd_chance(c, 0.4f * s)) rnd_set(c, "drift", rnd_range(c, 20, 70));
+        if (rnd_chance(c, 0.3f * s)) {
+            static const char *const K[] = {"an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder"};
+            for (int k = 0; k < 6; k++) rnd_set(c, K[k], rnd_range(c, 10, 70));
+        }
+        if (rnd_chance(c, 0.2f * s)) { rnd_seto(c, "glide", "On"); rnd_set(c, "glide_time", rnd_ms(rnd_logr(c, 30, 400))); }
+    }
+    /* bigger option switches and knobs anywhere in their range (the safety pass reins them in) */
+    for (int i = 0; i < NPARAMS; i++) {
+        if (!rnd_free_i(c, i)) continue;
+        const rnd_rule_t *r = &RND_RULES[c->rule[i]];
+        if (r->sec >= RS_COUNT || strstr(PARAMS[i].key, "freeze")) continue;
+        if (r->kind == RK_OPT && PARAMS[i].nopts > 1 && rnd_chance(c, 0.15f * s))
+            c->w[i] = (float)((int)(rnd_u(c) * PARAMS[i].nopts) % PARAMS[i].nopts);
+        else if ((r->kind == RK_UNI || r->kind == RK_BELL) && rnd_chance(c, 0.25f * s)) {
+            float lo = r->lo + (PARAMS[i].min - r->lo) * s, hi = r->hi + (PARAMS[i].max - r->hi) * s;
+            c->w[i] = rnd_range(c, lo, hi);
+        }
+    }
+}
+
+/* ---- the tick buttons' sections (each only when its button is lit: rnd_open) ---- */
+static inline void rnd_sample_sec(rnd_ctx_t *c, int sec) {   /* each of section sec's params from its rule */
+    for (int i = 0; i < NPARAMS; i++)
+        if (rnd_free_i(c, i) && RND_RULES[c->rule[i]].sec == sec) rnd_sample(c, i);
+}
+static inline void rnd_gen_arp(rnd_ctx_t *c) {   /* mostly on: slower divisions and longer gates for pads */
+    static const char *const DIV[RA_COUNT] = {"0 0 0.3 3 5 0.5 0 0", "0 0 0.5 3 4 1 0 0", "0 0.3 2 3 1 0 0 0",
+                                              "0 0 0.3 2 5 1 0 0", "0 0 1 3 3 0.5 0 0", "0 0.5 1 2 3 2 0.3 0"};
+    static const float GATE[RA_COUNT][2] = {{30, 70}, {40, 90}, {60, 100}, {15, 45}, {35, 80}, {10, 100}};
+    float w = c->wild;
+    int a = c->arch;
+    if (!rnd_open(c, RS_ARP)) return;
+    rnd_sample_sec(c, RS_ARP);
+    rnd_seto(c, "arp_on", rnd_chance(c, 0.75f) ? "On" : "Off");
+    rnd_set(c, "arp_div", (float)rnd_pickw(c, rnd_chance(c, 0.5f * w) ? "0 0 1 1 1 1 0.3 0" : DIV[a], 8));
+    rnd_set(c, "arp_gate", rnd_chance(c, 0.5f * w) ? rnd_range(c, 5, 100) : rnd_range(c, GATE[a][0], GATE[a][1]));
+    if (rnd_chance(c, 0.5f * w)) rnd_set(c, "arp_pattern", (float)((int)(rnd_u(c) * 4) % 4));
+    if (rnd_chance(c, 0.5f * w)) rnd_set(c, "arp_oct", (float)((int)(rnd_u(c) * 4) % 4));
+    if (rnd_chance(c, 0.4f * w)) rnd_set(c, "arp_timing", (float)((int)(rnd_u(c) * 3) % 3));
+    if (rnd_chance(c, 0.5f * w)) rnd_set(c, "arp_swing", rnd_range(c, 50, 75));
+}
+static inline void rnd_gen_gen(rnd_ctx_t *c) {   /* a Euclidean rhythm, a Turing melody, or both; a key and a scale */
+    static const int STEPS[] = {8, 12, 16, 5, 7, 9, 10, 6}, TLEN[] = {4, 5, 6, 8, 12, 16};
+    float w = c->wild;
+    if (!rnd_open(c, RS_GEN)) return;
+    rnd_sample_sec(c, RS_GEN);
+    rnd_seto(c, "gen_euclid_on", rnd_chance(c, 0.55f) ? "On" : "Off");
+    rnd_seto(c, "gen_tm_on", rnd_chance(c, 0.4f) ? "On" : "Off");
+    int n = rnd_chance(c, 0.5f * w) ? 3 + (int)(rnd_u(c) * 30) % 30 : STEPS[rnd_pickw(c, "3 2 4 1 1 1 1 1", 8)];
+    float fill = rnd_chance(c, 0.5f * w) ? rnd_range(c, 0.2f, 1.0f) : rnd_range(c, 0.3f, 0.7f);
+    rnd_set(c, "gen_steps", (float)n);
+    rnd_set(c, "gen_hits", rnd_clamp(roundf(n * fill), 1.0f, (float)(n > 1 ? n - 1 : 1)));
+    rnd_set(c, "gen_rot", (float)((int)(rnd_u(c) * n) % n));
+    rnd_set(c, "gen_tm_len", (float)TLEN[rnd_pickw(c, "1 1 1 3 1 1", 6)]);
+    rnd_set(c, "gen_tm_change", rnd_chance(c, 0.5f * w) ? rnd_range(c, 0, 100) : rnd_bell(c, 5, 40));
+    rnd_set(c, "gen_scale", (float)rnd_pickw(c, rnd_chance(c, 0.5f * w) ? NULL : "3 0.3 1 1 1 1 1 1 1", 9));
+    if (rnd_chance(c, 0.5f * w)) rnd_set(c, "gen_range", (float)((int)(rnd_u(c) * 4) % 4));
+    if (rnd_chance(c, 0.5f * w)) rnd_set(c, "gen_prob", rnd_range(c, 40, 100));
+    if (rnd_chance(c, 0.5f * w)) rnd_set(c, "gen_vel_rand", rnd_range(c, 0, 80));
+}
+static inline void rnd_gen_seq(rnd_ctx_t *c) {   /* the sequencer's settings; the keys trigger it only if it has notes */
+    static const int LEN[] = {8, 12, 16, 24, 32};
+    float w = c->wild;
+    if (!rnd_open(c, RS_SEQ)) return;
+    rnd_sample_sec(c, RS_SEQ);
+    rnd_seto(c, "seq_on", rnd_chance(c, 0.75f) ? "On" : "Off");
+    rnd_set(c, "seq_div", (float)rnd_pickw(c, rnd_chance(c, 0.5f * w) ? "0 0.3 1 1 1 1 0.3 0" : "0 0 0.5 3 5 1 0 0", 8));
+    rnd_set(c, "seq_length", rnd_chance(c, 0.5f * w) ? (float)(1 + (int)(rnd_u(c) * 64) % 64) : (float)LEN[rnd_pickw(c, "2 1 4 1 2", 5)]);
+    rnd_seto(c, "seq_note_trig", c->seq_notes && rnd_chance(c, 0.5f) ? "On" : "Off");
+    rnd_seto(c, "seq_transpose", c->seq_notes && rnd_chance(c, 0.35f) ? "On" : "Off");
+    if (rnd_chance(c, 0.4f * w)) rnd_set(c, "seq_timing", (float)((int)(rnd_u(c) * 3) % 3));
+    if (rnd_chance(c, 0.5f * w)) rnd_set(c, "clock_swing", rnd_range(c, 50, 75));
+}
+
+/* WILD's loudness on top of the mixer levels' estimate: unison, and matrix rows that turn levels up */
+static inline float rnd_wild_loud(const rnd_ctx_t *c) {
+    float m = 1.0f + (rnd_on(c, "unison") ? 0.4f : 0.0f);
+    for (int k = 1; k <= 16; k++) {
+        int dst = (int)c->w[rnd_keyf("mod%d_dst", k)];
+        float amt = c->w[rnd_keyf("mod%d_amt", k)];
+        if (rnd_row_active(c, k) && amt > 0.0f && ((dst >= MD_O1_LEVEL && dst <= MD_RING_LEVEL) || dst == MD_AMP))
+            m += 0.15f + amt * 0.005f;
+    }
+    return 1.0f + (m - 1.0f) * c->wild;
+}
+/* WILD's extra care for matrix row k (source src, destination dst): a constant only nudges, the octave jumps stay
+ * within an octave or so, the amp envelope's attack is not stretched to silence */
+static inline void rnd_safety_wild_row(rnd_ctx_t *c, int k, int src, int dst) {
+    int ai = rnd_keyf("mod%d_amt", k);
+    if (!rnd_row_active(c, k)) return;
+    float v = c->w[ai];
+    if (src == MS_CONST) v = rnd_clamp(v, -25.0f, 25.0f);
+    if (dst >= MD_O1_OCT && dst <= MD_O3_OCT) v = rnd_clamp(v, -25.0f, 25.0f);
+    if (dst >= MD_O1_LEVEL && dst <= MD_RING_LEVEL) v = fminf(v, 40.0f);   /* (levels up: rnd_wild_loud counts them) */
+    if (dst == MD_FENV_DELAY + 7 + MDE_ATTACK || dst == MD_FENV_DELAY + 7 + MDE_DELAY) v = fminf(v, 25.0f);   /* amp env */
+    c->w[ai] = v;
+}
+/* WILD's extra care for the whole sound: no vocoder without an input, the LFOs' High range only where it is not
+ * pitch vibrato (LFO 1 at audio rate on the vibrato row would be a growl at every note), and the effects' feedback
+ * kept lower (with odd types and times, 70% builds up into a wall of sound) */
+static inline void rnd_safety_wild(rnd_ctx_t *c) {
+    static const char *const T[] = {"modfx_type", "dly_type", "rev_type"};
+    static const char *const FB[] = {"modfx_fb", "modfx_fb_r", "modfx_dfb", "dly_fb"};
+    for (int k = 0; k < 3; k++)
+        if (rnd_is_vocoder(c, T[k])) { int i = rnd_key(T[k]); rnd_seti(c, i, rnd_real(i, PARAMS[i].def)); }
+    if (rnd_get(c, "pitch_lfo") > 0.0f) rnd_max(c, "lfo1_range", 1.0f);
+    for (int k = 0; k < 4; k++) { rnd_max(c, FB[k], 50.0f); rnd_min(c, FB[k], -50.0f); }
+}
+/* the tick buttons' sections: Euclid always has a hit, probability not near silence, gates not vanishing, the keys
+ * only trigger or transpose a sequence that has notes, and a slow attack does not swallow every arpeggiated note */
+static inline void rnd_safety_also(rnd_ctx_t *c) {
+    if (rnd_open(c, RS_GEN)) {
+        float n = rnd_clamp(roundf(rnd_get(c, "gen_steps")), 1.0f, 32.0f);
+        rnd_min(c, "gen_hits", ceilf(n / 6.0f));   /* (a sparse rhythm still plays now and then) */
+        rnd_max(c, "gen_hits", n);
+        rnd_max(c, "gen_rot", n - 1.0f);
+        rnd_min(c, "gen_prob", 40.0f - 15.0f * c->wild);
+    }
+    if (rnd_open(c, RS_ARP)) rnd_min(c, "arp_gate", 15.0f);
+    if (rnd_open(c, RS_SEQ) && !c->seq_notes) { rnd_seto(c, "seq_note_trig", "Off"); rnd_seto(c, "seq_transpose", "Off"); }
+    if ((rnd_open(c, RS_ARP) || rnd_open(c, RS_GEN)) &&
+        (rnd_on(c, "arp_on") || rnd_on(c, "gen_euclid_on") || rnd_on(c, "gen_tm_on"))) {
+        rnd_max(c, "amp_a", rnd_ms(80.0f + 120.0f * c->wild));
+        rnd_max(c, "amp_delay", rnd_ms(30.0f));
+    }
+}
+
 /* ---- the safety pass: heard, not closed, not harsh, in tune (only what the locks allow) ---- */
 static inline void rnd_safety(rnd_ctx_t *c) {
     for (int i = 0; i < NPARAMS; i++) {   /* in range, options whole */
@@ -805,6 +1194,7 @@ static inline void rnd_safety(rnd_ctx_t *c) {
             float svf = r.svf[s] ? 1.0f - r.mix : 0.0f;
             est += r.lvl[s] * 0.01f * wrms * fminf(2.0f, lad + svf);
         }
+        if (c->wild > 0.0f) est *= rnd_wild_loud(c);
         float cap = rnd_get(c, "voices") > 0.5f ? 0.85f : 1.3f;   /* a 4-note chord adds up about twice one note */
         if (est > cap) {
             static const char *const L[5] = {"o1_level", "o2_level", "o3_level", "noise_level", "ring_level"};
@@ -890,14 +1280,17 @@ static inline void rnd_safety(rnd_ctx_t *c) {
         if (!strcmp(dn, "Pitch") || !strcmp(dn, "Osc 1 Pitch") || !strcmp(dn, "Osc 2 Pitch") || !strcmp(dn, "Osc 3 Pitch")) {
             int envs = src == env_src[0] || src == env_src[1] || src == env_src[2];
             int synced = (!strcmp(dn, "Osc 2 Pitch") && rnd_on(c, "o2_sync")) || (!strcmp(dn, "Osc 3 Pitch") && rnd_on(c, "o3_sync"));
-            cap = envs && synced ? 50.0f : 6.0f;
+            cap = envs && synced ? 50.0f : 6.0f + 30.0f * c->wild;   /* WILD: up to about 9 semitones */
         } else if (!strcmp(dn, "Pitch LFO1 Amt") || !strcmp(dn, "Pitch EG Amt")) {
             cap = 10.0f;
         } else if (!strcmp(dn, "Amp Level")) {
             cap = 40.0f;
         }
         c->w[ai] = rnd_clamp(c->w[ai], -cap, cap);
+        if (c->wild > 0.0f) rnd_safety_wild_row(c, k, src, dst);
     }
+    if (c->wild > 0.0f) rnd_safety_wild(c);
+    rnd_safety_also(c);
     rnd_max(c, "pitch_lfo", 5.0f);
     rnd_max(c, "pitch_env", 20.0f);
     rnd_min(c, "pitch_env", -20.0f);
@@ -929,15 +1322,16 @@ static inline int rnd_finish(const rnd_ctx_t *c, const float *cur, float *out) {
 }
 
 /* RANDOMISE: a new sound in `out` (normalized, NPARAMS values) from the current one `cur`, keeping locked sections and the
- * never-touched params. Returns its archetype (RND_ARCH). */
-static inline int rnd_generate(const float *cur, float *out, unsigned locks, uint32_t *seed) {
+ * never-touched params; o (may be NULL): WILD and the tick buttons. Returns its archetype (RND_ARCH). The tick buttons'
+ * sections draw their own numbers after the sound's, so a seed gives the same sound whichever buttons are lit. */
+static inline int rnd_generate_x(const float *cur, float *out, unsigned locks, uint32_t *seed, const rnd_opts_t *o) {
     rnd_ctx_t c;
-    rnd_init(&c, cur, locks, seed);
+    rnd_init(&c, cur, locks, seed, o);
     for (int i = 0; i < NPARAMS; i++)   /* every free param from its default first */
         if (rnd_free_i(&c, i)) c.w[i] = rnd_real(i, PARAMS[i].def);
     c.arch = rnd_pickw(&c, "18 16 20 18 16 12", RA_COUNT);
     for (int i = 0; i < NPARAMS; i++)
-        if (rnd_free_i(&c, i)) rnd_sample(&c, i);
+        if (rnd_free_i(&c, i) && RND_RULES[c.rule[i]].sec < RS_COUNT) rnd_sample(&c, i);
     rnd_gen_osc(&c);
     rnd_gen_mix(&c);
     rnd_gen_filters(&c);
@@ -945,9 +1339,16 @@ static inline int rnd_generate(const float *cur, float *out, unsigned locks, uin
     rnd_gen_fx(&c);
     rnd_gen_perf(&c);
     rnd_gen_mod(&c);
+    if (c.wild > 0.0f) rnd_gen_wild(&c, c.wild);
+    rnd_gen_arp(&c);
+    rnd_gen_gen(&c);
+    rnd_gen_seq(&c);
     rnd_safety(&c);
     rnd_finish(&c, cur, out);
     return c.arch;
+}
+static inline int rnd_generate(const float *cur, float *out, unsigned locks, uint32_t *seed) {   /* WILD 0, no ticks */
+    return rnd_generate_x(cur, out, locks, seed, NULL);
 }
 
 /* MUTATE helpers: a param that cannot be heard now is left alone (a silent oscillator's shape, an effect that is off) */
@@ -965,18 +1366,34 @@ static inline int rnd_relevant(const rnd_ctx_t *c, int i) {
     if (!strncmp(k, "noise_", 6) && strcmp(k, "noise_level")) return rnd_get(c, "noise_level") > 0.0f;
     if (!strncmp(k, "glide_", 6) || !strcmp(k, "glissando")) return rnd_on(c, "glide");
     if (!strncmp(k, "uni_", 4)) return rnd_on(c, "unison");
+    /* the tick buttons' sections: a setting matters only while what it belongs to is on */
+    if (strncmp(k, "arp_", 4) && strncmp(k, "gen_", 4) && strncmp(k, "seq_", 4) && strcmp(k, "clock_swing")) return 1;
+    int arp = rnd_on(c, "arp_on"), eu = rnd_on(c, "gen_euclid_on"), tm = rnd_on(c, "gen_tm_on");
+    if (!strcmp(k, "arp_gate")) return arp || eu || tm;   /* (the generators' gate too) */
+    if (!strncmp(k, "arp_", 4) && strcmp(k, "arp_on")) return arp;
+    if (!strcmp(k, "gen_steps") || !strcmp(k, "gen_hits") || !strcmp(k, "gen_rot")) return eu;
+    if (!strncmp(k, "gen_tm_", 7) && strcmp(k, "gen_tm_on")) return tm;
+    if (!strcmp(k, "gen_scale") || !strcmp(k, "gen_range")) return tm;
+    if (!strcmp(k, "gen_prob") || !strcmp(k, "gen_vel_rand")) return arp || eu || tm;
+    if (!strcmp(k, "clock_swing")) return rnd_on(c, "seq_on") || arp || eu || tm;
+    if (!strncmp(k, "seq_", 4) && strcmp(k, "seq_on")) return rnd_on(c, "seq_on");
     return 1;
 }
+/* WILD (c->wild) makes the steps bigger and new rows likelier (often any to any), and swaps controllers */
 static inline void rnd_mutate_matrix(rnd_ctx_t *c, float amount) {
     if (!rnd_open(c, RS_MOD)) return;
+    float w = c->wild;
     for (int k = 1; k <= 16; k++) {
         int ai = rnd_keyf("mod%d_amt", k);
-        if (rnd_row_active(c, k) && rnd_chance(c, fmaxf(0.05f, amount)))
-            c->w[ai] += rnd_gauss(c) * amount * (k == 1 ? 1.0f : 12.0f);   /* slot 1 is the vibrato: tiny steps */
+        if (rnd_row_active(c, k) && rnd_chance(c, fmaxf(0.05f, amount)))   /* slot 1 is the vibrato: tiny steps */
+            c->w[ai] += rnd_gauss(c) * amount * (k == 1 ? 1.0f : 12.0f) * (1.0f + 2.0f * w);
+        if (w > 0.0f && k > 1 && rnd_row_active(c, k) && rnd_chance(c, 0.3f * amount * w))   /* another controller */
+            rnd_seti(c, rnd_keyf("mod%d_via", k), rnd_chance(c, 0.3f) ? 0.0f : (float)(1 + rnd_pickw(c, RND_WILD_SRC + 2, 25)));
     }
-    if (rnd_chance(c, amount * 0.12f))   /* a new row */
+    if (rnd_chance(c, amount * (0.12f + 0.6f * w)))   /* a new row */
         for (int k = 2; k <= 16; k++)
             if (!rnd_row_active(c, k)) {
+                if (w > 0.0f && rnd_chance(c, w)) { rnd_put_wild(c, k, amount * w); break; }
                 int m = rnd_pick_mod(c);
                 if (m >= 0) rnd_put_mod(c, k, &RND_MODS[m], fminf(1.0f, 0.3f + amount));
                 break;
@@ -991,43 +1408,126 @@ static inline void rnd_mutate_matrix(rnd_ctx_t *c, float amount) {
     }
 }
 
-/* MUTATE: a variation of `cur` in `out`; amount 0..1 (0.2: a nudge, 1: a lot). Returns how many params changed. */
-static inline int rnd_mutate(const float *cur, float *out, float amount, unsigned locks, uint32_t *seed) {
+/* MUTATE: a variation of `cur` in `out`; amount 0..1 (0.2: a nudge, 1: a lot); o (may be NULL): WILD and the tick
+ * buttons. WILD makes the steps up to three times bigger, lets knobs leave their musical span for their whole range,
+ * switches options more often (and to any choice), wakes up what is off more often, and adds some of RANDOMISE's
+ * WILD moves (at AMOUNT x WILD). Returns how many params changed. */
+static inline int rnd_mutate_x(const float *cur, float *out, float amount, unsigned locks, uint32_t *seed, const rnd_opts_t *o) {
     rnd_ctx_t c;
-    rnd_init(&c, cur, locks, seed);
+    rnd_init(&c, cur, locks, seed, o);
     amount = rnd_clamp(amount, 0.0f, 1.0f);
-    float pm = fmaxf(0.05f, amount);
+    float pm = fmaxf(0.05f, amount), w = c.wild;
     for (int i = 0; i < NPARAMS; i++) {
         if (!rnd_free_i(&c, i)) continue;
         const rnd_rule_t *r = &RND_RULES[c.rule[i]];
         const param_t *p = &PARAMS[i];
         if (r->mut <= 0.0f || !rnd_relevant(&c, i)) continue;
         if (p->nopts > 1) {
-            if (rnd_chance(&c, amount * 0.25f)) c.w[i] = (float)rnd_pickw(&c, r->w, p->nopts);
+            if (rnd_chance(&c, amount * (0.25f + 0.5f * w))) {
+                int any = w > 0.0f && rnd_chance(&c, 0.5f * w);   /* WILD: any choice, not by the weights */
+                c.w[i] = (float)rnd_pickw(&c, any ? NULL : r->w, p->nopts);
+            }
             continue;
         }
         float span = p->max - p->min, v = c.w[i], lo = r->lo, hi = r->hi;
         if (span <= 0.0f) continue;
         if (r->pz > 0.0f && fabsf(v - r->z) < 1e-6f * span) {   /* off (or centred): mostly stays so */
-            if (!rnd_chance(&c, amount * 0.15f)) continue;
+            if (!rnd_chance(&c, amount * (0.15f + 0.5f * w))) continue;
         } else if (!rnd_chance(&c, pm)) {
             continue;
         }
         if (lo == hi) { lo = p->min; hi = p->max; }
+        else if (w > 0.0f) { lo += (p->min - lo) * w; hi += (p->max - hi) * w; }   /* WILD: towards the whole range */
         lo = fminf(lo, v);
         hi = fmaxf(hi, v);
-        c.w[i] = rnd_clamp(v + rnd_gauss(&c) * amount * r->mut * span, fmaxf(lo, p->min), fminf(hi, p->max));
+        c.w[i] = rnd_clamp(v + rnd_gauss(&c) * amount * r->mut * span * (1.0f + 2.0f * w), fmaxf(lo, p->min), fminf(hi, p->max));
     }
     rnd_mutate_matrix(&c, amount);
+    if (amount * w > 0.0f) rnd_gen_wild(&c, amount * w);
     rnd_safety(&c);
     return rnd_finish(&c, cur, out);
+}
+static inline int rnd_mutate(const float *cur, float *out, float amount, unsigned locks, uint32_t *seed) {   /* WILD 0 */
+    return rnd_mutate_x(cur, out, amount, locks, seed, NULL);
+}
+
+/* the sequencer's modulation lanes (SEQUENCER lit; the window sends them to the engine). RANDOMISE clears all SQ_ML
+ * lanes and makes 0-2 new ones (up to 6, to any destination, as WILD rises), each a shape over the sequence's `len`
+ * steps: random steps held for a few, a ramp, an up-down swing or sparse accents. MUTATE nudges the offsets there are
+ * (by AMOUNT) and now and then adds a lane. norm: the sound (normalized), for what is heard. 1: a lane changed. */
+static inline int rnd_seq_lanes(sq_mlane_t *m, int len, const float *norm, int mutate, float amount, const rnd_opts_t *o,
+                                uint32_t *seed) {
+    static const char *const DST[] = {"Ladder Cutoff", "SVF Cutoff", "Osc 1 PW", "Osc 2 Level", "FM Amount", "Pan",
+                                      "Synth FX Mix", "Ladder Res", "Osc 1 Angle", "Amp Level", "Noise Level", "Send 2 (FX2)"};
+    static const unsigned char COND[] = {MC_LAD, MC_SVF, MC_PW1, MC_O2, MC_FM, MC_ANY, MC_SFX, MC_LAD, MC_ANGLE1, MC_ANY,
+                                         MC_ANY, MC_ANY};
+    rnd_ctx_t c;
+    rnd_init(&c, norm, 0, seed, o);
+    float w = c.wild;
+    int changed = 0, d1 = rnd_key("mod1_dst");
+    len = len < 1 ? 1 : len > SQ_STEPS ? SQ_STEPS : len;
+    if (d1 >= NPARAMS) return 0;
+    if (mutate) {
+        for (int l = 0; l < SQ_ML; l++) {
+            if (!m[l].dest) continue;
+            for (int s = 0; s < SQ_STEPS; s++)
+                if (m[l].off[s] != SQ_NO_OFF && rnd_chance(&c, amount)) {
+                    float v = m[l].off[s] + rnd_gauss(&c) * 30.0f * amount * (1.0f + 2.0f * w);
+                    m[l].off[s] = (int8_t)lroundf(rnd_clamp(v, -100.0f, 100.0f));
+                    changed = 1;
+                }
+        }
+        if (!rnd_chance(&c, amount * (0.2f + 0.6f * w))) return changed;
+    } else {
+        for (int l = 0; l < SQ_ML; l++) {
+            changed |= m[l].dest != 0;
+            sq_clear_mlane(&m[l]);
+        }
+    }
+    int want = mutate ? 1 : rnd_pickw(&c, "3 4 2", 3) + (int)roundf(w * rnd_range(&c, 0.0f, 4.0f));
+    for (int l = 0; l < SQ_ML && want > 0; l++) {
+        if (m[l].dest) continue;
+        int d = 0;
+        for (int t = 0; t < 16 && !d; t++) {
+            int k = (int)(rnd_u(&c) * 12) % 12, x;
+            if (w > 0.0f && rnd_chance(&c, w)) x = 1 + (int)(rnd_u(&c) * (PARAMS[d1].nopts - 1)) % (PARAMS[d1].nopts - 1);
+            else x = rnd_mod_ok(&c, COND[k]) ? rnd_opt(d1, DST[k]) : 0;
+            if (x > 0 && (w <= 0.0f || rnd_wild_dst_ok(&c, x))) d = x;
+            for (int j = 0; j < SQ_ML && d; j++)
+                if (m[j].dest == d) d = 0;   /* one lane per destination */
+        }
+        if (!d) break;
+        sq_clear_mlane(&m[l]);
+        m[l].dest = (uint16_t)d;
+        if (rnd_chance(&c, 0.15f + 0.3f * w)) {   /* a controller now and then (at its minimum it silences the lane) */
+            static const int CTL[] = {MS_VEL, MS_WHEEL, MS_AT, MS_LFO2, MS_RAND_UNI};
+            m[l].ctl = (uint8_t)CTL[rnd_pickw(&c, "3 1 1 2 2", 5)];
+            m[l].amt = (uint8_t)lroundf(rnd_range(&c, 40, 100));
+        }
+        float a = fminf(100.0f, rnd_range(&c, 20, 50) + 50.0f * w * rnd_u(&c)), held = 0.0f;
+        int shape = rnd_pickw(&c, "3 2 2 2", 4), every = 1 + (int)(rnd_u(&c) * 4) % 4;
+        int level = d == MD_AMP || (d >= MD_O1_LEVEL && d <= MD_RING_LEVEL);
+        for (int s = 0; s < SQ_STEPS; s++) {   /* the shape over len steps, repeated past it */
+            int p = s % len, none = 0;
+            float v;
+            if (shape == 0) { if (p % every == 0) held = rnd_range(&c, -a, a); v = held; }   /* random steps, held */
+            else if (shape == 1) v = (len > 1 ? 2.0f * p / (len - 1) - 1.0f : 0.0f) * a;    /* a ramp */
+            else if (shape == 2) v = p / every % 2 ? -a : a;                                /* up and down */
+            else { v = a; none = p && !rnd_chance(&c, 0.3f); }                             /* accents */
+            if (level) v = fmaxf(v, -50.0f);   /* a level not cut to nothing */
+            m[l].off[s] = none ? SQ_NO_OFF : (int8_t)lroundf(rnd_clamp(v, -100.0f, 100.0f));
+        }
+        changed = 1;
+        want--;
+    }
+    return changed;
 }
 
 /* a one-line summary of a sound (normalized values): oscillators, filter, envelope, effects, voicing */
 static inline int rnd_describe(const float *norm, char *buf, int n) {
     rnd_ctx_t c;
     uint32_t seed = 1;
-    rnd_init(&c, norm, 0, &seed);
+    rnd_init(&c, norm, 0, &seed, NULL);
     rnd_route_t r = rnd_route(&c);
     int used = 0;
 #define RND_ADD(...) do { if (used < n) used += snprintf(buf + used, (size_t)(n - used), __VA_ARGS__); } while (0)
@@ -1082,6 +1582,10 @@ static inline int rnd_describe(const float *norm, char *buf, int n) {
     if (rnd_get(&c, "voices") < 0.5f) RND_ADD("; mono");
     if (rnd_on(&c, "glide")) RND_ADD(" glide");
     if (rnd_on(&c, "unison")) RND_ADD("; unison x%d", (int)rnd_get(&c, "uni_count") + 2);
+    if (rnd_on(&c, "arp_on")) RND_ADD("; arp");
+    if (rnd_on(&c, "gen_euclid_on")) RND_ADD("; euclid %d/%d", (int)rnd_get(&c, "gen_hits"), (int)rnd_get(&c, "gen_steps"));
+    if (rnd_on(&c, "gen_tm_on")) RND_ADD("; turing");
+    if (rnd_on(&c, "seq_on")) RND_ADD("; seq");
 #undef RND_ADD
     return used < n ? used : n - 1;
 }

@@ -3920,6 +3920,8 @@ static int rnd_safe(const rnd_stats_t *s) {
 }
 static int cmp_d(const void *a, const void *b) { double x = *(const double *)a, y = *(const double *)b; return (x > y) - (x < y); }
 
+static void randomiser_wild(void);
+static int count_moved(const float *a, const float *b) { int n = 0; for (int i = 0; i < NPARAMS; i++) n += a[i] != b[i]; return n; }
 static void randomiser(void) {
     enum { SOUNDS = 300, MUT = 100 };
     static double rms[SOUNDS];
@@ -4045,6 +4047,190 @@ static void randomiser(void) {
     snprintf(what, sizeof what, "mutate 100%% (50 sounds) and ten 50%% mutations in a row (50 sounds): %d of %d heard and "
              "safe, quietest chord rms %.4f, peak at most %.3f", m_safe, MUT, m_min, m_peak);
     check(m_safe == MUT, what);
+    randomiser_wild();
+}
+
+/* ---- WILD (2026-10-29): RANDOMISE at WILD 0, 50 and 100%, a few hundred sounds each, every one heard, finite and within
+ * the limiter; how much each sound uses (matrix rows, params away from their defaults) printed so the variety shows;
+ * MUTATE at WILD 100%; the tick buttons' sections (arp, GENERATIVE, sequencer) and the sequencer's lanes ---- */
+static int rnd_rows_of(const float *n) {   /* matrix rows that do something: a source, a destination and an amount */
+    int rows = 0;
+    for (int k = 1; k <= 16; k++) {
+        char ks[16], kd[16], ka[16];
+        snprintf(ks, sizeof ks, "mod%d_src", k);
+        snprintf(kd, sizeof kd, "mod%d_dst", k);
+        snprintf(ka, sizeof ka, "mod%d_amt", k);
+        int s = rnd_key(ks), d = rnd_key(kd), a = rnd_key(ka);
+        rows += n[s] > 0.0f && n[d] > 0.0f && fabsf(rnd_real(a, n[a])) > 0.01f;
+    }
+    return rows;
+}
+static int rnd_moved_of(const float *n) {   /* params the randomiser may set that are away from their defaults */
+    int m = 0;
+    for (int i = 0; i < NPARAMS; i++) m += rnd_section_of(i) != RS_NEVER && fabsf(n[i] - PARAMS[i].def) > 1e-6f;
+    return m;
+}
+static void randomiser_wild(void) {
+    enum { SOUNDS = 200, MUT = 60, ALSO = 60 };
+    static const float WILD[3] = {0.0f, 0.5f, 1.0f};
+    float def[NPARAMS], out[NPARAMS], out2[NPARAMS], cur[NPARAMS];
+    char what[640];
+    rnd_defaults(def);
+    /* WILD 0 is the randomiser as it was: the same sounds and mutations for the same seeds */
+    int same = 1;
+    for (int s = 0; s < 40 && same; s++) {
+        rnd_opts_t o = {0.0f, 0, 0};
+        uint32_t a = 3000 + s, b = 3000 + s;
+        rnd_generate(def, out, 0, &a);
+        rnd_generate_x(def, out2, 0, &b, &o);
+        same = !memcmp(out, out2, sizeof out) && a == b;
+        rnd_mutate(out, cur, 0.4f, 0, &a);
+        rnd_mutate_x(out, out2, 0.4f, 0, &b, &o);
+        same &= !memcmp(cur, out2, sizeof cur) && a == b;
+    }
+    check(same, "WILD 0: RANDOMISE and MUTATE give exactly what they gave before WILD (40 seeds)");
+    double rows_at[3] = {0}, moved_at[3] = {0};
+    for (int k = 0; k < 3; k++) {
+        int safe = 0, finite = 1, untouched = 1, all16 = 0;
+        double max_peak = 0, sum_over = 0, max_over = 0, min_rms = 1, max_rms = 0;
+        for (int s = 0; s < SOUNDS; s++) {
+            rnd_opts_t o = {WILD[k], 0, 0};
+            uint32_t seed = 20000 + s * 7919;
+            rnd_generate_x(def, out, 0, &seed, &o);
+            int rows = rnd_rows_of(out);
+            rows_at[k] += rows;
+            all16 += rows == 16;
+            moved_at[k] += rnd_moved_of(out);
+            for (int i = 0; i < NPARAMS; i++) {   /* the tick buttons' sections stay put when not lit */
+                int sec = rnd_section_of(i);
+                if (sec >= RS_ARP && sec < RS_ALL && out[i] != def[i]) untouched = 0;
+            }
+            void *e = E->create(NULL);
+            rnd_apply_norm(e, out);
+            rnd_stats_t st = rnd_play(e);
+            E->destroy(e);
+            int fin = isfinite(st.rms) && isfinite(st.peak) && isfinite(st.note_peak);
+            finite &= fin;
+            int ok = fin && rnd_safe(&st);
+            if (!ok && safe == s) {
+                char d[256];
+                rnd_describe(out, d, sizeof d);
+                printf("     wild %.0f%% sound %d fails: rms %.4f peak %.3f note peak %.3f zero run %d: %s\n", 100 * WILD[k], s,
+                       st.rms, st.peak, st.note_peak, st.zero_run, d);
+                for (int i = 0; i < NPARAMS; i++)   /* DEBUG */
+                    if (out[i] != def[i] && rnd_section_of(i) != RS_NEVER) printf("        %s = %g\n", PARAMS[i].key, rnd_real(i, out[i]));
+            }
+            safe += ok;
+            if (st.peak > max_peak) max_peak = st.peak;
+            if (st.note_peak > max_peak) max_peak = st.note_peak;
+            if (st.over > max_over) max_over = st.over;
+            if (st.rms < min_rms) min_rms = st.rms;
+            if (st.rms > max_rms) max_rms = st.rms;
+            sum_over += st.over;
+        }
+        rows_at[k] /= SOUNDS;
+        moved_at[k] /= SOUNDS;
+        snprintf(what, sizeof what, "WILD %.0f%%: %d sounds, %d heard and safe (finite: %s), chord rms %.4f .. %.3f, peak at most "
+                 "%.3f, at most %.1f%% (mean %.1f%%) of samples in the limiter; on average %.1f matrix rows (%d sounds use all "
+                 "16) and %.0f params away from their defaults; arp, GENERATIVE and sequencer untouched: %s", 100 * WILD[k],
+                 SOUNDS, safe, finite ? "yes" : "no", min_rms, max_rms, max_peak, 100 * max_over, 100 * sum_over / SOUNDS, rows_at[k],
+                 all16, moved_at[k], untouched ? "yes" : "no");
+        /* (the limiter: at most 60% of one sound's samples in it, 3% on average; WILD 0 alone reaches about 40%) */
+        check(safe == SOUNDS && finite && untouched && max_over < 0.6 && sum_over / SOUNDS < 0.03, what);
+    }
+    printf("     the variety by WILD: matrix rows %.1f / %.1f / %.1f, params moved %.0f / %.0f / %.0f (WILD 0 / 50 / 100%%)\n",
+           rows_at[0], rows_at[1], rows_at[2], moved_at[0], moved_at[1], moved_at[2]);
+    check(rows_at[2] > rows_at[1] && rows_at[1] > rows_at[0] && moved_at[2] > moved_at[0] && rows_at[2] >= 10.0,
+          "WILD: more matrix rows and more params moved as it rises (at 100% at least 10 rows on average)");
+
+    /* MUTATE at WILD 100%: once at 50%, and five in a row at 30% */
+    int m_safe = 0, m_changed = 0, m_tame = 0;
+    for (int s = 0; s < MUT; s++) {
+        rnd_opts_t o = {1.0f, 0, 0};
+        uint32_t seed = 40000 + s, tame;
+        rnd_generate(def, cur, 0, &seed);
+        tame = seed;
+        rnd_mutate(cur, out2, 0.5f, 0, &tame);
+        m_tame += count_moved(cur, out2);
+        if (s % 2) { rnd_mutate_x(cur, out, 0.5f, 0, &seed, &o); m_changed += count_moved(cur, out); }
+        else {
+            memcpy(out, cur, sizeof out);
+            for (int k = 0; k < 5; k++) { memcpy(out2, out, sizeof out); rnd_mutate_x(out2, out, 0.3f, 0, &seed, &o); }
+        }
+        void *e = E->create(NULL);
+        rnd_apply_norm(e, out);
+        rnd_stats_t st = rnd_play(e);
+        E->destroy(e);
+        int ok = isfinite(st.rms) && rnd_safe(&st);
+        if (!ok && m_safe == s) {
+            char d[256];
+            rnd_describe(out, d, sizeof d);
+            printf("     wild mutation %d fails: rms %.4f peak %.3f zero run %d: %s\n", s, st.rms, st.peak, st.zero_run, d);
+            for (int i = 0; i < NPARAMS; i++)   /* DEBUG */
+                if (out[i] != def[i] && rnd_section_of(i) != RS_NEVER) printf("        %s = %g\n", PARAMS[i].key, rnd_real(i, out[i]));
+        }
+        m_safe += ok;
+    }
+    snprintf(what, sizeof what, "MUTATE at WILD 100%%: %d of %d heard and safe; a 50%% mutation moves %.0f params (%.0f at WILD 0)",
+             m_safe, MUT, m_changed / (MUT / 2.0), m_tame / (double)MUT);
+    check(m_safe == MUT && m_changed / (MUT / 2.0) > m_tame / (double)MUT, what);
+
+    /* the tick buttons: their sections are set (and only then); still finite and within the limiter */
+    int fin = 1, safe = 0, arp = 0, eu = 0, tm = 0, seq = 0, trig = 0, locked_ok = 1;
+    double peak = 0;
+    for (int s = 0; s < ALSO; s++) {
+        rnd_opts_t o = {s % 3 * 0.5f, 1u << RS_ARP | 1u << RS_GEN | 1u << RS_SEQ, 0};
+        uint32_t seed = 60000 + s * 31;
+        unsigned locks = s % 4 == 3 ? 1u << RS_ENV : 0;
+        rnd_generate_x(def, out, locks, &seed, &o);
+        arp += out[rnd_key("arp_on")] > 0.5f;
+        eu += out[rnd_key("gen_euclid_on")] > 0.5f;
+        tm += out[rnd_key("gen_tm_on")] > 0.5f;
+        seq += out[rnd_key("seq_on")] > 0.5f;
+        trig += out[rnd_key("seq_note_trig")] > 0.5f || out[rnd_key("seq_transpose")] > 0.5f;   /* (no notes: never) */
+        for (int i = 0; i < NPARAMS; i++)
+            if (locks && rnd_section_of(i) == RS_ENV && out[i] != def[i]) locked_ok = 0;
+        void *e = E->create(NULL);
+        rnd_apply_norm(e, out);
+        rnd_stats_t st = rnd_play(e);
+        E->destroy(e);
+        fin &= isfinite(st.rms) && isfinite(st.peak);
+        int ok = isfinite(st.rms) && st.rms > 0.001 && st.peak < 0.98 && st.note_peak < 0.98;
+        if (!ok && safe == s) {
+            char d[256];
+            rnd_describe(out, d, sizeof d);
+            printf("     ticked sound %d fails: rms %.4f peak %.3f: %s\n", s, st.rms, st.peak, d);
+        }
+        safe += ok;
+        if (st.peak > peak) peak = st.peak;
+    }
+    snprintf(what, sizeof what, "ARPEGGIATOR, GENERATIVE and SEQUENCER lit (%d sounds): arp on in %d, Euclid %d, Turing %d, "
+             "sequencer %d, keys trigger an empty sequence in %d; %d heard within the limiter (peak at most %.3f), a locked "
+             "section kept: %s", ALSO, arp, eu, tm, seq, trig, safe, peak, locked_ok ? "yes" : "no");
+    check(fin && safe == ALSO && trig == 0 && arp > ALSO / 3 && eu > ALSO / 5 && tm > ALSO / 6 && seq > ALSO / 3 && locked_ok, what);
+
+    /* the sequencer's modulation lanes: RANDOMISE makes some (any destination at WILD 100%), MUTATE keeps them */
+    sq_seq_t q;
+    int lanes0 = 0, lanes1 = 0, valid = 1, kept = 1;
+    for (int s = 0; s < 40; s++) {
+        rnd_opts_t o = {s < 20 ? 0.0f : 1.0f, 1u << RS_SEQ, 1};
+        uint32_t seed = 70000 + s;
+        sq_clear(&q);
+        rnd_generate(def, out, 0, &seed);
+        rnd_seq_lanes(q.m, 16, out, 0, 0.0f, &o, &seed);
+        for (int l = 0; l < SQ_ML; l++) {
+            if (!q.m[l].dest) continue;
+            *(s < 20 ? &lanes0 : &lanes1) += 1;
+            valid &= q.m[l].dest < MD_COUNT && q.m[l].ctl < MS_COUNT && q.m[l].amt <= 100;
+            for (int st = 0; st < SQ_STEPS; st++) valid &= q.m[l].off[st] == SQ_NO_OFF || abs(q.m[l].off[st]) <= 100;
+        }
+        sq_seq_t before = q;
+        rnd_seq_lanes(q.m, 16, out, 1, 0.3f, &o, &seed);
+        for (int l = 0; l < SQ_ML; l++) kept &= !before.m[l].dest || q.m[l].dest == before.m[l].dest;
+    }
+    snprintf(what, sizeof what, "SEQUENCER lit: RANDOMISE makes %.1f modulation lanes a sound at WILD 0, %.1f at 100%%, all "
+             "valid; MUTATE keeps each lane's destination", lanes0 / 20.0, lanes1 / 20.0);
+    check(valid && kept && lanes0 > 10 && lanes1 > lanes0, what);
 }
 
 /* <dir>/random_demo.wav: twelve RANDOMISE results (two of each archetype), each a short line and a chord */
