@@ -25,7 +25,12 @@
 enum {
     MS_OFF, MS_FENV, MS_AENV, MS_MENV, MS_LFO1, MS_LFO2, MS_VEL, MS_WHEEL, MS_AT, MS_KEY, MS_RAND,
     MS_LFO3, MS_LFO4, MS_BEND, MS_GATE, MS_SUSTAIN, MS_EXP1, MS_EXP2, MS_RAND_UNI, MS_CONST,
-    MS_NOISE_EG, MS_SOSTENUTO, MS_RIBBON, MS_PAD_X, MS_PAD_Y, MS_PAD_GATE, MS_COUNT
+    MS_NOISE_EG, MS_SOSTENUTO, MS_RIBBON, MS_PAD_X, MS_PAD_Y, MS_PAD_GATE,
+    /* (2026-10-30) the GAME OF LIFE, GRAVITY ORBITS and PENDULUMS generators (src/gens_a_run.h), each 0 .. 1: the share
+     * of LIFE's cells alive; planet 1 across and up (0.5: level with the sun); pendulum 1's place (0.5: the centre);
+     * how in step the pendulums are (1: all together) */
+    MS_LIFE_POP, MS_ORB1_X, MS_ORB1_Y, MS_PEND1, MS_PEND_SYNC,
+    MS_COUNT
 };
 
 enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };   /* transforms, params.json order */
@@ -149,7 +154,7 @@ static inline void mod_eval_list(const float *slots, const float *extra, const u
             x = src[via];
             amt = c;
         }
-        dst[d] += mod_transform(x, (int)ex[1], ex[2] * 0.01f, (int)(bipolar >> s) & 1) * amt;
+        dst[d] += mod_transform(x, (int)ex[1], ex[2] * 0.01f, s < 32 && (bipolar >> s & 1u)) * amt;   /* (32 on: 0 .. 1) */
     }
 }
 
