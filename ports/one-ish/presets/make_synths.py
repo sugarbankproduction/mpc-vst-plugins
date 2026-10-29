@@ -17,7 +17,7 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 PATH = os.path.join(HERE, "..", "params.json")
 PREFIXES = ("s2_", "s3_")
-GLOBAL_PREFIX = ("dly_", "rev_")   # the master effect slots' controls
+GLOBAL_PREFIX = ("dly_", "rev_", "link_")   # the master effect slots' controls; the window's LINKs (2026-10-30)
 GLOBAL = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune", "fine_tune", "midi_ch",
           "learn_mode", "master_level", "seq_all"}
 SYNTH_DEFAULTS = {"s2_": {"syn_on": "Off", "syn_ch": "2"}, "s3_": {"syn_on": "Off", "syn_ch": "3"}}

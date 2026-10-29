@@ -1917,7 +1917,9 @@ int lib_home_line(ed_t *e, char *out, int n) {
     for (int k = 0; k < TAG_KINDS; k++)
         if (L_->cur.tag[k][0]) used += snprintf(out + used, used < n ? n - used : 0, "%s%s", used ? "  |  " : "", L_->cur.tag[k]);
     if (L_->cur.notes[0] && used < n) used += snprintf(out + used, n - used, "%sNOTES", used ? "  |  " : "");
-    if (L_->tempo > 0 && used < n) snprintf(out + used, n - used, "%s%.1f BPM", used ? "      " : "", L_->tempo);
+    float own;
+    if (settings_tempo(&own) && used < n) snprintf(out + used, n - used, "%s%.1f BPM (OWN)", used ? "      " : "", own);
+    else if (L_->tempo > 0 && used < n) snprintf(out + used, n - used, "%s%.1f BPM", used ? "      " : "", L_->tempo);
     return out[0] != 0;
 }
 int lib_notes_help(ed_t *e, char *out, int n) {   /* SHOW NOTES: the patch's notes where the help goes */
@@ -2056,6 +2058,7 @@ void lib_tick(ed_t *e) {
         if (t != L_->tempo) {
             L_->tempo = t;
             if (e->wnd) InvalidateRect(e->wnd, &L.name, FALSE);
+            if (e->wnd) InvalidateRect(e->wnd, &L.tempo, FALSE);   /* (the console's TEMPO readout, hub.c) */
         }
     }
 }

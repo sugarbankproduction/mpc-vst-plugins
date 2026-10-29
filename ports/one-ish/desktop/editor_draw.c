@@ -218,8 +218,16 @@ static const char *help_for(int i) {
         {"seq_one_shot", "One shot: the sequence plays to its end once and stops (PLAY goes off), instead of looping."},
         {"seq_rec_mode", "Record mode (running): Replace clears a step the first time you play into it, Overdub adds, Focused replaces the selected step."},
         {"seq_pattern", "Factory sequence: picks one of the built-in sequences (replacing the steps). User loads nothing: your own steps stay."},
-    };
+        /* (2026-10-30) */
+        {"volume", "Volume: the Synth in focus's own level. Light MASTER under it and the knob becomes MASTER, the whole instrument's level."},
+        {"master_level", "MASTER: the level of the whole instrument, all three Synths together (shared; saved with the sound). SYNTH OUTPUT's MASTER button off: the knob is VOLUME again."},    };
     const char *key = PARAMS[i].key;
+    if (!strcmp(key, "link_cut")) return "ALL 3: lit, turning either CUTOFF moves that cutoff on all three Synths by the "
+                                         "same amount (each keeps its own offset; a cutoff at its end stays there). One "
+                                         "undo step, the host told. Saved with the sound.";
+    if (!strncmp(key, "link_", 5)) return "LINK: lit, changing this setting (or group) on the Synth in focus sets the same "
+                                         "on all three Synths: one undo step, the host told of each. Off, each Synth "
+                                         "keeps its own. Saved with the sound.";
     size_t kl = strlen(key);
     if (!strncmp(key, "an_", 3)) return "Analog character: how much the voices differ from each other in this respect (0 = all exactly alike).";
     for (unsigned h = 0; h < sizeof H / sizeof H[0]; h++)   /* the key itself first, then the first matching ending */
@@ -234,6 +242,7 @@ static const char *help_for(int i) {
 static const char *zone_help(ed_t *e, int z) {
     if (seq_zone(z)) return seq_zone_help(e, z);   /* the step editor, the page LEDs */
     if (z >= Z_QM && z < Z_QM_END) return qm_zone_help(e, z);   /* a DEST button (quickmod.c) */
+    if (z >= Z_HUB_ON && z < Z_HUB_END) return hub_zone_help(e, z);   /* the hub page, the console's third row */
     if (z >= Z_SET_BASE && z < Z_SET_END) return settings_zone_help(e, z);   /* the SETTINGS page */
     if (z == Z_TAB_SETTINGS) return "SETTINGS: the instrument's own settings, kept apart from the sounds: preset "
                                     "autoload, MIDI clock and channels, pedals, MIDI learn, the library and tuning.";
@@ -454,13 +463,15 @@ static void draw_knob(HDC dc, ed_t *e, int i) {
     int small = L.kind[i] == K_SMALL, lh = sc(12), vh = small ? 0 : sc(11), ly;
     float cx, cy, r;
     knob_geom(i, &cx, &cy, &r, &ly);
-    float v = ed_get(e, i);   /* the focused Synth's (Panel Focus) */
-    knob(cx, cy, r, v, PARAMS[i].min < 0 && PARAMS[i].max > 0);
+    int src = panel_source(e, i);   /* (VOLUME with SYNTH OUTPUT's MASTER lit: master_level, hub.c) */
+    float v = ed_get(e, src);   /* the focused Synth's (Panel Focus) */
+    knob(cx, cy, r, v, PARAMS[src].min < 0 && PARAMS[src].max > 0);
     int tw = rw(b) > sc(76) ? rw(b) : sc(76);
-    text_c(dc, (int)cx, ly, tw, lh + 2, L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
+    text_c(dc, (int)cx, ly, tw, lh + 2, src != i ? "MASTER" : L.label[i], font_label,
+           src == e->hover ? (src != i ? RGB(255, 214, 150) : T_HOT) : src != i ? RGB(232, 190, 120) : T_LABEL);
     if (!small) {   /* the value no wider than its cell (and a little), so neighbours' values don't run together */
         char val[64];
-        if (!qm_value_text(e, i, val, sizeof val)) param_text(e, i, val, sizeof val);   /* (being turned: its mod amount) */
+        if (!qm_value_text(e, i, val, sizeof val)) param_text(e, src, val, sizeof val);   /* (being turned: its mod amount) */
         RECT vr = {(int)cx - (rw(b) + sc(8)) / 2, ly + lh, (int)cx + (rw(b) + sc(8)) / 2, ly + lh + vh + 2};
         text(dc, &vr, val, font_value, T_VALUE, DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
@@ -803,6 +814,54 @@ static void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, H
     text(dc, &r, label, f, lit ? RGB(11, 22, 33) : hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
 
+/* the GENERATIVE hub page (hub.c): the generators with their ON and the Synths they are on in, KEY and SCALE with
+ * their LINKs, ALL OFF and what is on */
+static void draw_hub(HDC dc, ed_t *e) {
+    title_line(dc, e, "GENERATIVE:  the generators, KEY and SCALE", 1);
+    text(dc, &L.head, "ON: the Synth in focus (1 2 3: the Synths it is on in). Click a name for its page.", font_tiny,
+         T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    int on_n[NSYNTHS] = {0, 0, 0};
+    for (int k = 0; k < NHUB; k++) {
+        RECT on = hub_rect(Z_HUB_ON + k), op = hub_rect(Z_HUB_OPEN + k);
+        int hot = e->hover == Z_HUB_OPEN + k;
+        if (HUB[k].on >= 0)
+            screen_button(dc, on, "ON", hub_on(e, k, e->focus), e->hover == Z_HUB_ON + k, font_cell);
+        gfx_frame((float)op.left, (float)op.top, (float)rw(&op), (float)rh(&op), 1.0f, hot ? 0xFF96D7E8 : 0xFF27404E);
+        RECT tr = {op.left + sc(6), op.top, op.right - sc(56), op.bottom};
+        text(dc, &tr, HUB[k].label, font_cell, hot ? T_HOT : T_LCD, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        for (int c = 0; c < NSYNTHS; c++) {   /* 1 2 3: lit where it is on */
+            int lit = hub_on(e, k, c);
+            on_n[c] += lit;
+            char d[2] = {(char)('1' + c), 0};
+            RECT dr = {op.right - sc(52) + c * sc(12), op.top, op.right - sc(42) + c * sc(12), op.bottom};
+            text(dc, &dr, d, font_tiny, lit ? T_LCD : RGB(46, 72, 84), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+        RECT ar = {op.right - sc(14), op.top, op.right - sc(4), op.bottom};
+        text(dc, &ar, ">", font_cell, T_LCD_DIM, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
+    static const char *const NAME[2] = {"KEY", "SCALE"}, *const KEY[2] = {"key_root", "key_scale"},
+                      *const LNK[2] = {"link_key", "link_scale"};
+    for (int row = 0; row < 2; row++) {   /* KEY and SCALE of the Synth in focus, and their LINKs */
+        int iv = rnd_key(KEY[row]) < NPARAMS ? rnd_key(KEY[row]) : -1, il = rnd_key(LNK[row]) < NPARAMS ? rnd_key(LNK[row]) : -1;
+        RECT v = hub_value_rect(row), l = hub_link_rect(row), nm = {v.left - sc(50), v.top, v.left - sc(2), v.bottom};
+        if (iv < 0) continue;
+        text(dc, &nm, NAME[row], font_cell, iv == e->hover ? T_HOT : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        gfx_frame((float)v.left, (float)v.top, (float)rw(&v), (float)rh(&v), 1.0f, 0xFF27404E);
+        screen_menu(dc, e, iv, v, 1, font_cell);
+        if (il >= 0) screen_button(dc, l, "LINK", option_of(e, il) == 1, il == e->hover, font_tiny);
+    }
+    RECT a = hub_rect(Z_HUB_ALLOFF);
+    int back = hub_restore_n(e);
+    screen_button(dc, a, back ? "BRING BACK (ALL 3 SYNTHS)" : "ALL OFF (ALL 3 SYNTHS)", 0, e->hover == Z_HUB_ALLOFF,
+                  font_cell);
+    char st[96];
+    if (on_n[0] + on_n[1] + on_n[2])
+        snprintf(st, sizeof st, "On: Synth 1 %d, Synth 2 %d, Synth 3 %d", on_n[0], on_n[1], on_n[2]);
+    else snprintf(st, sizeof st, back ? "All off (%d to bring back)." : "All off.", back);
+    RECT sr = {a.right + sc(8), a.top, L.row[0].right, a.bottom};
+    text(dc, &sr, st, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+
 /* the randomiser page: which sound of the history is playing, what it is, the buttons, the amount and the locks */
 static void draw_random(HDC dc, ed_t *e) {
     char t[128], d[200];
@@ -893,6 +952,7 @@ static void draw_screen(HDC dc, ed_t *e) {
     }
     else if (lib_screen(e->screen)) lib_draw(dc, e);   /* PATCHES and the library's pages, with their tabs */
     else if (e->screen == SCR_SETUP) draw_setup(dc, e, subs);
+    else if (e->screen == SCR_GEN) draw_hub(dc, e);   /* (hub.c) */
     else if (e->screen == SCR_SETTINGS) {   /* (settings.c) */
         char t[64];
         settings_title(e, t, sizeof t);
@@ -938,6 +998,8 @@ static void draw_screen(HDC dc, ed_t *e) {
         lib_help(e, help, sizeof help);
     } else if (e->screen == SCR_SETTINGS) {
         settings_help(e, help, sizeof help);
+    } else if (e->screen == SCR_GEN) {
+        hub_help(e, help, sizeof help);
     } else if (e->screen == SCR_SEQ) {
         seq_help(e, help, sizeof help);
     } else if (e->screen == SCR_MATRIX) {
@@ -1006,6 +1068,36 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     panel_button(dc, &L.compare, "COMPARE", lib_comparing(e), e->hover == Z_COMPARE);   /* (library.c) */
     panel_button(dc, &L.snapshot, "SNAPSHOT", e->screen == SCR_SNAPS, e->hover == Z_SNAPSHOT);
+    if (vis(&L.vol_master, sc(6)) && !IsRectEmpty(&L.vol_master)) {   /* SYNTH OUTPUT's MASTER (hub.c) */
+        const RECT *r = &L.vol_master;
+        int bh = sc(10), bw = sc(18), h = e->hover == Z_VOL_MASTER;
+        skin_button((float)r->left + 1, (r->top + r->bottom - bh) / 2.0f, (float)bw, (float)bh, SK_BLACK,
+                    e->vol_master ? SK_ON : h ? SK_HOT : SK_UP);
+        RECT tr = {r->left + bw + sc(5), r->top, r->right + sc(10), r->bottom};
+        text(dc, &tr, "MASTER", font_label, h ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
+    /* the third row (hub.c): GENERATIVE, GEN OFF (GEN BACK while it can bring them back), TEMPO with HOST / OWN */
+    panel_button(dc, &L.tab_gen, "GENERATIVE", e->screen == SCR_GEN, e->hover == Z_TAB_GEN);
+    panel_button(dc, &L.gen_off, hub_restore_n(e) ? "GEN BACK" : "GEN OFF", 0, e->hover == Z_GEN_OFF);
+    if (vis(&L.tempo, sc(16)) || vis(&L.tempo_host, sc(4)) || vis(&L.tempo_own, sc(4))) {
+        char t[16];
+        int own = settings_tempo(NULL), hot = e->hover == Z_TEMPO;
+        tempo_text(e, t, sizeof t);
+        small_lcd(dc, &L.tempo, t, font_big);
+        RECT dn = hub_rect(Z_TEMPO_DOWN), up = hub_rect(Z_TEMPO_UP);   /* its < > (a click steps it) */
+        text(dc, &dn, "<", font_screen, e->hover == Z_TEMPO_DOWN ? T_HOT : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &up, ">", font_screen, e->hover == Z_TEMPO_UP ? T_HOT : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text_c(dc, (L.tempo.left + L.tempo.right) / 2, L.tempo.bottom + sc(4), rw(&L.tempo) + sc(10), sc(14), "TEMPO (BPM)",
+               font_label, hot ? T_HOT : T_LABEL);
+        for (int b = 0; b < 2; b++) {   /* HOST, OWN: one lit */
+            const RECT *r = b ? &L.tempo_own : &L.tempo_host;
+            int lit = b ? own : !own, bh = sc(10), bw = sc(18), h = e->hover == (b ? Z_TEMPO_OWN : Z_TEMPO_HOST);
+            float y = (r->top + r->bottom - bh) / 2.0f;
+            skin_button((float)r->left + 1, y, (float)bw, (float)bh, SK_BLACK, lit ? SK_ON : h ? SK_HOT : SK_UP);
+            RECT tr = {r->left + bw + sc(6), r->top, r->right + sc(6), r->bottom};
+            text(dc, &tr, b ? "OWN" : "HOST", font_label, h ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        }
+    }
     if (vis(&L.encoder, sc(12))) {
         float cx, cy, r;
         encoder_geom(&cx, &cy, &r);
@@ -1178,7 +1270,7 @@ static void draw_keys(HDC dc, ed_t *e) {
 static void bake(HDC dc) {
     gfx_begin(dc);
     skin_bind(gfx_g);
-    int cheek = sc(26), strip = sc(550);
+    int cheek = sc(26), strip = L.ribbon.top - sc(6);   /* (the wood from just over the ribbon down) */
     skin_chassis(0, 0, L.w, L.h);
     skin_wood(cheek, strip, L.w - 2 * cheek, L.h - strip, 0, 3);   /* the strip over the keys and the front rail */
     for (int p = 0; p < NPANELS; p++)   /* the frames' shadows on the case and the wood */
@@ -1223,6 +1315,7 @@ static void bake(HDC dc) {
         gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.2f, 0xFFB9C6CE);
     }
     screen_static();
+    small_lcd_glass(&L.tempo);   /* the TEMPO readout's glass (hub.c) */
     {   /* our name, printed on the console with a faint shadow */
         RECT b1 = L.brand;
         OffsetRect(&b1, 0, 1);

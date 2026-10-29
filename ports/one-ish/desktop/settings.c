@@ -208,8 +208,11 @@ void settings_init(ed_t *e) {   /* a new instance (VSTPluginMain, the host's UI 
     send(e);
 }
 
-/* one setting changed (from the page or load_test): kept, sent to every instance, saved */
-static void change(ed_t *e, int k, float v) {
+/* one setting changed (from the page or load_test): kept, sent to every instance, saved (save 0: not yet) */
+static void change_ex(ed_t *e, int k, float v, int save);
+static void change(ed_t *e, int k, float v) { change_ex(e, k, v, 1); }
+static int unsaved;   /* a change not in the file yet (a TEMPO drag) */
+static void change_ex(ed_t *e, int k, float v, int save) {
     v = clampv(k, v);
     if (is_pedal(k)) {   /* a pedal skips the numbers taken: fixed ones and the other pedals' */
         int dir = v >= G.v[k] ? 1 : -1, cc = (int)v;
@@ -222,12 +225,26 @@ static void change(ed_t *e, int k, float v) {
         }
         v = (float)cc;
     }
-    if (v == G.v[k]) return;
+    if (v == G.v[k] && !(save && unsaved)) return;
     G.v[k] = v;
     int gone = is_pedal(k) ? map_drop_cc((int)v) : 0;   /* a pedal on a learned CC: the pedal wins */
     apply_all();
     if (gone) say(e, "CC %d was a learned mapping; it is the pedal's now (the mapping is gone).", (int)v);
-    if (!save_file()) say(e, "Couldn't save the settings file (the folder may be read-only); they apply until you close.");
+    unsaved = !save;
+    if (save && !save_file()) say(e, "Couldn't save the settings file (the folder may be read-only); they apply until you close.");
+}
+
+/* the console's TEMPO readout (hub.c, 2026-10-30): the same two settings as this page's RECEIVE MIDI CLOCK (HOST: on;
+ * OWN: off) and TEMPO, so both places always show one value */
+int settings_tempo(float *bpm) {
+    if (!g_loaded) load_file();
+    if (bpm) *bpm = G.v[SI_TEMPO];
+    return G.v[SI_RX_CLOCK] < 0.5f;
+}
+void settings_tempo_set(ed_t *e, int own, float bpm, int save) {
+    if (!g_loaded) load_file();
+    change_ex(e, SI_TEMPO, roundf(bpm * 10.0f) / 10.0f, 0);
+    change_ex(e, SI_RX_CLOCK, own ? 0.0f : 1.0f, save);   /* (saves both, when asked to) */
 }
 
 /* ---- PRESET AUTOLOAD (patches.c's browsing asks these) ---- */

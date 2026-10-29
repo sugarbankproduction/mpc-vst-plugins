@@ -124,6 +124,9 @@ int hr_peek_view(hostrate_t *h, int synth, char *buf, int n) {
     else snprintf(key, sizeof key, "phys_view");
     return h && h->eng ? h->api->get_param(h->eng, key, buf, n) : 0;
 }
+int hr_peek(hostrate_t *h, const char *key, char *buf, int n) {   /* a readout (load_test: "bpm", 2026-10-30) */
+    return h && h->eng ? h->api->get_param(h->eng, key, buf, n) : 0;
+}
 /* (2026-10-30) the same for another view the engine makes safe from any thread ("rain_view", "markov_view") */
 int hr_peek_named(hostrate_t *h, int synth, const char *name, char *buf, int n) {
     char key[32];

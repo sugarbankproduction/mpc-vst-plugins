@@ -672,6 +672,17 @@ mkv_gate
 mkv_range
 mkv_keys
 mkv_max
+link_key
+link_scale
+link_arp
+link_seq
+link_lfo1
+link_lfo2
+link_lfo3
+link_lfo4
+link_phys
+link_send
+link_cut
 s2_o1_wave
 s2_amp_a
 s2_amp_d

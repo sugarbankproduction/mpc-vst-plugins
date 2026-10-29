@@ -59,6 +59,22 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
 enum { SCR_SETUP = -11, NSYNTHS = 3 };   /* the centre screen's SETUP page (the three Synths side by side) */
+/* (2026-10-30, hub.c) the GENERATIVE hub page, and the hit codes of it and of the console's third row */
+enum { SCR_GEN = -21 };
+enum { Z_HUB_ON = 670000,        /* + row: a generator's ON (HUB[row]) */
+       Z_HUB_OPEN = 670100,      /* + row: its name: its MORE page */
+       Z_HUB_ALLOFF = 670200, Z_TAB_GEN, Z_GEN_OFF, Z_TEMPO, Z_TEMPO_HOST, Z_TEMPO_OWN,
+       Z_VOL_MASTER,             /* SYNTH OUTPUT's MASTER: its VOLUME knob is master_level while lit */
+       Z_TEMPO_DOWN, Z_TEMPO_UP, /* the TEMPO readout's < and >: 1 BPM (Shift 0.1), OWN */
+       Z_HUB_END = 670300 };
+#define TEST_HUB 0x4F314842   /* VENDOR_SPECIFIC index: value = HT_ op (hub.c) */
+enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 1000) */
+       HT_OWN,                /* 1: TEMPO is OWN (RECEIVE MIDI CLOCK off) */
+       HT_TEMPO,              /* the TEMPO setting (x 1000) */
+       HT_RESTORE,            /* how many generators GEN OFF would bring back */
+       HT_LINKED,             /* opt = a panel index: 1 when its LINK is lit */
+       HT_VOL_MASTER,         /* 1: SYNTH OUTPUT's MASTER is lit */
+       HT_SUB };              /* the screen's sub-page shown now */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
@@ -84,6 +100,8 @@ typedef struct {
     RECT tab_settings;                        /* the SETTINGS page's button (settings.c) */
     RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon, euclid;   /* euclid: GENERATIVE's ring */
     RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
+    RECT tab_gen, gen_off, tempo, tempo_host, tempo_own;   /* the console's third row (hub.c, 2026-10-30) */
+    RECT vol_master;                          /* SYNTH OUTPUT's MASTER button (hub.c) */
 } layout_t;
 extern layout_t L;
 
@@ -175,9 +193,14 @@ typedef struct {
     HWND idle;                                 /* a hidden window whose timer loads MIDI program changes */
     settings_ui_t st;                          /* the SETTINGS page (settings.c) */
     qm_ui_t qm;                                /* QUICK ASSIGN (quickmod.c) */
+    /* GEN OFF (hub.c): the generators it switched off (their own param indexes), to bring back; the program then */
+    short gen_was[64];
+    int gen_was_n, gen_was_prog;
+    float tempo_from;                          /* a TEMPO drag: the BPM it started at */
+    int vol_master;                            /* SYNTH OUTPUT's MASTER lit: VOLUME is master_level (never saved) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
-       M_QMOD };
+       M_QMOD, M_TEMPO };   /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -208,6 +231,9 @@ static inline int note_of_white(int j, int base) {   /* white key j of the keybo
     static const int s[] = {0, 2, 4, 5, 7, 9, 11};
     return base + 12 * (j / 7) + s[j % 7];
 }
+void ed_edit(ed_t *e, int i, float v);       /* a one-shot edit of panel index i (as a click: host told, undo) */
+void ed_edit_abs(ed_t *e, int i, float v);   /* the same for a param's own index (any Synth's) */
+void ed_show(ed_t *e, int screen, int sub);  /* the centre screen shows this page */
 /* editor_draw.c */
 void paint(ed_t *e, HDC out);
 void leds_geom(int i, int *x0, int *y0, int *row, RECT *button);
@@ -351,3 +377,29 @@ const char *settings_zone_help(ed_t *e, int z);
 void settings_help(ed_t *e, char *out, int n);
 const char *settings_message(ed_t *e);
 intptr_t settings_test(ed_t *e, intptr_t op, char *buf, float opt);
+int settings_tempo(float *bpm);                /* the TEMPO setting into bpm; 1: OWN (RECEIVE MIDI CLOCK off) */
+void settings_tempo_set(ed_t *e, int own, float bpm, int save);   /* both (save 0: while a drag goes on) */
+/* hub.c (2026-10-30): the GENERATIVE hub page, GEN OFF, the console's TEMPO readout, the LINKs across the Synths */
+int link_lit(ed_t *e, int i);                  /* panel index i has a LINK, lit: edits go to all three Synths */
+int link_param(int i);                         /* the LINK param of panel index i (-1: none) */
+int link_relative(ed_t *e, int i);             /* lit and relative (ALL 3: the cutoffs move by the same amount) */
+int panel_source(ed_t *e, int i);              /* what panel control i moves now (VOLUME: master_level, MASTER lit) */
+int master_param(void);                        /* master_level's index (-1: none) */
+RECT hub_rect(int z);                          /* where hub zone z sits (the page's or the console's) */
+RECT hub_link_rect(int row);                   /* the hub page's KEY (0) / SCALE (1) row: its LINK button */
+RECT hub_value_rect(int row);                  /* ... and its value */
+int hub_hit(ed_t *e, POINT pt);                /* the hub page's zones (and KEY, SCALE, their LINKs: params) */
+int hub_hit_console(POINT pt);                 /* the console's third row */
+int hub_press(ed_t *e, int z);                 /* 1: z was the hub's */
+int hub_on(ed_t *e, int row, int c);           /* HUB[row] on in Synth c */
+int hub_restore_n(ed_t *e);                    /* generators GEN OFF would bring back (0: it switches off) */
+void hub_all_off(ed_t *e);                     /* GEN OFF / ALL OFF: every generator off in all 3 Synths, or back */
+void tempo_text(ed_t *e, char *out, int n);    /* the readout: "120.0" */
+int tempo_host_bpm(ed_t *e, double *bpm);      /* the host's tempo (1: it gives one) */
+void tempo_press(ed_t *e, int y);              /* a click on the readout: a drag (M_TEMPO) starts */
+void tempo_drag(ed_t *e, int y, int shift);    /* M_TEMPO */
+void tempo_release(ed_t *e);
+int tempo_wheel(ed_t *e, int z, int dir, int fine);   /* 1: used */
+const char *hub_zone_help(ed_t *e, int z);
+void hub_help(ed_t *e, char *out, int n);
+intptr_t hub_test(ed_t *e, intptr_t op, float opt);

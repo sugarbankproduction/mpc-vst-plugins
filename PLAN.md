@@ -373,6 +373,24 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      both off with every setting moved 25.0 us (no cost), with the rain playing into the voices 40.8 us (mostly the
      extra voices its notes and echoes sound), with the Markov melody on 1/32 28.5 us. Left: the matrix's bipolar mask
      is 32 bits (30 sources now; others adding sources past 32 must widen it); the MPC chunk (25 more params a Synth).
+  24. Front-panel conveniences (owner's request). Done 2026-10-30 (offline and the desktop window; `desktop/hub.c`,
+     load_test, `test/midi_check.c`): the window is 56 units taller (856) for a third console row and a third line in
+     the bottom row. TEMPO on the console: a readout with HOST / OWN that is the SETTINGS page's RECEIVE MIDI CLOCK and
+     TEMPO (one setting, two places); its < > (a click), a drag or the wheel set an own tempo (Shift 0.1 BPM).
+     Offline: with the host at 60 BPM and OWN at 150, the arp, the sequencer and the balls run at 150 and every Synth's
+     synced LFOs, envelopes and effects follow it. LINK buttons (eleven shared `link_*` params, saved with the sound, no
+     engine effect): KEY, SCALE, the arp's RATE, the sequencer's RATE, each LFO's RATE, the FX SENDS, the balls /
+     particles, and ALL 3 above LINK CUTOFF (relative: both cutoffs move by the same amount in all three Synths); lit,
+     an edit on the Synth in focus goes to all three (host automation, one undo step). Every feature works with a
+     plain click; Shift-click on GENERATIVE (GEN OFF) and the arrow keys are extra shortcuts. GENERATIVE (console button): a hub page
+     of the generators (data-driven from the MORE pages: EUCLID, TURING, BOUNCING BALLS, PARTICLES, and LIFE, ORBITS,
+     PEND, RAIN, MARKOV once they exist) with each one's ON and the Synths it is on in, KEY / SCALE with their LINKs,
+     and ALL OFF; GEN OFF beside the button: every generator off in all three Synths (one undo step), again: back on.
+     MASTER in SYNTH OUTPUT: lit, its knob is the shared master level (a view, not saved). New MORE triangles and
+     pages: PITCH MODULATION, RING MOD, WAVEFORM MOD, FREQ MOD, NOISE, CUTOFF MODULATION, SYNTH OUTPUT, BEND RANGE;
+     BALLS and PARTICLES (their ON and triangle) in GENERATIVE. The screen's sub-pages: the < > on the title line, and
+     now the keys Left / Right (PgUp / PgDn) everywhere but the step editor; the < > by the patch name, PREV / NEXT
+     and the PRESET knob step presets as before. No CPU cost (nothing in the audio path).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

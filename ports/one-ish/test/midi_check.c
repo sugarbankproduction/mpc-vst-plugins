@@ -71,6 +71,46 @@ static void midi_settings(void) {
     check(strstr(b, "tempo=280") != NULL, "RECEIVE CLOCK: the own tempo stays within 10-280 BPM");
     E->destroy(e);
 
+    /* the front panel's TEMPO set to OWN (2026-10-30: RECEIVE CLOCK off, the same setting): while the host plays at
+     * 60 BPM, everything synced runs at the own 150 BPM. A 16th at 150 BPM is 4410 samples. */
+    {
+        double ppq = 0;
+        e = patch(SAW, 1, 100, 80, 20);   /* the arpeggiator (and with it Euclid / Turing's steps) */
+        E->set_param(e, "lfo_bpm", "60");
+        midicfg(e, "rx_clock=0;tempo=150");
+        setkv(e, "arp_on=1,arp_sync=1,arp_div=4");
+        double arp = arp_gap(e, 60);
+        double b1 = get(e, "bpm"), b2 = get(e, "s2_bpm"), b3 = get(e, "s3_bpm");
+        E->destroy(e);
+        e = seq_patch(60);   /* the sequencer: two steps of 1/16 */
+        midicfg(e, "rx_clock=0;tempo=150");
+        seqcmd(e, "note 0 0 60 100 30 1 0\nnote 1 0 62 100 30 1 0");
+        setkv(e, "seq_length=2,seq_sync=1,seq_div=4,seq_play=1");
+        int n = gen_render_pos(e, SR * 2, 0, &ppq, 60);
+        long long t[8];
+        int k = gen_pick(n, 1, NULL, t, NULL, 8);
+        double seq = k >= 4 ? (double)(t[3] - t[2]) : -1;
+        E->destroy(e);
+        e = patch(SAW, 1, 100, 80, 20);   /* the bouncing balls, SYNC 1/16: every note on the own tempo's grid */
+        E->set_param(e, "lfo_bpm", "60");
+        midicfg(e, "rx_clock=0;tempo=150");
+        setkv(e, "phys_balls_on=1,phys_sync=3,phys_balls=6,phys_max=16");
+        ppq = 0;
+        n = gen_render_pos(e, SR * 6, 0, &ppq, 60);
+        long long bt[64];
+        int nb = gen_pick(n, 1, NULL, bt, NULL, 64), off = 0;
+        for (int i = 0; i < nb; i++) {
+            double g = bt[i] / 4410.0;
+            if (fabs(g - floor(g + 0.5)) * 4410.0 > 1.0) off++;
+        }
+        E->destroy(e);
+        snprintf(what, sizeof what, "TEMPO OWN 150 with the host at 60: the arp's 1/16 %.0f samples apart, the "
+                 "sequencer's %.0f, %d balls' notes with %d off the 1/16 grid; all three Synths' synced LFOs, envelopes "
+                 "and effects at %g / %g / %g BPM", arp, seq, nb, off, b1, b2, b3);
+        check(fabs(arp - 4410) <= 1 && fabs(seq - 4410) <= 1 && nb > 3 && off == 0 && b1 == 150 && b2 == 150 &&
+              b3 == 150, what);
+    }
+
     /* the pedals' numbers */
     e = patch(SAW, 1, 100, 80, 20);
     midicfg(e, "sustain=69");

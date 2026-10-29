@@ -131,6 +131,8 @@ void rate_leds_tick(ed_t *e) {
         if (ti && (ti->flags & kTempoValid) && ti->tempo >= 10.0 && ti->tempo <= 999.0) bpm = ti->tempo;
         if (ti && (ti->flags & kTransportPlaying) && (ti->flags & kPpqPosValid)) { playing = 1; ppq = ti->ppqPos; }
     }
+    float own;
+    if (settings_tempo(&own)) { bpm = own; playing = 0; }   /* TEMPO OWN (2026-10-30): the Synths' own tempo, free */
     unsigned now = 0;
     for (int k = 0; k < NRATES; k++) {
         int on;

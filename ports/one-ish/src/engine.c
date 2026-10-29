@@ -248,6 +248,9 @@ enum {
     P_RAIN_KEYS, P_RAIN_LEN, P_RAIN_OCT, P_RAIN_RANGE, P_RAIN_MAX,
     P_MKV_ON, P_MKV_ORDER, P_MKV_LEARN, P_MKV_FORGET, P_MKV_CREAT, P_MKV_RHYTHM, P_MKV_QUANT, P_MKV_RATE, P_MKV_GATE,
     P_MKV_RANGE, P_MKV_KEYS, P_MKV_MAX,
+    /* (2026-10-30) the window's LINKs (desktop/hub.c): shared, stored only; the engine does nothing with them */
+    P_LINK_KEY, P_LINK_SCALE, P_LINK_ARP, P_LINK_SEQ, P_LINK_LFO1, P_LINK_LFO2, P_LINK_LFO3, P_LINK_LFO4, P_LINK_PHYS,
+    P_LINK_SEND, P_LINK_CUT,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -388,6 +391,8 @@ static const char *const KEYS[P_COUNT] = {
     "rain_keys", "rain_len", "rain_octave", "rain_range", "rain_max",
     "mkv_on", "mkv_order", "mkv_learn", "mkv_forget", "mkv_creat", "mkv_rhythm", "mkv_quant", "mkv_rate", "mkv_gate",
     "mkv_range", "mkv_keys", "mkv_max",
+    "link_key", "link_scale", "link_arp", "link_seq", "link_lfo1", "link_lfo2", "link_lfo3", "link_lfo4", "link_phys",
+    "link_send", "link_cut",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -2261,6 +2266,7 @@ static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);
     if (!strcmp(key, "rain_view")) return gb_view_text(s, 0, buf, n);     /* (2026-10-30) the pond (the window's view) */
     if (!strcmp(key, "markov_view")) return gb_view_text(s, 1, buf, n);   /* ... and the Markov melody's */
+    if (!strcmp(key, "bpm")) return snprintf(buf, n, "%g", s->bpm);   /* (a test readout: "s2_bpm", 2026-10-30) */
     if (!strcmp(key, "phys_view")) return ph_view_text(s, buf, n);   /* the balls and particles (the window's view) */   /* the sequencer's readout (a "display": "string" param) */
     if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
         int used = 0;

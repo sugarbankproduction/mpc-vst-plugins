@@ -19,6 +19,12 @@ every ONE-ish you open. Click a value (or scroll over it, Shift for finer steps)
 | SHOW BANK PREVIEW | On: a bank letter on the SET page (performance sets, `docs/PATCHES.md`) shows the names of its eight patches. Off: only the numbers A1-H8 (and the one playing); a number still loads its patch. | On |
 | RECEIVE MIDI CLOCK | On: the host's tempo and song position drive synced LFOs, envelopes, effects, the arp and the sequencer. Off: both are ignored; everything runs free at TEMPO. | On |
 | TEMPO (CLOCK OFF) | The tempo ONE-ish keeps itself while RECEIVE MIDI CLOCK is off, 10-280 BPM. | 120 BPM |
+
+(2026-10-30, desktop window) The console's **TEMPO** readout with **HOST / OWN** is these two settings, not a copy: HOST
+is RECEIVE MIDI CLOCK on, OWN is off, and the readout shows the host's tempo (HOST) or TEMPO (OWN). The < > in the
+readout (a click: 1 BPM), a drag up / down or the wheel on it set TEMPO (Shift: 0.1 BPM) and switch to OWN; a drag is
+saved once, when you let go.
+The rate LEDs and the home line follow the own tempo while it is OWN.
 | MIDI I/O FROM PRESET | On: a preset or patch you load brings its MIDI channels (MIDI IN (ALL) and each Synth's channel). Off: the channels you set stay. A project always restores everything. | On |
 | SUSTAIN PEDAL CC | The CC number of your sustain pedal. | 64 |
 | EXP 1 PEDAL CC | The CC number the mod matrix reads as Exp 1 (its list still says "Exp 1 (CC 11)", the default). | 11 |

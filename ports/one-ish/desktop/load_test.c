@@ -1330,6 +1330,7 @@ static void rate_led_test(AEffect *fx, HWND child, int w, int h) {
 static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void quickmod_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
     check(fx->flags & 1, "the plugin says it has an editor window");
@@ -1427,6 +1428,7 @@ static void editor(AEffect *fx, const char *bmp) {
         quickmod_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         failures += library_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* undo, compare, sets ... */
         settings_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        panel2_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* TEMPO, GENERATIVE, LINK, MASTER (2026-10-30) */
     }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
@@ -2047,6 +2049,302 @@ static void quickmod_test(AEffect *fx, HWND child, float s, const char *bmp, int
 
 /* a host unloading the DLL and loading it again (Carla after a rebuild): nothing of the old DLL stays registered, and
  * the new one opens its editor and plays */
+/* ---- the front panel's conveniences (2026-10-30, desktop/hub.c): TEMPO with HOST / OWN, the GENERATIVE hub page and
+ * GEN OFF, the LINKs across the Synths, SYNTH OUTPUT's MASTER, the new MORE triangles, the screen's sub-page arrows ---- */
+#define TEST_HUB 0x4F314842   /* as editor.h */
+enum { HT_ENGINE_BPM = 1, HT_OWN, HT_TEMPO, HT_RESTORE, HT_LINKED, HT_VOL_MASTER, HT_SUB };
+enum { T_SCR_GEN = -21, T_SCR_MATRIX = -1, T_SCR_SETUP = -11 };   /* as editor.h */
+static intptr_t ht(AEffect *fx, int op, float opt) { return fx->dispatcher(fx, 50, TEST_HUB, op, NULL, opt); }
+static int screen_now(AEffect *fx) { char b[1024]; return (int)fx->dispatcher(fx, 50, TEST_LIB, LT_SCREEN, b, 0); }
+static void wheel_at(HWND child, float s, float x, float y, int clicks) {   /* base units; + up, - down */
+    for (int k = 0; k < abs(clicks); k++)
+        SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(0, clicks > 0 ? 120 : -120),
+                     MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
+}
+static void wheel_ctl(HWND child, float s, const char *key, int clicks) {   /* over a panel control */
+    int i = rnd_key(key);
+    for (int c = 0; c < NCTLS; c++)
+        if (CTLS[c].param == i) wheel_at(child, s, CTLS[c].x + CTLS[c].w / 2.0f, CTLS[c].y + CTLS[c].h / 2.0f, clicks);
+}
+static void hub_xy(int k, int part, float *x, float *y) {   /* generator k's row on the hub page: ON (0) or its name */
+    float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
+    *x = x0 + (k / 6) * (half + 8.0f) + (part ? 70.0f : 16.0f);
+    *y = ZONE_SCREEN[1] + 80.0f + 22.0f * (k % 6) + 11.0f;
+}
+static void hub_key_xy(int row, int link, float *x, float *y) {   /* the hub's KEY (0) / SCALE (1): value or LINK */
+    float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
+    *x = x0 + row * (half + 8.0f) + (link ? half - 20.0f : 80.0f);
+    *y = ZONE_SCREEN[1] + 80.0f + 22.0f * 6 + 11.0f;
+}
+static float pv(AEffect *fx, const char *key) { return getkey(fx, key); }
+
+static void tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300], b[1024];
+    double was_host = host_tempo;
+    st(fx, STT_RESTORE, NULL, NULL, 0);   /* HOST, 120 */
+    check(ht(fx, HT_OWN, 0) == 0 && ht(fx, HT_TEMPO, 0) == 120000, "TEMPO: HOST and 120 BPM to start (the defaults)");
+    click_zone(child, s, ZONE_TEMPO_OWN);
+    int own = (int)ht(fx, HT_OWN, 0);
+    wheel_at(child, s, ZONE_TEMPO[0] + ZONE_TEMPO[2] / 2.0f, ZONE_TEMPO[1] + ZONE_TEMPO[3] / 2.0f, 5);
+    float tx = ZONE_TEMPO[0] + ZONE_TEMPO[2] / 2.0f, ty = ZONE_TEMPO[1] + ZONE_TEMPO[3] / 2.0f;
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM((int)lroundf(tx * s), (int)lroundf(ty * s)));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM((int)lroundf(tx * s), (int)lroundf(ty * s) - 40));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM((int)lroundf(tx * s), (int)lroundf(ty * s) - 40));
+    play(fx, 4, 512);
+    long t = (long)ht(fx, HT_TEMPO, 0), eng = (long)ht(fx, HT_ENGINE_BPM, 0);
+    st(fx, STT_GET, NULL, b, 0);
+    snprintf(what, sizeof what, "TEMPO: OWN clicked (%d), 5 wheel clicks and a 40-pixel drag up: %.1f BPM; the engine "
+             "follows (%.1f); the SETTINGS page's settings say the same (rx_clock=0, tempo=%.1f)", own, t / 1000.0,
+             eng / 1000.0, t / 1000.0);
+    char want[64];
+    snprintf(want, sizeof want, "tempo=%g", t / 1000.0);
+    check(own == 1 && t == 145000 && eng == t && strstr(b, "rx_clock=0") && strstr(b, want) &&
+          file_has(settings_file, "rx_clock=0"), what);
+    if (bmp) shot(child, w, h, bmp, "_tempo_own");
+    float ux = ZONE_TEMPO[0] + ZONE_TEMPO[2] - 6.0f, dx = ZONE_TEMPO[0] + 6.0f;   /* the readout's > and < */
+    click(child, s, ux, ty); click(child, s, ux, ty); click(child, s, dx, ty);
+    snprintf(what, sizeof what, "TEMPO: plain clicks on > > < step it 1 BPM each (%.1f)", ht(fx, HT_TEMPO, 0) / 1000.0);
+    check(ht(fx, HT_TEMPO, 0) == 146000, what);
+    click(child, s, dx, ty);
+    host_tempo = 96.0;   /* the host plays at 96: HOST follows it */
+    click_zone(child, s, ZONE_TEMPO_HOST);
+    play(fx, 8, 512);
+    eng = (long)ht(fx, HT_ENGINE_BPM, 0);
+    snprintf(what, sizeof what, "TEMPO: HOST clicked: the engine follows the host's 96 BPM (%.1f); the setting says so "
+             "(rx_clock=1) and OWN's 145 is kept for later (%.1f)", eng / 1000.0, ht(fx, HT_TEMPO, 0) / 1000.0);
+    check(ht(fx, HT_OWN, 0) == 0 && eng == 96000 && file_has(settings_file, "rx_clock=1") &&
+          ht(fx, HT_TEMPO, 0) == 145000, what);
+    st(fx, STT_SET, "rx_clock=0", NULL, 0);   /* the SETTINGS page's RECEIVE MIDI CLOCK is the same switch */
+    play(fx, 8, 512);
+    check(ht(fx, HT_OWN, 0) == 1 && ht(fx, HT_ENGINE_BPM, 0) == 145000,
+          "TEMPO: RECEIVE MIDI CLOCK off on the SETTINGS page makes the readout OWN (145 BPM in the engine)");
+    st(fx, STT_RESTORE, NULL, NULL, 0);
+    host_tempo = was_host;
+    play(fx, 4, 512);
+}
+
+static void gen_hub_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone in focus */
+    click_zone(child, s, ZONE_TAB_GEN);
+    check(screen_now(fx) == T_SCR_GEN && NHUB >= 4, "GENERATIVE: the console button shows the hub page (4 generators "
+          "or more)");
+    int opened = 0;
+    for (int k = 0; k < NHUB; k++) {   /* each name opens its page */
+        float x, y;
+        click_zone(child, s, ZONE_TAB_GEN);
+        hub_xy(k, 1, &x, &y);
+        click(child, s, x, y);
+        opened += screen_now(fx) == HUB[k].page;
+    }
+    snprintf(what, sizeof what, "GENERATIVE: each of the %d generators' names opens its page (%d did)", NHUB, opened);
+    check(opened == NHUB, what);
+    click_zone(child, s, ZONE_TAB_GEN);
+    int i = HUB[0].on, i2 = rnd_key("s2_gen_euclid_on");
+    float x, y;
+    hub_xy(0, 0, &x, &y);
+    click(child, s, x, y);
+    float a = fx->getParameter(fx, i), a2 = fx->getParameter(fx, i2);
+    click(child, s, x, y);
+    snprintf(what, sizeof what, "GENERATIVE: the first row's ON switches %s in Synth 1 (on %.0f), not Synth 2 (%.0f), "
+             "and again off (%.0f)", PARAMS[i].key, a, a2, fx->getParameter(fx, i));
+    check(a > 0.5f && a2 < 0.5f && fx->getParameter(fx, i) < 0.5f, what);
+    /* GEN OFF: three generators on in three Synths, all off at once (one undo step), then back */
+    setkey(fx, "gen_euclid_on", 1); setkey(fx, "s2_phys_balls_on", 1); setkey(fx, "s3_gen_tm_on", 1);
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_hub"); }
+    int au = automated[rnd_key("s2_phys_balls_on")];
+    char lb[1024];
+    int steps0 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
+    click_zone(child, s, ZONE_GEN_OFF);
+    int left = 0;
+    for (int k = 0; k < NHUB; k++)
+        for (int c = 0; c < 3; c++) {
+            char key[48];
+            if (c) snprintf(key, sizeof key, "s%d_%s", c + 1, PARAMS[HUB[k].on].key);
+            else snprintf(key, sizeof key, "%s", PARAMS[HUB[k].on].key);
+            left += pv(fx, key) > 0.5f;
+        }
+    int back = (int)ht(fx, HT_RESTORE, 0), steps1 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
+    snprintf(what, sizeof what, "GEN OFF: every generator off in all three Synths (%d left on), the host told (%d), one "
+             "undo step (%d -> %d); it would bring back %d", left, automated[rnd_key("s2_phys_balls_on")] - au, steps0,
+             steps1, back);
+    check(left == 0 && automated[rnd_key("s2_phys_balls_on")] > au && steps1 == steps0 + 1 && back == 3, what);
+    click_zone(child, s, ZONE_TAB_GEN);
+    hub_xy(0, 0, &x, &y);
+    float ax = ZONE_SCREEN[0] + 8.0f + 30.0f, ay = ZONE_SCREEN[1] + 80.0f + 22.0f * 7 + 11.0f;   /* ALL OFF: row 8 */
+    if (bmp) shot(child, w, h, bmp, "_gen_hub_off");
+    click(child, s, ax, ay);   /* ... the page's ALL OFF, pressed again: back */
+    snprintf(what, sizeof what, "ALL OFF again brings back what GEN OFF switched off (%.0f %.0f %.0f), nothing else (%.0f)",
+             pv(fx, "gen_euclid_on"), pv(fx, "s2_phys_balls_on"), pv(fx, "s3_gen_tm_on"), pv(fx, "phys_balls_on"));
+    check(pv(fx, "gen_euclid_on") > 0.5f && pv(fx, "s2_phys_balls_on") > 0.5f && pv(fx, "s3_gen_tm_on") > 0.5f &&
+          pv(fx, "phys_balls_on") < 0.5f && ht(fx, HT_RESTORE, 0) == 0, what);
+    click(child, s, ax, ay);   /* (off again, for what follows) */
+    check(pv(fx, "gen_euclid_on") < 0.5f && pv(fx, "s2_phys_balls_on") < 0.5f, "ALL OFF: off again");
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    static const struct { const char *key, *link; } T[] = {
+        {"arp_div", "link_arp"}, {"seq_div", "link_seq"}, {"lfo1_rate", "link_lfo1"}, {"mfx_send1", "link_send"}};
+    for (unsigned k = 0; k < sizeof T / sizeof T[0]; k++) {
+        char k2[48], k3[48];
+        snprintf(k2, sizeof k2, "s2_%s", T[k].key);
+        snprintf(k3, sizeof k3, "s3_%s", T[k].key);
+        setkey(fx, T[k].link, 0);
+        float b2 = pv(fx, k2), b3 = pv(fx, k3), b1 = pv(fx, T[k].key);
+        wheel_ctl(child, s, T[k].key, 2);   /* unlit: Synth 1 alone */
+        int alone = pv(fx, T[k].key) != b1 && pv(fx, k2) == b2 && pv(fx, k3) == b3;
+        click_ctl(child, s, T[k].link);      /* lit (its button on the panel) */
+        int lit = pv(fx, T[k].link) > 0.5f && ht(fx, HT_LINKED, (float)rnd_key(T[k].key)) == 1;
+        int a2 = automated[rnd_key(k2)], a3 = automated[rnd_key(k3)];
+        wheel_ctl(child, s, T[k].key, 1);
+        float v1 = pv(fx, T[k].key);
+        int all = pv(fx, k2) == v1 && pv(fx, k3) == v1, told = automated[rnd_key(k2)] > a2 && automated[rnd_key(k3)] > a3;
+        snprintf(what, sizeof what, "LINK %s: off, a change moves Synth 1 alone (%d); lit (%d), Synths 2 and 3 get the "
+                 "same %s (%d), as host automation (%d)", T[k].key, alone, lit, T[k].key, all, told);
+        check(alone && lit && all && told, what);
+        click_ctl(child, s, T[k].link);
+    }
+    /* ALL 3 over LINK CUTOFF: relative, each Synth's cutoff moves by the same amount */
+    {
+        static const char *const K[3] = {"flt_cut", "s2_flt_cut", "s3_flt_cut"};
+        static const float V[3] = {0.30f, 0.50f, 0.70f};
+        for (int c = 0; c < 3; c++) setkey(fx, K[c], V[c]);
+        setkey(fx, "link_cut", 0);
+        wheel_ctl(child, s, "flt_cut", 5);
+        int alone = pv(fx, K[0]) > V[0] && pv(fx, K[1]) == V[1] && pv(fx, K[2]) == V[2];
+        float b[3];
+        for (int c = 0; c < 3; c++) b[c] = pv(fx, K[c]);
+        click_ctl(child, s, "link_cut");
+        int a2 = automated[rnd_key(K[1])];
+        wheel_ctl(child, s, "flt_cut", 5);
+        float d[3];
+        for (int c = 0; c < 3; c++) d[c] = pv(fx, K[c]) - b[c];
+        snprintf(what, sizeof what, "ALL 3 (cutoffs): off, Synth 1's cutoff alone moves (%d); lit (%.0f), all three move "
+                 "by the same amount, keeping their offsets (%+.3f %+.3f %+.3f), the host told (%d)", alone,
+                 pv(fx, "link_cut"), d[0], d[1], d[2], automated[rnd_key(K[1])] - a2);
+        check(alone && pv(fx, "link_cut") > 0.5f && d[0] > 0.04f && fabsf(d[1] - d[0]) < 1e-5f &&
+              fabsf(d[2] - d[0]) < 1e-5f && automated[rnd_key(K[1])] > a2, what);
+        if (bmp) shot(child, w, h, bmp, "_all3_cutoff");
+        click_ctl(child, s, "link_cut");
+    }
+    /* KEY on the hub page, with its LINK there; then the LINK survives the project's save and load */
+    click_zone(child, s, ZONE_TAB_GEN);
+    float x, y;
+    hub_key_xy(0, 1, &x, &y);
+    click(child, s, x, y);
+    hub_key_xy(0, 0, &x, &y);
+    wheel_at(child, s, x, y, 3);
+    float k1 = pv(fx, "key_root");
+    snprintf(what, sizeof what, "LINK on the GENERATIVE page: KEY lit (%.0f), the KEY moved there is all three Synths' "
+             "(%.3f %.3f %.3f)", pv(fx, "link_key"), k1, pv(fx, "s2_key_root"), pv(fx, "s3_key_root"));
+    check(pv(fx, "link_key") > 0.5f && k1 > 0.0f && pv(fx, "s2_key_root") == k1 && pv(fx, "s3_key_root") == k1, what);
+    if (bmp) shot(child, w, h, bmp, "_gen_hub_link");
+    void *chunk = NULL;
+    intptr_t n = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+    static char saved[300000];
+    if (n > 0 && n <= (intptr_t)sizeof saved) memcpy(saved, chunk, (size_t)n);
+    setkey(fx, "link_key", 0);
+    if (n > 0 && n <= (intptr_t)sizeof saved) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, saved, 0);
+    check(pv(fx, "link_key") > 0.5f, "LINK: kept with the project (lit again after its chunk is loaded)");
+    setkey(fx, "link_key", 0);
+    setkey(fx, "key_root", 0); setkey(fx, "s2_key_root", 0); setkey(fx, "s3_key_root", 0);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+static void master_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    float m0 = pv(fx, "master_level"), v1 = pv(fx, "volume"), v2 = pv(fx, "s2_volume"), v3 = pv(fx, "s3_volume");
+    wheel_ctl(child, s, "volume", -3);   /* off: the focused Synth's VOLUME */
+    int own = pv(fx, "volume") < v1 && pv(fx, "s2_volume") == v2 && pv(fx, "master_level") == m0;
+    setkey(fx, "volume", v1);
+    click_zone(child, s, ZONE_VOL_MASTER);
+    int lit = (int)ht(fx, HT_VOL_MASTER, 0);
+    if (bmp) shot(child, w, h, bmp, "_master");
+    /* all three Synths on one channel, playing: MASTER down to 0 silences them all */
+    setkey(fx, "s2_syn_on", 1); setkey(fx, "s3_syn_on", 1);
+    float c2 = pv(fx, "s2_syn_ch"), c3 = pv(fx, "s3_syn_ch");
+    setkey(fx, "s2_syn_ch", pv(fx, "syn_ch")); setkey(fx, "s3_syn_ch", pv(fx, "syn_ch"));
+    send_midi(fx, 0x90, 60, 100);
+    double before = play(fx, 20, 512);
+    wheel_ctl(child, s, "volume", -120);   /* (now MASTER: 1% a click) */
+    double after = play(fx, 20, 512);
+    send_midi(fx, 0x80, 60, 0);
+    snprintf(what, sizeof what, "MASTER: off, the knob is the focused Synth's VOLUME (%d); lit (%d), it is MASTER: down to "
+             "%.0f%% (the VOLUMEs untouched: %d), all three Synths go quiet (rms %.3f -> %.5f)", own, lit,
+             pv(fx, "master_level") * 100.0f, pv(fx, "volume") == v1 && pv(fx, "s2_volume") == v2 &&
+             pv(fx, "s3_volume") == v3, before, after);
+    check(own && lit && pv(fx, "master_level") == 0.0f && pv(fx, "volume") == v1 && pv(fx, "s2_volume") == v2 &&
+          before > 0.01 && after < 1e-4, what);
+    click_zone(child, s, ZONE_VOL_MASTER);
+    check(ht(fx, HT_VOL_MASTER, 0) == 0, "MASTER: off again, the knob is VOLUME");
+    setkey(fx, "master_level", m0);
+    setkey(fx, "s2_syn_on", 0); setkey(fx, "s3_syn_on", 0); setkey(fx, "s2_syn_ch", c2); setkey(fx, "s3_syn_ch", c3);
+    play(fx, 200, 512);
+}
+
+static void triangle_sub_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    static const struct { int page; const char *name; } P[] = {
+        {PG_PITCHMOD, "pitchmod"}, {PG_RINGMOD, "ringmod"}, {PG_WAVEMOD, "wavemod"}, {PG_FMMOD, "fmmod"},
+        {PG_NOISE, "noise"}, {PG_CUTMOD, "cutmod"}, {PG_OUTPUT, "output"}, {PG_BEND, "bend"}, {PG_BALLS, "balls_tri"},
+        {PG_PARTICLES, "particles_tri"}};
+    int ok = 0;
+    for (unsigned k = 0; k < sizeof P / sizeof P[0]; k++) {
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        int found = click_more(child, s, P[k].page) && screen_now(fx) == P[k].page;
+        ok += found;
+        if (!found) printf("     (no working triangle for the %s page)\n", P[k].name);
+        char suf[48];
+        snprintf(suf, sizeof suf, "_more_%s", P[k].name);
+        if (bmp && found && k < 8) shot(child, w, h, bmp, suf);
+    }
+    snprintf(what, sizeof what, "the new MORE triangles: %d of %d open their pages (pitch mod, ring mod, waveform mod, freq "
+             "mod, noise, cutoff mod, synth output, bend range, balls, particles)", ok, (int)(sizeof P / sizeof P[0]));
+    check(ok == (int)(sizeof P / sizeof P[0]), what);
+    /* the screen's sub-pages: the title line's > and <, the keys Right / Left; the step editor keeps its arrows */
+    float sx = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f - 9.0f, sy = ZONE_SCREEN[1] + 6.0f + 36.0f + 9.0f;
+    float px = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f - 55.0f;
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    if (ht(fx, HT_SUB, 0) != 0) click_zone(child, s, ZONE_TAB_MATRIX);
+    int m0 = (int)ht(fx, HT_SUB, 0);
+    click(child, s, sx, sy);
+    int m1 = (int)ht(fx, HT_SUB, 0);
+    SendMessageA(child, WM_KEYDOWN, VK_LEFT, 0);
+    int m2 = (int)ht(fx, HT_SUB, 0);
+    SendMessageA(child, WM_KEYDOWN, VK_RIGHT, 0);
+    int m3 = (int)ht(fx, HT_SUB, 0);
+    click(child, s, px, sy);
+    int m4 = (int)ht(fx, HT_SUB, 0);
+    int p0 = (int)fx->dispatcher(fx, 3 /* effGetProgram */, 0, 0, NULL, 0);
+    click_zone(child, s, ZONE_TAB_SETUP);
+    SendMessageA(child, WM_KEYDOWN, VK_RIGHT, 0);
+    int s1 = (int)ht(fx, HT_SUB, 0), scr = screen_now(fx);
+    click_more(child, s, PG_ARP);
+    SendMessageA(child, WM_KEYDOWN, VK_NEXT, 0);
+    int a1 = (int)ht(fx, HT_SUB, 0);
+    SendMessageA(child, WM_KEYDOWN, VK_PRIOR, 0);
+    int a0 = (int)ht(fx, HT_SUB, 0);
+    snprintf(what, sizeof what, "sub-pages: the matrix's > on the title line shows rows 9-16 (%d -> %d), Left back (%d), "
+             "Right on (%d), < back (%d); SETUP: Right its second page (%d); a MORE page: PgDn / PgUp (%d, %d); the "
+             "presets stay (%d -> %d)", m0, m1, m2, m3, m4, s1, a1, a0, p0,
+             (int)fx->dispatcher(fx, 3, 0, 0, NULL, 0));
+    check(m0 == 0 && m1 == 1 && m2 == 0 && m3 == 1 && m4 == 0 && scr == T_SCR_SETUP && s1 == 1 && a1 == 1 && a0 == 0 &&
+          (int)fx->dispatcher(fx, 3, 0, 0, NULL, 0) == p0, what);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    tempo_test(fx, child, s, bmp, w, h);
+    gen_hub_test(fx, child, s, bmp, w, h);
+    link_test(fx, child, s, bmp, w, h);
+    master_test(fx, child, s, bmp, w, h);
+    triangle_sub_test(fx, child, s, bmp, w, h);
+}
+
 static void reload_test(const char *path, HMODULE old) {
     WNDCLASSA wc;
     check(!GetClassInfoA(old, "ONEishEditor", &wc), "after FreeLibrary no window class points into the unloaded DLL");

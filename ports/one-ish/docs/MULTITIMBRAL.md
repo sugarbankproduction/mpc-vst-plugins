@@ -31,6 +31,22 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   the Synth in focus in its own key and scale, so the Synths can play in different keys or modes; the other Synths'
   sequences stay as they are.
 - **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample.
+- **LINK** (2026-10-30, desktop window): small LINK buttons keep a setting the same in all three Synths. While one is
+  lit, changing that setting on the Synth in focus sets the same value on the other two (host automation for each, one
+  undo step). LINKs: KEY and SCALE (the GENERATIVE page and the GEN page), the arpeggiator's RATE (under it on the
+  panel: its division, timing, sync and free rate), the sequencer's RATE (beside it), each LFO's RATE (in each LFO:
+  its rate, sync and timing), LINK SENDS (the MASTER EFFECTS panel: SEND 1 and SEND 2) and the balls and particles
+  (every `phys_*` setting; their pages). **ALL 3** above LINK CUTOFF (between the filters) is the one relative LINK:
+  turning either CUTOFF moves that cutoff on all three Synths by the same amount, so their offsets stay (a cutoff at
+  its end stays there). Lighting one copies nothing by itself: the next change does. They are shared
+  params (`link_*`, one copy, no engine effect), so they are saved with the sound (projects, patches, presets, undo)
+  and the host can automate them; the randomiser leaves them alone (it follows them: a linked setting it changes
+  goes to all three).
+- **GEN OFF** (the console's third row) and **ALL OFF** (the GENERATIVE page) switch every generator off in all three
+  Synths at once; pressed again while they are all still off, they bring back the ones they switched off.
+- **MASTER** (2026-10-30): the small MASTER button in SYNTH OUTPUT turns that section's VOLUME knob into MASTER, the
+  shared master level of all three Synths (`master_level`, also on the SETUP page); off, the knob is the focused
+  Synth's own VOLUME again. The button is only a view (never saved).
 - **UNDO / REDO, COMPARE, snapshots and autosaves** (2026-10-29, offline; `docs/PATCHES.md`) work on the whole
   performance: all three Synths, the shared settings and every sequence, whichever Synth is in focus.
 
