@@ -564,7 +564,8 @@ def build(lay):
         ("glissando", "Glissando"),
         # the X/Y pad and the saved wheel and pad positions (2026-10-29)
         ("pad_polarity", "Pad Polarity"), ("pad_hold", "Pad X/Y Hold"), ("load_pos", "Load Saved Pos"),
-        ("wheel_pos", "Saved Mod Wheel"), ("pad_x_pos", "Saved Pad X"), ("pad_y_pos", "Saved Pad Y")])
+        ("wheel_pos", "Saved Mod Wheel"), ("pad_x_pos", "Saved Pad X"), ("pad_y_pos", "Saved Pad Y"),
+        ("eg_times", "EG Times (MIN, Syncs)")])   # the envelopes' MIN and 13 synced values (2026-10-29)
     L.page("RIBBON", "RIBBON", "The touch strip over the keys (MIDI CC 16 position, CC 17 touch).", [
         ("ribbon_dst", "Destination"), ("ribbon_amt", "Amount"), ("ribbon_mode", "Mode"), ("ribbon_origin", "Origin")])
     L.page("ANALOG", "ANALOG CHARACTER", "Per-voice differences, as between real analog voices. All 0 = exact.", [

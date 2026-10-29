@@ -258,6 +258,13 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      ENABLE per matrix slot (click a row's number on the MATRIX page), PAD POLARITY, X/Y HOLD and LOAD SAVED POS (the
      wheel and pad saved with the sound; CTRL page). Old sounds play sample for sample as before; CPU on the PC within
      2% of before (8 voices 67.4 against 66.4 us, A/B on the same machine, 2026-10-29).
+  17. LFO and envelope fidelity (audit package 4). Done 2026-10-29 (offline; `test/lfoenv_check.c`): LFO RANGE High
+     (1 Hz-1 kHz, run per sample on pitch, both cutoffs and the amp level), the LFO wave "Pulse" (width over 0-100%),
+     synced LFOs restarting at their start phase when the host transport starts, and EG TIMES "MIN, 13 Syncs" (an
+     attack, decay or release knob at its far left is MIN, 0.2 ms, which time scale leaves alone; synced times from the
+     manual's 13 values). Old sounds unchanged (the default EG TIMES keeps the old times). CPU on the PC: unchanged with
+     no LFO in High (8 voices 68.0 us); one LFO in High on pitch adds 3.2 us per voice (89.4 to 114.9 us for 8 voices),
+     LFOs 1 and 2 in High on pitch and both cutoffs 5.1 us per voice (130.4 us).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

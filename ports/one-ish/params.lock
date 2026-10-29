@@ -621,6 +621,7 @@ load_pos
 wheel_pos
 pad_x_pos
 pad_y_pos
+eg_times
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1609,3 +1610,5 @@ s3_load_pos
 s3_wheel_pos
 s3_pad_x_pos
 s3_pad_y_pos
+s2_eg_times
+s3_eg_times

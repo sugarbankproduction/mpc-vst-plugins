@@ -206,13 +206,13 @@ user patch files (2026-10-27, offline).
 | DECAY | 1 ms to 10 s (p41) | Have | `*_d`; curve `*_dcurve` (default 50% exp = the old one-pole decay, 99% in the set time) | - | - |
 | SUSTAIN | 0 to 10 (p41) | Have | `*_s` 0-100% | - | - |
 | RELEASE | 1 ms to 10 s (p41) | Have | `*_r`; curve `*_rcurve` (default 50% exp); ends at exactly the set time | - | - |
-| MIN setting below 1 ms, ignored by TIME SCALE | p40 | Partial | Shortest time 1 ms, and time scale applies to every free stage | S | none |
+| MIN setting below 1 ms, ignored by TIME SCALE | p40 | Have | `eg_times` "MIN, 13 Syncs" (per Synth; the default "1 ms, 11 Syncs" is as before, so old sounds are unchanged): an attack, decay or release knob at its far left is MIN (0.2 ms), left alone by time scale and the voice cards, shown as "MIN" (CTRL page) (2026-10-29, offline) | - | none |
 | ATTACK CURVE | 100% log to linear to 100% exp (p45) | Have | `*_acurve` -100..100%: one shared shaper (u = u m + b per sample), every curve takes the stage's whole time (2026-10-27, offline) | - | none |
 | DECAY CURVE | 100% log to linear to 100% exp (p45) | Have | `*_dcurve` -100..100%, default 50 (2026-10-27, offline) | - | none |
 | RELEASE CURVE | 100% log to linear to 100% exp (p45) | Have | `*_rcurve` -100..100%, default 50 (2026-10-27, offline) | - | none |
 | MULTI TRIG: legato notes restart the envelope or not | on/off (p42) | Have | `*_multi` (default on): off, a new note on a voice whose key is still down carries on from the envelope's current position (2026-10-27, offline) | - | none |
 | RESET: restart the attack from zero (mono/unison with multi trig) | off/on (p44) | Have | `*_reset`: every restart from zero (also a stolen or replayed voice in poly) (2026-10-27, offline) | - | none |
-| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Partial | `*_sync`: the five time knobs pick from 11 divisions (1/32 to 4 bars, longest on the right) at the host tempo; not the manual's 13 (1/64 .. 64 beats); time scale does not apply (2026-10-27, offline) | S | none |
+| SYNC: stage times as tempo divisions | 1/64 to 64 (13 values, p42) | Have | `*_sync`: with `eg_times` "MIN, 13 Syncs" the time knobs pick from the manual's 13 values, 1/64 to 64 beats (shown as 1/256 .. 16 bars), longest on the right; "1 ms, 11 Syncs" keeps the old 11 (1/32 to 4 bars); time scale does not apply (2026-10-29, offline) | - | none |
 | LOOP: repeat the whole DAHDSR (trapezoid) | on/off (p42) | Have | `*_loop`: after the decay it goes straight to the release, then the delay again, while held (2026-10-27, offline) | - | none |
 | LATCH: hold at sustain after key up; with LOOP keeps cycling | on/off (p42) | Have | `*_latch`: key up ignored until the voice is replayed or stolen, latch is switched off or All Notes Off (2026-10-27, offline) | - | none |
 | TIME SCALE, keeps the stage ratios; modulatable | 10% to 1000% (p44) | Have | `*_scale` 10-1000%, log knob with 100% in the middle; matrix "... Env Time Scale" per voice (2026-10-27, offline) | - | none |
@@ -228,18 +228,18 @@ user patch files (2026-10-27, offline).
 | Four LFOs (hard-wired: 1 to pitch, 2 to cutoffs, 3 to wave shape) | p46, p27-28 | Have | `lfo1_*` .. `lfo4_*`; LFO 1 to pitch, LFO 2 to cutoffs, LFO 3 to wave angle and width (2026-10-27, offline) | - | - |
 | LFOs per voice (manual p10) so they can restart per note | p10 | Have | Per voice when restarted (note-on reset, repeats) or modulated per voice; free-running otherwise (2026-10-27, offline) | - | - |
 | RATE | 0 to 10 within the RANGE (p46) | Have | `lfoN_rate`, three decades on a log knob within the range (2026-10-27, offline) | - | - |
-| RANGE | Slow 0.001-1 Hz, Low 0.01-10 Hz, Medium 0.1-100 Hz, High 1 Hz-1 kHz (p48) | Partial | `lfoN_range` Slow, Low (default), Medium; no High (1 Hz-1 kHz needs per-sample LFOs: the control rate is 2.76 kHz) (2026-10-27, offline) | M (High) | medium for High |
+| RANGE | Slow 0.001-1 Hz, Low 0.01-10 Hz, Medium 0.1-100 Hz, High 1 Hz-1 kHz (p48) | Have | `lfoN_range` Slow, Low (default), Medium, High. High runs per sample in each voice: on pitch (LFO 1 hard-wired, matrix Pitch / Osc n Pitch), both cutoffs (LFO 2 hard-wired, matrix cutoffs) and Amp Level, where the matrix slot is linear in it (source or controller, no transform); its other destinations follow it at the control rate (2.76 kHz) (2026-10-29, offline) | - | medium for a High LFO (PLAN.md) |
 | WAVE: Triangle/Sine | p46 | Have | Triangle and Sine, each morphing into the other with `lfoN_var` (2026-10-27, offline) | - | - |
-| WAVE: Pulse with variable width | 0% always off .. 100% always on (p46, p48) | Partial | Square; `lfoN_var` narrows it from 50% to always low; widths over 50% only by inverting the amount, and 0% is a square, not the manual's always-off | S | none |
+| WAVE: Pulse with variable width | 0% always off .. 100% always on (p46, p48) | Have | The wave "Pulse": its width is `lfoN_var` over the whole range, 0% always off, 50% a square, 100% always on; Square keeps its old narrowing (old sounds unchanged) (2026-10-29, offline) | - | none |
 | WAVE: Saw/Ramp | p46 | Have | Saw and Ramp, each morphing through a triangle into the other (2026-10-27, offline) | - | - |
 | WAVE: S&H/Noise (smooth random) | p46 | Have | S&H and Noise (smooth random, the same random steps glided), each morphing into the other (2026-10-27, offline) | - | - |
 | VARIATION: morph within the wave category | 0% to 100% (p48-49) | Have | `lfoN_var`, from the chosen wave towards its partner; a matrix destination (2026-10-27, offline) | - | - |
 | POLARITY | Unipolar, Bipolar (p49) | Have | `lfoN_polarity` Bipolar / Unipolar (2026-10-27, offline) | - | - |
-| START PHASE (used on reset, repeats, clock start) | 0% to 100% (p49) | Partial | `lfoN_phase`, on note-on reset and repeats; the host transport's start is not used (next row) | S | none |
+| START PHASE (used on reset, repeats, clock start) | 0% to 100% (p49) | Have | `lfoN_phase`, on note-on reset and repeats, and for a synced LFO when the host transport starts (2026-10-29, offline) | - | none |
 | SYNC to the Master Clock | on/off (p49) | Have | `lfoN_sync`, host tempo | - | - |
 | SYNC DIVISION | 64, 32, 16, 8, 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32, 1/64 (p49) | Have | 13 divisions, 16 bars .. 1/256 (64 .. 1/64 quarter-note beats), a table of the LFOs' own (2026-10-27, offline) | - | - |
 | SYNC TIMING | Straight, Dotted, Triplet (p49) | Have | `lfoN_timing` Straight, Dotted (x1.5), Triplet (x2/3) (2026-10-27, offline) | - | - |
-| Reset to start phase on Master Clock start when synced | p49 | Missing | The engine sees the host's playing flag (`song_pos`) but only the arp uses it | S | none |
+| Reset to start phase on Master Clock start when synced | p49 | Have | When the host transport starts, every synced LFO (free-running and each voice's own) goes back to its start phase (2026-10-29, offline) | - | none |
 | NOTE-ON RESET | off/on (p49) | Have | `lfoN_reset`: the voice restarts its LFO at the start phase, with its own random values (2026-10-27, offline) | - | - |
 | DELAY TIME before the LFO starts | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_delay` Off, 1 ms .. 10 s, per voice from the note-on; a restarted LFO waits at its start phase (2026-10-27, offline) | - | - |
 | FADE IN TIME | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_fade_in` Off, 1 ms .. 10 s (2026-10-27, offline) | - | - |
@@ -957,6 +957,11 @@ beside the engine work.
 
 **4. LFO and envelope fidelity** (sections 8, 9). Effort M. CPU: none, except an LFO in the High range (medium for
 that LFO: it needs a per-sample path).
+- Done 2026-10-29 (offline; `test/lfoenv_check.c`): RANGE High (per sample on pitch, the cutoffs and the amp level;
+  sidebands where they belong and none of the control rate's images), the wave "Pulse" (its width the variation,
+  0-100%; Square as before), synced LFOs back to their start phase when the transport starts, `eg_times` "MIN, 13
+  Syncs" (MIN 0.2 ms unscaled, the 13 synced values; the default keeps the old times, so old sounds are unchanged).
+  The High range's cost is in PLAN.md. Left: High-range modulation of the other destinations is at the control rate.
 - LFO RANGE High (1 Hz to 1 kHz); the pulse VARIATION over the manual's whole range, 0% (always off) to 100% (always
   on); synced LFOs restart at their start phase when the host transport starts.
 - Envelope MIN times below 1 ms that time scale leaves alone; the manual's 13 synced values (1/64 to 64 beats).
