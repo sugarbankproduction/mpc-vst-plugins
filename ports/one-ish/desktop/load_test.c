@@ -2417,12 +2417,111 @@ static void triangle_sub_test(AEffect *fx, HWND child, float s, const char *bmp,
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
+static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
     link_test(fx, child, s, bmp, w, h);
     master_test(fx, child, s, bmp, w, h);
     triangle_sub_test(fx, child, s, bmp, w, h);
+    plain_test(fx, child, s, bmp, w, h);   /* (2026-10-30) every hidden gesture's visible way */
+}
+
+/* ---- (2026-10-30) the plain-click pass: what a modifier key, a double-click, a right-click or a keyboard key did,
+ * a plain click on something visible does too ---- */
+enum { HT_TOGETHER = 8, HT_HELP };   /* (after HT_SUB, as editor.h) */
+static char hbuf[1024];
+static const char *help_now(AEffect *fx) { hbuf[0] = 0; fx->dispatcher(fx, 50, TEST_HUB, HT_HELP, hbuf, 0); return hbuf; }
+/* the help of what is under the mouse (the last actions' messages, which show first for a few seconds, cleared) */
+static const char *help_fresh(AEffect *fx) { hbuf[0] = 0; fx->dispatcher(fx, 50, TEST_HUB, HT_HELP, hbuf, 1); return hbuf; }
+static void hover_at(HWND child, float s, float x, float y) {   /* base units */
+    SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
+}
+static void hover_zone(HWND child, float s, const short z[4]) { hover_at(child, s, z[0] + z[2] / 2.0f, z[1] + z[3] / 2.0f); }
+static int focus_now(AEffect *fx) { return (int)fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0); }   /* focus + 4 * mask */
+
+static void together_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);   /* Synth 1 alone */
+    if (ht(fx, HT_TOGETHER, 0)) click_zone(child, s, ZONE_TOGETHER);
+    check(ht(fx, HT_TOGETHER, 0) == 0, "TOGETHER: off to start");
+    click_zone(child, s, ZONE_TOGETHER);
+    int lit = (int)ht(fx, HT_TOGETHER, 0);
+    click_zone(child, s, ZONE_FOCUS2);
+    int f12 = focus_now(fx);
+    click_zone(child, s, ZONE_FOCUS3);
+    int f123 = focus_now(fx);
+    if (bmp) shot(child, w, h, bmp, "_together");
+    click_zone(child, s, ZONE_FOCUS2);   /* again: out of the group; Synth 3 stays shown */
+    int f13 = focus_now(fx);
+    snprintf(what, sizeof what, "TOGETHER lit (%d): plain clicks on SYNTH 2, SYNTH 3 add them (focus %d mask %d; focus %d "
+             "mask %d), SYNTH 2 again takes it out (focus %d mask %d), as Ctrl-click did", lit, f12 % 4, f12 / 4, f123 % 4,
+             f123 / 4, f13 % 4, f13 / 4);
+    check(lit == 1 && f12 == 1 + 4 * 3 && f123 == 2 + 4 * 7 && f13 == 2 + 4 * 5, what);
+    float r1 = getkey(fx, "flt_res"), r2 = getkey(fx, "s2_flt_res"), r3 = getkey(fx, "s3_flt_res");
+    RECT r = ctl_px("flt_res", s);
+    POINT at = {(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(at.x, at.y));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(at.x, at.y - 30));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(at.x, at.y - 30));
+    snprintf(what, sizeof what, "TOGETHER: a knob turned moves Synths 1 and 3 (%.2f -> %.2f, %.2f -> %.2f), not 2 (%.2f)",
+             r1, getkey(fx, "flt_res"), r3, getkey(fx, "s3_flt_res"), getkey(fx, "s2_flt_res"));
+    check(getkey(fx, "flt_res") != r1 && fabsf(getkey(fx, "flt_res") - getkey(fx, "s3_flt_res")) < 1e-6f &&
+          getkey(fx, "s2_flt_res") == r2, what);
+    setkey(fx, "flt_res", r1); setkey(fx, "s3_flt_res", r3);
+    hover_zone(child, s, ZONE_TOGETHER);
+    snprintf(what, sizeof what, "TOGETHER: its help says what it does (\"%.90s\")", help_fresh(fx));
+    check(strstr(hbuf, "TOGETHER") && strstr(hbuf, "SYNTH") != NULL, what);
+    click_zone(child, s, ZONE_TOGETHER);   /* off: back to the one shown */
+    int f3 = focus_now(fx);
+    click_zone(child, s, ZONE_FOCUS1);
+    int f1 = focus_now(fx);
+    snprintf(what, sizeof what, "TOGETHER off: back to Synth 3 alone (focus %d mask %d); a click on SYNTH 1 picks it alone "
+             "(focus %d mask %d)", f3 % 4, f3 / 4, f1 % 4, f1 / 4);
+    check(ht(fx, HT_TOGETHER, 0) == 0 && f3 == 2 + 4 * 4 && f1 == 0 + 4 * 1, what);
+    with_keys(1, 0);   /* Ctrl-click (the shortcut) lights it too */
+    click_zone(child, s, ZONE_FOCUS2);
+    with_keys(0, 0);
+    snprintf(what, sizeof what, "Ctrl-click on SYNTH 2 adds it (mask %d) and lights TOGETHER (%d)", focus_now(fx) / 4,
+             (int)ht(fx, HT_TOGETHER, 0));
+    check(focus_now(fx) / 4 == 3 && ht(fx, HT_TOGETHER, 0) == 1, what);
+    click_zone(child, s, ZONE_TOGETHER);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
+}
+
+static void undo_buttons_test(AEffect *fx, HWND child, float s) {
+    char what[400], lb[1024];
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, lb, 0);
+    hover_zone(child, s, ZONE_UNDO);
+    snprintf(what, sizeof what, "UNDO with nothing to undo says so (\"%.80s\")", help_fresh(fx));
+    check(strstr(hbuf, "nothing to undo") != NULL, what);
+    float r0 = getkey(fx, "flt_res");
+    RECT r = ctl_px("flt_res", s);
+    POINT at = {(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(at.x, at.y));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(at.x, at.y - 40));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(at.x, at.y - 40));
+    float r1 = getkey(fx, "flt_res");
+    fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0);   /* (the drag's step, committed) */
+    hover_zone(child, s, ZONE_UNDO);
+    snprintf(what, sizeof what, "UNDO's help names the step it takes back (\"%.80s\")", help_fresh(fx));
+    check(strstr(hbuf, "UNDO: take back") && strstr(hbuf, "1 step") != NULL, what);
+    click_zone(child, s, ZONE_UNDO);
+    float u = getkey(fx, "flt_res");
+    snprintf(what, sizeof what, "after UNDO the help line says what it undid (\"%.80s\")", help_now(fx));
+    check(strstr(hbuf, "Undid") && strstr(hbuf, "UNDO / REDO on the console") != NULL, what);
+    click_zone(child, s, ZONE_REDO);
+    float re = getkey(fx, "flt_res");
+    snprintf(what, sizeof what, "the console's UNDO takes a knob drag back (%.3f -> %.3f -> %.3f) and REDO does it again "
+             "(%.3f), as Ctrl+Z / Ctrl+Y", r0, r1, u, re);
+    check(r1 != r0 && u == r0 && re == r1, what);
+    click_zone(child, s, ZONE_UNDO);
+    hover_at(child, s, 0, 0);
+}
+
+static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    together_test(fx, child, s, bmp, w, h);
+    undo_buttons_test(fx, child, s);
 }
 
 static void reload_test(const char *path, HMODULE old) {

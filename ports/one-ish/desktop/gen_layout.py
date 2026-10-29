@@ -501,17 +501,20 @@ def build(lay):
              # (on the row above's grid, so the SETTINGS page's button fits at the end: desktop/settings.c)
              "FOCUS1": (769, 432, 48, 42), "FOCUS2": (817, 432, 48, 42), "FOCUS3": (865, 432, 48, 42),
              "TAB_SETUP": (913, 432, 48, 42), "TAB_SETTINGS": (961, 432, 44, 42),
-             # (2026-10-30) the third row: GENERATIVE (the generators' hub page, hub.c) and GEN OFF (every generator
-             # off in all three Synths; again: back on); the global TEMPO readout with HOST / OWN (the SETTINGS
-             # page's RECEIVE MIDI CLOCK and TEMPO)
-             "TAB_GEN": (769, 478, 96, 42), "GEN_OFF": (865, 478, 48, 42), "TEMPO": (924, 482, 84, 24),
-             "TEMPO_HOST": (1020, 481, 54, 15), "TEMPO_OWN": (1020, 498, 54, 15)}
+             # (2026-10-30) the third row: TOGETHER (lit: the SYNTH buttons add and remove Synths edited together,
+             # hub.c), GENERATIVE (the generators' hub page) and GEN OFF (every generator off in all three Synths;
+             # again: back on); the global TEMPO readout with HOST / OWN (the SETTINGS page's RECEIVE MIDI CLOCK and
+             # TEMPO); UNDO and REDO (library.c's undo, as Ctrl+Z / Ctrl+Y). Spaced for their labels, not the grid.
+             "TOGETHER": (769, 478, 54, 42), "TAB_GEN": (827, 478, 62, 42), "GEN_OFF": (895, 478, 50, 42),
+             "TEMPO": (950, 482, 72, 24), "TEMPO_HOST": (1028, 481, 54, 15), "TEMPO_OWN": (1028, 498, 54, 15),
+             "UNDO": (1100, 478, 35, 42), "REDO": (1135, 478, 35, 42)}
     # Synth 2 and 3's copies are reached through the Panel Focus; the setup keys live on the SETUP page
     L.placed.update(k for k in L.index if k.startswith(("s2_", "s3_")))
+    # (syn_solo: the S half of each SYNTH button, editor.c; never saved with the sound, so no MORE page row)
     L.placed.update(k for k in ("syn_on", "syn_ch", "key_lo", "key_hi", "seq_all", "midi_ch",
-                                "learn_mode") if k in L.index)
+                                "learn_mode", "syn_solo") if k in L.index)
     if "arp_on" in L.index:
-        L.rate_led("TEMPO", 0, 1082, 491)   # (2026-10-30) the beat, beside the TEMPO readout
+        L.rate_led("TEMPO", 0, 1090, 491)   # (2026-10-30) the beat, beside the TEMPO readout
     # the step sequencer: ON, PLAY, REC, NOTE TRIG, TRANSPOSE, STEP MOD; the page LEDs (the step editor's pages, the
     # playing one lit); LENGTH and RATE. Its MORE triangle: the settings; the SEQ button: the step editor
     L.panel(764, 532, 412, 62, "SEQUENCER", more="SEQ", keys=["seq_on"])
@@ -649,7 +652,10 @@ def build(lay):
     # ---- left-hand controller: octave, glide, wheels, X/Y pad, bend range; the ribbon over the keys ----
     zones.update({"OCT_LEDS": (50, 632, 116, 26), "OCT_DOWN": (64, 662, 36, 16), "OCT_UP": (118, 662, 36, 16),
                   "PITCH": (56, 706, 36, 112), "MODW": (110, 706, 36, 112), "PAD": (166, 706, 126, 112),
-                  "KEYS": (384, 640, 1744, 200), "RIBBON": (384, 612, 1744, 20)})   # shorter with a MORE page
+                  "KEYS": (384, 640, 1744, 200), "RIBBON": (384, 612, 1744, 20),   # shorter with a MORE page
+                  # (2026-10-30) the controller's DEST button, top left: modulate from the wheels, the X/Y pad,
+                  # the ribbon or the keyboard (quickmod.c); the computer keyboard's hint on the front rail
+                  "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14)})
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     L.ctl("glide", "toggle", 236, 632, 42, 56, "ON")
     L.ctl("glide_type", "leds", 278, 624, 52, 76, "TYPE")

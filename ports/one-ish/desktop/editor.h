@@ -66,6 +66,8 @@ enum { Z_HUB_ON = 670000,        /* + row: a generator's ON (HUB[row]) */
        Z_HUB_ALLOFF = 670200, Z_TAB_GEN, Z_GEN_OFF, Z_TEMPO, Z_TEMPO_HOST, Z_TEMPO_OWN,
        Z_VOL_MASTER,             /* SYNTH OUTPUT's MASTER: its VOLUME knob is master_level while lit */
        Z_TEMPO_DOWN, Z_TEMPO_UP, /* the TEMPO readout's < and >: 1 BPM (Shift 0.1), OWN */
+       Z_TOGETHER,               /* (2026-10-30) lit: a SYNTH button adds / removes that Synth (as Ctrl-click) */
+       Z_UNDO, Z_REDO,           /* (2026-10-30) the console's UNDO / REDO (as Ctrl+Z / Ctrl+Y) */
        Z_HUB_END = 670300 };
 #define TEST_HUB 0x4F314842   /* VENDOR_SPECIFIC index: value = HT_ op (hub.c) */
 enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 1000) */
@@ -74,7 +76,9 @@ enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 100
        HT_RESTORE,            /* how many generators GEN OFF would bring back */
        HT_LINKED,             /* opt = a panel index: 1 when its LINK is lit */
        HT_VOL_MASTER,         /* 1: SYNTH OUTPUT's MASTER is lit */
-       HT_SUB };              /* the screen's sub-page shown now */
+       HT_SUB,                /* the screen's sub-page shown now */
+       HT_TOGETHER,           /* 1: TOGETHER is lit */
+       HT_HELP };             /* the help line now, into ptr (1 KB); returns its length */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
@@ -102,6 +106,8 @@ typedef struct {
     RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
     RECT tab_gen, gen_off, tempo, tempo_host, tempo_own;   /* the console's third row (hub.c, 2026-10-30) */
     RECT vol_master;                          /* SYNTH OUTPUT's MASTER button (hub.c) */
+    RECT together, undo, redo;                /* (2026-10-30) the third row's TOGETHER, UNDO, REDO (hub.c) */
+    RECT qm_hands, kb_hint;                   /* the controller's DEST (quickmod.c); the computer keyboard's hint */
 } layout_t;
 extern layout_t L;
 
@@ -198,6 +204,7 @@ typedef struct {
     int gen_was_n, gen_was_prog;
     float tempo_from;                          /* a TEMPO drag: the BPM it started at */
     int vol_master;                            /* SYNTH OUTPUT's MASTER lit: VOLUME is master_level (never saved) */
+    int together;                              /* TOGETHER lit: SYNTH buttons add / remove Synths (never saved) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
        M_QMOD, M_TEMPO };   /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
@@ -234,8 +241,10 @@ static inline int note_of_white(int j, int base) {   /* white key j of the keybo
 void ed_edit(ed_t *e, int i, float v);       /* a one-shot edit of panel index i (as a click: host told, undo) */
 void ed_edit_abs(ed_t *e, int i, float v);   /* the same for a param's own index (any Synth's) */
 void ed_show(ed_t *e, int screen, int sub);  /* the centre screen shows this page */
+void ed_focus(ed_t *e, int c, int add);      /* the panel shows Synth c (add: into / out of the group edited together) */
 /* editor_draw.c */
 void paint(ed_t *e, HDC out);
+void help_line(ed_t *e, char *out, int n);   /* the screen's help line now */
 void leds_geom(int i, int *x0, int *y0, int *row, RECT *button);
 void knob_geom(int i, float *cx, float *cy, float *r, int *label_y);   /* where a panel knob sits */
 /* quickmod.c: QUICK ASSIGN. A DEST button (on the LFOs, the envelopes and NOISE), or Alt-click / right-click on a
@@ -402,4 +411,4 @@ void tempo_release(ed_t *e);
 int tempo_wheel(ed_t *e, int z, int dir, int fine);   /* 1: used */
 const char *hub_zone_help(ed_t *e, int z);
 void hub_help(ed_t *e, char *out, int n);
-intptr_t hub_test(ed_t *e, intptr_t op, float opt);
+intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt);
