@@ -68,7 +68,10 @@
  *   random    the patch randomiser (src/randomize.h): 300 RANDOMISE sounds each heard on a chord, never slamming the
  *             limiter (peak, rms, zero runs while held), single notes bounded; the never-touched params and locked
  *             sections keep their values exactly; the same seed gives the same sound; MUTATE at 10% moves a few params a
- *             little; MUTATE at 100% and chains of mutations stay heard and safe
+ *             little; MUTATE at 100% and chains of mutations stay heard and safe; WILD (2026-10-29): 0% exactly as
+ *             before, 200 sounds each at 0, 50 and 100% heard, finite and in the limiter (with the variety printed:
+ *             matrix rows and params moved), MUTATE at WILD 100%, the ARPEGGIATOR / GENERATIVE / SEQUENCER ticks and
+ *             the sequencer's modulation lanes
  *   oss       the open-source effects (Rings, Clouds, Airwindows): the Airwindows ports match the original plugins' output
  *             (reference values rendered from their own code), every new type exactly dry at mix 0 and bounded at its
  *             extremes, Rings rings at its note (and follows the keyboard), Clouds' freeze holds, CTRL/DRIVE readouts,

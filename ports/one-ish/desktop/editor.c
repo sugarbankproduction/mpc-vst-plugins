@@ -11,7 +11,9 @@
  * RANDOM (the console button next to ANALOG) shows the patch randomiser on the screen (src/randomize.h): RANDOMISE makes
  * a new sound, MUTATE a variation of this one by AMOUNT, the lock buttons keep sections as they are, UNDO / REDO step
  * through the last RND_HIST sounds (the focused Synth's; ALL 3 SYNTHS or Shift+R / Shift+M change all three, R and M
- * are RANDOMISE and MUTATE). Each result is set param by param through the same path as a knob (setParameter,
+ * are RANDOMISE and MUTATE). WILD sets how strange both get; the ARPEGGIATOR, GENERATIVE and SEQUENCER ticks add those
+ * sections (SEQUENCER: its settings and modulation lanes; rnd_seq_notes is the hook for a sequence generator). Each
+ * result is set param by param through the same path as a knob (setParameter,
  * audioMasterAutomate between begin/end edit), so the host and the window follow it.
  *
  * MORE pages, as on the instrument: a module with a small triangle in its top-right corner has second-layer controls;

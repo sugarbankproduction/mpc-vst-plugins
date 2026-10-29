@@ -18,10 +18,19 @@
  *   4. code makes the choices that need several params to agree: the oscillators and their footages, the filter
  *      topology and the mixer buttons that feed it, envelopes per archetype, LFO rates for what they drive, 0-4 matrix
  *      rows from a list of tried pairings (RND_MODS), the effects
- *   5. a safety pass (rnd_safety, after MUTATE too) makes sure it is heard and is not harsh
+ *   5. WILD above 0 (rnd_opts_t.wild, 2026-10-29): rnd_gen_wild adds stranger choices on top: more matrix rows (at 100%
+ *      often all 16), any source to any destination (the effects' and LFOs' too) with controllers (VIA) and
+ *      transforms, LFOs in the Medium / High range, odd filter routings, FM, ring, sync, extreme envelopes, any effect
+ *      type but the vocoders, options switched to any choice, knobs anywhere in their range
+ *   6. the tick buttons' sections, if lit (rnd_opts_t.also): the arpeggiator, the GENERATIVE section (Euclid, Turing,
+ *      KEY, SCALE), the sequencer's settings; the sequencer's modulation lanes are rnd_seq_lanes' (the window sends them)
+ *   7. a safety pass (rnd_safety, after MUTATE too) makes sure it is heard and is not harsh; at WILD it also keeps
+ *      effect feedback lower, counts unison and level rows in the loudness, and caps the octave / constant rows
  * MUTATE moves each continuous param (with probability `amount`) by a gaussian step of `amount` x its musical span
  * (RND_RULES' mut), switches an option now and then (probability amount / 4, by the rule's weights), nudges the matrix,
- * then runs the same safety pass. Things that are off (a level at 0, no FM) mostly stay off at small amounts. */
+ * then runs the same safety pass. Things that are off (a level at 0, no FM) mostly stay off at small amounts. WILD
+ * makes the steps bigger, the spans wider, the switches likelier and adds rnd_gen_wild at AMOUNT x WILD.
+ * At WILD 0 with no tick lit, both draw exactly the same numbers as before WILD existed (test/offline_check.c). */
 #pragma once
 #include <math.h>
 #include <stdint.h>

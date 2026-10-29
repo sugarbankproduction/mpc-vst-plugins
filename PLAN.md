@@ -176,6 +176,20 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      keyboard settings, ribbon and link cutoff never touched. Left: an MPC control. Per part done 2026-10-29 (the
      desktop window, load_test): it works on the Synth in focus; ALL 3 SYNTHS (lit) gives every Synth its own new sound
      (ON, channels, key ranges and levels stay); keys R randomise, M mutate, Shift+R / Shift+M all three.
+     More variety done 2026-10-29 (offline and the desktop window; the owner found the results too tame): a WILD bar
+     (0-100%, a window setting like AMOUNT; 0% gives exactly the sounds it gave before). As it rises RANDOMISE and
+     MUTATE use more matrix rows (often all 16 at 100%), any source to any destination (the effects', sends' and LFOs'
+     too; the matrix has no arp or GENERATIVE destinations) with VIA and transforms, LFOs in the High range, odd filter
+     routings, FM, ring and sync, extreme envelopes, unusual effect types, bigger option switches; MUTATE's moves grow
+     with it. The safety pass still keeps every sound heard, finite and in the limiter's range (WILD also keeps effect
+     feedback lower and counts unison and level rows in the loudness). Offline, the average sound at WILD 0 / 50 /
+     100% has 2.2 / 7.2 / 12.0 matrix rows and 93 / 127 / 171 params away from their defaults (200 sounds each, all
+     heard and safe). Three tick buttons, ARPEGGIATOR, GENERATIVE and SEQUENCER (off by default): lit, that section is
+     randomised too (arp on, pattern, octaves, division, gate, swing; Euclid, Turing, KEY and SCALE; the sequencer's
+     on, division, length, swing, triggering and transposing by the keys (only if it has notes) and its modulation
+     lanes). The sequencer has no play-direction setting. Not done: the steps' notes (a sequence generator,
+     `src/seqgen.h`, is a separate job: editor.c's `rnd_seq_notes()` is the empty hook for it); the randomiser's UNDO
+     does not bring back the lanes (Ctrl+Z does).
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27
