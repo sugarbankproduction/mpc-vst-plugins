@@ -7,7 +7,13 @@
  * hit (which wall or event, where, how hard, and when within the step). Which note and velocity a hit plays, the
  * tempo grid, the note rate cap and the window's view are engine.c's (src/physgen_run.h).
  * Fixed-size arrays (8 balls, a pool of 32 particles), a seeded random sequence of its own (seq.h's xorshift), no
- * allocation, no locks, no files: safe in the audio thread, and the same seed always gives the same hits. */
+ * allocation, no locks, no files: safe in the audio thread, and the same seed always gives the same hits.
+ * (2026-10-30) Each wall PLAYS (as before), is SILENT (a ball bounces off it without a note: the hit is reported with
+ * `silent` set, for the matrix's BALL HIT) or OPEN (a ball leaves through it and another is thrown in, or with KEY
+ * LAUNCH it is gone; a particle leaves). Particles never play the walls, so for them only OPEN changes anything. With
+ * the keys' LAUNCH and EMIT ways (`keyed`) only the balls marked live are in the box, and each ball and particle keeps
+ * the key it came from (its notes start there: src/physgen_run.h). Every wall PLAYS and not keyed: the very same steps,
+ * random numbers and hits as before. */
 #pragma once
 #include <math.h>
 #include <stdint.h>
@@ -28,10 +34,13 @@
 
 enum { PH_FLOOR, PH_CEIL, PH_LEFT, PH_RIGHT, PH_LINE, PH_COLLIDE, PH_DIE };   /* what a hit was */
 enum { PHT_LINE, PHT_COLLIDE, PHT_DIE };                                      /* "phys_trigger": what particles play */
+enum { PHW_PLAY, PHW_SILENT, PHW_OPEN };   /* (2026-10-30) "phys_floor", "phys_ceil", "phys_left", "phys_right" */
 
-typedef struct { float x, y, vx, vy; } ph_ball_t;
-typedef struct { float x, y, vx, vy, age, life, cool; uint8_t live; } ph_part_t;
-typedef struct { uint8_t kind, who; float x, y, speed, frac; } ph_hit_t;   /* frac: when in the step, 0 .. <1 */
+/* live, key (2026-10-30): read only when keyed (KEY LAUNCH, KEY EMIT); key: the note its notes start from */
+typedef struct { float x, y, vx, vy; uint8_t live; int16_t key; } ph_ball_t;
+typedef struct { float x, y, vx, vy, age, life, cool; uint8_t live; int16_t key; } ph_part_t;
+/* frac: when in the step, 0 .. <1; silent (2026-10-30): off a SILENT wall (no note) */
+typedef struct { uint8_t kind, who; float x, y, speed, frac; uint8_t silent; } ph_hit_t;
 
 /* the settings a step reads, in box units (the box is 1 x 1; speed and gravity already divided by its size) */
 typedef struct {
@@ -41,12 +50,18 @@ typedef struct {
     int parts, trigger;         /* the particles on, and what plays (PHT_*) */
     float rate, spread, life;   /* particles per second; 0 .. 1 of a full circle around straight down; seconds */
     float attract;              /* the pull towards the centre, per second squared per box width */
+    /* (2026-10-30; all zero: as before) each wall's way (PHW_*; floor, ceiling, left, right: the PH_FLOOR order);
+     * keyed: only the balls marked live are in the box; refill: a keyed ball that leaves (an open wall) or comes to rest
+     * is thrown in again (else it is gone: KEY LAUNCH). Not keyed, it is always thrown in again. */
+    uint8_t wall[4];
+    int keyed, refill;
 } ph_cfg_t;
 
 typedef struct {
     ph_ball_t b[PH_BALLS];
     ph_part_t p[PH_PARTS];
     float emit;      /* particles owed (the rate's fraction carried over) */
+    int16_t emit_key;   /* (2026-10-30) the key the particles it emits itself play from */
     uint32_t rng;    /* its random numbers: never 0 (xorshift) */
 } ph_world_t;
 
@@ -70,8 +85,29 @@ static inline void ph_restart(ph_world_t *w, uint32_t seed, float speed) {
 
 static inline int ph_add(ph_hit_t *h, int n, int kind, int who, float x, float y, float speed, float frac) {
     if (n >= PH_HITS) return n;
-    h[n] = (ph_hit_t){(uint8_t)kind, (uint8_t)who, x, y, speed, frac < 0.0f ? 0.0f : frac > 0.999f ? 0.999f : frac};
+    h[n] = (ph_hit_t){(uint8_t)kind, (uint8_t)who, x, y, speed, frac < 0.0f ? 0.0f : frac > 0.999f ? 0.999f : frac, 0};
     return n + 1;
+}
+
+/* (2026-10-30) a wall hit (kind PH_FLOOR .. PH_RIGHT): reported, marked silent when its wall is SILENT */
+static inline int ph_add_wall(const ph_cfg_t *c, ph_hit_t *h, int n, int kind, int who, float x, float y, float speed,
+                              float frac) {
+    int m = ph_add(h, n, kind, who, x, y, speed, frac);
+    if (m > n && c->wall[kind] == PHW_SILENT) h[n].silent = 1;
+    return m;
+}
+
+/* (2026-10-30) whether something at (x, y) has gone out through an OPEN wall */
+static inline int ph_out(const ph_cfg_t *c, float x, float y) {
+    float lo = PH_BALL_R, hi = 1.0f - PH_BALL_R;
+    return (y < lo && c->wall[PH_FLOOR] == PHW_OPEN) || (y > hi && c->wall[PH_CEIL] == PHW_OPEN) ||
+           (x < lo && c->wall[PH_LEFT] == PHW_OPEN) || (x > hi && c->wall[PH_RIGHT] == PHW_OPEN);
+}
+
+/* (2026-10-30) a ball that rested or left: thrown in again, or (keyed without refill: KEY LAUNCH) gone */
+static inline void ph_again(ph_world_t *w, const ph_cfg_t *c, ph_ball_t *b, int from_top) {
+    if (c->refill || !c->keyed) ph_throw(w, b, c->speed, from_top);
+    else b->live = 0;
 }
 
 /* one axis of a ball against its two walls: reflected, its speed times bounce; the hit's place in the step from where
@@ -91,35 +127,42 @@ static int ph_step_balls(ph_world_t *w, const ph_cfg_t *c, float dt, ph_hit_t *h
     float fall = sqrtf(2.0f * c->gravity);   /* the speed of a fall through the whole box */
     for (int i = 0; i < c->nballs && i < PH_BALLS; i++) {
         ph_ball_t *b = &w->b[i];
+        if (c->keyed && !b->live) continue;
         float x0 = b->x, y0 = b->y, imp = 0.0f;
         int hx, hy;
         b->vy -= c->gravity * dt;
         b->x += b->vx * dt;
         b->y += b->vy * dt;
-        float fx = ph_wall(x0, &b->x, &b->vx, c->bounce, &hx, &imp);
-        if (hx) n = ph_add(h, n, hx < 0 ? PH_LEFT : PH_RIGHT, i, hx < 0 ? 0.0f : 1.0f, b->y, imp, fx);
-        float fy = ph_wall(y0, &b->y, &b->vy, c->bounce, &hy, &imp);
-        if (hy < 0 && c->gravity > 0.0f && imp < PH_REST * fall) {   /* resting on the floor: thrown again from above */
-            ph_throw(w, b, c->speed, 1);
+        if (ph_out(c, b->x, b->y)) {   /* (2026-10-30) out through an OPEN wall: another one in (KEY LAUNCH: gone) */
+            ph_again(w, c, b, c->gravity > 0.0f);
             continue;
         }
-        if (hy) n = ph_add(h, n, hy < 0 ? PH_FLOOR : PH_CEIL, i, b->x, hy < 0 ? 0.0f : 1.0f, imp, fy);
+        float fx = ph_wall(x0, &b->x, &b->vx, c->bounce, &hx, &imp);
+        if (hx) n = ph_add_wall(c, h, n, hx < 0 ? PH_LEFT : PH_RIGHT, i, hx < 0 ? 0.0f : 1.0f, b->y, imp, fx);
+        float fy = ph_wall(y0, &b->y, &b->vy, c->bounce, &hy, &imp);
+        if (hy < 0 && c->gravity > 0.0f && imp < PH_REST * fall) {   /* resting on the floor: thrown again from above */
+            ph_again(w, c, b, 1);
+            continue;
+        }
+        if (hy) n = ph_add_wall(c, h, n, hy < 0 ? PH_FLOOR : PH_CEIL, i, b->x, hy < 0 ? 0.0f : 1.0f, imp, fy);
         if (c->gravity <= 0.0f && c->bounce < 1.0f && b->vx * b->vx + b->vy * b->vy < 0.0625f * c->speed * c->speed)
-            ph_throw(w, b, c->speed, 0);   /* no gravity, slowed to a quarter of its speed: thrown again */
+            ph_again(w, c, b, 0);   /* no gravity, slowed to a quarter of its speed: thrown again */
     }
     return n;
 }
 
-static void ph_emit(ph_world_t *w, const ph_cfg_t *c) {
+/* one particle from the emitter, its notes from `key` (2026-10-30: KEY LAUNCH's bursts and KEY EMIT call it too) */
+static void ph_emit_key(ph_world_t *w, const ph_cfg_t *c, int key) {
     for (int i = 0; i < PH_PARTS; i++) {
         ph_part_t *p = &w->p[i];
         if (p->live) continue;
         float a = -1.5707963f + (ph_rand(w) - 0.5f) * 6.2831853f * c->spread, v = c->speed * (0.7f + 0.6f * ph_rand(w));
         *p = (ph_part_t){PH_EMIT_X, PH_EMIT_Y, v * cosf(a), v * sinf(a), 0.0f, c->life * (0.75f + 0.5f * ph_rand(w)),
-                         0.0f, 1};
+                         0.0f, 1, (int16_t)key};
         return;
     }   /* (the pool full: none this time) */
 }
+static void ph_emit(ph_world_t *w, const ph_cfg_t *c) { ph_emit_key(w, c, w->emit_key); }
 
 static int ph_step_parts(ph_world_t *w, const ph_cfg_t *c, float dt, ph_hit_t *h, int n) {
     w->emit += c->rate * dt;
@@ -139,6 +182,10 @@ static int ph_step_parts(ph_world_t *w, const ph_cfg_t *c, float dt, ph_hit_t *h
         p->vy += (c->attract * (0.5f - p->y) - c->gravity) * dt;
         p->x += p->vx * dt;
         p->y += p->vy * dt;
+        if (ph_out(c, p->x, p->y)) {   /* (2026-10-30) out through an OPEN wall: gone, silently */
+            p->live = 0;
+            continue;
+        }
         ph_wall(x0, &p->x, &p->vx, c->bounce, &hit, &imp);   /* off the walls, silently */
         ph_wall(y0, &p->y, &p->vy, c->bounce, &hit, &imp);
         if (p->cool > 0.0f) p->cool -= dt;
@@ -204,4 +251,15 @@ typedef struct {
     uint32_t vseq;
     uint8_t vnb, vnp, vwall, vf[PH_VIEW];
     int16_t vx[PH_VIEW], vy[PH_VIEW];   /* 0 .. 1000 across and up the box */
+    /* (2026-10-30) the keys' ways, FOLLOW OCTAVE and the matrix sources */
+    int mode;                /* PHYS KEYS (PHK_*) */
+    int takes;               /* the keys go to the generator (HELD KEYS, KEY LAUNCH, KEY EMIT: route_of) */
+    int kb_oct;              /* the window's keyboard octave, -2 .. 2 ("kboct" from the window; never saved) */
+    int launch;              /* KEY LAUNCH: the ball the next key throws in (oldest first) */
+    float rate;              /* PARTICLE RATE, a second (the world's own is 0 while the keys emit) */
+    float kemit[128];        /* KEY EMIT: the particles each held key owes */
+    float m_raw[4];          /* the first ball's height and place, the balls' speed, the pool's fill, as the world has them */
+    float m_hb, m_hp, m_eu, m_tm;   /* the pulses (1 at a hit, then falling) and the Turing machine's value */
+    float m_out[8];          /* the sources, smoothed at control rate (MS_BALL_Y .. MS_EUCLID) */
 } ph_run_t;
+enum { PHK_FREE, PHK_HELD, PHK_LAUNCH, PHK_EMIT };   /* "phys_keys" (2026-10-30: LAUNCH and EMIT appended) */

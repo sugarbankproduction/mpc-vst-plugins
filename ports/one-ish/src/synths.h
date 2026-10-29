@@ -230,6 +230,12 @@ static void set_param(void *inst, const char *key, const char *val) {
             else if (!strncmp(val, "tunclear", 8)) tun_clear(t);
             return;
         }
+        if (!strncmp(val, "kboct\n", 6)) {   /* (2026-10-30) the window's keyboard octave, -2..2: the balls' FOLLOW
+                                              * OCTAVE (src/physgen_run.h); every Synth, never saved */
+            int o = atoi(val + 6);
+            for (int c = 0; c < NSYN; c++) in->syn[c]->ph.kb_oct = o < -2 ? -2 : o > 2 ? 2 : o;
+            return;
+        }
         if (!strncmp(val, "midicfg\n", 8)) {   /* the window's SETTINGS page (src/midi_in_run.h) */
             mi_command(in, val + 8);
             return;

@@ -647,6 +647,11 @@ phys_octave
 phys_range
 phys_max
 phys_dyn
+phys_floor
+phys_ceil
+phys_left
+phys_right
+phys_follow_oct
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1687,3 +1692,13 @@ s3_phys_octave
 s3_phys_range
 s3_phys_max
 s3_phys_dyn
+s2_phys_floor
+s2_phys_ceil
+s2_phys_left
+s2_phys_right
+s2_phys_follow_oct
+s3_phys_floor
+s3_phys_ceil
+s3_phys_left
+s3_phys_right
+s3_phys_follow_oct
