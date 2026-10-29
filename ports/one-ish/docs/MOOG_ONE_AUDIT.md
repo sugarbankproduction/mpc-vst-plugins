@@ -50,7 +50,7 @@ Plaits, 24 models, `mac_*`, a sixth mixer channel); open-source synth effect typ
 density, console) and the Space reverb (Airwindows Galactic); the GENERATIVE section (`gen_*`: Euclid, probability,
 velocity random, Turing machine; 2026-10-29 the bouncing balls and particles, `phys_*`, playing in each Synth's KEY and
 SCALE; 2026-10-30 rain and ripples, `rain_*`, and a Markov melody that learns from the keys played, `mkv_*`, with four
-matrix sources: Rain Drop, Ripple Energy, Markov Step, Markov Height); 14 built-in chord shapes; the patch randomiser (RANDOM page, mutate, locks, undo, WILD, arp / GENERATIVE / sequencer ticks);
+matrix sources: Rain Drop, Ripple Energy, Markov Step, Markov Height; GAME OF LIFE, GRAVITY ORBITS and PENDULUMS, `life_*`, `orb_*`, `pend_*`, with five matrix sources); 14 built-in chord shapes; the patch randomiser (RANDOM page, mutate, locks, undo, WILD, arp / GENERATIVE / sequencer ticks);
 user patch files (2026-10-27, offline).
 
 ---

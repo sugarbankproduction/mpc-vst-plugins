@@ -34,6 +34,10 @@ enum {
      * the particle pool is, a pulse at every particle note, the Turing machine's last value, a pulse at each Euclid hit.
      * Further generators append their own block after this one. ---- */
     MS_BALL_Y, MS_BALL_X, MS_BALL_SPEED, MS_BALL_HIT, MS_PART_COUNT, MS_PART_HIT, MS_TURING, MS_EUCLID,
+    /* (2026-10-30) the GAME OF LIFE, GRAVITY ORBITS and PENDULUMS generators (src/gens_a_run.h), each 0 .. 1: the share
+     * of LIFE's cells alive; planet 1 across and up (0.5: level with the sun); pendulum 1's place (0.5: the centre);
+     * how in step the pendulums are (1: all together) */
+    MS_LIFE_POP, MS_ORB1_X, MS_ORB1_Y, MS_PEND1, MS_PEND_SYNC,
     MS_COUNT
 };
 _Static_assert(MS_COUNT <= 64, "the bipolar flags (engine.c s->bipolar, mod_eval_list) hold one bit per source in 64");
@@ -159,7 +163,7 @@ static inline void mod_eval_list(const float *slots, const float *extra, const u
             x = src[via];
             amt = c;
         }
-        dst[d] += mod_transform(x, (int)ex[1], ex[2] * 0.01f, (int)(bipolar >> s) & 1) * amt;
+        dst[d] += mod_transform(x, (int)ex[1], ex[2] * 0.01f, (int)(bipolar >> s & 1u)) * amt;
     }
 }
 

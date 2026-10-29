@@ -3814,7 +3814,8 @@ static void matrix_wiring(void) {
             set(a, p->key, v);
         }
         /* (not in a saved state on purpose: the sequencer's PLAY, REC and STEP MOD, its step readout, and SOLO) */
-        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos", "seq_all", "syn_solo"};
+        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos", "seq_all", "syn_solo",
+                                                "life_reseed" /* (2026-10-30) a button the engine sets back off */};
         int kept = 0;
         for (int i = 0; i < NPARAMS; i++) kept += s1_key(PARAMS[i].key);
         for (int i = 0; i < NPARAMS; i++) {
@@ -5161,6 +5162,7 @@ static void arp_wav(const char *demo_path) {
 #include "seqgen_check.c"  /* the sequence generator: patterns in the Synth's key and scale (2026-10-29) */
 #include "physgen_check.c"   /* the bouncing balls and particles (2026-10-29) */
 #include "gens_b_check.c"    /* (2026-10-30) rain and ripples, the Markov melody */
+#include "gens_a_check.c"   /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5924,7 +5926,14 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "bench")) {
         bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench(); tuning_bench(); lfoenv_bench(); physgen_bench();
         gens_b_bench();   /* (2026-10-30) */
+        gens_a_bench();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
         return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "gensa")) {   /* (2026-10-30) just LIFE, ORBITS, PENDULUMS: offline_check gensa */
+        gens_a_checks();
+        gens_a_bench();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
     }
     if (argc > 1 && !strcmp(argv[1], "phys")) {   /* just the balls and particles: offline_check phys */
         physgen_checks();
@@ -6046,6 +6055,7 @@ int main(int argc, char **argv) {
     seqgen_checks();
     physgen_checks();
     gens_b_checks();   /* (2026-10-30) */
+    gens_a_checks();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");
