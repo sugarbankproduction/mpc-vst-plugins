@@ -381,7 +381,7 @@ def build(lay):
         ("arp_dir", "Octave Direction"), ("arp_oct_order", "Octave Order"), ("arp_pendulum", "Pendulum"),
         ("arp_pend_mode", "Pendulum Ends"), ("arp_rnd_mode", "Random Mode"), ("arp_sync", "Tempo Sync"),
         ("arp_div", "Rate (Synced)"), ("arp_timing", "Timing"), ("arp_rate", "Free Rate"), ("arp_gate", "Gate Length"),
-        ("arp_swing", "Swing"), ("arp_reset", "Note Reset")])
+        ("arp_swing", "Swing"), ("arp_follow_swing", "Follow Swing"), ("arp_reset", "Note Reset")])
 
     L.panel(412, YB, 58, HB, "CHORD", more="CHORD", keys=["chord_on"])
     L.ctl("chord_on", "toggle", 416, YA, 36, 14, "ON", SIDE)
@@ -445,7 +445,7 @@ def build(lay):
         ("clock_swing", "Master Swing"), ("seq_note_trig", "Note Trig"), ("seq_note_reset", "Note Reset"),
         ("seq_restart_trig", "Restart On Trig"), ("seq_restart_hold", "Restart On Hold"),
         ("seq_transpose", "Transpose"), ("seq_tr_mode", "Transpose Mode"), ("seq_one_shot", "One Shot"),
-        ("seq_pattern", "Factory Sequence")])
+        ("seq_pattern", "Factory Sequence"), ("seq_host_ss", "Host Start/Stop")])
 
     # ---- mixer ----
     X = DX

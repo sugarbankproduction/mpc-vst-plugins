@@ -584,6 +584,7 @@ static void sq_map_init(one_t *s) {
  *   off L S V            lane L's offset on step S (-100..100; x: none)
  *   sel S L              the selected step and lane            gate G   new notes' gate %
  *   rtz                  RETURN TO ZERO              load <text>  a whole sequence (src/stepseq.h's form)
+ *   stepnotes S D V G R  every note of step S: moved D semitones, velocity V, gate G %, ratchet R (0: kept) (2026-10-29)
  * Bad numbers are clamped; an unknown command is skipped. */
 static void sq_command(one_t *s, const char *text) {
     sq_run_t *r = &s->sq;
@@ -643,6 +644,8 @@ static void sq_command(one_t *s, const char *text) {
             lanes = 1;   /* (STEP MOD's stopped preview follows the selection) */
         } else if (!strcmp(word, "gate") && got == 1) {
             r->def_gate = (int)clampf((float)a[0], 1.0f, 100.0f);
+        } else if (!strcmp(word, "stepnotes") && got == 5) {   /* every note of a step together (2026-10-29) */
+            sq_step_notes(&r->q, st, a[1], a[2], a[3], a[4]);
         } else if (!strcmp(word, "rtz")) {   /* RETURN TO ZERO: step 1 next */
             if (r->running) r->k0 = r->next_k;
             r->resume = r->cursor = 0;

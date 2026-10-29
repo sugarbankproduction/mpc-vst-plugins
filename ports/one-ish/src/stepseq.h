@@ -65,6 +65,29 @@ static inline void sq_set_note(sq_seq_t *q, int s, int l, int note, int vel, int
     n->gate = (uint8_t)(gate < 1 ? 1 : gate > 100 ? 100 : gate);
     n->flags = (uint8_t)(((ratchet < 1 ? 1 : ratchet > 4 ? 4 : ratchet) - 1) | (tie ? SQ_TIE : 0));
 }
+/* (2026-10-29) every note of step s together: moved by dn semitones (as a chord: kept within 0-127 by its lowest and
+ * highest notes), and given one velocity, gate and ratchet (0: each keeps its own); ties stay */
+static inline void sq_step_notes(sq_seq_t *q, int s, int dn, int vel, int gate, int ratchet) {
+    int lo = 127, hi = 0, any = 0;
+    for (int l = 0; l < SQ_NL; l++) {
+        const sq_note_t *n = &q->n[s][l];
+        if (n->note == SQ_EMPTY) continue;
+        any = 1;
+        if (n->note < lo) lo = n->note;
+        if (n->note > hi) hi = n->note;
+    }
+    if (!any) return;
+    if (dn > 127 - hi) dn = 127 - hi;
+    if (dn < -lo) dn = -lo;
+    for (int l = 0; l < SQ_NL; l++) {
+        sq_note_t *n = &q->n[s][l];
+        if (n->note == SQ_EMPTY) continue;
+        n->note = (uint8_t)(n->note + dn);
+        if (vel > 0) n->vel = (uint8_t)(vel > 127 ? 127 : vel);
+        if (gate > 0) n->gate = (uint8_t)(gate > 100 ? 100 : gate);
+        if (ratchet > 0) n->flags = (uint8_t)((n->flags & SQ_TIE) | ((ratchet > 4 ? 4 : ratchet) - 1));
+    }
+}
 /* the first free lane of step s, or -1 */
 static inline int sq_free_lane(const sq_seq_t *q, int s) {
     for (int l = 0; l < SQ_NL; l++)

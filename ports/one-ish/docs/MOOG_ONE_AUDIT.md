@@ -287,7 +287,7 @@ user patch files (2026-10-27, offline).
 | TEMPO | 10 BPM to 280 BPM (p61) | Have | The host's tempo is the master clock (`lfo_bpm`, 20-400 BPM; the arp also reads the song position's tempo) | - | none |
 | TAP tempo [HW] | p61 | Missing | Host | - | none |
 | NUDGE + / - and NUDGE MODE [HW] | Increment (1 or 0.1 BPM), Bend (2 or 1 BPM) (p62) | Missing | Host | - | none |
-| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Partial | `clock_swing` (the master swing, 50: none), followed by the sequencer (FOLLOW SWING); the arp keeps its own `arp_swing` (0-100%, used 10-90%) (2026-10-27, offline) | S | none |
+| SWING AMOUNT (for arp and sequencer) | 0% to 50% (none) to 100% (p62) | Have | `clock_swing` (the master swing, 50: none), followed by the sequencer (FOLLOW SWING) and, with `arp_follow_swing`, the arp (synced; otherwise its own `arp_swing`) (2026-10-29, offline) | - | none |
 | LOAD PRESET TEMPO [HW] | on/off (p62) | Missing | A plugin can't set the host's tempo | - | none |
 | External clock overrides the Master Clock | p60 | Have | The host clock always applies | - | none |
 | What can sync: arp, sequencer, LFOs, EGs, effects | p60 | Have | LFOs, EGs (`*_sync`), the synth effect and delay (`modfx_sync`, `dly_sync`), the arp and the sequencer (`seq_sync`) sync to the host (2026-10-27, offline) | - | none |
@@ -441,7 +441,7 @@ user patch files (2026-10-27, offline).
 | CLOCK DIVISION | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p81) | Have | `arp_div`, named 1/1 .. 1/128 (4 .. 1/32 beats) (2026-10-27, offline) | - | none |
 | CLOCK TIMING | Straight, Dotted, Triplet (p81) | Have | `arp_timing` (2026-10-27, offline) | - | none |
 | GATE LENGTH | 1% to 100% (p81) | Have | `arp_gate`; 100% ties into the next step (2026-10-27, offline) | - | none |
-| FOLLOW SWING | off/on (p81) | Partial | No master swing: `arp_swing` always applies (50% = none) (2026-10-27, offline) | S | none |
+| FOLLOW SWING | off/on (p81) | Have | `arp_follow_swing` (default Off: `arp_swing` as before): synced, the arp plays the master swing `clock_swing` (ARP page) (2026-10-29, offline) | - | none |
 | NOTE RESET: restart at once on a new note, or wait for the next division | off/on (p81) | Have | `arp_reset` (default On); with the transport playing, steps stay on the song grid (2026-10-27, offline) | - | none |
 | PENDULUM MODE: end notes played once or twice | Once, Twice (p81) | Have | `arp_pend_mode` (2026-10-27, offline) | - | none |
 | RANDOM MODE | Non-repeating, Repeating (p81) | Have | `arp_rnd_mode` (2026-10-27, offline) | - | none |
@@ -450,7 +450,7 @@ user patch files (2026-10-27, offline).
 ## 17. Sequencer (p82-95)
 
 Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everything but OUTPUT and multi-Synth starts
-[MULTI], an RTZ button, editing every note of a step at once, the 15e step-mod-only destinations and performance notes.
+[MULTI] (2026-10-29: RTZ, editing every note of a step at once, the 15e step-mod-only destinations and performance notes since).
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
@@ -458,7 +458,7 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | ON (whether the sequencer plays the Synth) | on/off (p82) | Have | `seq_on`; it can run silently with ON off (2026-10-27, offline) | - | none |
 | RATE, free | 10 BPM to 280 BPM (p82) | Have | `seq_rate` with `seq_sync` Off (2026-10-27, offline) | - | none |
 | CURRENT PAGE / ACTIVE STEP LEDs [UI] | p82 | Have | the SEQUENCER module's four PAGE LEDs, the step editor's playing column, the `seq_pos` readout (2026-10-27, offline) | - | none |
-| RETURN TO ZERO, START/STOP, RECORD, ADV back/forward [UI] | p83 | Partial | `seq_play`, `seq_rec`; ADV: the step editor's clicks and arrow keys; RTZ is an engine command (`rtz`) without a button yet (2026-10-27, offline) | M | none |
+| RETURN TO ZERO, START/STOP, RECORD, ADV back/forward [UI] | p83 | Have | `seq_play`, `seq_rec`; ADV: the step editor's clicks and arrow keys; RTZ on the step editor's title line (2026-10-29, offline and the desktop window) | - | none |
 | REST per step (a rest may keep its notes) | on/off (p84, p87) | Have | REST (its notes kept) (2026-10-27, offline) | - | none |
 | TIE per step (no envelope retrigger) | on/off (p84, p87) | Have | per note lane: the same note goes on, another takes over its voice legato (2026-10-27, offline) | - | none |
 | STEP MOD: record knob moves as per-step offsets while running (a new lane per knob) | on/off (p84, p89) | Have | `seq_step_mod`: a knob's move becomes the step's offset in a lane for its destination (made if missing); the knob stays (2026-10-27, offline) | - | none |
@@ -469,7 +469,7 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | Per-step VELOCITY | 1 to 127 (p88) | Have | per note (2026-10-27, offline) | - | none |
 | Per-step GATE (the last value set applies to new notes) | 1% to 100% (p88) | Have | per note, of the step's own length; the last one set goes to new notes (2026-10-27, offline) | - | none |
 | Per-step RATCHET (repeats inside one step) | 1 to 4 (p88) | Have | per note (2026-10-27, offline) | - | none |
-| Edit all notes of a step at once; delete a note, a step or a lane (SHIFT + DELETE) [UI] | p88, p90 | Partial | delete a note (or an offset) and a modulation lane; no editing of a step's notes together, no step delete button (the engine has `clearstep`) (2026-10-27, offline) | S | none |
+| Edit all notes of a step at once; delete a note, a step or a lane (SHIFT + DELETE) [UI] | p88, p90 | Have | ALL in the step editor: NOTE moves every note of the step together, VEL, GATE, RATCH set them all (the engine's `stepnotes`); DEL STEP (ALL lit) and SHIFT + Delete empty the step; a note, an offset and a lane as before (2026-10-29, offline and the desktop window) | - | none |
 | Modulation lanes: one destination each, bipolar % offset per step, CONTROLLER and AMOUNT per lane | p89-91 | Have | 8 lanes, -100..+100% per step, a controller with an amount (2026-10-27, offline) | - | low |
 | Step-mod destination list (CATEGORY/DESTINATION) | p91 (see 15e) | Have | the mod matrix's whole destination list (voices and effects), the step-mod-only ones too (octave, noise EG, EG switches, LFO wave: 2026-10-29); STEP MOD records the footage, EG switch, noise EG and LFO wave controls as offsets (a list's move as its steps); a lane past destination 255 saves in a two-byte form, older sequences as before (2026-10-29, offline) | - | none |
 | SYNC | off/on (p92) | Have | `seq_sync`: host tempo, and its song position while it plays (2026-10-27, offline) | - | none |
@@ -486,7 +486,7 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | OUTPUT: which Synth(s) the sequence plays [MULTI] | Synth 1/2/3, All Synths (p94) | Missing | - | S | none |
 | Start several Synths' sequences together (Panel Focus multi-select) [MULTI] | p83 | Have | PLAY ALL (`seq_all`, the SETUP page): every Synth that is on with its sequencer ON starts (or stops) on the same sample (2026-10-28, offline and the desktop window) | - | none |
 | CLEAR SEQUENCE, DUPLICATE X-Y [UI] | p94 | Have | the step editor's CLEAR (asks) and DUP (2026-10-27, offline) | - | none |
-| LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Partial | `.oneseq` files from the step editor (the Windows file dialog sorts by name or date); no performance notes (2026-10-27, offline) | M | none |
+| LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Have | `.oneseq` files from the step editor (the Windows file dialog sorts by name or date); SAVE asks for performance notes, kept in the file and shown on LOAD (2026-10-29, the desktop window) | - | none |
 
 ## 18. Effects (p96-111)
 
@@ -731,7 +731,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | LCD BRIGHTNESS, PANEL LED BRIGHTNESS [HW] | 0% to 100% (p125) | Missing | - | - | none |
 | SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Partial | The PRESET knob and PREV/NEXT load as they step (autoload always on, no switch); the SET page's bank letters always preview a bank (no switch) (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | S | none |
 | DUPLICATE NAMES ON IMPORT / EXPORT [UI] | Ignore, Overwrite, Auto Rename, Manual Rename (p126) | Partial | IMPORT asks before overwriting a same-named patch; no auto-rename or ignore choice | S | none |
-| STEP EDIT AUTO-SCROLL [UI] | off/on (p126) | Missing | (with the sequencer) | S | none |
+| STEP EDIT AUTO-SCROLL [UI] | off/on (p126) | Have | AUTO on the step editor's title line (lit by default): the page shown follows the step playing; a window setting for now, not saved (2026-10-29, the desktop window) | - | none |
 | NOISE REDUCTION between notes [ANALOG][HW] | -24 dB to 0 dB, default -12 dB (p126) | Missing | Not needed: no analog hiss (ONE-ish adds only a -100 dB floor) | - | none |
 | SET DATE/TIME, formats [HW] | p127 | Missing | The computer's clock | - | none |
 | FAN MODE [HW] | Normal, Low (p127) | Missing | - | - | none |
@@ -741,7 +741,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | RECEIVE MIDI CLOCK | off/on (p128) | Partial | Always the host's tempo; no switch to ignore it | S | none |
-| RECEIVE MIDI START/STOP | off/on (p128) | Partial | The host's playing flag reaches the engine (`song_pos`); the arp and the sequencer follow the song position while it plays (no LFO reset; the host's start and stop don't start or stop the sequence) | S | none |
+| RECEIVE MIDI START/STOP | off/on (p128) | Have | `seq_host_ss` per Synth (default Off): the host's start and stop start and stop the sequence (PLAY follows, the host is told); synced LFOs restart on the start (2026-10-29, offline) | - | none |
 | MIDI I/O LOAD FROM PRESET [UI] | off/on (p129) | Missing | - | S | none |
 | MIDI IN PORTS [HW] | DIN, USB, DIN & USB (p129) | Missing | Host | - | none |
 | MIDI IN CHANNEL ALL (one channel for the whole preset) | Off, 1-16 (p129) | Have | `midi_ch`: Omni (the default: every channel, as before) or 1-16 for every Synth; the window plays on it (2026-10-28, offline) | - | none |
@@ -837,30 +837,30 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | Module | Have | Partial | Missing | Missing [HW] | Missing [UI] |
 |---|---|---|---|---|---|
 | 0. Architecture and overview (p8-10) | 8 | 2 | 0 | 0 | 0 |
-| 1. Front panel, centre console, keyboard (p10-18) | 7 | 5 | 4 | 1 | 2 |
+| 1. Front panel, centre console, keyboard (p10-18) | 8 | 5 | 3 | 1 | 2 |
 | 2. Rear panel (p19-21) | 0 | 3 | 3 | 3 | 0 |
 | 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
-| 5. Noise (p29-30) | 8 | 1 | 0 | 0 | 0 |
+| 5. Noise (p29-30) | 9 | 0 | 0 | 0 | 0 |
 | 6. Mixer (p31-32) | 8 | 0 | 1 | 1 | 0 |
 | 7. Filters (p33-39) | 23 | 1 | 0 | 0 | 0 |
-| 8. Envelopes (p40-45) | 18 | 2 | 1 | 0 | 1 |
-| 9. LFOs (p46-49) | 18 | 4 | 1 | 0 | 0 |
+| 8. Envelopes (p40-45) | 20 | 0 | 1 | 0 | 1 |
+| 9. LFOs (p46-49) | 22 | 1 | 0 | 0 | 0 |
 | 10. VCA (p50-52) | 5 | 0 | 0 | 0 | 0 |
 | 11. Output (p53-56) | 0 | 0 | 6 | 4 | 0 |
 | 12. Performance Sets and text entry (p57-60) | 5 | 0 | 0 | 0 | 0 |
-| 13. Master Clock (p60-62) | 4 | 1 | 3 | 3 | 0 |
+| 13. Master Clock (p60-62) | 5 | 0 | 3 | 3 | 0 |
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
-| 15. Modulation (p67-77) | 75 | 3 | 10 | 2 | 3 |
-| 16. Arpeggiator (p78-81) | 16 | 1 | 0 | 0 | 0 |
-| 17. Sequencer (p82-95) | 28 | 4 | 1 | 0 | 0 |
+| 15. Modulation (p67-77) | 80 | 2 | 6 | 2 | 3 |
+| 16. Arpeggiator (p78-81) | 17 | 0 | 0 | 0 | 0 |
+| 17. Sequencer (p82-95) | 32 | 0 | 1 | 0 | 0 |
 | 18. Effects (p96-111) | 87 | 0 | 1 | 0 | 1 |
-| 19. Left Hand Controller (p17-18, p112-117) | 15 | 1 | 3 | 1 | 0 |
-| 20. Browser, presets and timbres (p118-121) | 6 | 1 | 0 | 0 | 0 |
+| 19. Left Hand Controller (p17-18, p112-117) | 17 | 1 | 1 | 1 | 0 |
+| 20. Browser, presets and timbres (p118-121) | 7 | 0 | 0 | 0 | 0 |
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
-| 22. Settings (p124-139) | 7 | 5 | 19 | 11 | 6 |
+| 22. Settings (p124-139) | 9 | 4 | 18 | 11 | 5 |
 | 24. Appendices A and B (p143-158) | 1 | 2 | 3 | 1 | 0 |
-| **Total** | **381** | **38** | **56** | **27** | **13** |
+| **Total** | **405** | **23** | **47** | **27** | **12** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -898,7 +898,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; then packages 3, 4 and 2's leftovers: 20 and 23). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -933,7 +933,9 @@ beside the engine work.
   "what can sync" complete (13) and chord memory after the sequencer (14). Left (S each): an RTZ button, editing a
   step's notes together and a step delete button, performance notes with a saved sequence, step edit auto-scroll
   (22a), the arp following the master swing (16), the host transport's start and stop starting and stopping the
-  sequence (22b RECEIVE START/STOP).
+  sequence (22b RECEIVE START/STOP). Done 2026-10-29 (offline and the desktop window; `test/seqx_check.c`, load_test):
+  all of these (RTZ and AUTO on the step editor's title line, ALL and DEL STEP, notes in .oneseq files,
+  `arp_follow_swing`, `seq_host_ss`); 32 of the 33 rows Have, OUTPUT [MULTI] left.
 - Depends on: package 3 for the step-mod destinations the manual lists (oscillator octave, the EG switches, LFO
   waveform). OUTPUT to other Synths and starting several Synths together wait for package 13.
 - Files: `src/stepseq.h`, `src/stepseq_run.h`, `desktop/seq_page.c`, `params.json`.

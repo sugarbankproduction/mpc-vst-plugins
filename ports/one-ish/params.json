@@ -625,6 +625,8 @@
   {"key": "pad_x_pos", "name": "Saved Pad X", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "pad_y_pos", "name": "Saved Pad Y", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "eg_times", "name": "EG Times", "options": ["1 ms, 11 Syncs", "MIN, 13 Syncs"], "default": "1 ms, 11 Syncs", "refresh_display": true},
+  {"key": "arp_follow_swing", "name": "Arp Follow Swing", "options": ["Off", "On"], "default": "Off"},
+  {"key": "seq_host_ss", "name": "Seq Host Start/Stop", "options": ["Off", "On"], "default": "Off"},
   {"key": "s2_o1_wave", "name": "S2 Osc 1 Wave", "options": ["Tri", "Saw"], "default": "Saw"},
   {"key": "s2_amp_a", "name": "S2 Amp Attack", "min": 0, "max": 100, "default": 17.5, "dynamic_display": true},
   {"key": "s2_amp_d", "name": "S2 Amp Decay", "min": 0, "max": 100, "default": 61.9, "dynamic_display": true},
@@ -1614,7 +1616,11 @@
   {"key": "s3_pad_x_pos", "name": "S3 Saved Pad X", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "s3_pad_y_pos", "name": "S3 Saved Pad Y", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "s2_eg_times", "name": "S2 EG Times", "options": ["1 ms, 11 Syncs", "MIN, 13 Syncs"], "default": "1 ms, 11 Syncs", "refresh_display": true},
-  {"key": "s3_eg_times", "name": "S3 EG Times", "options": ["1 ms, 11 Syncs", "MIN, 13 Syncs"], "default": "1 ms, 11 Syncs", "refresh_display": true}
+  {"key": "s3_eg_times", "name": "S3 EG Times", "options": ["1 ms, 11 Syncs", "MIN, 13 Syncs"], "default": "1 ms, 11 Syncs", "refresh_display": true},
+  {"key": "s2_arp_follow_swing", "name": "S2 Arp Follow Swing", "options": ["Off", "On"], "default": "Off"},
+  {"key": "s2_seq_host_ss", "name": "S2 Seq Host Start/Stop", "options": ["Off", "On"], "default": "Off"},
+  {"key": "s3_arp_follow_swing", "name": "S3 Arp Follow Swing", "options": ["Off", "On"], "default": "Off"},
+  {"key": "s3_seq_host_ss", "name": "S3 Seq Host Start/Stop", "options": ["Off", "On"], "default": "Off"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},

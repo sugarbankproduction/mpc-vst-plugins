@@ -232,6 +232,7 @@ enum {
      * pad positions */
     P_MOD1_ON, P_MOD16_ON = P_MOD1_ON + MOD_SLOTS - 1, P_PAD_POLARITY, P_PAD_HOLD, P_LOAD_POS, P_WHEEL_POS, P_PAD_X_POS,
     P_PAD_Y_POS, P_EG_TIMES,   /* (2026-10-29) the envelopes' MIN and 13 synced values */
+    P_ARP_FOLLOW_SWING, P_SEQ_HOST_SS,   /* (2026-10-29) the arp's FOLLOW SWING; the sequencer on the host's start, stop */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -362,7 +363,7 @@ static const char *const KEYS[P_COUNT] = {
     "modfx_sibil", "modfx_sens", "dly_sibil", "dly_sens", "rev_sibil", "rev_sens",
     "mod1_on", "mod2_on", "mod3_on", "mod4_on", "mod5_on", "mod6_on", "mod7_on", "mod8_on", "mod9_on", "mod10_on",
     "mod11_on", "mod12_on", "mod13_on", "mod14_on", "mod15_on", "mod16_on", "pad_polarity", "pad_hold", "load_pos",
-    "wheel_pos", "pad_x_pos", "pad_y_pos", "eg_times",
+    "wheel_pos", "pad_x_pos", "pad_y_pos", "eg_times", "arp_follow_swing", "seq_host_ss",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -1730,7 +1731,9 @@ static void clock_block(one_t *s) {
     double bps = bpm / 60.0 / SR, now_pos = clock_pos(s);
     double step = ARP_DIV_BEATS[(int)clampf(p[P_ARP_DIV], 0, 7)] * ARP_TIMING[(int)clampf(p[P_ARP_TIMING], 0, 2)];
     /* SWING: the on-step's share of each pair of steps (50%: none), so odd steps come later (or earlier) */
-    double swoff = (2.0 * clampf(p[P_ARP_SWING] * 0.01f, 0.1f, 0.9f) - 1.0) * step;
+    /* FOLLOW SWING (synced, 2026-10-29): the master swing instead of the arp's own */
+    float sw = sync && p[P_ARP_FOLLOW_SWING] > 0.5f ? p[P_CLOCK_SWING] : p[P_ARP_SWING];
+    double swoff = (2.0 * clampf(sw * 0.01f, 0.1f, 0.9f) - 1.0) * step;
     int restep = step != s->step || swoff != s->swoff, jump = 0;
     s->step = step;
     s->swoff = swoff;
@@ -1963,14 +1966,26 @@ static void lfo_transport_start(one_t *s) {
 }
 
 /* the host's song position at each block (HAS_SONG_POS): the step clock follows it while synced and playing */
+static void synth_after(one_t *s, int k);
 static void synth_song_pos(one_t *s, double ppq, double bpm, int playing, int frames) {
     (void)frames;
-    if (playing && !s->sp_playing) lfo_transport_start(s);
+    int started = playing && !s->sp_playing, stopped = !playing && s->sp_playing;
+    if (started) lfo_transport_start(s);
     s->sp_ppq = ppq;
     s->sp_bpm = bpm;
     s->sp_playing = playing;
     s->sp_new = 1;
     s->sq.sp_new = 1;
+    /* RECEIVE START/STOP (seq_host_ss, 2026-10-29): the host's start plays the sequence (ON, the Synth on, NOTE TRIG
+     * off), its stop stops it; PLAY follows and the host is told */
+    if (s->val[P_SEQ_HOST_SS] < 0.5f || (!started && !stopped)) return;
+    int play = s->val[P_SEQ_PLAY] > 0.5f;
+    if (started && !play && s->on && s->val[P_SEQ_ON] > 0.5f && s->val[P_SEQ_NOTE_TRIG] < 0.5f) play = 1;
+    else if (stopped && play) play = 0;
+    else return;
+    s->val[P_SEQ_PLAY] = (float)play;
+    s->changed |= 1u << SQ_CHG_PLAY;
+    synth_after(s, P_SEQ_PLAY);
 }
 
 /* a MIDI message for this Synth (src/synths.h chose which Synths, by channel and key range) */

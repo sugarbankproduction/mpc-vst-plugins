@@ -660,7 +660,7 @@ static void seq_page_test(AEffect *fx, HWND child, float s, const char *bmp, int
     sq_seq_t q;
     float x, y;
     click_zone(child, s, ZONE_TAB_SEQ);   /* the step editor */
-    float bx = ZONE_SCREEN[0] + 8 + (ZONE_SCREEN[2] - 16 - 24) / 7.0f * 3.5f + 6;
+    float bx = ZONE_SCREEN[0] + 8 + (ZONE_SCREEN[2] - 16 - 24) / 8.0f * 4.5f + 6;   /* (8 buttons: CLEAR is the fifth) */
     float by = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 176 + 8 + 24 + 9;   /* CLEAR, in the buttons' row */
     static const answer_t yes = {"ONE-ish", NULL, IDYES};
     click_answered(child, s, bx, by, &yes);   /* CLEAR (asked; Yes): an empty sequence to start with */
@@ -723,6 +723,46 @@ static void seq_page_test(AEffect *fx, HWND child, float s, const char *bmp, int
     char back[SQT_BUF];
     fx->dispatcher(fx, 50, TEST_SEQ, SQT_TEXT, back, 0);
     check(r == 1 && !strcmp(back, saved), "SEQ page: LOAD brings the saved sequence back exactly");
+    /* (2026-10-29) performance notes in the file; ALL (a step's notes together) and DEL STEP; RTZ */
+    {
+        float x0 = ZONE_SCREEN[0] + 8, bw = (ZONE_SCREEN[2] - 16 - 4 * 7) / 8.0f, ty = ZONE_SCREEN[1] + 6 + 36 + 9;
+        float fy = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 176 + 8 + 10;   /* the values row */
+        snprintf(buf, sizeof buf, "Wheel half up on bar 2");
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_SET_NOTES, buf, 0);
+        snprintf(buf, sizeof buf, "Notes Test");
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_SAVE, buf, 0);
+        char npath[MAX_PATH + 64], ntext[SQT_BUF] = "";
+        snprintf(npath, sizeof npath, "%s\\Notes Test.oneseq", seq_dir);
+        FILE *nf = fopen(npath, "rb");
+        if (nf) { ntext[fread(ntext, 1, sizeof ntext - 1, nf)] = 0; fclose(nf); }
+        buf[0] = 0;
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_SET_NOTES, buf, 0);
+        snprintf(buf, sizeof buf, "Notes Test");
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_LOAD, buf, 0);
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_NOTES, buf, 0);
+        snprintf(what, sizeof what, "SEQ page: performance notes saved in the .oneseq file (%d) and read back on LOAD (\"%s\")",
+                 strstr(ntext, "\nnotes=Wheel half up on bar 2\n") != NULL, buf);
+        check(strstr(ntext, "\nnotes=Wheel half up on bar 2\n") && !strcmp(buf, "Wheel half up on bar 2"), what);
+        cell_xy(0, 0, &x, &y);
+        click(child, s, x, y);   /* step 1 (C4) */
+        click(child, s, x0 + 2 * (bw + 4) + bw / 2, by);   /* ALL */
+        int before = seq_now(fx, &q) ? q.n[0][0].note : -1;
+        SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(0, 120), MAKELPARAM((int)lroundf((x0 + 110) * s), (int)lroundf(fy * s)));
+        seq_now(fx, &q);
+        int moved = q.n[0][0].note == before + 1;
+        click(child, s, x0 + 3 * (bw + 4) + bw / 2, by);   /* DEL STEP */
+        seq_now(fx, &q);
+        snprintf(what, sizeof what, "SEQ page: ALL, then the wheel on NOTE moves step 1's notes (%d to %d), DEL STEP empties "
+                 "it (%d) and keeps step 2 (%d)", before, before + moved, sq_step_empty(&q, 0), sq_has(&q.n[1][0]));
+        check(moved && sq_step_empty(&q, 0) && sq_has(&q.n[1][0]), what);
+        click(child, s, x0 + 2 * (bw + 4) + bw / 2, by);   /* ALL off */
+        click(child, s, x0 + 216, ty);   /* RTZ */
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_MESSAGE, buf, 0);
+        snprintf(what, sizeof what, "SEQ page: RTZ on the title line (\"%s\")", buf);
+        check(!strncmp(buf, "Return to zero", 14), what);
+        snprintf(buf, sizeof buf, "Walking Test");   /* the phrase back, for what follows */
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_LOAD, buf, 0);
+    }
     /* a user patch keeps the sequence (its "seq=" line) */
     pt(fx, PT_SAVE_AS, "Seq Patch", NULL, 1);
     char ppath[MAX_PATH + 64], ptext[SQT_BUF] = "";
@@ -740,6 +780,24 @@ static void seq_page_test(AEffect *fx, HWND child, float s, const char *bmp, int
     SendMessageA(child, WM_TIMER, 1, 0);
     check(fx->getParameter(fx, rnd_key("seq_on")) > 0.5f && fx->getParameter(fx, rnd_key("seq_play")) > 0.5f,
           "SEQ page: ON and PLAY on the SEQUENCER module start it");
+    {   /* (2026-10-29) AUTO (step edit auto-scroll): page 3 picked while it plays; on, the page shown follows the playing
+         * step back to page 1; off, it stays */
+        float pbx = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8 - 2 * 25 + 11, ty = ZONE_SCREEN[1] + 6 + 36 + 9;
+        click(child, s, pbx, ty);   /* page 3 */
+        SendMessageA(child, WM_TIMER, 1, 0);
+        play(fx, 4, 512);
+        SendMessageA(child, WM_TIMER, 1, 0);
+        int followed = (int)fx->dispatcher(fx, 50, TEST_SEQ, SQT_PAGE, buf, 0) == 0;
+        click(child, s, ZONE_SCREEN[0] + 8 + 252, ty);   /* AUTO off */
+        click(child, s, pbx, ty);
+        play(fx, 4, 512);
+        SendMessageA(child, WM_TIMER, 1, 0);
+        int stayed = (int)fx->dispatcher(fx, 50, TEST_SEQ, SQT_PAGE, buf, 0) == 2;
+        click(child, s, ZONE_SCREEN[0] + 8 + 252, ty);   /* AUTO on again */
+        snprintf(what, sizeof what, "SEQ page: AUTO on, the page shown follows the playing step (%d); off, it stays (%d)",
+                 followed, stayed);
+        check(followed && stayed, what);
+    }
     cell_xy(1, 0, &x, &y);
     click(child, s, x, y);
     if (bmp) shot(child, w, h, bmp, "_seq");

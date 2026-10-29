@@ -4960,6 +4960,7 @@ static void arp_wav(const char *demo_path) {
 #include "ext_check.c"     /* the audio input: the EXT channel and the vocoders */
 #include "modx_check.c"    /* modulation extras: the step-mod destinations, slot ENABLE, the pad (2026-10-29) */
 #include "lfoenv_check.c"  /* LFO and envelope fidelity: the High range, pulse width, transport start, MIN, 13 syncs */
+#include "seqx_check.c"    /* the sequencer leftovers: RTZ, a step's notes together, follow swing, host start/stop */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5740,6 +5741,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "modx")) {   /* just the 2026-10-29 packages: offline_check modx */
         mod_extras();
         lfo_env_fidelity();
+        seq_extras();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -5815,6 +5817,7 @@ int main(int argc, char **argv) {
     vocoders();
     mod_extras();
     lfo_env_fidelity();
+    seq_extras();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");
