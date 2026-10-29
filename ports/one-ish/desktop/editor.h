@@ -277,6 +277,7 @@ void ed_each(void (*fn)(ed_t *));
 void settings_init(ed_t *e);
 int settings_path(char *out, int n);
 int settings_autoload(void);
+int settings_bank_preview(void);               /* SHOW BANK PREVIEW (the SET page, library.c) */
 int settings_cue_from(ed_t *e, int pos);       /* PRESET AUTOLOAD off: browsing points instead of loading */
 int settings_cue_step(ed_t *e, int to);
 int settings_cue_title(ed_t *e, char *out, int n);

@@ -1793,6 +1793,7 @@ static void draw_set(HDC dc, ed_t *e) {
         snprintf(t, sizeof t, "%c%d", 'A' + L_->bank, row + 1);
         label(dc, tr, t, font_cell, sl->kind ? C_LCD : C_DARK, DT_LEFT);
         tr.left += sc(30);
+        if (!settings_bank_preview() && k != L_->cur_slot) continue;   /* SHOW BANK PREVIEW off: the numbers only */
         label(dc, tr, sl->kind ? sl->name : "(empty)", font_cell, sl->kind ? (k == L_->cur_slot || hot ? C_HOT : C_LCD) : C_DARK, DT_LEFT);
         kr.right -= sc(6);
         if (sl->kind) label(dc, kr, sl->kind == 'F' ? "FACTORY" : "USER", font_tiny, C_DIM, DT_RIGHT);

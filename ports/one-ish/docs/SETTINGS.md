@@ -15,14 +15,14 @@ every ONE-ish you open. Click a value (or scroll over it, Shift for finer steps)
 
 | Setting | What it does | Default |
 |---|---|---|
-| PRESET AUTOLOAD | On: the PRESET knob, PREV and NEXT load each preset or patch as they step. Off: they only point at one (the name line shows `> F 004  Name ?`); click the PRESET knob or the name to load it. | On |
+| PRESET AUTOLOAD | On: the PRESET knob, PREV and NEXT load each preset or patch as they step. Off: they only point at one (the name line shows `> F 004  Name ?`); click the PRESET knob or the name to load it. With tag filters (TAGS page) PREV / NEXT point within the filtered list. | On |
+| SHOW BANK PREVIEW | On: a bank letter on the SET page (performance sets, `docs/PATCHES.md`) shows the names of its eight patches. Off: only the numbers A1-H8 (and the one playing); a number still loads its patch. | On |
 | RECEIVE MIDI CLOCK | On: the host's tempo and song position drive synced LFOs, envelopes, effects, the arp and the sequencer. Off: both are ignored; everything runs free at TEMPO. | On |
 | TEMPO (CLOCK OFF) | The tempo ONE-ish keeps itself while RECEIVE MIDI CLOCK is off, 10-280 BPM. | 120 BPM |
 | MIDI I/O FROM PRESET | On: a preset or patch you load brings its MIDI channels (MIDI IN (ALL) and each Synth's channel). Off: the channels you set stay. A project always restores everything. | On |
 | SUSTAIN PEDAL CC | The CC number of your sustain pedal. | 64 |
 | EXP 1 PEDAL CC | The CC number the mod matrix reads as Exp 1 (its list still says "Exp 1 (CC 11)", the default). | 11 |
 | EXP 2 PEDAL CC | The CC number the mod matrix reads as Exp 2 ("Exp 2 (CC 4)"). | 4 |
-| RESTORE DEFAULT SETTINGS | Every setting back to the defaults (asks first). Patches and sounds are not touched. | |
 
 A pedal moved to another number no longer answers to its old one. A pedal can't take a number another pedal has, or
 one ONE-ish reads for something else (0, 1, 2, 3, 6, 16, 17, 18, 32, 38, 66, 96-101): those are skipped.
@@ -52,7 +52,8 @@ HEADPHONES (2) has no plugin meaning. ONE-ish's own NRPN replaces the plugin wra
 n), which is switched off for ONE-ish (`vst.json` `"nrpn": false`).
 
 **LIBRARY**: where your patches and the settings file are (with buttons that open the folders), how many patches
-there are, the version and the build date.
+there are, the version and the build date, and **RESTORE DEFAULTS** (RESTORE DEFAULT SETTINGS: every setting on the
+page, the MIDI map included, back to the defaults, after a question; patches and sounds are not touched).
 
 **TUNING**: MASTER FREQUENCY (400-480 Hz) and MASTER FINE TUNE (+-100 cents). These two stay part of the sound, as they
 always were (shared by its three Synths), so old sounds keep their tuning.
@@ -85,6 +86,7 @@ header `ONE-ish settings 1`:
 
     ONE-ish settings 1
     autoload=1
+    bank_preview=1
     rx_clock=1
     tempo=120
     midi_io_preset=1

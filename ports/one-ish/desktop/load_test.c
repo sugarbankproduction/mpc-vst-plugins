@@ -1184,6 +1184,9 @@ static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp
               && st(fx, STT_CUE, NULL, NULL, 0) == -1,
           "autoload off: a click on the PRESET knob loads the one it points at");
     st(fx, STT_SET, "autoload=1", NULL, 0);
+    check(file_has(settings_file, "bank_preview=1") && st(fx, STT_SET, "bank_preview=0", NULL, 0) == 1
+              && file_has(settings_file, "bank_preview=0") && st(fx, STT_SET, "bank_preview=1", NULL, 0) == 1,
+          "SETTINGS: SHOW BANK PREVIEW (the SET page's) is a setting, on by default");
     check(pt(fx, PT_STEP, NULL, NULL, 1) == pos0 + 3 && st(fx, STT_CUE, NULL, NULL, 0) == -1,
           "autoload on: NEXT loads at once, as before");
 

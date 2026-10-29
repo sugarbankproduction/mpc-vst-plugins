@@ -3,15 +3,15 @@
  *
  * Tabs (the buttons on the page's first line):
  *   GLOBAL   PRESET AUTOLOAD (the PRESET knob, PREV and NEXT load as they step; off: they only point, and a click on
- *            the knob or the name loads), RECEIVE MIDI CLOCK (off: the host's tempo and song position are ignored and
- *            the Synths run at TEMPO), MIDI I/O FROM PRESET (off: loading a preset or patch keeps the MIDI channels:
- *            MIDI IN (ALL) and each Synth's channel), the CC numbers of the SUSTAIN, EXP 1 and EXP 2 pedals, RESTORE
- *            DEFAULT SETTINGS
+ *            the knob or the name loads), SHOW BANK PREVIEW (library.c's SET page: off, a bank shows only its numbers),
+ *            RECEIVE MIDI CLOCK (off: the host's tempo and song position are ignored and the Synths run at TEMPO),
+ *            MIDI I/O FROM PRESET (off: loading a preset or patch keeps the MIDI channels: MIDI IN (ALL) and each
+ *            Synth's channel), the CC numbers of the SUSTAIN, EXP 1 and EXP 2 pedals
  *   MIDI     MIDI LEARN (manual p144-148): LEARN, click a control, move a knob or fader on the controller: that CC
  *            now moves the control (7-bit, or 14-bit when its LSB, CC + 32, follows). The map lists every mapping
  *            (7/14-BIT, DELETE, CLEAR ALL) and the reserved CCs. The map is a setting like the others (the manual
  *            keeps it with the global settings, not with a sound). NRPN input (the manual's table) needs nothing here.
- *   LIBRARY  where the patches and this file live, how many there are, the version
+ *   LIBRARY  where the patches and this file live, how many there are, the version, RESTORE DEFAULT SETTINGS
  *   TUNING   MASTER FREQUENCY and MASTER FINE TUNE (the shared params: they stay part of the sound, as before), and
  *            MICROTUNING (package 16, beyond the manual): the focused Synth's Scala scale (.scl) and keyboard map
  *            (.kbm), read here (scala.c) and kept in the sound's state by the engine (src/tuning.h)
@@ -40,13 +40,16 @@ static const char HEADER[] = "ONE-ish settings";
 enum { FORMAT_VERSION = 1, FILE_MAX = 65536 };
 
 /* ---- the settings ---- */
-enum { SI_AUTOLOAD, SI_RX_CLOCK, SI_TEMPO, SI_MIDI_IO, SI_SUSTAIN, SI_EXP1, SI_EXP2, SI_COUNT };
+enum { SI_AUTOLOAD, SI_BANK_PREVIEW, SI_RX_CLOCK, SI_TEMPO, SI_MIDI_IO, SI_SUSTAIN, SI_EXP1, SI_EXP2, SI_COUNT };
 enum { IK_ONOFF, IK_NUM };
 typedef struct { const char *label, *key; int kind; float lo, hi, step, def; const char *unit, *help; } item_t;
 static const item_t ITEM[SI_COUNT] = {
     {"PRESET AUTOLOAD", "autoload", IK_ONOFF, 0, 1, 1, 1, "",
      "PRESET AUTOLOAD: On, the PRESET knob, PREV and NEXT load each preset or patch as they step. Off, they only point "
      "at one (its name shows with >); click the PRESET knob or the name to load it."},
+    {"SHOW BANK PREVIEW", "bank_preview", IK_ONOFF, 0, 1, 1, 1, "",
+     "SHOW BANK PREVIEW: On, a bank letter on the SET page shows the names of its eight patches. Off, only the numbers "
+     "(and the one playing); a number still loads its patch."},
     {"RECEIVE MIDI CLOCK", "rx_clock", IK_ONOFF, 0, 1, 1, 1, "",
      "RECEIVE MIDI CLOCK: On, the host's tempo and song position drive synced LFOs, envelopes, effects, the arp and "
      "the sequencer. Off, they are ignored and everything runs free at TEMPO below."},
@@ -229,6 +232,7 @@ static void change(ed_t *e, int k, float v) {
 
 /* ---- PRESET AUTOLOAD (patches.c's browsing asks these) ---- */
 int settings_autoload(void) { if (!g_loaded) load_file(); return G.v[SI_AUTOLOAD] > 0.5f; }
+int settings_bank_preview(void) { if (!g_loaded) load_file(); return G.v[SI_BANK_PREVIEW] > 0.5f; }   /* library.c */
 static void cue_check(ed_t *e) {   /* something else loaded meanwhile: the pointer goes */
     if (e->st.cue >= 0 && (patches_pos(e) != e->st.cue_base || e->st.cue >= patches_total(e))) e->st.cue = -1;
 }
@@ -486,9 +490,9 @@ static void row_parts(int row, RECT *name, RECT *val, RECT *down, RECT *up) {   
     SetRect(down, val->left, val->top, val->left + aw, val->bottom);
     SetRect(up, val->right - aw, val->top, val->right, val->bottom);
 }
-static RECT button_rect(int b) {   /* RESTORE: GLOBAL's last row; the OPEN buttons: LIBRARY's last two, on the right */
+static RECT button_rect(int b) {   /* RESTORE, then the OPEN buttons on the right: LIBRARY's last three rows */
     RECT r = L.row[ROWS - 1], nm, d, u;
-    if (b == B_RESTORE) InflateRect(&r, -sc(4), -sc(2));
+    if (b == B_RESTORE) row_parts(ROWS - 3, &nm, &r, &d, &u);
     else if (b == B_LEARN) { r = L.row[0]; r.right = r.left + sc(96); InflateRect(&r, -sc(4), -sc(2)); }
     else if (b == B_CLEAR_MAP) { r.left = r.right - sc(76); InflateRect(&r, -sc(4), -sc(2)); }
     else if (b >= B_LOAD_SCL) {   /* LOAD and CLEAR at the right of the scale's and the map's rows */
@@ -502,7 +506,7 @@ static RECT button_rect(int b) {   /* RESTORE: GLOBAL's last row; the OPEN butto
     return r;
 }
 static int button_shown(ed_t *e, int b) {
-    return b == B_RESTORE ? e->st.tab == ST_GLOBAL : b >= B_LOAD_SCL ? e->st.tab == ST_TUNING
+    return b >= B_LOAD_SCL ? e->st.tab == ST_TUNING
          : b >= B_LEARN ? e->st.tab == ST_MIDI : e->st.tab == ST_LIBRARY;
 }
 
@@ -805,33 +809,33 @@ void settings_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dr
             else snprintf(v, sizeof v, "%g%s", G.v[k], it->unit);
             value_row(dc, e, k, it->label, v, it->kind == IK_NUM, G.v[k] > 0.5f);
         }
-        button(dc, button_rect(B_RESTORE), "RESTORE DEFAULT SETTINGS", 0, e->hover == Z_BTN + B_RESTORE);
     } else if (e->st.tab == ST_LIBRARY) {
         char pd[MAX_PATH], sp[MAX_PATH];
         if (!patch_dir(pd, sizeof pd, 0)) snprintf(pd, sizeof pd, "(no Documents or AppData folder found)");
         if (!settings_path(sp, sizeof sp)) snprintf(sp, sizeof sp, "(none)");
         patches_rescan(e);
-        const char *name[6] = {"PATCH FOLDER", "USER PATCHES", "FACTORY PRESETS", "SETTINGS FILE", "VERSION", "BUILT"};
-        char val[6][MAX_PATH + 32];
+        const char *name[5] = {"PATCH FOLDER", "USER PATCHES", "FACTORY PRESETS", "SETTINGS FILE", "VERSION"};
+        char val[5][MAX_PATH + 32];
         snprintf(val[0], sizeof val[0], "%s", pd);
         snprintf(val[1], sizeof val[1], "%d", e->pt.count);
         snprintf(val[2], sizeof val[2], "%d", e->fx->numPrograms);
         snprintf(val[3], sizeof val[3], "%s", sp);
-        snprintf(val[4], sizeof val[4], "%s %d.%d.%d  (VST2, %d params)", PLUG_NAME, PLUG_VERSION / 1000,
-                 PLUG_VERSION / 100 % 10, PLUG_VERSION % 100, NPARAMS);
-        snprintf(val[5], sizeof val[5], "%s %s", __DATE__, __TIME__);
-        for (int r = 0; r < 6; r++) {
+        snprintf(val[4], sizeof val[4], "%s %d.%d.%d, %d params, built %s", PLUG_NAME, PLUG_VERSION / 1000,
+                 PLUG_VERSION / 100 % 10, PLUG_VERSION % 100, NPARAMS, __DATE__);
+        for (int r = 0; r < 5; r++) {
             RECT nm, vr, d, u;
             row_parts(r, &nm, &vr, &d, &u);
             label(dc, nm, name[r], font_cell, S_DIM, DT_LEFT);
             label(dc, vr, val[r], font_cell, S_LCD, r == 0 || r == 3 ? DT_PATH_ELLIPSIS | DT_LEFT : DT_LEFT);
         }
-        RECT a = L.row[6], b = L.row[7];
-        a.left += sc(4);
-        b.left += sc(4);
-        a.right = b.right = button_rect(B_OPEN_PATCHES).left - sc(4);
-        label(dc, a, "Your patches:", font_cell, S_DIM, DT_LEFT);
-        label(dc, b, "This settings file:", font_cell, S_DIM, DT_LEFT);
+        static const char *const SIDE[3] = {"Every setting on this page:", "Your patches:", "This settings file:"};
+        for (int r = 0; r < 3; r++) {
+            RECT a = L.row[ROWS - 3 + r];
+            a.left += sc(4);
+            a.right = button_rect(B_OPEN_PATCHES).left - sc(4);
+            label(dc, a, SIDE[r], font_cell, S_DIM, DT_LEFT);
+        }
+        button(dc, button_rect(B_RESTORE), "RESTORE DEFAULTS", 0, e->hover == Z_BTN + B_RESTORE);
         button(dc, button_rect(B_OPEN_PATCHES), "OPEN PATCH FOLDER", 0, e->hover == Z_BTN + B_OPEN_PATCHES);
         button(dc, button_rect(B_OPEN_SETTINGS), "OPEN SETTINGS FOLDER", 0, e->hover == Z_BTN + B_OPEN_SETTINGS);
     } else {

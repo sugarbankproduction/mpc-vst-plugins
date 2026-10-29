@@ -76,7 +76,7 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
 ## Performance sets (2026-10-29, offline)
 
 - 128 sets of 64 patches each, banks A-H x numbers 1-8 (a factory preset or a user patch in each).
-- **SET** (the current set): the bank buttons A-H show that bank's eight patches below (bank preview: nothing loads; a
+- **SET** (the current set): the bank buttons A-H show that bank's eight patches below (bank preview: nothing loads; SHOW BANK PREVIEW off on the SETTINGS page shows only the numbers; a
   dark letter is an empty bank). Click a number to load its patch (the number lights); **hold it 0.6 s to put the
   current patch there** (a sound that isn't saved must be saved first; an edited patch is assigned as saved). ASSIGN and
   CLEAR act on the selected number; `<` `>` step through the sets.
