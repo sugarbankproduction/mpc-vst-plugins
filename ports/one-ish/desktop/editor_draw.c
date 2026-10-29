@@ -24,7 +24,7 @@ static const char *help_for(int i) {
         {"_via_amt", "Via amount: how much the via source scales this row (100% = fully; minus turns it upside down)."},
         {"_xf_amt", "Transform amount: how strongly the transform reshapes the source (0% = not at all)."},
         {"_xf", "Transform: reshapes the source before it moves the destination. Limit Low/High clip one side; Squared and Cubed bend it into a curve."},
-        {"_amt", "Mod amount: how far and which way (drag left/right; minus turns the source upside down). Double-click resets to 0."},
+        {"_amt", "Mod amount: how far and which way (drag left/right; minus turns the source upside down). The middle is 0 (shortcut: double-click)."},
         {"_via", "Mod via: scales this row by a second source. LFO 1 -> Pitch via Mod Wheel = vibrato that the wheel brings in."},
         {"_svf", "Sends this mixer channel to the state-variable filter. With the Ladder button too it feeds both; with neither it is silent."},
         {"_lad", "Sends this mixer channel to the ladder filter. With the SVF button too it feeds both; with neither it is silent."},
@@ -362,7 +362,7 @@ static const char *zone_help(ed_t *e, int z) {
                                 "(steps, hits, rotation), probability, the Turing melody, KEY and SCALE. Off: they stay.";
     case Z_RND_ALSO + 2: return "SEQUENCER (lit): RANDOMISE and MUTATE also set the sequencer's settings (on, division, length, "
                                 "swing, trigger and transpose by the keys if it has notes) and its modulation lanes. The "
-                                "steps' notes stay. Ctrl+Z takes the lanes back too; the randomiser's UNDO only the settings.";
+                                "steps' notes stay. The console's UNDO takes the lanes back too; the randomiser's UNDO only the settings.";
     case Z_RND_UNDO: return "UNDO: back to the sound before (the last 32 are kept, your own edits in between too).";
     case Z_RND_REDO: return "REDO: forward again after UNDO.";
     case Z_RND_ALL: return "ALL 3 SYNTHS: lit, RANDOMISE and MUTATE give all three Synths a new sound (each its own; ON, "

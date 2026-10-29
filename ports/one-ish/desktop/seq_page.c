@@ -711,7 +711,7 @@ static void gen_run(ed_t *e, int reroll) {
     lib_touch(e, reroll ? "Re-roll" : "Generate");
     seq_send(e, "load %s", t);
     lib_hold(e, -1);
-    say(e, "Synth %d: a %s pattern in %s %s, %d of %d steps playing (seed %u). RE-ROLL for another; Ctrl+Z undoes it.",
+    say(e, "Synth %d: a %s pattern in %s %s, %d of %d steps playing (seed %u). RE-ROLL for another; UNDO undoes it.",
         e->focus + 1, GEN_STYLES[o.style], gen_key_name(e), gen_scale_name(e), played, o.len, (unsigned)*seed);
 }
 /* the randomiser's SEQUENCER tick (2026-10-29): RANDOMISE writes a new pattern into q (random generator options, wider
@@ -1303,8 +1303,8 @@ const char *seq_zone_help(ed_t *e, int z) {
         return GF[z - Z_GEN_FIELD];
     }
     if (z == Z_GEN_GO) return "GENERATE: replaces the sequence of the Synth in focus with a new one from these options and "
-                              "the seed shown (the first time: a new seed). Ctrl+Z takes it back.";
-    if (z == Z_GEN_REROLL) return "RE-ROLL: the same options with a new seed: another pattern. Ctrl+Z takes it back.";
+                              "the seed shown (the first time: a new seed). The console's UNDO takes it back.";
+    if (z == Z_GEN_REROLL) return "RE-ROLL: the same options with a new seed: another pattern. UNDO takes it back.";
     if (z >= Z_STEPNUM && z < Z_STEPNUM + SQ_PAGE) return e->sq.range_arm
         ? "Step number: click to end DUP's range here (RANGE is waiting for it)."
         : "Step number: click to select the step. RANGE (top left) then a click marks the end of the steps DUP copies; "
@@ -1312,14 +1312,15 @@ const char *seq_zone_help(ed_t *e, int z) {
     if (z >= Z_LANE && z < Z_LANE + ROWS) return "A lane: click to select it. Each note lane holds one note per step; a chord "
                                                  "takes several lanes.";
     if (z >= Z_CELL && z < Z_CELL + SQ_PAGE * ROWS) return e->sq.view
-        ? "Click or drag up/down across the row to set each step's offset (middle = 0). Right-click removes one. Pick the "
+        ? "Click or drag up/down across the row to set each step's offset (middle = 0); DELETE removes the selected one "
+          "(shortcut: right-click). Pick the "
           "lane's DEST first."
         : "Click to select, click an empty cell again for a new note; drag a note up/down for velocity, sideways for gate; "
           "the NOTE field (or the wheel) changes its note; DELETE removes it. With REC lit, play the keys. (Shortcuts: "
           "double-click, right-click.)";
     if (z >= Z_FIELD && z < Z_FIELD + NFIELD) {
         static const char *const NF[NFIELD] = {
-            "NOTE of the selected step and lane: drag up/down or scroll (SHIFT: octaves); right-click deletes it. On an empty "
+            "NOTE of the selected step and lane: drag up/down or scroll (SHIFT: octaves); DELETE removes it. On an empty "
             "cell this makes a new note.",
             "VELOCITY of the selected note (1-127): drag or scroll.",
             "GATE: how long the note sounds, as a part of its step (1-100%). The next new note gets the last one set.",

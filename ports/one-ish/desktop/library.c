@@ -2006,7 +2006,8 @@ const char *lib_zone_help(int z) {
             "NOTES: change the selected snapshot's note.", "DELETE: removes the selected snapshot (asks first).",
             "SAVE OVER: loads the selected snapshot and saves it over the patch it was taken of.",
             "SAVE NEW: loads the selected snapshot and saves it as a new patch (asks for a name).",
-            "UNDO: the last edit undone (Ctrl+Z).", "REDO: the last undo done again (Ctrl+Y)."};
+            "UNDO: the last edit undone (as the console's UNDO, or Ctrl+Z).",
+            "REDO: the last undo done again (as the console's REDO, or Ctrl+Y)."};
         return H[z - Z_SNAP_ACT];
     }
     if (z >= Z_TAG_ACT && z < Z_TAG_ACT + NTAG_ACT) {

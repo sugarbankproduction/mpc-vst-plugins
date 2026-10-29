@@ -2666,7 +2666,36 @@ static void oct_panic_test(AEffect *fx, HWND child, float s) {
     check(off == 16, what);
 }
 
+/* every console button and part of the controller explains itself on the help line (not the page's general text) */
+static void zone_help_test(AEffect *fx, HWND child, float s) {
+    static const struct { const short *z; const char *name; } Z[] = {
+        {ZONE_TAB_MATRIX, "MATRIX"}, {ZONE_TAB_MORE, "MORE"}, {ZONE_TAB_ANALOG, "ANALOG"}, {ZONE_TAB_RANDOM, "RANDOM"},
+        {ZONE_TAB_SEQ, "SEQ"}, {ZONE_TAB_SETUP, "SETUP"}, {ZONE_TAB_SETTINGS, "SETTINGS"}, {ZONE_PREV, "PREV"},
+        {ZONE_NEXT, "NEXT"}, {ZONE_ENCODER, "PRESET"}, {ZONE_TAB_GEN, "GENERATIVE"}, {ZONE_GEN_OFF, "GEN OFF"},
+        {ZONE_TEMPO, "TEMPO"}, {ZONE_TEMPO_HOST, "HOST"}, {ZONE_TEMPO_OWN, "OWN"}, {ZONE_TOGETHER, "TOGETHER"},
+        {ZONE_UNDO, "UNDO"}, {ZONE_REDO, "REDO"}, {ZONE_OCT_DOWN, "OCTAVE"}, {ZONE_OCT_LEDS, "octave LEDs"},
+        {ZONE_PANIC, "PANIC"}, {ZONE_PITCH, "PITCH"}, {ZONE_MODW, "MOD"}, {ZONE_PAD, "X/Y PAD"}, {ZONE_KEYS, "keyboard"},
+        {ZONE_RIBBON, "RIBBON"}, {ZONE_QM_HANDS, "the controller's DEST"}};
+    char what[300], bad[600] = "";
+    int n = 0;
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
+        if (Z[k].z[2] <= 0) continue;
+        hover_zone(child, s, Z[k].z);
+        help_fresh(fx);
+        if (!hbuf[0] || !strncmp(hbuf, "Each row: SOURCE", 16)) {   /* (the MATRIX page's general text: none of its own) */
+            n++;
+            snprintf(bad + strlen(bad), sizeof bad - strlen(bad), "%s%s", n > 1 ? ", " : "", Z[k].name);
+        }
+    }
+    hover_at(child, s, 0, 0);
+    snprintf(what, sizeof what, "every console button and controller part has help of its own (%d without: %s)", n,
+             n ? bad : "none");
+    check(n == 0, what);
+}
+
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    zone_help_test(fx, child, s);
     oct_panic_test(fx, child, s);
     together_test(fx, child, s, bmp, w, h);
     undo_buttons_test(fx, child, s);

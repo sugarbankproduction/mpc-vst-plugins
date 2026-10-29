@@ -450,7 +450,7 @@ int qm_press(ed_t *e, int i, int x, int y) {
         if (i >= 0 && i < NPARAMS) {
             if (connect(e, i, y)) return 1;
             if (e->hit_screen) return 0;   /* (the matrix's own cells, a page's other items: as always) */
-            say(e, "%s has no matrix destination: %s can't move it. Pick another knob, or Esc when done.",
+            say(e, "%s has no matrix destination: %s can't move it. Pick another knob, or DONE when finished.",
                 PARAMS[fp(e, i)].name, src_name(e->qm.src));
             return 1;
         }
@@ -481,7 +481,7 @@ void qm_release(ed_t *e) {
         if (e->qm.row[c] >= 0) edit_begin(e, cell(e->qm.row[c], MX_AMT, c), 1);
     int m = e->qm.row[e->focus];
     if (m >= 0 && e->qm.src)
-        say(e, "%s > %s: %+.0f%% (row %d). Click the next knob, or Esc when done.", src_name(opt_at(e, cell(m, MX_SRC, e->focus))),
+        say(e, "%s > %s: %+.0f%% (row %d). Click the next knob, or DONE when finished.", src_name(opt_at(e, cell(m, MX_SRC, e->focus))),
             dst_name(e->qm.dst), real_at(e, cell(m, MX_AMT, e->focus)), m + 1);
     else if (m >= 0)
         say(e, "%s > %s: %+.0f%% (row %d).", src_name(opt_at(e, cell(m, MX_SRC, e->focus))), dst_name(e->qm.dst),
