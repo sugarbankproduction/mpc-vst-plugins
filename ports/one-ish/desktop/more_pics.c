@@ -319,10 +319,24 @@ static void pic_phys(HDC dc, ed_t *e, RECT a) {
         gfx_line(x0 + g * side, y0, x0 + g * side, y0 + side, 1.0f, C_GRID);
         gfx_line(x0, y0 + g * side, x0 + side, y0 + g * side, 1.0f, C_GRID);
     }
-    gfx_frame(x0, y0, side, side, 1.0f, C_RULE);
     static const float W[4][4] = {{0, 1, 1, 1}, {0, 0, 1, 0}, {0, 0, 0, 1}, {1, 0, 1, 1}};   /* floor, ceiling, left, right */
+    static const char *const WALL[4] = {"floor", "ceil", "left", "right"};
+    int mode[4];
+    for (int k = 0; k < 4; k++) {   /* (2026-10-30) each wall: PLAYS a rule, SILENT a dim one, OPEN dashed (a gap) */
+        mode[k] = opt(e, ix("phys_", WALL[k]));
+        float ax = x0 + W[k][0] * side, ay = y0 + W[k][1] * side, bx = x0 + W[k][2] * side, by = y0 + W[k][3] * side;
+        if (mode[k] == PHW_OPEN) {
+            float len = side, dx = (bx - ax) / len, dy = (by - ay) / len;
+            for (float d = 0.0f; d < len; d += 6.0f * L.s) {
+                float d1 = fminf(d + 2.5f * L.s, len);
+                gfx_line(ax + dx * d, ay + dy * d, ax + dx * d1, ay + dy * d1, 1.0f, C_LIT);
+            }
+        } else {
+            gfx_line(ax, ay, bx, by, mode[k] == PHW_SILENT ? 1.0f : 1.5f * L.s, mode[k] == PHW_SILENT ? C_RULE : C_LIT);
+        }
+    }
     for (int k = 0; k < 4; k++)
-        if (wall >> k & 1)
+        if (wall >> k & 1 && mode[k] == PHW_PLAY)
             gfx_line(x0 + W[k][0] * side, y0 + W[k][1] * side, x0 + W[k][2] * side, y0 + W[k][3] * side, 2.5f * L.s, C_TRACE);
     if (line) {
         float ly = y0 + (1.0f - PH_LINE_Y) * side;
@@ -348,7 +362,10 @@ static void pic_phys(HDC dc, ed_t *e, RECT a) {
     txt(dc, lr, t, T_LCD, DT_LEFT | DT_VCENTER);
     OffsetRect(&lr, 0, sc(15));
     if (balls) {
-        snprintf(t, sizeof t, "%d ball%s: walls play the key", nb, nb == 1 ? "" : "s");
+        int plays = 0, open = 0;
+        for (int k = 0; k < 4; k++) { plays += mode[k] == PHW_PLAY; open += mode[k] == PHW_OPEN; }
+        snprintf(t, sizeof t, "%d ball%s: %d wall%s play%s, %d open", nb, nb == 1 ? "" : "s", plays,
+                 plays == 1 ? "" : "s", plays == 1 ? "s" : "", open);
         txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
         OffsetRect(&lr, 0, sc(15));
     }
@@ -357,8 +374,10 @@ static void pic_phys(HDC dc, ed_t *e, RECT a) {
         txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
         OffsetRect(&lr, 0, sc(15));
     }
-    snprintf(t, sizeof t, "Key %s %s, %s", opt_name(e, ix("key_", "root")), opt_name(e, ix("key_", "scale")),
-             opt(e, ix("phys_", "keys")) ? "from the held keys" : "free");
+    static const char *const KEYS[] = {"free", "from the held keys", "keys launch", "keys emit"};
+    int km = opt(e, ix("phys_", "keys")) & 3;
+    snprintf(t, sizeof t, "Key %s %s, %s%s", opt_name(e, ix("key_", "root")), opt_name(e, ix("key_", "scale")), KEYS[km],
+             km == 0 && opt(e, ix("phys_", "follow_oct")) ? " (octave follows)" : "");
     txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
 }
 

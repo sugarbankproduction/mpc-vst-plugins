@@ -322,6 +322,20 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      1.0 us (32 particles colliding); the engine with 4 held voices 24.8 us, plus 8 balls and 32 particles playing into
      the voices 28.1 us. Off: no work at all. Left: the MPC's 8 KB chunk overflows in the every-param-changed test (8424
      bytes, the lead's call); a panel button for the pages; an optional modulation output of the particles.
+     Extended 2026-10-30 (offline and the desktop window; `test/physgen_check.c` physgen2_checks, load_test): each
+     wall (FLOOR, CEILING, LEFT, RIGHT) PLAYS (as before), is SILENT (bounces, no note) or OPEN (a ball leaves and a
+     new one comes in; particles leave), drawn bright / dim / dashed in the box. PHYS KEYS adds KEY LAUNCH (each key
+     throws in a ball, BALLS at most, oldest replaced, and a burst of 3-12 particles by velocity) and KEY EMIT (a ball
+     per key held; particles stream while keys are held at RATE x velocity / 64); each ball and particle plays from its
+     own key, in the KEY and SCALE. FOLLOW OCTAVE: with FREE keys LOW OCTAVE follows the window's keyboard octave
+     buttons (the window sends `kboct` through the state, like its sequencer edits; runtime only, never saved). Eight
+     new matrix sources at the end of the list, per Synth, 0..1 and smoothed at control rate: BALL 1 HEIGHT, BALL 1 X,
+     BALLS SPEED, BALL HIT, PARTICLE COUNT, PARTICLE HIT, TURING VALUE, EUCLID GATE; the bipolar flags are now 64 bits
+     (an assert and a polarity check). 5 new `phys_*` params per Synth. Old sounds unchanged (golden check). CPU on the
+     PC per 128-frame block: the world alone 0.04 us (8 balls), 1.0 us (32 particles); the engine with 4 held voices
+     24.9-25.2 us, plus 8 balls and 32 particles 28.3-29.1 us (before: 24.8 / 28.1, the same within noise); with a
+     silent floor, an open wall and 3 slots from the new sources 35.6-37.3 us, against 36.3-44.3 us for the same 3
+     slots from LFO 1 / Mod Env / Velocity: the new sources cost nothing beyond an ordinary slot.
   22. Quick assign: modulation from the front panel (audit package 6, owner's request). Done 2026-10-30 (the desktop
      window; `desktop/quickmod.c`, load_test): pick a source with the DEST button in the title strip of LFO 1-4, the
      three envelopes or NOISE (Noise EG), or Alt-click / right-click its part of the panel: NOISE (Noise EG, Random,

@@ -29,8 +29,14 @@ enum {
     /* (2026-10-30) RAIN AND RIPPLES and MARKOV MELODY (src/gens_b_run.h gb_sources), all 0..1: a landing drop's pulse,
      * the rings' energy, a pulse at each Markov note, the Markov note's height in its range */
     MS_RAIN_DROP, MS_RIPPLE, MS_MK_STEP, MS_MK_HEIGHT,
+    /* ---- (2026-10-30) the generators as sources, per Synth, all 0..1 (src/physgen_run.h ph_mod_step): the first
+     * ball's height and place across, the balls' average speed, a pulse at every ball hit (silent walls too), how full
+     * the particle pool is, a pulse at every particle note, the Turing machine's last value, a pulse at each Euclid hit.
+     * Further generators append their own block after this one. ---- */
+    MS_BALL_Y, MS_BALL_X, MS_BALL_SPEED, MS_BALL_HIT, MS_PART_COUNT, MS_PART_HIT, MS_TURING, MS_EUCLID,
     MS_COUNT
 };
+_Static_assert(MS_COUNT <= 64, "the bipolar flags (engine.c s->bipolar, mod_eval_list) hold one bit per source in 64");
 
 enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };   /* transforms, params.json order */
 
@@ -133,10 +139,10 @@ static inline int mod_active(const float *slots, const float *extra, const float
 
 /* slots: MOD_SLOTS x (source, destination, amount, via) as the param values; extra: MOD_SLOTS x (via amount,
  * transform, transform amount); list / nlist: the slots to evaluate (mod_active); src[MS_COUNT] with src[MS_OFF]
- * unused; bipolar: bit s set when source s is bipolar. dst[MD_COUNT] gets each destination's summed modulation, -1..1
+ * unused; bipolar: bit s set when source s is bipolar (64 bits: 2026-10-30, past 32 sources). dst[MD_COUNT] gets each destination's summed modulation, -1..1
  * per full-amount slot; only dst[0 .. nd - 1] are cleared first (the listed slots reach no destination past them). */
 static inline void mod_eval_list(const float *slots, const float *extra, const uint8_t *list, int nlist, const float *src,
-                                 uint32_t bipolar, float *dst, int nd) {
+                                 uint64_t bipolar, float *dst, int nd) {
     for (int d = 0; d < nd; d++) dst[d] = 0.0f;
     for (int k = 0; k < nlist; k++) {
         int i = list[k];
@@ -158,7 +164,7 @@ static inline void mod_eval_list(const float *slots, const float *extra, const u
 }
 
 /* every slot, for callers without a list */
-static inline void mod_eval(const float *slots, const float *extra, const float *src, uint32_t bipolar, float *dst) {
+static inline void mod_eval(const float *slots, const float *extra, const float *src, uint64_t bipolar, float *dst) {
     uint8_t list[MOD_SLOTS];
     mod_eval_list(slots, extra, list, mod_active(slots, extra, NULL, list), src, bipolar, dst, MD_COUNT);
 }

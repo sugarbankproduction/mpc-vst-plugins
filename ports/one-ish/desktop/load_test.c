@@ -1181,6 +1181,23 @@ static void phys_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
         check(opened > 500 && moved > 20, what);
         if (bmp) shot(child, w, h, bmp, P[k].suffix);
     }
+    /* (2026-10-30) the walls (PLAYS, SILENT, OPEN), FOLLOW OCTAVE and the keys' new ways on both pages; the box with
+     * an open floor (dashed) and a silent left wall (dim), keys launching */
+    int keys_n = -1;
+    for (int i = 0; i < NPARAMS; i++)
+        if (!strcmp(PARAMS[i].key, "phys_keys")) keys_n = PARAMS[i].nopts;
+    check(keys_n == 4 && page_has(fx, PG_BALLS, "phys_floor") && page_has(fx, PG_BALLS, "phys_right") &&
+          page_has(fx, PG_BALLS, "phys_follow_oct") && page_has(fx, PG_PARTICLES, "phys_ceil") &&
+          page_has(fx, PG_PARTICLES, "phys_left") && page_has(fx, PG_PARTICLES, "phys_follow_oct"),
+          "the walls, FOLLOW OCTAVE and KEY LAUNCH / KEY EMIT are on the BOUNCING BALLS and PARTICLES pages");
+    set_option(fx, "phys_floor", "Open");
+    set_option(fx, "phys_left", "Silent");
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    open_page(child, s, PG_BALLS);
+    play(fx, 30, 512);
+    if (bmp) shot(child, w, h, bmp, "_more_walls");
+    set_option(fx, "phys_floor", "Plays");
+    set_option(fx, "phys_left", "Plays");
     set_option(fx, "phys_balls_on", "Off");
     set_option(fx, "phys_parts_on", "Off");
     click_zone(child, s, ZONE_TAB_MATRIX);

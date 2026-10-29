@@ -251,6 +251,8 @@ enum {
     /* (2026-10-30) the window's LINKs (desktop/hub.c): shared, stored only; the engine does nothing with them */
     P_LINK_KEY, P_LINK_SCALE, P_LINK_ARP, P_LINK_SEQ, P_LINK_LFO1, P_LINK_LFO2, P_LINK_LFO3, P_LINK_LFO4, P_LINK_PHYS,
     P_LINK_SEND, P_LINK_CUT,
+    /* (2026-10-30) the balls' walls (PLAYS, SILENT, OPEN) and FOLLOW OCTAVE (src/physgen_run.h) */
+    P_PH_FLOOR, P_PH_CEIL, P_PH_LEFT, P_PH_RIGHT, P_PH_FOLLOW_OCT,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -393,6 +395,7 @@ static const char *const KEYS[P_COUNT] = {
     "mkv_range", "mkv_keys", "mkv_max",
     "link_key", "link_scale", "link_arp", "link_seq", "link_lfo1", "link_lfo2", "link_lfo3", "link_lfo4", "link_phys",
     "link_send", "link_cut",
+    "phys_floor", "phys_ceil", "phys_left", "phys_right", "phys_follow_oct",   /* (2026-10-30) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -577,7 +580,7 @@ typedef struct {
     float lfo_coef[NLFO];    /* each LFO's smoothing coefficient per control step (1: none) */
     float lfo_fade[NLFO][3]; /* each LFO's delay, fade in and fade out, samples (0: off) */
     float lfo_coef1[NLFO];   /* each LFO's smoothing coefficient per sample (the High range's path; 1: none) */
-    uint32_t bipolar;        /* bit s: matrix source s is bipolar (for the limit transforms) */
+    uint64_t bipolar;        /* bit s: matrix source s is bipolar (for the limit transforms; 64 bits: 2026-10-30) */
     uint8_t mod_list[MOD_SLOTS];   /* the matrix slots in use, and how many */
     int mod_n;
     int mod_env, mod_lfo;    /* a slot in use goes to an envelope's / an LFO's settings */
@@ -832,9 +835,10 @@ static void positions_load(one_t *s) {
 
 /* the LFOs' settings that don't change per voice */
 static void apply_lfos(one_t *s) {
-    s->bipolar = 1u << MS_KEY | 1u << MS_RAND | 1u << MS_BEND
-                 | (uint32_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON
-                 | (uint32_t)pad_bipolar(s) * (1u << MS_PAD_X | 1u << MS_PAD_Y);
+    /* (2026-10-30: 64 bits, one per source; every source past these is unipolar, 0..1) */
+    s->bipolar = 1ull << MS_KEY | 1ull << MS_RAND | 1ull << MS_BEND
+                 | (uint64_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON
+                 | (uint64_t)pad_bipolar(s) * (1ull << MS_PAD_X | 1ull << MS_PAD_Y);
     static const int src[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
     for (int n = 0; n < NLFO; n++) {
         const float *x = lfo_x(s, n);
@@ -844,7 +848,7 @@ static void apply_lfos(one_t *s) {
         s->lfo_fade[n][1] = lfo_samples(x[L_FADE_IN]);
         s->lfo_fade[n][2] = lfo_samples(x[L_FADE_OUT]);
         s->lfo_hz[n] = lfo_hz(s, n);
-        if ((int)x[L_POLARITY] == POL_BIPOLAR) s->bipolar |= 1u << src[n];
+        if ((int)x[L_POLARITY] == POL_BIPOLAR) s->bipolar |= 1ull << src[n];
         /* the High range's per-sample path: its smoothing per sample (2026-10-29) */
         s->lfo_coef1[n] = sm > 0.0f ? 1.0f - expf(-6.2831853f * LFO_SMOOTH_HZ * powf(10.0f, -4.0f * sm) / SR) : 1.0f;
     }
@@ -1669,7 +1673,7 @@ static const int CHANGED_SLOT[CHORD_MAX + 3] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CH
 
 static int route_of(const one_t *s) {
     if (s->val[P_CHORD_LEARN] > 0.5f) return ROUTE_LEARN;
-    if (s->seq_on || s->ph.held || s->gb.rn_held || s->gb.mk_held) return ROUTE_SEQ;   /* (the balls' HELD KEYS take the keys the same way) */
+    if (s->seq_on || s->ph.takes || s->gb.rn_held || s->gb.mk_held) return ROUTE_SEQ;   /* (the balls' HELD KEYS, LAUNCH, EMIT and the rain's / Markov's HELD KEYS take the keys the same way) */
     return s->val[P_CHORD_ON] > 0.5f ? ROUTE_CHORD : ROUTE_PLAIN;
 }
 
@@ -1883,6 +1887,7 @@ static void fire_step(one_t *s, int64_t k) {
     const float *p = s->val;
     int64_t e = k - s->k0;
     if (p[P_GEN_EUCLID] > 0.5f && !s->eu[(e % s->eu_n + s->eu_n) % s->eu_n]) return;
+    if (p[P_GEN_EUCLID] > 0.5f) s->ph.m_eu = 1.0f;   /* (2026-10-30) the matrix's EUCLID GATE: a pulse at each hit */
     float prob = p[P_GEN_PROB] * 0.01f;
     if (prob < 1.0f && seq_rand01(&s->grng) >= prob) return;
     double t0 = step_t(s, k), t1 = step_t(s, k + 1);
@@ -1890,6 +1895,7 @@ static void fire_step(one_t *s, int64_t k) {
     if (off <= s->now) off = s->now + 1;
     if (p[P_GEN_TM] > 0.5f) {
         int v = tm_step(s->tm_reg, (int)roundf(p[P_GEN_TM_LEN]), &s->tm_pos, p[P_GEN_TM_CHANGE] * 0.01f, &s->grng);
+        s->ph.m_tm = v * (1.0f / 255.0f);   /* (2026-10-30) the matrix's TURING VALUE */
         play_step(s, tm_note(v, (int)p[P_GEN_SCALE], (int)p[P_GEN_RANGE] + 1, &s->keys), s->keys.vel[s->keys.n - 1], off);
     } else if (p[P_ARP_ON] > 0.5f) {
         int vel, note = arp_next(s, &vel);
@@ -1964,7 +1970,7 @@ static void seq_unlatch(one_t *s) {   /* latch or the pedal let go: the keys no 
 #include "gens_b_run.h"    /* (2026-10-30) RAIN AND RIPPLES, MARKOV MELODY: part of this file */
 
 static void key_on(one_t *s, int note, int vel) {
-    ph_key_on(s, note);   /* KEY RESTARTS: the balls and particles from their start */
+    ph_key_on(s, note, vel);   /* KEY RESTARTS, KEY LAUNCH, KEY EMIT (src/physgen_run.h) */
     gb_key_on(s, note, vel);   /* the Markov melody learns the keys played */
     if (sq_key_on(s, note, vel)) return;   /* NOTE TRIG / TRANSPOSE keys move the sequencer instead of sounding */
     switch (s->route) {
@@ -2268,6 +2274,12 @@ static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "markov_view")) return gb_view_text(s, 1, buf, n);   /* ... and the Markov melody's */
     if (!strcmp(key, "bpm")) return snprintf(buf, n, "%g", s->bpm);   /* (a test readout: "s2_bpm", 2026-10-30) */
     if (!strcmp(key, "phys_view")) return ph_view_text(s, buf, n);   /* the balls and particles (the window's view) */   /* the sequencer's readout (a "display": "string" param) */
+    if (!strcmp(key, "mod_bipolar")) return snprintf(buf, n, "%llx", (unsigned long long)s->bipolar);   /* (2026-10-30)
+                                                                * a test readout: which matrix sources are bipolar */
+    if (!strcmp(key, "gen_src")) {   /* (2026-10-30) a test readout: the generators' eight matrix sources now */
+        const float *m = s->ph.m_out;
+        return snprintf(buf, n, "%.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7]);
+    }
     if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
         int used = 0;
         buf[0] = 0;
@@ -2578,6 +2590,7 @@ static void control_voice(one_t *s, voice_t *v) {
     src[MS_PAD_X] = pad_src(s, s->pad_x);
     src[MS_PAD_Y] = pad_src(s, s->pad_y);
     src[MS_PAD_GATE] = s->pad_gate;
+    ph_mod_src(s, src);   /* (2026-10-30) the generators' sources */
     gb_sources(s, src);   /* (2026-10-30) rain and ripples, the Markov melody */
     /* the voice's slots (none reaches an effect: those are the effect pass's); the MACRO destinations sit past them */
     memset(dm + MD_MAC_HARM, 0, sizeof(float) * (MD_COUNT - MD_MAC_HARM));
@@ -2970,6 +2983,7 @@ static int fx_mod_step(one_t *s, uint64_t *dirty) {
         src[MS_PAD_X] = pad_src(s, s->pad_x);
         src[MS_PAD_Y] = pad_src(s, s->pad_y);
         src[MS_PAD_GATE] = s->pad_gate;
+        ph_mod_src(s, src);   /* (2026-10-30) the generators' sources */
         gb_sources(s, src);   /* (2026-10-30) */
         mod_eval_list(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->fx_list, s->fx_n, src, s->bipolar, dm, 0);
         int rd = (int)s->val[P_RIBBON_DST];
@@ -3259,7 +3273,7 @@ static void synth_piece(one_t *s, int n, float *l, float *r) {
     float acc[128], xl[128], xr[128];   /* the voices: mono sum, panned voices' offsets */
     fx_params_t *fxp = &s->fxp;
     int first = s->phase == 0;
-    if (first) { control_lfos(s); ribbon_step(s); }
+    if (first) { control_lfos(s); ribbon_step(s); ph_mod_step(s); }   /* (2026-10-30: the generators' sources) */
     memset(acc, 0, sizeof(float) * n);
     memset(xl, 0, sizeof(float) * n);
     memset(xr, 0, sizeof(float) * n);

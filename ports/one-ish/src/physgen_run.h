@@ -18,7 +18,21 @@
  * moves every PH_STEP samples, only while it is on; positions are never saved (a sound starts them from the start).
  * The window's view ("phys_view"): written every few steps by the audio thread into a small fixed copy guarded by a
  * counter (a seqlock: odd while it is being written), read by the window without any lock. Nothing here allocates,
- * locks or touches a file. */
+ * locks or touches a file.
+ * (2026-10-30) THE WALLS: each of FLOOR, CEILING, LEFT and RIGHT PLAYS (as before), is SILENT (balls bounce off it
+ * without a note) or OPEN (a ball leaves and another is thrown in; with KEY LAUNCH it is gone; particles leave).
+ * PHYS KEYS adds KEY LAUNCH (each key throws in a new ball, at most BALLS at once, the oldest replaced, and a burst of
+ * 3-12 particles by velocity; balls that rest or leave are gone) and KEY EMIT (a ball for each key held, BALLS at
+ * most, and particles streaming from the emitter while keys are held, at PARTICLE RATE times velocity / 64): either
+ * way each ball and particle plays from its own key (in the KEY and SCALE), and the keys go to the generator as with
+ * HELD KEYS. FOLLOW OCTAVE: with FREE keys, LOW OCTAVE moves with the window's keyboard octave buttons (the window
+ * sends "kboct" through the state: src/synths.h; runtime only, never saved).
+ * THE MATRIX SOURCES (modmatrix.h MS_BALL_Y .. MS_EUCLID, 0..1 each, per Synth): the world's values are taken at each
+ * step (BALL 1 HEIGHT and X: the first ball in the box; BALLS SPEED: their average speed against the box's full speed;
+ * PARTICLE COUNT: the pool's fill), the pulses set at each hit (BALL HIT: every ball hit, silent walls too; PARTICLE
+ * HIT: every particle hit, played or over MAX NOTES/S) and by the step clock (EUCLID GATE at each Euclid hit, TURING
+ * VALUE the Turing machine's last value: engine.c fire_step); ph_mod_step smooths them at control rate (8 ms; the
+ * pulses rise in about 2 ms and fall over 120 ms; the Turing value glides 5 ms), so nothing zippers. */
 
 #define PH_BURST 2.0f      /* MAX NOTES/S: up to two notes at once, then that many a second */
 static const float PH_SYNC_BEATS[] = {0.0f, 1.0f, 0.5f, 0.25f, 0.125f, 1.0f / 3, 1.0f / 6};   /* "phys_sync" */
@@ -40,6 +54,8 @@ static void ph_restart_run(one_t *s, int key) {
     r->tokens = PH_BURST;
     r->ticks = 0;
     r->t_next = s->now;
+    r->launch = 0;
+    memset(r->kemit, 0, sizeof r->kemit);
 }
 
 /* the settings (after any param change): the world's units, on and off */
@@ -64,27 +80,87 @@ static void ph_apply(one_t *s) {
     c->life = ph_life(p);
     c->attract = 12.0f * clampf(p[P_PH_ATTRACT] * 0.01f, 0.0f, 1.0f);
     int on = p[P_SYN_ON] > 0.5f ? c->balls | c->parts << 1 : 0;
-    r->held = on && p[P_PH_KEYS] > 0.5f;
-    if (on && !r->on) ph_restart_run(s, -1);   /* switched on: from the start */
-    if (!on) r->nq = 0;                        /* off: nothing more plays */
+    /* (2026-10-30) the walls; the keys' way (KEY LAUNCH and EMIT: only the balls the keys put in, and no particles
+     * but theirs) */
+    for (int w = 0; w < 4; w++) c->wall[w] = (uint8_t)clampf(p[P_PH_FLOOR + w], PHW_PLAY, PHW_OPEN);
+    int mode = (int)clampf(p[P_PH_KEYS], PHK_FREE, PHK_EMIT), mode_was = r->mode;
+    r->mode = mode;
+    c->keyed = mode >= PHK_LAUNCH;
+    c->refill = mode != PHK_LAUNCH;
+    r->rate = c->rate;
+    if (c->keyed) c->rate = 0.0f;
+    r->held = on && mode == PHK_HELD;
+    r->takes = on && mode != PHK_FREE;
+    if (on && (!r->on || mode != mode_was)) ph_restart_run(s, -1);   /* switched on (or another way): from the start */
+    if (!on) {   /* off: nothing more plays; the sources it gives go to 0 */
+        r->nq = 0;
+        memset(r->m_raw, 0, sizeof r->m_raw);
+    }
     r->on = on;
 }
 
-/* KEY RESTARTS */
-static void ph_key_on(one_t *s, int note) {
-    if (s->ph.on && s->val[P_PH_RESTART] > 0.5f) ph_restart_run(s, note);
+/* KEY RESTARTS; (2026-10-30) KEY LAUNCH: a new ball (the oldest goes when BALLS are in) and a burst of particles; KEY
+ * EMIT: the key's first particle at once */
+static void ph_key_on(one_t *s, int note, int vel) {
+    ph_run_t *r = &s->ph;
+    if (!r->on) return;
+    if (s->val[P_PH_RESTART] > 0.5f) ph_restart_run(s, note);
+    if (r->mode == PHK_EMIT) r->kemit[note & 127] = 1.0f;
+    if (r->mode != PHK_LAUNCH) return;
+    const ph_cfg_t *c = &r->cfg;
+    if (c->balls) {
+        ph_ball_t *b = &r->w.b[r->launch++ % c->nballs];
+        ph_throw(&r->w, b, c->speed, c->gravity > 0.0f);
+        b->live = 1;
+        b->key = (int16_t)note;
+    }
+    for (int i = 0, n = c->parts ? 3 + 9 * vel / 127 : 0; i < n; i++) ph_emit_key(&r->w, c, note);
 }
 
-/* scale degree d (0: the root at LOW OCTAVE, or at the lowest held key) as a note in the key */
-static int ph_note(const one_t *s, int d) {
+/* (2026-10-30) KEY EMIT, at each step: the balls follow the keys held (one each, BALLS at most; a key let go takes its
+ * ball away) and each key held sends out particles at PARTICLE RATE x velocity / 64 */
+static void ph_keys_emit(one_t *s, float dt) {
+    ph_run_t *r = &s->ph;
+    const ph_cfg_t *c = &r->cfg;
+    const seq_keys_t *k = &s->keys;
+    if (c->balls) {
+        for (int i = 0; i < PH_BALLS; i++)
+            if (r->w.b[i].live && (i >= c->nballs || seq_find(k, r->w.b[i].key) < 0)) r->w.b[i].live = 0;
+        for (int j = 0; j < k->n; j++) {
+            int has = 0, slot = -1;
+            for (int i = 0; i < c->nballs; i++) {
+                if (r->w.b[i].live) has |= r->w.b[i].key == k->note[j];
+                else if (slot < 0) slot = i;
+            }
+            if (has || slot < 0) continue;
+            ph_ball_t *b = &r->w.b[slot];
+            ph_throw(&r->w, b, c->speed, c->gravity > 0.0f);
+            b->live = 1;
+            b->key = k->note[j];
+        }
+    }
+    for (int j = 0; c->parts && j < k->n; j++) {
+        float *o = &r->kemit[k->note[j] & 127];
+        *o += r->rate * k->vel[j] * (1.0f / 64.0f) * dt;
+        while (*o >= 1.0f) { *o -= 1.0f; ph_emit_key(&r->w, c, k->note[j]); }
+    }
+}
+
+/* scale degree d (0: the root at LOW OCTAVE, or at the lowest held key, or at `key`: the ball's or particle's own,
+ * KEY LAUNCH and EMIT; -1 none) as a note in the key */
+static int ph_note(const one_t *s, int d, int key) {
     const float *p = s->val;
     int root = (int)clampf(p[P_KEY_ROOT], 0, 11), sc = ks_clamp_scale((int)p[P_KEY_SCALE]), note;
-    if (s->ph.held && s->keys.n) {
+    if (key >= 0) {
+        note = key + ks_degree(root, sc, 0, d) - root;
+    } else if (s->ph.held && s->keys.n) {
         int low = s->keys.note[0];
         for (int i = 1; i < s->keys.n; i++) if (s->keys.note[i] < low) low = s->keys.note[i];
         note = low + ks_degree(root, sc, 0, d) - root;
     } else {
-        note = ks_degree(root, sc, (int)clampf(p[P_PH_OCT], 0, 5) + 2, d);   /* C1 = 24 (middle C is C4) */
+        int oct = (int)clampf(p[P_PH_OCT], 0, 5) + 2;   /* C1 = 24 (middle C is C4) */
+        if (p[P_PH_FOLLOW_OCT] > 0.5f) oct = (int)clampf((float)(oct + s->ph.kb_oct), 0, 8);   /* (2026-10-30) */
+        note = ks_degree(root, sc, oct, d);
     }
     return ks_quantize(note, root, sc);
 }
@@ -104,7 +180,9 @@ static void ph_hit_note(const one_t *s, const ph_hit_t *h, int *note, int *vel) 
         for (int i = 0; i < size; i++) if (st[i] == 7) f = i;
         d = f + up;
     }
-    *note = ph_note(s, d);
+    int key = -1;   /* (2026-10-30) KEY LAUNCH and EMIT: from the ball's or particle's own key */
+    if (s->ph.cfg.keyed) key = h->kind <= PH_RIGHT ? s->ph.w.b[h->who].key : s->ph.w.p[h->who].key;
+    *note = ph_note(s, d, key);
     const ph_cfg_t *c = &s->ph.cfg;
     float ref = fmaxf(c->speed, sqrtf(2.0f * c->gravity)), t = ref > 0.0f ? fminf(1.0f, h->speed / ref) : 1.0f;
     float dyn = clampf(p[P_PH_DYN] * 0.01f, 0.0f, 1.0f);
@@ -155,11 +233,13 @@ static void ph_view_write(ph_run_t *r) {
     uint32_t v = r->vseq;
     __atomic_store_n(&r->vseq, v + 1, __ATOMIC_RELAXED);
     __atomic_thread_fence(__ATOMIC_RELEASE);
-    int nb = r->cfg.balls ? r->cfg.nballs : 0, np = 0;
-    for (int i = 0; i < nb; i++) {
-        __atomic_store_n(&r->vx[i], (int16_t)(r->w.b[i].x * 1000.0f), __ATOMIC_RELAXED);
-        __atomic_store_n(&r->vy[i], (int16_t)(r->w.b[i].y * 1000.0f), __ATOMIC_RELAXED);
-        __atomic_store_n(&r->vf[i], (uint8_t)(r->flash[i] > 0), __ATOMIC_RELAXED);
+    int nb = 0, np = 0;
+    for (int i = 0; r->cfg.balls && i < r->cfg.nballs; i++) {
+        if (r->cfg.keyed && !r->w.b[i].live) continue;   /* (2026-10-30: KEY LAUNCH and EMIT: the balls in the box) */
+        __atomic_store_n(&r->vx[nb], (int16_t)(clampf(r->w.b[i].x, 0.0f, 1.0f) * 1000.0f), __ATOMIC_RELAXED);
+        __atomic_store_n(&r->vy[nb], (int16_t)(clampf(r->w.b[i].y, 0.0f, 1.0f) * 1000.0f), __ATOMIC_RELAXED);
+        __atomic_store_n(&r->vf[nb], (uint8_t)(r->flash[i] > 0), __ATOMIC_RELAXED);
+        nb++;
     }
     for (int i = 0; r->cfg.parts && i < PH_PARTS; i++) {
         const ph_part_t *p = &r->w.p[i];
@@ -206,6 +286,46 @@ static int ph_view_text(one_t *s, char *buf, int n) {
     return used < n ? used : n - 1;
 }
 
+/* (2026-10-30) the matrix sources as the world has them now (each step): the first ball in the box, the balls'
+ * average speed against the box's full speed (SPEED, or a fall through the whole box), the particle pool's fill */
+static void ph_mod_world(ph_run_t *r) {
+    const ph_cfg_t *c = &r->cfg;
+    float sum = 0.0f, ref = fmaxf(c->speed, sqrtf(2.0f * c->gravity));
+    int nb = 0, np = 0;
+    for (int i = 0; c->balls && i < c->nballs; i++) {
+        const ph_ball_t *b = &r->w.b[i];
+        if (c->keyed && !b->live) continue;
+        if (!nb) { r->m_raw[0] = clampf(b->y, 0.0f, 1.0f); r->m_raw[1] = clampf(b->x, 0.0f, 1.0f); }
+        sum += sqrtf(b->vx * b->vx + b->vy * b->vy);
+        nb++;
+    }
+    if (!nb) r->m_raw[0] = r->m_raw[1] = 0.0f;
+    r->m_raw[2] = nb && ref > 0.0f ? fminf(1.0f, sum / nb / ref) : 0.0f;
+    for (int i = 0; c->parts && i < PH_PARTS; i++) np += r->w.p[i].live;
+    r->m_raw[3] = np * (1.0f / PH_PARTS);
+}
+
+/* (2026-10-30) the matrix sources at each control step (engine.c synth_piece): smoothed, the pulses falling. Whether
+ * the generators are on or not (off they settle at 0); a few multiplies, nothing else */
+#define PHM_SLOW 0.0443f    /* 1 - exp(-CR / 8 ms) */
+#define PHM_FAST 0.1659f    /* ... / 2 ms: the pulses' rise */
+#define PHM_GLIDE 0.0700f   /* ... / 5 ms: the Turing value's glide */
+#define PHM_FALL 0.99698f   /* exp(-CR / 120 ms): the pulses' fall */
+_Static_assert(MS_EUCLID - MS_BALL_Y == 7, "the generators' eight sources, in m_out's order");
+static void ph_mod_step(one_t *s) {
+    ph_run_t *r = &s->ph;
+    const float tgt[8] = {r->m_raw[0], r->m_raw[1], r->m_raw[2], r->m_hb, r->m_raw[3], r->m_hp, r->m_tm, r->m_eu};
+    static const float k[8] = {PHM_SLOW, PHM_SLOW, PHM_SLOW, PHM_FAST, PHM_SLOW, PHM_FAST, PHM_GLIDE, PHM_FAST};
+    for (int i = 0; i < 8; i++) {
+        float y = r->m_out[i] + (tgt[i] - r->m_out[i]) * k[i];
+        r->m_out[i] = fabsf(y) < 1e-6f && tgt[i] == 0.0f ? 0.0f : y;   /* (no denormals on the way to 0) */
+    }
+    r->m_hb = r->m_hb > 1e-4f ? r->m_hb * PHM_FALL : 0.0f;
+    r->m_hp = r->m_hp > 1e-4f ? r->m_hp * PHM_FALL : 0.0f;
+    r->m_eu = r->m_eu > 1e-4f ? r->m_eu * PHM_FALL : 0.0f;
+}
+static void ph_mod_src(const one_t *s, float *src) { memcpy(&src[MS_BALL_Y], s->ph.m_out, sizeof s->ph.m_out); }
+
 /* one step of the world at sample t: its hits become notes (capped, on their samples or the grid) */
 static void ph_tick(one_t *s, int64_t t) {
     ph_run_t *r = &s->ph;
@@ -215,12 +335,16 @@ static void ph_tick(one_t *s, int64_t t) {
     for (int i = 0; i < PH_VIEW; i++) if (r->flash[i]) r->flash[i]--;
     for (int k = 0; k < 5; k++) if (r->wall[k]) r->wall[k]--;
     if (sync) ph_beat(s, t);
+    if (r->mode == PHK_EMIT) ph_keys_emit(s, dt);
     if (!r->held || (s->running && s->keys.n)) {   /* (HELD KEYS with none held: it waits where it is) */
         r->tokens = fminf(r->tokens + clampf(p[P_PH_MAX], 1.0f, 30.0f) * dt, PH_BURST);
         ph_hit_t h[PH_HITS];
         int nh = ph_step(&r->w, &r->cfg, dt, h);
         for (int i = 0; i < nh; i++) {
-            if (r->tokens < 1.0f) break;   /* over MAX NOTES/S: not played */
+            if (h[i].kind <= PH_RIGHT) r->m_hb = 1.0f;   /* (2026-10-30) the matrix's BALL HIT and PARTICLE HIT */
+            else r->m_hp = 1.0f;
+            if (h[i].silent) continue;     /* (2026-10-30) off a SILENT wall: no note */
+            if (r->tokens < 1.0f) continue;   /* over MAX NOTES/S: not played */
             r->tokens -= 1.0f;
             int note, vel;
             ph_hit_note(s, &h[i], &note, &vel);
@@ -230,6 +354,7 @@ static void ph_tick(one_t *s, int64_t t) {
             if (h[i].kind <= PH_LINE) r->wall[h[i].kind] = PH_FLASH;
         }
     }
+    ph_mod_world(r);
     if (++r->ticks % PH_VIEW_EVERY == 0) ph_view_write(r);
 }
 

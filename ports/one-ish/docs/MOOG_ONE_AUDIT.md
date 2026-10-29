@@ -361,6 +361,7 @@ user patch files (2026-10-27, offline).
 | RANDOM (unipolar) | Have | "Random Uni" (0..1, per note) | - | - |
 | RANDOM BIPOLAR | Have | "Random" (-1..1, per note) | - | - |
 | CONSTANT | Have | "Constant" | - | - |
+| (beyond the Moog One) the generators | Have | "Ball 1 Height", "Ball 1 X", "Balls Speed", "Ball Hit", "Particle Count", "Particle Hit", "Turing Value", "Euclid Gate": 0..1 per Synth, smoothed at control rate, at the end of the source and via lists (2026-10-30, offline and the window) | - | none measurable |
 
 ### 15c. Matrix controllers (p75)
 
