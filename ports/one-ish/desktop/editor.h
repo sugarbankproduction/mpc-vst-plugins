@@ -65,6 +65,7 @@ enum { Z_HUB_ON = 670000,        /* + row: a generator's ON (HUB[row]) */
        Z_HUB_OPEN = 670100,      /* + row: its name: its MORE page */
        Z_HUB_ALLOFF = 670200, Z_TAB_GEN, Z_GEN_OFF, Z_TEMPO, Z_TEMPO_HOST, Z_TEMPO_OWN,
        Z_VOL_MASTER,             /* SYNTH OUTPUT's MASTER: its VOLUME knob is master_level while lit */
+       Z_TEMPO_DOWN, Z_TEMPO_UP, /* the TEMPO readout's < and >: 1 BPM (Shift 0.1), OWN */
        Z_HUB_END = 670300 };
 #define TEST_HUB 0x4F314842   /* VENDOR_SPECIFIC index: value = HT_ op (hub.c) */
 enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 1000) */

@@ -19,7 +19,8 @@
  * (shared by the three Synths) and is labelled MASTER; off, the Synth in focus's own VOLUME. A view, never saved.
  *
  * LINK: a shared param per group of settings (gen_layout.py LINK_GROUPS: KEY, SCALE, the arp's and the sequencer's
- * rate, each LFO's rate, the master effect sends, the balls and particles). While it is lit, an edit of one of them from the window goes to all
+ * rate, each LFO's rate, the master effect sends, the balls and particles, and ALL 3 over LINK CUTOFF: the two
+ * cutoffs, the one relative LINK, the other Synths moving by as much as the knob did). While it is lit, an edit of one of them from the window goes to all
  * three Synths at once (editor.c edit_targets): the same host automation and the same undo step as the edit itself.
  * Being params, the LINKs are kept with the sound (projects, patches, presets, undo). */
 #include <math.h>
@@ -107,6 +108,8 @@ RECT hub_rect(int z) {
     else if (z == Z_TEMPO_HOST) r = L.tempo_host;
     else if (z == Z_TEMPO_OWN) r = L.tempo_own;
     else if (z == Z_VOL_MASTER) r = L.vol_master;
+    else if (z == Z_TEMPO_DOWN) { r = L.tempo; r.right = r.left + sc(16); }
+    else if (z == Z_TEMPO_UP) { r = L.tempo; r.left = r.right - sc(16); }
     return r;
 }
 
@@ -133,7 +136,8 @@ int hub_hit(ed_t *e, POINT pt) {   /* the hub page (the screen shows it) */
     return PtInRect(&a, pt) ? Z_HUB_ALLOFF : -1;
 }
 int hub_hit_console(POINT pt) {
-    static const int Z[] = {Z_TAB_GEN, Z_GEN_OFF, Z_TEMPO, Z_TEMPO_HOST, Z_TEMPO_OWN, Z_VOL_MASTER};
+    static const int Z[] = {Z_TAB_GEN, Z_GEN_OFF, Z_TEMPO_DOWN, Z_TEMPO_UP, Z_TEMPO, Z_TEMPO_HOST, Z_TEMPO_OWN,
+                            Z_VOL_MASTER};
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
         RECT r = hub_rect(Z[k]);
         if (PtInRect(&r, pt)) return Z[k];
@@ -231,6 +235,9 @@ int hub_press(ed_t *e, int z) {
         else ed_show(e, SCR_GEN, 0);
     } else if (z == Z_GEN_OFF || z == Z_HUB_ALLOFF) {
         hub_all_off(e);
+    } else if (z == Z_TEMPO_DOWN || z == Z_TEMPO_UP) {   /* the readout's < >: a plain click steps it (and OWN) */
+        settings_tempo_set(e, 1, clamp_bpm(roundf((tempo_now(e) + (z == Z_TEMPO_UP ? 1 : -1) *
+                                                   (GetKeyState(VK_SHIFT) < 0 ? 0.1f : 1.0f)) * 10.0f) / 10.0f), 1);
     } else if (z == Z_VOL_MASTER) {   /* (a view: nothing changes in the sound) */
         e->vol_master = !e->vol_master && master_param() >= 0;
     } else if (z == Z_TEMPO_HOST || z == Z_TEMPO_OWN) {
@@ -259,6 +266,8 @@ const char *hub_zone_help(ed_t *e, int z) {
     if (z == Z_TEMPO) return "TEMPO: what everything synced follows (arp, sequencer, LFOs, synced envelopes, effects, the "
                              "generators). Drag up / down or scroll to set your own (Shift: 0.1 BPM); that switches to "
                              "OWN. The same as the SETTINGS page's TEMPO, kept for every sound.";
+    if (z == Z_TEMPO_DOWN || z == Z_TEMPO_UP) return "< >: the own tempo 1 BPM down / up (Shift: 0.1), and OWN on. "
+                                                     "Or drag the number up / down, or scroll over it.";
     if (z == Z_TEMPO_HOST) return "HOST: follow the host's tempo and song position (SETTINGS: RECEIVE MIDI CLOCK on).";
     if (z == Z_TEMPO_OWN) return "OWN: ignore the host's tempo; everything runs at the TEMPO shown (SETTINGS: RECEIVE MIDI "
                                  "CLOCK off). Kept in the settings, not in the sound.";

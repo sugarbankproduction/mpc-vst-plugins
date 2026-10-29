@@ -325,11 +325,13 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   22. Front-panel conveniences (owner's request). Done 2026-10-30 (offline and the desktop window; `desktop/hub.c`,
      load_test, `test/midi_check.c`): the window is 56 units taller (856) for a third console row and a third line in
      the bottom row. TEMPO on the console: a readout with HOST / OWN that is the SETTINGS page's RECEIVE MIDI CLOCK and
-     TEMPO (one setting, two places); drag or scroll it for an own tempo (Shift 0.1 BPM). Offline: with the host at
-     60 BPM and OWN at 150, the arp, the sequencer and the balls run at 150 and every Synth's synced LFOs, envelopes
-     and effects follow it. LINK buttons (ten shared `link_*` params, saved with the sound, no engine effect): KEY,
-     SCALE, the arp's RATE, the sequencer's RATE, each LFO's RATE, the FX SENDS and the balls / particles; lit, an edit
-     on the Synth in focus goes to all three (host automation, one undo step). GENERATIVE (console button): a hub page
+     TEMPO (one setting, two places); its < > (a click), a drag or the wheel set an own tempo (Shift 0.1 BPM).
+     Offline: with the host at 60 BPM and OWN at 150, the arp, the sequencer and the balls run at 150 and every Synth's
+     synced LFOs, envelopes and effects follow it. LINK buttons (eleven shared `link_*` params, saved with the sound, no
+     engine effect): KEY, SCALE, the arp's RATE, the sequencer's RATE, each LFO's RATE, the FX SENDS, the balls /
+     particles, and ALL 3 above LINK CUTOFF (relative: both cutoffs move by the same amount in all three Synths); lit,
+     an edit on the Synth in focus goes to all three (host automation, one undo step). Every feature works with a
+     plain click; Shift-click on GENERATIVE (GEN OFF) and the arrow keys are extra shortcuts. GENERATIVE (console button): a hub page
      of the generators (data-driven from the MORE pages: EUCLID, TURING, BOUNCING BALLS, PARTICLES, and LIFE, ORBITS,
      PEND, RAIN, MARKOV once they exist) with each one's ON and the Synths it is on in, KEY / SCALE with their LINKs,
      and ALL OFF; GEN OFF beside the button: every generator off in all three Synths (one undo step), again: back on.

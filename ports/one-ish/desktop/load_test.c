@@ -1841,6 +1841,11 @@ static void tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
     check(own == 1 && t == 145000 && eng == t && strstr(b, "rx_clock=0") && strstr(b, want) &&
           file_has(settings_file, "rx_clock=0"), what);
     if (bmp) shot(child, w, h, bmp, "_tempo_own");
+    float ux = ZONE_TEMPO[0] + ZONE_TEMPO[2] - 6.0f, dx = ZONE_TEMPO[0] + 6.0f;   /* the readout's > and < */
+    click(child, s, ux, ty); click(child, s, ux, ty); click(child, s, dx, ty);
+    snprintf(what, sizeof what, "TEMPO: plain clicks on > > < step it 1 BPM each (%.1f)", ht(fx, HT_TEMPO, 0) / 1000.0);
+    check(ht(fx, HT_TEMPO, 0) == 146000, what);
+    click(child, s, dx, ty);
     host_tempo = 96.0;   /* the host plays at 96: HOST follows it */
     click_zone(child, s, ZONE_TEMPO_HOST);
     play(fx, 8, 512);

@@ -36,7 +36,9 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   undo step). LINKs: KEY and SCALE (the GENERATIVE page and the GEN page), the arpeggiator's RATE (under it on the
   panel: its division, timing, sync and free rate), the sequencer's RATE (beside it), each LFO's RATE (in each LFO:
   its rate, sync and timing), LINK SENDS (the MASTER EFFECTS panel: SEND 1 and SEND 2) and the balls and particles
-  (every `phys_*` setting; their pages). Lighting one copies nothing by itself: the next change does. They are shared
+  (every `phys_*` setting; their pages). **ALL 3** above LINK CUTOFF (between the filters) is the one relative LINK:
+  turning either CUTOFF moves that cutoff on all three Synths by the same amount, so their offsets stay (a cutoff at
+  its end stays there). Lighting one copies nothing by itself: the next change does. They are shared
   params (`link_*`, one copy, no engine effect), so they are saved with the sound (projects, patches, presets, undo)
   and the host can automate them; the randomiser leaves them alone (it follows them: a linked setting it changes
   goes to all three).

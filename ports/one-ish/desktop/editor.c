@@ -379,7 +379,8 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_TAB_GEN: r = &L.tab_gen; break;   /* (the console's third row, hub.c) */
     case Z_GEN_OFF: r = &L.gen_off; break;
     case Z_VOL_MASTER: invalidate(e, &L.vol_master); r = &L.ctl[rnd_key("volume") < NPARAMS ? rnd_key("volume") : 0]; break;
-    case Z_TEMPO: case Z_TEMPO_HOST: case Z_TEMPO_OWN: invalidate(e, &L.tempo_host); invalidate(e, &L.tempo_own);
+    case Z_TEMPO: case Z_TEMPO_HOST: case Z_TEMPO_OWN: case Z_TEMPO_DOWN: case Z_TEMPO_UP:
+        invalidate(e, &L.tempo_host); invalidate(e, &L.tempo_own);
         r = &L.tempo; break;
     }
     if (seq_zone(z)) r = &L.seq_leds;   /* the step editor (on the screen) or the SEQUENCER's page LEDs */

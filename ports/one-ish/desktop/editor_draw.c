@@ -1040,6 +1040,9 @@ static void draw_console(HDC dc, ed_t *e) {
         int own = settings_tempo(NULL), hot = e->hover == Z_TEMPO;
         tempo_text(e, t, sizeof t);
         small_lcd(dc, &L.tempo, t, font_big);
+        RECT dn = hub_rect(Z_TEMPO_DOWN), up = hub_rect(Z_TEMPO_UP);   /* its < > (a click steps it) */
+        text(dc, &dn, "<", font_screen, e->hover == Z_TEMPO_DOWN ? T_HOT : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &up, ">", font_screen, e->hover == Z_TEMPO_UP ? T_HOT : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         text_c(dc, (L.tempo.left + L.tempo.right) / 2, L.tempo.bottom + sc(4), rw(&L.tempo) + sc(10), sc(14), "TEMPO (BPM)",
                font_label, hot ? T_HOT : T_LABEL);
         for (int b = 0; b < 2; b++) {   /* HOST, OWN: one lit */

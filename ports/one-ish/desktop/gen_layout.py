@@ -594,7 +594,7 @@ def build(lay):
     L.cells([("pan", "PAN", 46), ("spread", "SPREAD", 44)], X + 1930, 490, 78)
     if "master_level" in L.index:   # (2026-10-30) lit: VOLUME is MASTER (master_level, all three Synths; hub.c)
         zones["VOL_MASTER"] = (X + 1880, 572, 60, 14)
-    L.page("OUTPUT", "SYNTH OUTPUT", "This Synth's level, place and sends; MASTER (the console) is all three's.", [
+    L.page("OUTPUT", "SYNTH OUTPUT", "This Synth's level, place and sends; MASTER: all three Synths' level.", [
         ("volume", "Volume"), ("pan", "Pan"), ("spread", "Spread"), ("mfx_send1", "Send 1 (FX 1)"),
         ("mfx_send2", "Send 2 (FX 2)"), ("master_level", "Master (All Synths)")])
     L.page("SFX", "SYNTH EFFECT", "The controls of the selected type (TYPE changes the list).", sfx_page(L))
