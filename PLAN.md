@@ -128,7 +128,11 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      the owner. Owner's follow-ups (2026-10-28, offline): polished silver pitch/mod wheels; square window corners
      (Windows 11 rounds top-level windows: the editor asks for DWMWCP_DONOTROUND on the host's window when that window
      holds only the editor, never a bigger one; load_test checks both; the wood cheeks' ends are square with a
-     slight bevel).
+     slight bevel). Pictures and indicators (audit package 7, 2026-10-29, desktop, offline pictures): MORE pages for the
+     three envelopes (the shape with its curves), the mixer (a bar graph of levels and filter buses) and the filters
+     (routing, modes and response curves), the LFO pages' wave with its variation (`desktop/more_pics.c`); rate LEDs
+     by the LFOs', arp's and sequencer's RATE and a TEMPO LED (`desktop/rate_leds.c`: only an LED repaints, 0.05 ms);
+     the open-source effects' 14 params on the synth effect's page by type. Full repaint 8-10 ms, a knob 0.5 ms.
   3. Tier 2: done 2026-10-27 (offline): LFOs 3-4 and their options, 16-slot matrix with transforms and the missing
      sources/destinations (every effect control too, from global sources), noise colours and noise envelope,
      voice/keyboard options, stereo voices and pan, analog drift, the assignable ribbon. 402 params, 27 presets.
@@ -143,7 +147,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      Dual Mono / Stereo, each slot's own MIX, GAIN and controls (slot 1 `dly_*`, slot 2 `rev_*`), the manual's L/R
      feedback and modulation, band decays and levels, Infinite, DISTANCE, the room's detents, the crusher's crossover;
      the synth effect gains Stereo Delay and Ping Pong. 564 params, 158 effect destinations; 4.3 MB of effect buffers;
-     the factory presets sound as before (within 1 LSB). Left: the window's pages for the new controls, effect presets. Tier 4: arpeggiator and chord memory done 2026-10-27
+     the factory presets sound as before (within 1 LSB). The window's pages for the new controls done 2026-10-29 (desktop):
+     each slot's MORE page shows only its type's controls, no OTHER page left. Left: effect presets. Tier 4: arpeggiator and chord memory done 2026-10-27
      (offline): the manual's arp (Up/Down/Order/Random, 1-4 octaves up/down/up-down/down-up, octave order, pendulum
      once/twice, random repeating or not, synced 1/1-1/128 straight/dotted/triplet or a free 10-280 BPM, gate, swing,
      latch (and HOLD), note reset) and chord memory (CHORD LEARN as an on/off param, first key the root; 14 built-in

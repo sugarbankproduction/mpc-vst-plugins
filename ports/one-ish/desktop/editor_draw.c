@@ -82,16 +82,19 @@ static const char *help_for(int i) {
         {"key_center", "Key tracking centre: the note around which key tracking turns cutoffs and envelopes neither up nor down."},
         {"master_tune", "Master tune: the pitch of A, 440 Hz as standard."},
         {"fine_tune", "Fine tune, in cents."},
-        {"modfx_type", "The synth effect: delays, flangers, choruses, phasers, a bit crusher or a resonator. Its MORE page shows its own controls."},
+        {"modfx_type", "The synth effect: delays, flangers, choruses, phasers, a bit crusher, resonators, granular, tape and console colour. Its MORE page shows its own controls."},
         {"modfx_ctrl1", "CTRL 1: moves the effect's most useful control (or the one set as its target on the MORE page), plus or minus."},
         {"modfx_ctrl2", "CTRL 2: moves a second effect control (its target is on the MORE page)."},
         {"modfx_c1_dst", "CTRL 1 target: the effect control CTRL 1 moves (Auto: the most useful one for the type)."},
         {"modfx_c2_dst", "CTRL 2 target: the effect control CTRL 2 moves (Auto: a second useful one for the type)."},
         {"modfx_gain", "Wet gain: the level of the effect's output (50% = as it comes)."},
-        {"mfx_series", "Delay > Reverb: how much of the delay goes on into the reverb."},
+        {"mfx_series", "FX 1 > FX 2: how much of master effect 1 goes on into effect 2 (Dual Mono)."},
         {"mfx_width", "Width of the master effects: 0% mono, 100% normal, 200% extra wide."},
-        {"dly_pp", "Ping-pong: each echo crosses to the other side."},
-        {"rev_freeze", "Freeze: the reverb holds its tail forever (and takes no new sound) while on."},
+        {"mfx_buss", "Buss mode: Dual Mono runs both master effects (FX 1 on SEND 1, FX 2 on SEND 2); Stereo runs FX 1 alone, with a stereo input."},
+        {"dly_type", "Master effect 1's type: a reverb, a stereo or ping-pong delay, or any synth effect type. Its MORE page shows the controls that type uses."},
+        {"rev_type", "Master effect 2's type: a reverb, a stereo or ping-pong delay, or any synth effect type. Its MORE page shows the controls that type uses."},
+        {"dly_freeze", "Hold (reverbs): Freeze holds the tail and takes no new sound; Infinite never decays but still takes sound; Pitch Freeze (shimmer) holds its pitch loop."},
+        {"rev_freeze", "Hold (reverbs): Freeze holds the tail and takes no new sound; Infinite never decays but still takes sound; Pitch Freeze (shimmer) holds its pitch loop."},
         {"pan", "Pan: where the sound sits between left and right."},
         {"spread", "Spread: spreads the voices across the stereo field."},
         {"drift", "Analog drift: slow, slight wandering of pitch and tone, different on every voice."},
@@ -644,14 +647,23 @@ static void draw_page(HDC dc, ed_t *e, int subs) {
     snprintf(t, sizeof t, "MORE:  %s", PAGES[e->screen].title);
     title_line(dc, e, t, subs);
     text(dc, &L.head, PAGES[e->screen].note, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    for (int j = e->sub * SLOTS; j < n && j < (e->sub + 1) * SLOTS; j++) {
+    int per = page_slots(e->screen);
+    for (int j = e->sub * per; j < n && j < (e->sub + 1) * per; j++) {
         const lay_item_t *it = &ITEMS[items[j]];
         RECT nm, c;
-        slot_rects(j % SLOTS, &nm, &c);
+        slot_rects(page_slot(e->screen, j), &nm, &c);
         text(dc, &nm, it->label, font_cell, it->param == e->hover ? T_HOT : T_LCD_DIM,
              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         if (PARAMS[it->param].nopts) screen_menu(dc, e, it->param, c, 1, font_cell);
         else screen_amount(dc, e, it->param, c, 1, 0);
+    }
+    if (PAGES[e->screen].pic) {   /* its picture under the items (more_pics.c: its own drawing surface) */
+        RECT a = {L.row[0].left, L.row[ROWS - PIC_ROWS].top + sc(2), L.row[0].right, L.row[ROWS - 1].bottom};
+        gfx_end();
+        skin_bind(NULL);
+        pics_draw(dc, e, e->screen, a);
+        gfx_begin(dc);
+        skin_bind(gfx_g);
     }
 }
 
@@ -766,7 +778,8 @@ static void draw_screen(HDC dc, ed_t *e) {
     if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
     int subs = screen_subs(e);
     if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
-    for (int r = 0; r < ROWS && e->screen != SCR_SEQ; r++)   /* (the step editor has its own rows) */
+    int striped = e->screen >= 0 && e->screen < NPAGES ? page_rows(e->screen) : ROWS;   /* (not under a picture) */
+    for (int r = 0; r < striped && e->screen != SCR_SEQ; r++)   /* (the step editor has its own rows) */
         if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0x109CC8E6);
     if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
     else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
@@ -1073,6 +1086,7 @@ static void bake(HDC dc) {
         text(dc, &L.brand, "ONE-ish", font_brand, RGB(196, 198, 202), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     controller_static(dc);
+    rate_leds_static(dc);   /* (skin_text only: no GDI+ of its own) */
     ribbon_static();
     keys_static();
     {   /* our name, burnt into the front rail under the keys */
@@ -1100,6 +1114,7 @@ static void paint_rect(ed_t *e, HDC out, const RECT *r) {   /* everything that s
         if (vis(&wr, 0)) draw_wave(e, &WAVES[w]);
     }
     if (vis(&L.euclid, sc(4))) draw_euclid(dc, e);
+    rate_leds_draw(e, &clipr);
     int pad = sc(16);
     for (int c = 0; c < NCTLS; c++) {
         int i = CTLS[c].param;

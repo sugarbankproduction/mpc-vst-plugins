@@ -162,7 +162,7 @@ user patch files (2026-10-27, offline).
 | EXT INPUT LEVEL | 0% to 100% (p32) | Missing | The desktop plugin declares no audio input yet (the shared wrapper's instrument mode has none); a VST2 instrument can take one | M (with the input) | low |
 | EXT INPUT ROUTE | None, SVF, Ladder, Both (p32) | Missing | - | (with the input) | low |
 | EXT INPUT SOURCE [HW] | None, Mic/Line, Line, Mic/Line+Line (p32) | Missing | A choice of physical jacks; on the desktop the host picks the input | - | none |
-| MORE page bar-graph of levels and buses [UI] | p32 | Missing | The mixer panel's knobs and buttons only | S | none |
+| MORE page bar-graph of levels and buses [UI] | p32 | Have | The mixer's MORE page (its triangle): every level and bus, and a bar per source as tall as its level, its SVF and LADDER halves lit by its buttons (`desktop/more_pics.c`, 2026-10-29, desktop) | - | none |
 | Mixer levels as matrix destinations | p76 | Have | "Osc n Level", "Noise Level", "Ring Level" | - | - |
 
 ## 7. Filters (p33-39)
@@ -192,7 +192,7 @@ user patch files (2026-10-27, offline).
 | LADDER FM SOURCE (MORE) | OSC 1, OSC 2, OSC 3 (p38) | Have | `lad_fm_src` | - | none |
 | SVF KEY TRACK | -200% to +200% (p39) | Have | `svf_kbd` -200% to +200% | - | - |
 | LADDER KEY TRACK | -200% to +200% (p39) | Have | `lad_kbd` -200% to +200% | - | - |
-| Filter MORE page diagram [UI] | p38 | Missing | - | S | none |
+| Filter MORE page diagram [UI] | p38 | Have | The filters' MORE page: IN to the SVF and the ladder (series: the SVF also into the ladder) and the MIX, each filter's mode, slope and response curve at its cutoff and resonance (the SVF pair with its spacing), LINKED (`desktop/more_pics.c`, 2026-10-29, desktop) | - | none |
 
 ## 8. Envelopes (p40-45)
 
@@ -217,7 +217,7 @@ user patch files (2026-10-27, offline).
 | TIME SCALE, keeps the stage ratios; modulatable | 10% to 1000% (p44) | Have | `*_scale` 10-1000%, log knob with 100% in the middle; matrix "... Env Time Scale" per voice (2026-10-27, offline) | - | none |
 | VEL MOD AMT: velocity scales the envelope output | -100% to +100% (p45) | Have | `*_vel`: amp default 100% (as before), filter and mod 0%; also scales the envelope as a matrix source (2026-10-27, offline) | - | none |
 | DEST quick assign [UI] | p43 | Missing | - | M | none |
-| Envelope picture with curves [UI] | p43, p45 | Missing | - | S-M | none |
+| Envelope picture with curves [UI] | p43, p45 | Have | Each envelope's MORE page (its triangle): the DAHDSR shape, each stage as wide as its time knob turns, bent by its curve as `src/env.h` bends it, the sustain level, LOOP / LATCH / SYNC (`desktop/more_pics.c`, 2026-10-29, desktop) | - | none |
 | EG stage times and time scale as matrix destinations | p76 | Have | Delay, attack, hold, decay, sustain, release and time scale of each EG, per voice (see 15e) | - | low-medium |
 
 ## 9. LFOs (p46-49)
@@ -245,8 +245,8 @@ user patch files (2026-10-27, offline).
 | FADE OUT TIME | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_fade_out` Off, 1 ms .. 10 s, after the fade in (2026-10-27, offline) | - | - |
 | REPEATS: a set number of cycles after note-on | Infinite, 1 to 32 (p50) | Have | `lfoN_repeats` Inf, 1..32; then the LFO stays at 0 until the next note-on (2026-10-27, offline) | - | - |
 | SMOOTHING: one-pole lowpass on the LFO | 0% to 100% (p50) | Have | `lfoN_smooth`: cutoff 1 kHz at 1% down to 0.1 Hz at 100% (2026-10-27, offline) | - | - |
-| DEST quick assign; wave picture [UI] | p47-48 | Missing | - | M | none |
-| Rate LEDs flash at the LFO, arp and sequencer rates; tempo LED on each beat [UI] | p46, p61, p78, p82 | Missing | - | S | none |
+| DEST quick assign; wave picture [UI] | p47-48 | Partial | The wave picture: each LFO's MORE page draws two cycles from its start phase with `src/lfo.h`'s own wave, variation, polarity and smoothing, with its rate (2026-10-29, desktop). DEST quick assign: package 6 | M | none |
+| Rate LEDs flash at the LFO, arp and sequencer rates; tempo LED on each beat [UI] | p46, p61, p78, p82 | Have | An LED by each LFO's RATE, over the arp's RATE, beside the sequencer's RATE (on each step it plays, from `seq_pos`), and TEMPO in the arp's row: rates from the params as the window reads them, the tempo and beat from the host's time info on the UI thread (120 BPM without), synced ones on the host's beat while it plays; only the LED repaints (`desktop/rate_leds.c`, 2026-10-29, desktop; about 0.05 ms) | - | none |
 
 ## 10. VCA (p50-52)
 
@@ -504,7 +504,7 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 | Up to 5 effects at once (3 synth + 2 master) | p96 | Have | Three synth effects (one per Synth) and the two master effects (2026-10-28, offline and the desktop window) | - | shared medium |
 | MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Have | Each Synth's `mfx_send1` / `mfx_send2` into the shared master effects (their sum, `fx_master_multi`); returns added to the mix (2026-10-28, offline and the desktop window) | - | shared |
 | Master Effects ON button | on/off (p99) | Have | `mfx_on` | - | none |
-| MASTER EFFECT 1 / 2 TYPE: any type from the synth-effect list, plus the Eventide reverbs (synth effect presets usable as master effects and back) | p96, p101 | Have | `dly_type` / `rev_type`: 23 types in either slot (Plate, Room, Hall, Space, Shimmer, Blackhole, Stereo Delay, Ping Pong and the manual's 15 synth types; the 5 open-source synth types stay synth-only); each slot has its own controls (slot 1 the `dly_*` params, slot 2 the `rev_*`), MIX and GAIN; switching a type fades the old one out, clears its memory a block at a time and fades the new one in (2026-10-27, offline). Effect presets: package 12c | - | none/voice; shared, by type |
+| MASTER EFFECT 1 / 2 TYPE: any type from the synth-effect list, plus the Eventide reverbs (synth effect presets usable as master effects and back) | p96, p101 | Have | `dly_type` / `rev_type`: 23 types in either slot (Plate, Room, Hall, Space, Shimmer, Blackhole, Stereo Delay, Ping Pong and the manual's 15 synth types; the 5 open-source synth types stay synth-only); each slot has its own controls (slot 1 the `dly_*` params, slot 2 the `rev_*`), MIX and GAIN; switching a type fades the old one out, clears its memory a block at a time and fades the new one in (2026-10-27, offline). Effect presets: package 12c. On the window: a TYPE button per slot and a MORE page with only the controls its type uses (2026-10-29, desktop) | - | none/voice; shared, by type |
 | MASTER BUSS MODE | Dual Mono (two effects), Stereo (one effect) (p100) | Have | `mfx_buss`: Dual Mono (both effects, on SEND 1 and SEND 2) or Stereo (effect 1 alone on SEND 1, stereo in). ONE-ish keeps each voice's place in Dual Mono's inputs too (the instrument's mono buss loses it), so the earlier sounds are unchanged | - | shared |
 | STEREO WIDTH at the end of the master chain | 0% to 100% to 200% (p100) | Have | `mfx_width` 0-200%, mid/side on the returns (the dry path stays exact) | - | none/voice; shared low |
 | EFFECT 1 -> 2 SERIES (parallel to series blend) | 0% to 100% (p100) | Have | `mfx_series`: effect 1's return moves from the output into effect 2 (Dual Mono only) | - | none |
@@ -636,8 +636,8 @@ delay, spectral; `modfx_quality`; position, size, pitch, density, texture, freez
 SPREAD, FEEDBACK and ROOM). **Tape Color**, **Density**, **Console**: Airwindows ToTape6, Density and Console7
 (channel into buss) ported to C (`modfx_drive`, `modfx_bump`, `modfx_lowcut`). PC cost per 128-frame block, shared:
 Rings 5-42 us by model (modal the most), Clouds 12-73 us by mode (spectral works in bursts of up to about 360 us),
-Tape Color 19-25, Density 10-15, Console 14-16. Their 14 params have no place in the desktop window yet (only the
-host's generic editor reaches them).
+Tape Color 19-25, Density 10-15, Console 14-16. Their 14 params are on the synth effect's MORE page, each shown only
+for the types that use it (2026-10-29, desktop).
 
 ### 18c. Eventide Master Effects (master bus only, one at a time) [LIC]
 
@@ -841,10 +841,10 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
 | 5. Noise (p29-30) | 8 | 1 | 0 | 0 | 0 |
-| 6. Mixer (p31-32) | 4 | 1 | 4 | 1 | 1 |
-| 7. Filters (p33-39) | 22 | 1 | 1 | 0 | 1 |
-| 8. Envelopes (p40-45) | 17 | 2 | 2 | 0 | 2 |
-| 9. LFOs (p46-49) | 17 | 3 | 3 | 0 | 2 |
+| 6. Mixer (p31-32) | 5 | 1 | 3 | 1 | 0 |
+| 7. Filters (p33-39) | 23 | 1 | 0 | 0 | 0 |
+| 8. Envelopes (p40-45) | 18 | 2 | 1 | 0 | 1 |
+| 9. LFOs (p46-49) | 18 | 4 | 1 | 0 | 0 |
 | 10. VCA (p50-52) | 5 | 0 | 0 | 0 | 0 |
 | 11. Output (p53-56) | 0 | 0 | 6 | 4 | 0 |
 | 12. Performance Sets and text entry (p57-60) | 1 | 2 | 2 | 0 | 2 |
@@ -859,7 +859,7 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 21. Editing and saving (p122-123) | 1 | 0 | 3 | 0 | 2 |
 | 22. Settings (p124-139) | 6 | 5 | 20 | 11 | 7 |
 | 24. Appendices A and B (p143-158) | 1 | 2 | 3 | 1 | 0 |
-| **Total** | **359** | **42** | **74** | **27** | **25** |
+| **Total** | **363** | **43** | **69** | **27** | **20** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -897,7 +897,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after package 7: 42 and 43). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -978,6 +978,11 @@ that LFO: it needs a per-sample path).
   for the 14 open-source effect params (Rings, Clouds, Airwindows).
 - Depends on: nothing. Shares `editor_draw.c` with package 6: one after the other, or split by function.
 - Files: `desktop/editor_draw.c`, `desktop/gen_layout.py`.
+- Done 2026-10-29 (desktop, offline pictures): `desktop/more_pics.c` draws the pictures under a page's items (the last
+  three rows; such a page holds 10 items per sub-page): new MORE pages for the three envelopes, the mixer and the
+  filters, and the LFO pages' wave. `desktop/rate_leds.c`: seven LEDs (LFO 1-4, arp, sequencer, TEMPO) on their own
+  15 ms timer, repainting only the LEDs that change (load_test: 14 px squares, 0.05 ms each). The 14 open-source
+  effect params on the synth effect's page by type. Left: DEST quick assign (package 6).
 
 **8. Settings page and MIDI, part 1** (sections 1, 2, 14, 19, 22). Effort M. CPU: none.
 - Done in part 2026-10-28 (offline and the desktop window): `midi_ch` (Omni, 1-16, Per Synth), silent or audible chord
@@ -1013,6 +1018,10 @@ about twice what 8 do; fine on the desktop, the MPC keeps its benched default).
 - Files: `src/fx.h`, `src/fx/*`, the effect parts of `src/engine.c` (`fx_field`, `fx_params`), `params.json`.
 - Done 2026-10-27 (offline and the desktop build): 10a, 10b and 10c as above (section 18). Left: the desktop window's
   pages for the slots' new controls (they are on its OTHER page for now), effect presets (12c), the vocoders (11).
+  The window's pages done 2026-10-29 (desktop): MASTER FX 1 and 2 (the slots' MORE pages) show each type's own
+  controls (`gen_layout.py` MFX_USES, e.g. a hall 19, a ping pong 9), the panel a TYPE button per slot, the MASTER
+  EFFECTS page the buss mode; the synth effect's page by type for the two-tap delays and the crusher's crossover too,
+  its sync only for types with a time or a rate. No OTHER page is left (every param has a home).
 
 **11. Audio input and vocoders** (sections 0, 6, 15e, 18). Effort M for the input, L for the vocoders. CPU: low per
 voice for the EXT channel; shared medium (10-band) to medium-high (16-band) for the vocoders.

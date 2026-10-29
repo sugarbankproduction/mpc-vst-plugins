@@ -82,6 +82,15 @@ typedef struct {
 } layout_t;
 extern layout_t L;
 
+/* a MORE page's slots: ROWS rows in two columns, less the rows its picture takes at the bottom (PIC_ROWS); item j of
+ * page p sits in slot page_slot(p, j) of slot_rects (column by column) */
+static inline int page_rows(int p) { return p >= 0 && p < NPAGES && PAGES[p].pic ? ROWS - PIC_ROWS : ROWS; }
+static inline int page_slots(int p) { return 2 * page_rows(p); }
+static inline int page_slot(int p, int j) {
+    int k = j % page_slots(p), r = page_rows(p);
+    return (k / r) * ROWS + k % r;
+}
+
 static inline int sc(float v) { return (int)lroundf(v * L.s); }
 static inline RECT zone(const short z[4]) { RECT r = {sc(z[0]), sc(z[1]), sc(z[0] + z[2]), sc(z[1] + z[3])}; return r; }
 static inline int rw(const RECT *r) { return r->right - r->left; }
@@ -89,6 +98,17 @@ static inline int rh(const RECT *r) { return r->bottom - r->top; }
 
 /* ---- per instance ---- */
 #define MQ 256   /* UI MIDI queue: a power of two */
+enum { RATE_MAX = 8 };   /* rate LEDs (rate_leds.c) */
+typedef struct {
+    unsigned lit;              /* bit per RATES entry: lit now (as last painted) */
+    double read_at;            /* when the rates were last read from the params (seconds) */
+    float beats[RATE_MAX];     /* a cycle or step in beats (synced, or at a free BPM) ... */
+    float bpm[RATE_MAX];       /* ... at this free BPM (0: the host tempo) */
+    float hz[RATE_MAX];        /* or a free rate in Hz (beats 0) */
+    unsigned char on[RATE_MAX];
+    int seq_step;              /* the sequencer's step last seen running (-1: stopped) and when it changed */
+    double seq_at;
+} rate_ui_t;
 #define RND_HIST 32   /* sounds the randomiser's UNDO / REDO keep (the oldest goes) */
 enum { MLOG = 64 };
 typedef struct {
@@ -127,6 +147,7 @@ typedef struct {
     struct hostrate *hr;                       /* the host's rate and float output (hostrate.c); NULL: none */
     int corners, corner_tries;                 /* square_corners(): 1 done, 0 not (yet), -1 failed; attempts */
     seq_ui_t sq;                               /* the step sequencer's page (seq_page.c) */
+    rate_ui_t rl;                              /* the rate and tempo LEDs (rate_leds.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT };
 
@@ -158,6 +179,14 @@ static inline int note_of_white(int j, int base) {   /* white key j of the keybo
 /* editor_draw.c */
 void paint(ed_t *e, HDC out);
 void leds_geom(int i, int *x0, int *y0, int *row, RECT *button);
+/* more_pics.c: a MORE page's picture (an envelope, an LFO, the filters, the mixer) in rect a of the screen */
+void pics_draw(HDC dc, ed_t *e, int page, RECT a);
+/* rate_leds.c: the LEDs that flash at the LFO, arpeggiator and sequencer rates and on the beat */
+#define RATE_TIMER_MS 15
+void rate_leds_tick(ed_t *e);                        /* the UI timer: what is lit now; repaints the LEDs that changed */
+void rate_leds_draw(ed_t *e, const RECT *clip);      /* paint: the LEDs inside clip */
+void rate_leds_static(HDC dc);                       /* the static layer: their labels */
+RECT rate_led_rect(int k);                           /* RATES[k]'s LED, with its glow */
 /* editor.c: the wrapper's own dispatcher (no editor hooks), for patches.c */
 intptr_t wrapped_call(AEffect *fx, int32_t op, int32_t idx, intptr_t v, void *ptr, float opt);
 /* patches.c: user patches and the PATCHES page (patches.h) */

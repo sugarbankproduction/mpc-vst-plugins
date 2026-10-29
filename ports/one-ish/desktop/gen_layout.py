@@ -17,8 +17,9 @@ in a knob's place becomes a toggle (two options), an LED list (a few) or a butto
 Second-layer controls live on MORE pages, as on the instrument: a module with a small triangle in its top-right corner
 has one, and clicking the triangle shows that page on the centre screen (the console's MORE button lists them all).
 A page item may also be on the panel (a page shows the whole module); an item can depend on an option (the synth
-effect's page shows only the controls of the selected effect type). Every parameter that is neither on the panel, on a
-page nor in the mod matrix goes to an OTHER page, and the build warns about it.
+effect's page shows only the controls of the selected effect type). A page may have a picture under its items (an
+envelope, an LFO, the filters, the mixer: more_pics.c). Every parameter that is neither on the panel, on a page nor in
+the mod matrix goes to an OTHER page, and the build warns about it. The rate LEDs (rate_leds.c) are placed here too.
     python3 ports/one-ish/desktop/gen_layout.py <params.json> <out.h>"""
 import json
 import sys
@@ -35,48 +36,138 @@ ABBREV = {"Triangle": "TRI", "Sine": "SINE", "Square": "SQR", "Saw": "SAW", "Ram
           "6 dB": "6dB", "Red+White": "R+W", "Red+Purple": "R+P", "White+Purple": "W+P", "Plate": "PLATE",
           "Room": "ROOM", "Hall": "HALL", "Random": "RAND", "Up/Down": "UP-DN", "Down/Up": "DN-UP"}
 
-# the synth effect's types this layout knows (params.json modfx_type when it was written), and which of its controls
-# each type uses (SFX_USES: indexes into SFX_NAMES; matched to the real list by name). Types added later, and modfx_*
-# keys not listed here, still get a page: see sfx_page().
-SFX_NAMES = ["Delay", "BBD Delay", "Tape Delay", "Echo", "Flanger", "Stereo Flanger", "Chorus", "Dual Chorus",
-             "Ensemble", "Stereo Chorus", "6-Stage Phaser", "12-Stage Phaser", "Time Phaser", "Bit Crusher", "Resonator"]
-SFX_COMMON = [("modfx_sync", "Tempo Sync"), ("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
+# the effect types by name (params.json modfx_type, dly_type and rev_type options), and which controls each type uses:
+# a page shows a control only while its effect runs a type that reads it (engine.c fx_params, src/fx/*). Types added
+# later, and modfx_* keys not listed here, still get a place: see sfx_page().
+DELAYS = ["Delay", "BBD Delay", "Tape Delay", "Echo"]
+LINES = ["Flanger", "Stereo Flanger", "Chorus", "Dual Chorus", "Ensemble", "Stereo Chorus"]
+PHASERS = ["6-Stage Phaser", "12-Stage Phaser", "Time Phaser"]
+TWO_TAP = ["Stereo Delay", "Ping Pong"]
+SFX_COMMON = [("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
               ("modfx_c2_dst", "CTRL 2 Target"), ("modfx_on", "On"), ("modfx_mix", "Mix"), ("modfx_ctrl1", "CTRL 1"),
               ("modfx_ctrl2", "CTRL 2")]
-DELAYS, LINES = range(0, 4), range(4, 10)
-PHASERS = range(10, 13)
-SFX_USES = [   # key, label, types
-    ("modfx_dtime", "Delay Time", [0, 1, 2, 3, 12]),
+RINGS, CLOUDS = "Modal Resonator", "Granular"   # Mutable Instruments Rings and Clouds (src/fx/mi_effects.*)
+AW_TAPE, AW_DENSITY, AW_CONSOLE = "Tape Color", "Density", "Console"   # Airwindows (src/fx/airwindows.h)
+SFX_USES = [   # key, label, the types that use it
+    ("modfx_model", "Resonator Model", [RINGS]),
+    ("modfx_gmode", "Granular Mode", [CLOUDS]),
+    ("modfx_quality", "Grain Quality", [CLOUDS]),
+    ("modfx_dtime", "Delay Time", [*DELAYS, "Time Phaser", *TWO_TAP]),
+    ("modfx_dtime_r", "Delay Time R", TWO_TAP),
     ("modfx_time", "Time", LINES),
-    ("modfx_time_r", "Time R", [5, 9]),
-    ("modfx_rate", "Rate", [3, *LINES, *PHASERS, 14]),
-    ("modfx_rate_r", "Rate R", [5, 9]),
-    ("modfx_depth", "Depth", [1, 3, *LINES, *PHASERS, 14]),
+    ("modfx_time_r", "Time R", ["Stereo Flanger", "Stereo Chorus"]),
+    ("modfx_pitch", "Pitch", [RINGS, CLOUDS]),
+    ("modfx_follow", "Key Follow", [RINGS]),
+    ("modfx_struct", "Structure", [RINGS]),
+    ("modfx_pos", "Position", [RINGS, CLOUDS]),
+    ("modfx_size", "Grain Size", [CLOUDS]),
+    ("modfx_density", "Density", [CLOUDS]),
+    ("modfx_texture", "Texture", [CLOUDS]),
+    ("modfx_freeze", "Freeze", [CLOUDS]),
+    ("modfx_drive", "Drive", [AW_TAPE, AW_DENSITY, AW_CONSOLE]),
+    ("modfx_bump", "Head Bump", [AW_TAPE]),
+    ("modfx_lowcut", "Low Cut", [AW_DENSITY]),
+    ("modfx_rate", "Rate", ["Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay"]),
+    ("modfx_rate_r", "Rate R", ["Stereo Flanger", "Stereo Chorus", "Stereo Delay"]),
+    ("modfx_depth", "Depth", ["BBD Delay", "Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay"]),
+    ("modfx_depth_r", "Depth R", ["Stereo Delay"]),
+    ("modfx_offset", "Offset", ["Ping Pong"]),
     ("modfx_sweep", "Sweep", PHASERS),
-    ("modfx_fb", "Feedback", [*DELAYS, *LINES, *PHASERS]),
-    ("modfx_fb_r", "Feedback R", [5, 9]),
-    ("modfx_dfb", "Delay Feedback", [12]),
-    ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS]),
-    ("modfx_spread", "Spread", [4, 5, 6, 8, 9, *PHASERS]),
-    ("modfx_vrate", "Vibrato Rate", [7, 8]),
-    ("modfx_vdepth", "Vibrato Depth", [7, 8]),
-    ("modfx_noise", "Noise", [1, *LINES, *PHASERS]),
-    ("modfx_wow", "Wow", [2]),
-    ("modfx_flutter", "Flutter", [2]),
-    ("modfx_bias", "Tape Bias", [2]),
-    ("modfx_room", "Echo Room", [3]),
-    ("modfx_decay", "Echo Decay", [3]),
-    ("modfx_bits", "Bit Depth", [13]),
-    ("modfx_srate", "Sample Rate", [13]),
-    ("modfx_ftype", "Filter Type", [14]),
-    ("modfx_reso", "Resonance", [14]),
-    ("modfx_cut1", "Cutoff Low", [14]),
-    ("modfx_lvl1", "Level Low", [14]),
-    ("modfx_cut2", "Cutoff Mid", [14]),
-    ("modfx_lvl2", "Level Mid", [14]),
-    ("modfx_cut3", "Cutoff High", [14]),
-    ("modfx_lvl3", "Level High", [14]),
+    ("modfx_fb", "Feedback", [*DELAYS, *LINES, *PHASERS, CLOUDS, *TWO_TAP]),
+    ("modfx_fb_r", "Feedback R", ["Stereo Flanger", "Stereo Chorus"]),
+    ("modfx_fbl", "Feedback Left", ["Stereo Delay"]),
+    ("modfx_fbr", "Feedback Right", ["Stereo Delay"]),
+    ("modfx_dfb", "Delay Feedback", ["Time Phaser"]),
+    ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS, RINGS, AW_TAPE, *TWO_TAP]),
+    ("modfx_spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS, CLOUDS]),
+    ("modfx_vrate", "Vibrato Rate", ["Dual Chorus", "Ensemble"]),
+    ("modfx_vdepth", "Vibrato Depth", ["Dual Chorus", "Ensemble"]),
+    ("modfx_noise", "Noise", ["BBD Delay", *LINES, *PHASERS]),
+    ("modfx_wow", "Wow", ["Tape Delay"]),
+    ("modfx_flutter", "Flutter", ["Tape Delay", AW_TAPE]),
+    ("modfx_bias", "Tape Bias", ["Tape Delay"]),
+    ("modfx_room", "Room", ["Echo", CLOUDS]),     # Clouds: its reverb
+    ("modfx_decay", "Decay", ["Echo", RINGS]),    # Rings: its damping
+    ("modfx_bits", "Bit Depth", ["Bit Crusher"]),
+    ("modfx_srate", "Sample Rate", ["Bit Crusher"]),
+    ("modfx_xover", "Crossover", ["Bit Crusher"]),
+    ("modfx_ftype", "Filter Type", ["Resonator"]),
+    ("modfx_reso", "Resonance", ["Resonator"]),
+    ("modfx_cut1", "Cutoff Low", ["Resonator"]),
+    ("modfx_lvl1", "Level Low", ["Resonator"]),
+    ("modfx_cut2", "Cutoff Mid", ["Resonator"]),
+    ("modfx_lvl2", "Level Mid", ["Resonator"]),
+    ("modfx_cut3", "Cutoff High", ["Resonator"]),
+    ("modfx_lvl3", "Level High", ["Resonator"]),
+    ("modfx_sync", "Tempo Sync", [*DELAYS, *LINES, *PHASERS, "Resonator", *TWO_TAP]),   # its times and rates
 ]
+# a master effect slot's controls (slot 1's keys "dly_" + the suffix, slot 2's "rev_"): suffix, label, the types that
+# read it (engine.c fx_bank_field, src/fx/reverb.h; the synth effect's types as SFX_USES, a slot's TIME being both
+# their delay time and their chorus time), then each slot's TYPE, MIX and GAIN for every type
+REVERBS = ["Plate", "Room", "Hall", "Space", "Shimmer", "Blackhole"]
+CLASSIC = ["Plate", "Room", "Hall", "Shimmer"]   # the ones with pre-delay, damping and diffusion in the loop
+MFX_USES = [
+    ("time", "Time", [*DELAYS, *LINES, "Time Phaser", *TWO_TAP]),
+    ("time_r", "Time R", ["Stereo Flanger", "Stereo Chorus", *TWO_TAP]),
+    ("decay", "Decay", ["Plate", "Room", "Hall", "Space", "Shimmer", "Echo"]),
+    ("size", "Size", REVERBS),
+    ("pre", "Pre-delay", [*CLASSIC, "Blackhole"]),
+    ("fb", "Feedback", [*DELAYS, *LINES, *PHASERS, *TWO_TAP, "Blackhole"]),   # (the blackhole's: its decay)
+    ("fb_r", "Feedback R", ["Stereo Flanger", "Stereo Chorus"]),
+    ("fbl", "Feedback Left", ["Stereo Delay"]),
+    ("fbr", "Feedback Right", ["Stereo Delay"]),
+    ("dfb", "Delay Feedback", ["Time Phaser"]),
+    ("rate", "Rate", ["Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay", "Blackhole"]),
+    ("rate_r", "Rate R", ["Stereo Flanger", "Stereo Chorus", "Stereo Delay"]),
+    ("depth", "Depth", ["BBD Delay", "Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay"]),
+    ("depth_r", "Depth R", ["Stereo Delay"]),
+    ("offset", "Offset", ["Ping Pong"]),
+    ("tone", "Tone", [*REVERBS, *DELAYS, *LINES, *PHASERS, *TWO_TAP]),
+    ("damp", "High Damp", CLASSIC),
+    ("lowdamp", "Low Damp", CLASSIC),
+    ("diff", "Diffusion", CLASSIC),
+    ("mod", "Mod Level", REVERBS),
+    ("early", "Early / Late", ["Room", "Hall"]),
+    ("distance", "Distance", ["Plate"]),
+    ("hifreq", "High Freq", ["Room", "Hall", "Shimmer"]),
+    ("hlevel", "High Level", ["Room", "Hall", "Blackhole"]),
+    ("mlevel", "Mid Level", ["Hall"]),
+    ("llevel", "Low Level", ["Room", "Hall", "Blackhole"]),
+    ("ldecay", "Low Decay", ["Hall", "Shimmer"]),
+    ("hdecay", "High Decay", ["Hall", "Shimmer"]),
+    ("pitch", "Pitch A", ["Shimmer"]),
+    ("pitch_b", "Pitch B", ["Shimmer"]),
+    ("pdecay", "Pitch Decay", ["Shimmer"]),
+    ("gravity", "Gravity", ["Blackhole"]),
+    ("reso", "Resonance", ["Blackhole", "Resonator"]),
+    ("sweep", "Sweep", PHASERS),
+    ("spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS]),
+    ("vrate", "Vibrato Rate", ["Dual Chorus", "Ensemble"]),
+    ("vdepth", "Vibrato Depth", ["Dual Chorus", "Ensemble"]),
+    ("noise", "Noise", ["BBD Delay", *LINES, *PHASERS]),
+    ("wow", "Wow", ["Tape Delay"]),
+    ("flutter", "Flutter", ["Tape Delay"]),
+    ("bias", "Tape Bias", ["Tape Delay"]),
+    ("room", "Echo Room", ["Echo"]),
+    ("bits", "Bit Depth", ["Bit Crusher"]),
+    ("srate", "Sample Rate", ["Bit Crusher"]),
+    ("xover", "Crossover", ["Bit Crusher"]),
+    ("ftype", "Filter Type", ["Resonator"]),
+    ("cut1", "Cutoff Low", ["Resonator"]),
+    ("lvl1", "Level Low", ["Resonator"]),
+    ("cut2", "Cutoff Mid", ["Resonator"]),
+    ("lvl2", "Level Mid", ["Resonator"]),
+    ("cut3", "Cutoff High", ["Resonator"]),
+    ("lvl3", "Level High", ["Resonator"]),
+    ("freeze", "Hold", REVERBS),
+    ("sync", "Tempo Sync", [*DELAYS, *LINES, *PHASERS, "Resonator", *TWO_TAP, "Blackhole"]),
+]
+MFX_COMMON = [("mix", "Mix"), ("gain", "Gain")]
+# a MORE page's picture (more_pics.c), drawn over its last PIC_ROWS rows: an envelope, an LFO, the filters, the mixer
+PICS = {"ENV": 1, "LFO": 2, "FILTER": 3, "MIXER": 4}
+PIC_ROWS = 3
+# the rate LEDs (rate_leds.c): what each flashes with
+RATE_KINDS = {"LFO": 0, "ARP": 1, "SEQ": 2, "TEMPO": 3}
 
 
 class Layout:
@@ -86,7 +177,8 @@ class Layout:
         self.panels, self.ctls, self.waves = [], [], []
         self.euclid_at = None   # (x, y, w, h): the Euclidean pattern's ring of dots
         self.placed, self.planned = set(), []
-        self.pages = []   # (id, title, note, [(key, label, cond_key, types)])
+        self.pages = []   # (id, title, note, [(key, label, cond_key, types)], (picture, its key prefix) or None)
+        self.rates = []   # rate LEDs: (kind, n, x, y, label) with x, y the LED's centre
 
     def nopts(self, key):
         return len(self.params[self.index[key]].get("options", []))
@@ -145,22 +237,32 @@ class Layout:
         keys = ["o%d_%s" % (n, s) for s in ("wave", "angle", "pw", "mix")]
         self.waves.append((x, y, w, h, [self.index.get(k, -1) for k in keys]))
 
-    def page(self, pid, title, note, items):
+    def page(self, pid, title, note, items, pic=None):
         """a MORE page: items are (key, label[, cond_key, types]); a conditional item shows only while cond_key is set
-        to one of the option numbers in types"""
-        self.pages.append((pid, title, note, [it if len(it) == 4 else (it[0], it[1], None, None) for it in items]))
+        to one of the option numbers in types. pic: (a PICS name, the key prefix it reads), drawn under the items"""
+        self.pages.append((pid, title, note, [it if len(it) == 4 else (it[0], it[1], None, None) for it in items], pic))
+
+    def rate_led(self, kind, n, x, y, label=""):
+        """a rate LED centred on (x, y): it flashes at an LFO's (n: 0-3), the arpeggiator's or the sequencer's rate, or
+        on the beat (TEMPO); a label is printed to its right"""
+        self.rates.append((RATE_KINDS[kind], n, x, y, label))
+
+    def types(self, cond, names):
+        """the option numbers of the effect types named, in cond's option list (names it doesn't have are left out)"""
+        opts = self.params[self.index[cond]].get("options", []) if cond in self.index else []
+        return [opts.index(n) for n in names if n in opts]
 
 
 def sfx_page(lay):
     """the synth effect's MORE page items: TYPE, then each control for the types that use it, then the common ones.
     A type this layout doesn't know (added to modfx_type later) shows every control, and a modfx_* key it doesn't know
     shows for those new types (or for every type while there are none), so nothing new lands on the OTHER page."""
-    opts = lay.params[lay.index["modfx_type"]].get("options", []) if "modfx_type" in lay.index else SFX_NAMES
-    real = [opts.index(n) if n in opts else -1 for n in SFX_NAMES]
-    new = [t for t, n in enumerate(opts) if n not in SFX_NAMES]
+    opts = lay.params[lay.index["modfx_type"]].get("options", []) if "modfx_type" in lay.index else []
+    known_types = {n for _, _, names in SFX_USES for n in names}
+    new = [t for t, n in enumerate(opts) if n not in known_types]
     mask = lambda ts: [t for t in ts if 0 <= t < 32]   # the screen's option mask is 32 bits
     items = [("modfx_type", "Type")]
-    items += [(k, lab, "modfx_type", mask([real[t] for t in types] + new)) for k, lab, types in SFX_USES]
+    items += [(k, lab, "modfx_type", mask(lay.types("modfx_type", names) + new)) for k, lab, names in SFX_USES]
     known = {"modfx_type"} | {k for k, _, _ in SFX_USES} | {k for k, _ in SFX_COMMON}
     for p in lay.params:
         k = p["key"]
@@ -170,6 +272,24 @@ def sfx_page(lay):
                 name = name[len(pre):] if name.startswith(pre) else name
             items.append((k, name, "modfx_type", mask(new or range(len(opts)))))
     return items + SFX_COMMON
+
+
+def mfx_page(lay, pre):
+    """a master effect slot's MORE page items (pre: "dly_" slot 1, "rev_" slot 2): TYPE, each control while its type
+    uses it, MIX and GAIN. A type this layout doesn't know shows every control, and a key of the slot it doesn't
+    know shows for those types (or for every type while there are none): nothing new lands on the OTHER page."""
+    cond = pre + "type"
+    opts = lay.params[lay.index[cond]].get("options", []) if cond in lay.index else []
+    known_types = {n for _, _, names in MFX_USES for n in names}
+    new = [t for t, n in enumerate(opts) if n not in known_types]
+    mask = lambda ts: [t for t in ts if 0 <= t < 32]
+    items = [(cond, "Type")]
+    items += [(pre + k, lab, cond, mask(lay.types(cond, names) + new)) for k, lab, names in MFX_USES]
+    known = {cond} | {pre + k for k, _, _ in MFX_USES} | {pre + k for k, _ in MFX_COMMON}
+    for p in lay.params:
+        if p["key"].startswith(pre) and p["key"] not in known:
+            items.append((p["key"], p.get("name", p["key"]), cond, mask(new or range(len(opts)))))
+    return items + [(pre + k, lab) for k, lab in MFX_COMMON]
 
 
 def build(lay):
@@ -188,11 +308,13 @@ def build(lay):
         L.ctl(k + "rate", "knob", 44, y + 16, 60, 64, "RATE", 30)
         L.ctl(k + "wave", "leds", 106, y + 16, 62, 104, "WAVE")
         L.ctl(k + "sync", "toggle", 44, y + 82, 60, 40, "SYNC")
+        if k + "rate" in L.index:
+            L.rate_led("LFO", n - 1, 50, y + 22)   # top left of the RATE knob, clear of its scale
         L.page("LFO%d" % n, "LFO %d" % n, "Rate, wave and sync are on the panel too.", [
             (k + "rate", "Rate"), (k + "wave", "Wave"), (k + "sync", "Sync"), (k + "timing", "Sync Timing"),
             (k + "range", "Range"), (k + "polarity", "Polarity"), (k + "var", "Variation"), (k + "smooth", "Smoothing"),
             (k + "phase", "Start Phase"), (k + "reset", "Note Reset"), (k + "delay", "Delay"),
-            (k + "fade_in", "Fade In"), (k + "fade_out", "Fade Out"), (k + "repeats", "Repeats")])
+            (k + "fade_in", "Fade In"), (k + "fade_out", "Fade Out"), (k + "repeats", "Repeats")], pic=("LFO", k))
 
     # ---- oscillators 1-3 ----
     for n in range(1, 4):
@@ -242,7 +364,10 @@ def build(lay):
     YB, HB = 408, 132          # the row
     YA, YL, HL = 424, 442, 96  # the line of buttons; the line of controls under it and its height
     L.panel(176, YB, 232, HB, "ARPEGGIATOR", more="ARP", keys=["arp_on"])
-    L.row([("arp_on", "ON"), ("arp_latch", "LATCH"), ("arp_sync", "SYNC")], 180, YA, 64, 14, "toggle", SIDE)
+    L.cells([("arp_on", "ON", 44), ("arp_latch", "LATCH", 59), ("arp_sync", "SYNC", 56)], 180, YA, 14, "toggle", SIDE)
+    if "arp_on" in L.index:   # the master clock's TEMPO LED (on the beat) after the buttons; RATE's over its window
+        L.rate_led("TEMPO", 0, 341, YA + 7, "TEMPO")
+        L.rate_led("ARP", 0, 350, YL + 13)
     L.cells([("arp_pattern", "PATTERN", 54, "leds"), ("arp_oct", "OCT", 42, "leds"),
              ("arp_dir", "DIRECTION", 54, "leds"), ("arp_div", "RATE", 44, "button")], 178, YL, HL)
     L.column([("arp_gate", "GATE"), ("arp_swing", "SWING")], 372, YL, 36, HL // 2, "small")
@@ -305,6 +430,8 @@ def build(lay):
         zones["SEQ_LEDS"] = (976, 490, 82, 46)
     L.ctl("seq_length", "small", 1058, 488, 52, 50, "LENGTH")
     L.ctl("seq_div", "button", 1108, 491, 50, 46, "RATE")
+    if "seq_div" in L.index:
+        L.rate_led("SEQ", 0, 1158, 516)   # right of RATE's red button
     L.placed.add("seq_pos")   # the readout: the step editor and the page LEDs show it
     L.page("SEQ", "SEQUENCER", "Settings; the steps: the SEQ button. Synced: RATE is each step's note value.", [
         ("seq_on", "On"), ("seq_play", "Play"), ("seq_rec", "Record"), ("seq_rec_mode", "Record Mode"),
@@ -317,10 +444,15 @@ def build(lay):
 
     # ---- mixer ----
     X = DX
-    L.panel(X + 1086, 18, 138, 522, "MIXER")
+    L.panel(X + 1086, 18, 138, 522, "MIXER", more="MIXER")
     chans = [("o1", "OSC 1"), ("o2", "OSC 2"), ("o3", "OSC 3"), ("mac", "MACRO"), ("ring", "RING MOD"), ("noise", "NOISE")]
     L.planned += [c + s for c, _ in chans if c + "_level" not in L.index for s in ("_level", "_svf", "_lad")]
     chans = [c for c in chans if c[0] + "_level" in L.index]
+    L.page("MIXER", "MIXER", "Each source's level, and the filters it goes to (the bars below).",
+           [it for src, label in chans for it in ((src + "_level", label.title().replace("Osc", "OSC") + " Level"),
+                                                   (src + "_svf", label.title().replace("Osc", "OSC") + " > SVF"),
+                                                   (src + "_lad", label.title().replace("Osc", "OSC") + " > Ladder"))],
+           pic=("MIXER", ""))
     step = 100 if len(chans) <= 5 else 84   # the macro oscillator's channel makes six
     for k, (src, label) in enumerate(chans):
         y = 38 + step * k
@@ -331,7 +463,12 @@ def build(lay):
             L.panel(X + 1088, y - 8, 134, 14, "", style="caption", more="MACRO")
 
     # ---- filters: SVF and ladder side by side, link / mix / route between them ----
-    L.panel(X + 1230, 18, 306, 290, "STATE VARIABLE FILTER|LADDER FILTER")
+    L.panel(X + 1230, 18, 306, 290, "STATE VARIABLE FILTER|LADDER FILTER", more="FILTERS")
+    L.page("FILTERS", "FILTERS", "The two filters, how they connect, and their curves (below).", [
+        ("svf_cut", "SVF Cutoff"), ("svf_res", "SVF Resonance"), ("svf_mode", "SVF Mode"), ("svf_pair", "SVF Pair"),
+        ("svf_space", "SVF Spacing"), ("flt_cut", "Ladder Cutoff"), ("flt_res", "Ladder Resonance"),
+        ("flt_mode", "Ladder Mode"), ("flt_slope", "Ladder Slope"), ("flt_drive", "Ladder Drive"),
+        ("flt_route", "Route"), ("flt_mix", "Mix (SVF > Ladder)"), ("flt_link", "Link Cutoff")], pic=("FILTER", ""))
     L.ctl("svf_cut", "big", X + 1256, 36, 100, 100, "CUTOFF")
     L.ctl("flt_cut", "big", X + 1410, 36, 100, 100, "CUTOFF")
     L.ctl("flt_link", "toggle", X + 1356, 104, 54, 44, "LINK CUTOFF")
@@ -355,14 +492,20 @@ def build(lay):
     for k, (p, title) in enumerate([("fenv", "FILTER ENVELOPE"), ("amp", "AMPLIFIER ENVELOPE"),
                                     ("menv", "MODULATION ENVELOPE")]):
         yt = 18 + 104 * k
-        L.panel(X + 1542, yt, 478, 100, title)
+        L.panel(X + 1542, yt, 478, 100, title, more="ENV%d" % (k + 1))
+        L.page("ENV%d" % (k + 1), title, "Its shape below: stage times as their knobs, curves, sustain.", [
+            (p + "_delay", "Delay"), (p + "_a", "Attack"), (p + "_hold", "Hold"), (p + "_d", "Decay"),
+            (p + "_s", "Sustain"), (p + "_r", "Release"), (p + "_acurve", "Attack Curve"),
+            (p + "_dcurve", "Decay Curve"), (p + "_rcurve", "Release Curve"), (p + "_scale", "Time Scale"),
+            (p + "_vel", "Velocity Amount"), (p + "_multi", "Multi Trig"), (p + "_sync", "Tempo Sync"),
+            (p + "_loop", "Loop"), (p + "_latch", "Latch"), (p + "_reset", "Reset")], pic=("ENV", p + "_"))
         L.row([(p + "_multi", "MULTI"), (p + "_sync", "SYNC"), (p + "_loop", "LOOP"), (p + "_latch", "LATCH"),
                (p + "_reset", "RESET")], X + 1550, yt + 16, 62, 14, "toggle", SIDE)
         L.row([(p + "_delay", "DELAY"), (p + "_a", "ATTACK"), (p + "_hold", "HOLD"), (p + "_d", "DECAY"),
                (p + "_s", "SUSTAIN"), (p + "_r", "RELEASE")], X + 1546, yt + 32, 52, 66, "knob", 26)
         L.row([(p + "_acurve", "A CURVE"), (p + "_dcurve", "D CURVE"), (p + "_rcurve", "R CURVE")],
-              X + 1862, yt + 14, 52, 42, "small")
-        L.row([(p + "_scale", "KEY SCL"), (p + "_vel", "VEL AMT")], X + 1888, yt + 56, 52, 42, "small")
+              X + 1856, yt + 14, 52, 42, "small")
+        L.row([(p + "_scale", "KEY SCL"), (p + "_vel", "VEL AMT")], X + 1882, yt + 56, 52, 42, "small")
 
     # ---- synth effect and master effects (send levels); delay, reverb and output under them ----
     L.panel(X + 1542, 334, 238, 102, "SYNTH EFFECT", more="SFX")
@@ -371,10 +514,12 @@ def build(lay):
     L.panel(X + 1784, 334, 236, 102, "MASTER EFFECTS - SHARED", more="MFX")
     L.cells([("mfx_on", "ON", 40, "toggle"), ("mfx_send1", "SEND 1", 46), ("mfx_send2", "SEND 2", 46),
              ("mfx_series", "SERIES", 50), ("mfx_width", "WIDTH", 50)], X + 1786, 354, 64)
-    L.panel(X + 1542, 440, 162, 100, "DELAY - SHARED", more="DELAY")
-    L.cells([("dly_time", "TIME", 52), ("dly_fb", "FDBK", 52), ("dly_sync", "SYNC", 54, "toggle")], X + 1544, 458, 72)
-    L.panel(X + 1708, 440, 162, 100, "REVERB - SHARED", more="REVERB")
-    L.cells([("rev_type", "TYPE", 50, "leds"), ("rev_decay", "DECAY", 54), ("rev_size", "SIZE", 54)], X + 1710, 452,
+    # the two master effect slots, any type each (by default a stereo delay and a plate): TYPE and the two knobs their
+    # default types are played by most; every control of the chosen type is on the slot's MORE page
+    L.panel(X + 1542, 440, 162, 100, "MASTER FX 1 - SHARED", more="DELAY")
+    L.cells([("dly_type", "TYPE", 60, "button"), ("dly_time", "TIME", 50), ("dly_fb", "FDBK", 50)], X + 1544, 452, 84)
+    L.panel(X + 1708, 440, 162, 100, "MASTER FX 2 - SHARED", more="REVERB")
+    L.cells([("rev_type", "TYPE", 60, "button"), ("rev_decay", "DECAY", 50), ("rev_size", "SIZE", 50)], X + 1710, 452,
             84)
     L.panel(X + 1874, 440, 146, 100, "SYNTH OUTPUT")
     L.ctl("volume", "knob", X + 1876, 456, 54, 78, "VOLUME", 34)
@@ -387,16 +532,11 @@ def build(lay):
             if p["key"].startswith("mac_") and p["key"] not in dict(mac)]
     L.page("MACRO", "MACRO OSCILLATOR", "A fourth sound source with many models (level: the mixer).",
            mac)
-    L.page("MFX", "MASTER EFFECTS", "Delay and reverb on two sends after the synth effect.", [
-        ("mfx_on", "On"), ("mfx_send1", "Send 1 (Delay)"), ("mfx_send2", "Send 2 (Reverb)"),
-        ("mfx_series", "Delay > Reverb"), ("mfx_width", "Width")])
-    L.page("DELAY", "DELAY", "The master delay (send 1).", [
-        ("mfx_send1", "Send 1"), ("dly_time", "Time L"), ("dly_time_r", "Time R"), ("dly_sync", "Tempo Sync"),
-        ("dly_fb", "Feedback"), ("dly_tone", "Tone"), ("dly_pp", "Ping-Pong"), ("dly_offset", "Ping-Pong Offset")])
-    L.page("REVERB", "REVERB", "The master reverb (send 2).", [
-        ("mfx_send2", "Send 2"), ("rev_type", "Type"), ("rev_decay", "Decay"), ("rev_size", "Size"),
-        ("rev_pre", "Pre-delay"), ("rev_damp", "High Damp"), ("rev_lowdamp", "Low Damp"), ("rev_tone", "Tone"),
-        ("rev_diff", "Diffusion"), ("rev_early", "Early / Late"), ("rev_mod", "Modulation"), ("rev_freeze", "Freeze")])
+    L.page("MFX", "MASTER EFFECTS", "Two effects on two sends after the synth effects, shared by the Synths.", [
+        ("mfx_on", "On"), ("mfx_buss", "Buss Mode"), ("mfx_send1", "Send 1 (FX 1)"), ("mfx_send2", "Send 2 (FX 2)"),
+        ("mfx_series", "FX 1 > FX 2"), ("mfx_width", "Width")])
+    L.page("DELAY", "MASTER FX 1", "Its type's controls (TYPE changes the list). Fed by SEND 1.", mfx_page(L, "dly_"))
+    L.page("REVERB", "MASTER FX 2", "Its type's controls (TYPE changes the list). Fed by SEND 2.", mfx_page(L, "rev_"))
 
     # ---- left-hand controller: octave, glide, wheels, X/Y pad, bend range; the ribbon over the keys ----
     zones.update({"OCT_LEDS": (50, 576, 116, 26), "OCT_DOWN": (64, 606, 36, 16), "OCT_UP": (118, 606, 36, 16),
@@ -449,16 +589,16 @@ def emit(lay, zones, out):
             lay.placed.update(k for k in keys if k in lay.index)
     on_pages = set()
     pages = []
-    for pid, title, note, items in lay.pages:
+    for pid, title, note, items, pic in lay.pages:
         got = [it for it in items if it[0] in lay.index and (it[2] is None or it[2] in lay.index)]
         if got:
-            pages.append((pid, title, note, got))
+            pages.append((pid, title, note, got, pic))
             on_pages.update(it[0] for it in got)
     other = [p["key"] for p in P if p["key"] not in lay.placed and p["key"] not in on_pages]
     if other:
         pages.append(("OTHER", "OTHER", "Parameters that have no home yet.", [(k, P[lay.index[k]]["name"], None, None)
-                                                                             for k in other]))
-    page_ix = {pid: i for i, (pid, _, _, _) in enumerate(pages)}
+                                                                             for k in other], None))
+    page_ix = {pg[0]: i for i, pg in enumerate(pages)}
 
     styles = {"frame": 0, "module": 1, "caption": 2}
     rows = ["{%d, %d, %d, %d, %s, %d, %d}" % (x, y, w, h, c_str(t), styles[s], page_ix.get(m, -1))
@@ -501,19 +641,31 @@ def emit(lay, zones, out):
     # the MORE pages: their items (a param, its label, and the option of another param it depends on)
     lines.append("typedef struct { short param, cond; unsigned mask; const char *label; } lay_item_t;   /* cond: "
                  "shown while option (mask bit) of param cond is set; -1 always */")
-    lines.append("typedef struct { const char *title, *note; short first, count; } lay_page_t;")
+    lines.append("enum { PIC_NONE, %s };   /* a MORE page's picture (more_pics.c) */"
+                 % ", ".join("PIC_%s = %d" % (n, v) for n, v in PICS.items()))
+    lines.append("#define PIC_ROWS %d   /* the screen rows a picture takes, at the bottom of its page */" % PIC_ROWS)
+    lines.append("typedef struct { const char *title, *note; short first, count, pic; const char *pic_key; } lay_page_t;"
+                 "   /* pic_key: the key prefix of what the picture shows (an envelope's \"fenv_\") */")
     items, prow = [], []
-    for pid, title, note, got in pages:
-        prow.append("{%s, %s, %d, %d}" % (c_str(title), c_str(note), len(items), len(got)))
+    for pid, title, note, got, pic in pages:
+        prow.append("{%s, %s, %d, %d, %d, %s}" % (c_str(title), c_str(note), len(items), len(got),
+                                                  PICS[pic[0]] if pic else 0, c_str(pic[1] if pic else "")))
         for key, label, cond, types in got:
             mask = sum(1 << t for t in types) if types is not None else 0xFFFFFFFF
             items.append("{%d, %d, 0x%Xu, %s}" % (lay.index[key], lay.index[cond] if cond else -1, mask, c_str(label)))
     lines.append("LAY lay_item_t ITEMS[] = {%s};" % ",\n    ".join(items or ['{-1, -1, 0, ""}']))
-    lines.append("LAY lay_page_t PAGES[] = {%s};" % ",\n    ".join(prow or ['{"", "", 0, 0}']))
+    lines.append("LAY lay_page_t PAGES[] = {%s};" % ",\n    ".join(prow or ['{"", "", 0, 0, 0, ""}']))
     lines.append("#define NPAGES %d" % len(pages))
     for pid in ("LFO1", "LFO2", "LFO3", "LFO4", "OSC1", "OSC2", "OSC3", "POLY", "ARP", "CHORD", "GEN", "SFX", "MFX",
-                "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "SEQ", "OTHER"):
+                "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "SEQ", "ENV1", "ENV2", "ENV3", "MIXER",
+                "FILTERS", "OTHER"):
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
+    # the rate LEDs: what each flashes with (RL_*: an LFO's rate (n 0-3), the arpeggiator's, the sequencer's, the beat)
+    lines.append("enum { %s };" % ", ".join("RL_%s = %d" % (k, v) for k, v in RATE_KINDS.items()))
+    lines.append("typedef struct { short kind, n, x, y; const char *label; } lay_rate_t;   /* x, y: the LED's centre */")
+    lines.append("LAY lay_rate_t RATES[] = {%s};" % ", ".join("{%d, %d, %d, %d, %s}" % (k, n, x, y, c_str(t))
+                                                           for k, n, x, y, t in lay.rates or [(0, -1, 0, 0, "")]))
+    lines.append("#define NRATES %d" % len(lay.rates))
     # the triangles that open a module's page: the panel's top-right corner under its title strip; the ribbon's end
     tris = []
     for x, y, w, h, t, s, m in lay.panels:
@@ -545,7 +697,7 @@ def main():
         print("warning: gen_layout.py: %s has no place on the panel or a MORE page; it is on the OTHER page" % k,
               file=sys.stderr)
     later = sorted({k for k in lay.planned if k not in lay.index} |
-                   {it[0] for _, _, _, items in lay.pages for it in items if it[0] not in lay.index})
+                   {it[0] for pg in lay.pages for it in pg[3] if it[0] not in lay.index})
     print("layout.h: %d controls on the panel, %d MORE pages (%d items), %d unplaced; %d planned keys not in params "
           "yet%s" % (len(lay.ctls), len(pages), sum(len(p[3]) for p in pages), len(other), len(later),
                      (": " + " ".join(later)) if later else ""))
