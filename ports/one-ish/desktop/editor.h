@@ -77,6 +77,7 @@ typedef struct {
     RECT tab_matrix, tab_more, tab_analog, tab_random, tab_seq, encoder, bprev, bnext, brand;
     RECT seq_leds;                            /* the SEQUENCER module's page LEDs (seq_page.c) */
     RECT focus[NSYNTHS], tab_setup;           /* PANEL FOCUS: SYNTH 1-3, and the SETUP page's button */
+    RECT compare, snapshot;                   /* COMPARE and SNAPSHOT, under PREV / NEXT (library.c) */
     RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon, euclid;   /* euclid: GENERATIVE's ring */
     RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
 } layout_t;
@@ -148,8 +149,10 @@ typedef struct {
     int corners, corner_tries;                 /* square_corners(): 1 done, 0 not (yet), -1 failed; attempts */
     seq_ui_t sq;                               /* the step sequencer's page (seq_page.c) */
     rate_ui_t rl;                              /* the rate and tempo LEDs (rate_leds.c) */
+    struct lib *lib;                           /* undo, compare, snapshots, tags, sets (library.c; NULL: none) */
+    HWND idle;                                 /* a hidden window whose timer loads MIDI program changes */
 } ed_t;
-enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT };
+enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB };
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -225,6 +228,24 @@ void patches_program_set(ed_t *e, int before);
 intptr_t patches_get_chunk(ed_t *e, void *ptr);
 void patches_chunk_set(ed_t *e, const void *chunk, intptr_t len);
 intptr_t patches_test(ed_t *e, intptr_t op, char *buf, float opt);
+int patches_zone_rect(ed_t *e, int z, RECT *r);     /* where the PATCHES page's zone z is (0: not shown) */
+/* library.c: undo, COMPARE, snapshots, tags, performance sets (library.h has the rest) */
+int lib_screen(int s);                         /* one of the library's pages (PATCHES included) */
+int lib_hit(ed_t *e, POINT pt);
+int lib_press(ed_t *e, int z);
+void lib_release(ed_t *e);
+int lib_subs(ed_t *e);
+void lib_open(ed_t *e, int scr);
+void lib_draw(HDC dc, ed_t *e);                /* the page under the patch name, with its tabs */
+void lib_help(ed_t *e, char *out, int n);
+const char *lib_zone_help(int z);
+int lib_home_line(ed_t *e, char *out, int n);  /* the tags and tempo under the patch name (0: none) */
+int lib_notes_help(ed_t *e, char *out, int n); /* SHOW NOTES (0: off) */
+int lib_comparing(ed_t *e);
+void lib_tick(ed_t *e);
+void lib_idle(ed_t *e);
+void lib_midi_events(ed_t *e, const void *events);   /* the host's MIDI (any thread): program and bank change */
+intptr_t lib_test(ed_t *e, intptr_t op, char *buf, float opt);
 /* seq_page.c: the step sequencer's page (seq_page.h) */
 void seq_init(ed_t *e);
 int seq_read(ed_t *e);

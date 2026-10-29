@@ -74,14 +74,14 @@ user patch files (2026-10-27, offline).
 | Traditional knobs, soft knobs, master encoder; lit and red buttons [HW] | p11 | Missing | The window's drawn knobs, buttons and PRESET knob stand in (mouse) | - | none |
 | MORE pages: a second layer of parameters per module [UI] | p11, every module | Have | The window's MORE triangles open each module's second layer on the centre screen (sub-pages past 16 items) | - | none |
 | DEST button on each LFO and EG: next touched control becomes a destination [UI] | p11, p43, p47, p68 | Missing | Matrix slots set by hand on the MATRIX page | M | none |
-| HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Partial | The name line shows the patch (F/U, `*` when edited); each page's title the Synth in focus; the SETUP page the three Synths' on/off, channels and key ranges (2026-10-28, offline and the desktop window); no timbre names, tempo or tags | S | none |
-| SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Partial | MATRIX (the MOD screen) and the PATCHES page's SAVE / DELETE exist; no SETTINGS, SNAPSHOT or COMPARE | see 21, 22 | none |
+| HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Partial | The name line shows the patch (F/U, `*` when edited); each page's title the Synth in focus; the SETUP page the three Synths' on/off, channels and key ranges (2026-10-28, offline and the desktop window); the home line under the name its tags, NOTES and the host's tempo (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no timbre names | S | none |
+| SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Partial | MATRIX (the MOD screen), the PATCHES page's SAVE / DELETE, and COMPARE and SNAPSHOT on the console (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no SETTINGS | see 22 | none |
 | SHIFT: fine resolution on soft knobs, latching shift [UI] | p14 | Have | Shift-drag is the fine resolution on every knob (`editor.c`); a latching shift isn't needed with a keyboard modifier | - | none |
 | New initialised preset (SHIFT + COMPARE) | p14 | Have | The "Init" program | - | none |
 | Panel Focus: SYNTH 1/2/3, multi-select for joint edits, SHIFT = solo [UI][MULTI] | p14-15 | Partial | SYNTH 1/2/3 buttons on the console: the panel, MORE pages, matrix, step editor and randomiser show and edit that Synth; Ctrl-click edits several together (the last picked shown); shared sections marked SHARED (2026-10-28, offline and the desktop window); no solo | S (solo) | none |
 | Keyboard Control: per-Synth ON, LOW/HIGH RANGE key zone, both = full G0..C10 [MULTI] | p15 | Partial | `syn_on`, `key_lo`, `key_hi` per Synth (SETUP page), as note names (2026-10-28, offline and the desktop window); set by value, not by pressing LOW RANGE and then a key | S | none |
 | Expression Assign buttons: MW, PAD X, PAD Y, KB, VEL, AT, EXP 1 [UI] | p15, p68 | Missing | Matrix slots set by hand | M | none |
-| Selecting presets from the browser (list, timbre pane, tag pane, tag filters) [UI] | p15-16 | Partial | The PATCHES page lists factory presets and user patches and loads on a click; PREV/NEXT and the PRESET knob step through them; no timbre pane, no tags or filters | see 20 | none |
+| Selecting presets from the browser (list, timbre pane, tag pane, tag filters) [UI] | p15-16 | Partial | The PATCHES page lists factory presets and user patches and loads on a click; PREV/NEXT and the PRESET knob step through them; the TAGS page filters the list and PREV/NEXT by TYPE, CATEGORY, MOOD and GROUP (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no timbre pane | see 20 | none |
 | 61-key keybed, velocity and aftertouch [HW] | p17, p140 | Have | Via MIDI: velocity, channel pressure; the window's 61-key keyboard plays velocity by click height | - | none |
 | Selectable velocity curves | p17, p116 | Have | `vel_curve` (see 19) | - | none |
 | OCTAVE buttons; both = default octave; hold both = MIDI panic | p17, p112 | Have | `octave_shift` -2..+2 per Synth; the window's OCTAVE buttons: held 1 s back to the default octave, 2 s a MIDI panic (pedals up, All Notes Off, All Sound Off on every channel) (2026-10-28, the desktop window) | - | none |
@@ -273,10 +273,10 @@ user patch files (2026-10-27, offline).
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| Performance Sets: up to 128 sets of 64 preset pointers (banks A-H x 1-8) [UI] | p57, p141 | Partial | The host's program list (35 factory presets); user patches are browsed in the window, not as sets | M | none |
-| Assign current preset by long press; dim/lit/dark bank and preset buttons [UI] | p57 | Missing | - (window buttons could do it) | S (with sets) | none |
-| CURRENT SET, BROWSE SETS, ARRANGE SETS: move, copy, delete, add, name, notes [UI] | p58-59 | Missing | - | M | none |
-| Remote MIDI program and bank selection of sets | p57 | Partial | Host program change selects the 35 factory presets; user patches are not in the program list | S-M | none |
+| Performance Sets: up to 128 sets of 64 preset pointers (banks A-H x 1-8) [UI] | p57, p141 | Have | 128 sets of 64 factory presets or user patches, banks A-H x 1-8 on the SET page, saved in `sets.oneishsets` beside the patches (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
+| Assign current preset by long press; dim/lit/dark bank and preset buttons [UI] | p57 | Have | Holding a number 0.6 s assigns the current patch (ASSIGN and CLEAR too); the bank letters and numbers are lit (shown / playing), normal (holding patches) or dark (empty); a bank letter previews its eight patches without loading (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
+| CURRENT SET, BROWSE SETS, ARRANGE SETS: move, copy, delete, add, name, notes [UI] | p58-59 | Have | The SET, ALL SETS and ARRANGE pages (UP, DOWN, COPY, DELETE, ADD, NAME, NOTES) (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
+| Remote MIDI program and bank selection of sets | p57 | Have | Bank select MSB 1 + LSB n, program 0-63: set n + 1's A1-H8; MSB 0 + LSB n, program p: position 128n + p of the list (factory presets, then user patches A-Z); loaded on the window's thread (a hidden window when the editor is closed) (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
 | Text entry from the keyboard or a USB keyboard [UI] | p60, p143 | Have | The window's name prompts take typing (Windows text boxes) | - | none |
 
 ## 13. Master Clock (p60-62)
@@ -290,7 +290,7 @@ user patch files (2026-10-27, offline).
 | LOAD PRESET TEMPO [HW] | on/off (p62) | Missing | A plugin can't set the host's tempo | - | none |
 | External clock overrides the Master Clock | p60 | Have | The host clock always applies | - | none |
 | What can sync: arp, sequencer, LFOs, EGs, effects | p60 | Have | LFOs, EGs (`*_sync`), the synth effect and delay (`modfx_sync`, `dly_sync`), the arp and the sequencer (`seq_sync`) sync to the host (2026-10-27, offline) | - | none |
-| Current tempo shown on the HOME screen [UI] | p60, p12 | Missing | - | S | none |
+| Current tempo shown on the HOME screen [UI] | p60, p12 | Have | The host's tempo on the home line under the patch name, when the host reports one (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
 
 ## 14. Voice allocation: Hold, Chord, Polyphony (p63-66)
 
@@ -702,8 +702,8 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | Preset store (tens of thousands), browse and load | p118-119, p140 | Have | 35 factory programs plus any number of user patch files (`Documents\ONE-ish\Patches`, `docs/PATCHES.md`), browsed together on the PATCHES page and with PREV/NEXT | - | none |
-| Tags: TYPE (Single, Layer, Split, Multi), CATEGORY, MOOD, GROUP; filter the browser by tags [UI] | p118-120 | Partial | A patch file may carry `category=` and `author=` lines (kept on save); nothing sets them in the window, no mood/group/type, no filters | M | none |
-| Notes saved with a preset; SHOW NOTES on the HOME screen [UI] | p118, p120 | Missing | - | S | none |
+| Tags: TYPE (Single, Layer, Split, Multi), CATEGORY, MOOD, GROUP; filter the browser by tags [UI] | p118-120 | Have | Set in the save box (TYPE starts from the Synths' setup) or with TAG PATCH; the TAGS page filters the PATCHES list and PREV/NEXT, one tag per kind; the factory presets carry their own tags; patch format version 2 (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
+| Notes saved with a preset; SHOW NOTES on the HOME screen [UI] | p118, p120 | Have | Notes in the save box or TAGS > NOTES, saved in the patch (`notes=`); SHOW NOTES shows them in the help area; the home line says NOTES (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
 | Load a Timbre from any preset into any Synth [MULTI] | p119 | Have | PATCHES page INTO S1/2/3: a factory preset or user patch loads into the focused Synth only (its setup kept), the engine's `synthload` (2026-10-28, offline and the desktop window) | - | none |
 | SAVE PRESET / SAVE PRESET AS, unique names, overwrite prompt [UI] | p120 | Have | The PATCHES page: SAVE, SAVE AS (asks before replacing a same-named patch; names compare case-insensitively), RENAME, DELETE (2026-10-27, offline) | - | none |
 | SAVE TIMBRE to a new single-Timbre preset [UI][MULTI] | p121 | Have | PATCHES page SAVE S1/2/3: the focused Synth's sound as a user patch (2026-10-28, offline and the desktop window) | - | none |
@@ -714,9 +714,9 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | Edited indicator (SAVE lit dimly) [UI] | p122 | Have | `*` after the patch name and SAVE lit while the sound differs from the loaded or saved one (`patches.c`; also restored with a project) | - | none |
-| COMPARE edited vs saved (A/B); loading another preset clears both buffers | p122 | Missing | - (the editor already keeps the loaded values in `pt.base`) | S-M | none |
-| SNAPSHOT: timestamped micro-saves with notes, browse, load, delete [UI] | p122-123 | Missing | The randomiser's UNDO/REDO covers random sounds only; the host's undo, where it has one | M | none |
-| AUTOSAVE snapshot of unsaved edits on preset change [UI] | p123 | Missing | - | S (with snapshots) | none |
+| COMPARE edited vs saved (A/B); loading another preset clears both buffers | p122 | Have | COMPARE on the console plays the saved version, again the edit; loading another sound ends it (the edit autosaved); all three Synths and the sequences (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
+| SNAPSHOT: timestamped micro-saves with notes, browse, load, delete [UI] | p122-123 | Have | The SNAPSHOTS page: TAKE (with a note), LOAD, NOTES, DELETE, SAVE OVER (its patch), SAVE NEW; files in `Snapshots\` beside the patches (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
+| AUTOSAVE snapshot of unsaved edits on preset change [UI] | p123 | Have | An `AUTO` snapshot of an edited sound whenever another sound loads (list, PREV/NEXT, INTO, sets, MIDI, snapshots); the newest 32 kept (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
 
 ## 22. Settings (p124-139)
 
@@ -728,7 +728,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | KNOB MODE [HW] | Absolute, Pass Through, Relative (p125) | Missing | Mouse knobs always edit relatively | - | none |
 | CHORD MEMORY learn mode | Silent Learn, Audible Learn (p125) | Have | `learn_mode` (shared; the SETUP page) (2026-10-28, offline) | - | none |
 | LCD BRIGHTNESS, PANEL LED BRIGHTNESS [HW] | 0% to 100% (p125) | Missing | - | - | none |
-| SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Partial | The PRESET knob and PREV/NEXT load as they step (autoload always on, no switch); no bank preview (no performance sets) | S | none |
+| SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Partial | The PRESET knob and PREV/NEXT load as they step (autoload always on, no switch); the SET page's bank letters always preview a bank (no switch) (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | S | none |
 | DUPLICATE NAMES ON IMPORT / EXPORT [UI] | Ignore, Overwrite, Auto Rename, Manual Rename (p126) | Partial | IMPORT asks before overwriting a same-named patch; no auto-rename or ignore choice | S | none |
 | STEP EDIT AUTO-SCROLL [UI] | off/on (p126) | Missing | (with the sequencer) | S | none |
 | NOISE REDUCTION between notes [ANALOG][HW] | -24 dB to 0 dB, default -12 dB (p126) | Missing | Not needed: no analog hiss (ONE-ish adds only a -100 dB floor) | - | none |
@@ -767,7 +767,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Firmware / UI version, build date and info [UI] | p134 | Missing | The host shows the plugin version | S | none |
 | USER SPACES: switch, create (factory or empty), rename, copy [UI] | p134-135 | Missing | One patch folder (`ONEISH_PATCH_DIR` can point elsewhere) | M | none |
 | EXPORT / IMPORT to USB: presets, sequences, sets, effect presets, matrix presets, globals, all [UI] | p136-137 | Partial | One patch at a time to or from any folder (the PATCHES page); nothing else exists to export yet | M | none |
-| Edit CATEGORY, MOOD, GROUP tag lists [UI] | p137-138 | Missing | - | S | none |
+| Edit CATEGORY, MOOD, GROUP tag lists [UI] | p137-138 | Have | The TAGS page: ADD, RENAME, DELETE (the patches that carry a tag follow); `tags.oneishtags` beside the patches (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
 | MASTER FREQUENCY (A above middle C) | 400 Hz to 480 Hz, default 440 (p139) | Have | `master_tune` (2026-10-27, offline) | - | none |
 | MASTER FINE TUNE | -100 to +100 cents (p139) | Have | `fine_tune` (2026-10-27, offline) | - | none |
 
@@ -820,7 +820,7 @@ outside Carla's fixed settings.
 | Plays in tune at any host sample rate (44.1, 48, 88.2, 96 kHz) | Have (2026-10-27, desktop, offline): the engine still runs at 44.1 kHz and `desktop/hostrate.c` converts it to the host's rate (`desktop/resample.c`, a 72-tap windowed sinc: flat to 20 kHz, images 103 dB down), reporting the converter's latency (40 samples at 48 kHz, 79 at 96 kHz). A4 within 0.01 cent at 44.1/48/96 kHz, synced arp steps on the host's timeline (`desktop/rate_test.c`) | - | Wrapper and MPC unchanged. CPU about 40 us per 512-frame block for the converter (0.4% of real time at 48 kHz) |
 | Full-resolution output | Have (2026-10-27, desktop, offline): float samples from the engine (`one_ish_render_float`, the int16 path's samples before its last step), through a desktop-only engine table the wrapper is compiled against; 44.1 kHz output matches the old 16-bit output sample for sample when quantised | - | Shared wrapper not changed (only renamed symbols at compile time, desktop build) |
 | Microtuning: Scala `.scl` / `.kbm` files | Missing (only master tune and fine tune) | M | Not in this manual; common in desktop synths. Per-voice pitch already comes from one function (`update_note_hz`), so a table lookup is cheap |
-| Undo / redo of any edit in the window | Only the randomiser's history; hosts differ in plugin undo | M | Could share the snapshot store (21) |
+| Undo / redo of any edit in the window | Have (2026-10-29, offline and the desktop window; `docs/PATCHES.md`): every edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, randomiser, loads) is a step of the whole state; a drag or a wheel burst is one; 100 steps; Ctrl+Z / Ctrl+Y and the SNAPSHOTS page's UNDO / REDO | - | Host automation is not a step |
 | The 14 open-source effect params on the window | Missing (generic host editor only) | S | `desktop/gen_layout.py` |
 | MIDI learn in the plugin | Missing | M | Same as the LEARN MIDI CC row (24) |
 | Poly aftertouch / MPE | Not read (channel pressure only, as on the Moog One) | M | Not a Moog One feature; owner's call |
@@ -847,19 +847,19 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 9. LFOs (p46-49) | 18 | 4 | 1 | 0 | 0 |
 | 10. VCA (p50-52) | 5 | 0 | 0 | 0 | 0 |
 | 11. Output (p53-56) | 0 | 0 | 6 | 4 | 0 |
-| 12. Performance Sets and text entry (p57-60) | 1 | 2 | 2 | 0 | 2 |
-| 13. Master Clock (p60-62) | 3 | 1 | 4 | 3 | 1 |
+| 12. Performance Sets and text entry (p57-60) | 5 | 0 | 0 | 0 | 0 |
+| 13. Master Clock (p60-62) | 4 | 1 | 3 | 3 | 0 |
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
 | 15. Modulation (p67-77) | 74 | 3 | 11 | 2 | 3 |
 | 16. Arpeggiator (p78-81) | 16 | 1 | 0 | 0 | 0 |
 | 17. Sequencer (p82-95) | 28 | 4 | 1 | 0 | 0 |
 | 18. Effects (p96-111) | 85 | 0 | 3 | 0 | 1 |
 | 19. Left Hand Controller (p17-18, p112-117) | 15 | 1 | 3 | 1 | 0 |
-| 20. Browser, presets and timbres (p118-121) | 4 | 2 | 1 | 0 | 1 |
-| 21. Editing and saving (p122-123) | 1 | 0 | 3 | 0 | 2 |
-| 22. Settings (p124-139) | 6 | 5 | 20 | 11 | 7 |
+| 20. Browser, presets and timbres (p118-121) | 6 | 1 | 0 | 0 | 0 |
+| 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
+| 22. Settings (p124-139) | 7 | 5 | 19 | 11 | 6 |
 | 24. Appendices A and B (p143-158) | 1 | 2 | 3 | 1 | 0 |
-| **Total** | **363** | **43** | **69** | **27** | **20** |
+| **Total** | **374** | **40** | **61** | **27** | **13** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -957,6 +957,9 @@ that LFO: it needs a per-sample path).
 - Files: `src/lfo.h`, `src/env.h`, the LFO and envelope parts of `src/engine.c`, `params.json`.
 
 **5. Edit safety: compare, snapshots, autosave, undo** (sections 1, 21). Effort M. CPU: none.
+- Done 2026-10-29 (offline and the desktop window; `desktop/library.c`, `docs/PATCHES.md`): COMPARE and SNAPSHOT on the
+  console, the SNAPSHOTS page, autosaves (newest 32), undo / redo of any edit from the window (100 steps; Ctrl+Z /
+  Ctrl+Y), all over the whole state (three Synths, sequences). Tested by `desktop/library_test.c` in load_test.
 - COMPARE (hear the saved version, then back to the edit; loading another sound clears both); SNAPSHOT (timestamped
   saves of the sound with notes; browse, load, delete; a snapshot saved over the patch or as a new one); AUTOSAVE (a
   snapshot of unsaved edits when another sound loads); undo and redo of any edit, not only the randomiser's.
@@ -1035,10 +1038,13 @@ voice for the EXT channel; shared medium (10-band) to medium-high (16-band) for 
 
 **12. Library and browser** (sections 1, 12, 13, 15a, 18a, 20, 22). Effort L in all, in four parts.
 - 12a Tags (TYPE, CATEGORY, MOOD, GROUP) set on save and used as browser filters, editable tag lists; notes per patch
-  with SHOW NOTES; the HOME line with tags and tempo. S-M.
+  with SHOW NOTES; the HOME line with tags and tempo. S-M. Done 2026-10-29 (offline and the desktop window; patch
+  format version 2).
 - 12b Performance Sets: 128 sets of 64 patches (banks A-H x 1-8 as window buttons, a long press assigns the current
   sound), the set pages (current, browse, arrange: move, copy, delete, add, name, notes), bank preview; user patches
-  reachable by MIDI program and bank change. M.
+  reachable by MIDI program and bank change. M. Done 2026-10-29 (offline and the desktop window): the bank and number
+  buttons are on the SET page of the centre screen (the console has no room for sixteen more), COMPARE and SNAPSHOT
+  took the console's name plate.
 - 12c Libraries of parts: effect presets per type (load, save, initialise), matrix presets (load add or replace, with
   notes and timestamps), sequences (with package 2). M.
 - 12d User spaces (switchable libraries); export and import of every kind of item, and of everything; the

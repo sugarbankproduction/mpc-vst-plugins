@@ -24,6 +24,8 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   ON, channel and key range; the other Synths and the master effects stay). SAVE S1/2/3 saves the Synth in focus as
   its own user patch. SAVE and SAVE AS keep the whole instance (all three Synths: a performance).
 - **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample.
+- **UNDO / REDO, COMPARE, snapshots and autosaves** (2026-10-29, offline; `docs/PATCHES.md`) work on the whole
+  performance: all three Synths, the shared settings and every sequence, whichever Synth is in focus.
 
 ## Params (owner's choice A, 2026-10-28)
 
