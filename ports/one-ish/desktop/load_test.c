@@ -1286,6 +1286,7 @@ static void rate_led_test(AEffect *fx, HWND child, int w, int h) {
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void quickmod_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
@@ -1380,6 +1381,7 @@ static void editor(AEffect *fx, const char *bmp) {
         patch_page(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         seq_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         focus_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        quickmod_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         failures += library_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* undo, compare, sets ... */
         settings_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
     }
@@ -1662,6 +1664,13 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
     /* three different sounds: cutoff 10 / 90 / 50%, osc 1 tri / saw / tri, matrix row 1's amount */
     setkey(fx, "flt_cut", 0.10f); setkey(fx, "s2_flt_cut", 0.90f); setkey(fx, "s3_flt_cut", 0.50f);
     setkey(fx, "o1_wave", 0.0f); setkey(fx, "s2_o1_wave", 1.0f); setkey(fx, "s3_o1_wave", 0.0f);
+    for (int c = 0; c < 3; c++)   /* no destinations in any matrix: no modulation rings on the knobs (quickmod.c) */
+        for (int m = 1; m <= 16; m++) {
+            char k[24];
+            if (c) snprintf(k, sizeof k, "s%d_mod%d_dst", c + 1, m);
+            else snprintf(k, sizeof k, "mod%d_dst", m);
+            setkey(fx, k, 0.0f);
+        }
     for (int m = 1; m <= 9; m += 8) {   /* (rows 1 and 9: the matrix page may show either half) */
         char k1[16], k2[16], k3[16];
         snprintf(k1, sizeof k1, "mod%d_amt", m); snprintf(k2, sizeof k2, "s2_mod%d_amt", m); snprintf(k3, sizeof k3, "s3_mod%d_amt", m);
@@ -1783,6 +1792,213 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
     setkey(fx, "s2_syn_on", 0.0f);
     fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
     click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+/* ---- QUICK ASSIGN (desktop/quickmod.c): a source picked on the panel, a knob clicked and dragged for the amount ---- */
+#define TEST_QM 0x4F31514D   /* as editor.h */
+enum { QMT_SOURCE = 1, QMT_ANSWER, QMT_DRAWN, QMT_DEST_XY, QMT_HELP, QMT_DST_OF };
+enum { QA_LFO1 = 0, QA_LFO2 = 1, QA_PAD = 10 };   /* quickmod.c's parts of the panel */
+static char qbuf[1024];
+static intptr_t qmt(AEffect *fx, int op, float opt) { qbuf[0] = 0; return fx->dispatcher(fx, 50, TEST_QM, op, qbuf, opt); }
+static int qm_steps(AEffect *fx) { static char b[1024]; return (int)fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, b, 0) % 1000; }
+static void with_keys(int ctrl, int alt) {   /* the window reads Ctrl and Alt with GetKeyState (this thread's) */
+    BYTE ks[256];
+    GetKeyboardState(ks);
+    ks[VK_CONTROL] = ctrl ? 0x80 : 0;
+    ks[VK_MENU] = alt ? 0x80 : 0;
+    SetKeyboardState(ks);
+}
+static void qm_click_px(HWND child, int x, int y) {
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+}
+static void qm_click_xy(HWND child, intptr_t xy) { qm_click_px(child, (int)(xy & 0xFFFF), (int)(xy >> 16)); }
+static void qm_drag(HWND child, const char *key, float s, int dy) {   /* a press on a control, a move up by dy, let go */
+    RECT r = ctl_px(key, s);
+    int x = (r.left + r.right) / 2, y = (r.top + r.bottom) / 2;
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x, y - dy / 2));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x, y - dy));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(x, y - dy));
+}
+static void qm_right_click(HWND child, int x, int y) { SendMessageA(child, WM_RBUTTONDOWN, MK_RBUTTON, MAKELPARAM(x, y)); }
+static int mk(int m, int c, const char *col) {   /* Synth c's matrix row m's param (rnd_key; NPARAMS: none) */
+    char k[32];
+    if (c) snprintf(k, sizeof k, "s%d_mod%d_%s", c + 1, m + 1, col);
+    else snprintf(k, sizeof k, "mod%d_%s", m + 1, col);
+    return rnd_key(k);
+}
+static int mopt(AEffect *fx, int m, int c, const char *col) {
+    int i = mk(m, c, col);
+    return i < NPARAMS ? (int)lroundf(fx->getParameter(fx, i) * (PARAMS[i].nopts - 1)) : -1;
+}
+static float mamt(AEffect *fx, int m, int c) {
+    int i = mk(m, c, "amt");
+    return PARAMS[i].min + fx->getParameter(fx, i) * (PARAMS[i].max - PARAMS[i].min);
+}
+static void mclear(AEffect *fx) {   /* every Synth's matrix empty */
+    for (int c = 0; c < 3; c++)
+        for (int m = 0; m < 16; m++) {
+            fx->setParameter(fx, mk(m, c, "dst"), 0.0f);
+            fx->setParameter(fx, mk(m, c, "src"), 0.0f);
+            fx->setParameter(fx, mk(m, c, "via"), 0.0f);
+            fx->setParameter(fx, mk(m, c, "amt"), 0.5f);
+        }
+}
+static int rows_to(AEffect *fx, int c, int d) {   /* how many of Synth c's rows reach destination d */
+    int n = 0;
+    for (int m = 0; m < 16; m++) n += mopt(fx, m, c, "dst") == d;
+    return n;
+}
+static void quickmod_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    static float saved[NPARAMS];
+    snapshot(fx, saved);
+    int svf = rnd_key("svf_cut"), lad = rnd_key("flt_cut");
+    int d_svf = (int)qmt(fx, QMT_DST_OF, (float)svf), d_lad = (int)qmt(fx, QMT_DST_OF, (float)lad);
+    check(d_svf > 0 && d_lad > 0 && qmt(fx, QMT_DST_OF, (float)rnd_key("glide_time")) < 0,
+          "quick assign: the cutoff knobs have matrix destinations, GLIDE RATE has none");
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);   /* Synth 1 alone */
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, qbuf, 0);   /* (an empty undo history: the steps can be counted) */
+    mclear(fx);
+    setkey(fx, "svf_cut", 0.5f);   /* (mid-way: the ring shows both ways in the picture) */
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    RECT kr = ctl_px("svf_cut", s);
+    InflateRect(&kr, 4, 4);
+    unsigned char *before = grab(child, w, h);
+    /* LFO 1's DEST, then the SVF cutoff dragged up 40 pixels: row 1 = LFO 1 > SVF Cutoff +40% */
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_LFO1));
+    int armed = (int)qmt(fx, QMT_SOURCE, 0);
+    snprintf(what, sizeof what, "quick assign: LFO 1's DEST button picks LFO 1 (source %d \"%s\")", armed, qbuf);
+    check(armed == 4 && !strcmp(qbuf, "LFO 1"), what);
+    float cut0 = fx->getParameter(fx, svf);
+    int s0 = qm_steps(fx), a0 = automated[mk(0, 0, "amt")], b0 = begins, e0 = ends;
+    qm_drag(child, "svf_cut", s, 40);
+    snprintf(what, sizeof what, "quick assign: a click on SVF CUTOFF and a drag up connects LFO 1 > SVF Cutoff in row 1 at "
+             "+40%% (src %d, dst %d, amount %.2f), the cutoff itself unchanged (%.3f = %.3f), the host told (%d automates, "
+             "%d begin, %d end)", mopt(fx, 0, 0, "src"), mopt(fx, 0, 0, "dst"), mamt(fx, 0, 0), fx->getParameter(fx, svf),
+             cut0, automated[mk(0, 0, "amt")] - a0, begins - b0, ends - e0);
+    check(mopt(fx, 0, 0, "src") == 4 && mopt(fx, 0, 0, "dst") == d_svf && fabsf(mamt(fx, 0, 0) - 40.0f) < 0.01f &&
+          fx->getParameter(fx, svf) == cut0 && automated[mk(0, 0, "amt")] > a0 && begins - b0 == ends - e0 && begins > b0, what);
+    int s1 = qm_steps(fx);
+    snprintf(what, sizeof what, "quick assign: the connection and its amount are one undo step (%d -> %d)", s0, s1);
+    check(s1 == s0 + 1, what);
+    qm_drag(child, "svf_cut", s, -70);   /* again, still picked: the same row, down 70: -30% */
+    snprintf(what, sizeof what, "quick assign: dragging down turns the amount negative in the same row (%.2f, rows to SVF "
+             "Cutoff %d)", mamt(fx, 0, 0), rows_to(fx, 0, d_svf));
+    check(fabsf(mamt(fx, 0, 0) + 30.0f) < 0.01f && rows_to(fx, 0, d_svf) == 1, what);
+    unsigned char *after = grab(child, w, h);
+    snprintf(what, sizeof what, "quick assign: the SVF cutoff knob is drawn with a modulation ring (drawn %d, pixels %s)",
+             (int)qmt(fx, QMT_DRAWN, (float)svf), before && after && !region_same(before, after, w, kr) ? "differ" : "same");
+    check(qmt(fx, QMT_DRAWN, (float)svf) == 1 && before && after && !region_same(before, after, w, kr), what);
+    if (bmp) shot(child, w, h, bmp, "_quickmod");
+    /* one undo step each: Ctrl+Z back to +40%, then no row */
+    with_keys(1, 0);
+    SendMessageA(child, WM_KEYDOWN, 'Z', 0);
+    float back = mamt(fx, 0, 0);
+    SendMessageA(child, WM_KEYDOWN, 'Z', 0);
+    with_keys(0, 0);
+    snprintf(what, sizeof what, "quick assign: Ctrl+Z takes back the second drag (%.2f) then the connection (dst %d)", back,
+             mopt(fx, 0, 0, "dst"));
+    check(fabsf(back - 40.0f) < 0.01f && mopt(fx, 0, 0, "dst") == 0, what);
+    /* a knob with no destination says so; Esc ends it */
+    float g0 = getkey(fx, "glide_time");
+    click_ctl(child, s, "glide_time");
+    qmt(fx, QMT_HELP, 0);
+    snprintf(what, sizeof what, "quick assign: GLIDE RATE clicked: unchanged, \"no matrix destination\" (%s)", qbuf);
+    check(getkey(fx, "glide_time") == g0 && strstr(qbuf, "no matrix destination") != NULL, what);
+    SendMessageA(child, WM_KEYDOWN, VK_ESCAPE, 0);
+    check(qmt(fx, QMT_SOURCE, 0) == 0, "quick assign: Esc ends it");
+    /* afterwards: Ctrl-drag a modulated knob for its amount; hovering it says what modulates it */
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_LFO1));
+    qm_drag(child, "svf_cut", s, 20);
+    SendMessageA(child, WM_KEYDOWN, VK_ESCAPE, 0);
+    with_keys(1, 0);
+    qm_drag(child, "svf_cut", s, 15);
+    with_keys(0, 0);
+    snprintf(what, sizeof what, "quick assign: a Ctrl-drag on the modulated knob turns its amount (20%% -> %.2f%%), not the "
+             "knob (%.3f = %.3f)", mamt(fx, 0, 0), fx->getParameter(fx, svf), cut0);
+    check(fabsf(mamt(fx, 0, 0) - 35.0f) < 0.01f && fx->getParameter(fx, svf) == cut0, what);
+    RECT cr = ctl_px("svf_cut", s);
+    SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((cr.left + cr.right) / 2, (cr.top + cr.bottom) / 2));
+    qmt(fx, QMT_HELP, 0);
+    snprintf(what, sizeof what, "quick assign: hovering the knob lists its modulation (\"%s\")", qbuf);
+    check(strstr(qbuf, "modulated by") && strstr(qbuf, "LFO 1 +35%"), what);
+    /* right-click: OPEN IN MATRIX (row 1), then REMOVE */
+    static char lb[1024];
+    click_zone(child, s, ZONE_TAB_MORE);
+    qmt(fx, QMT_ANSWER, 200 + 0);
+    qm_right_click(child, (cr.left + cr.right) / 2, (cr.top + cr.bottom) / 2);
+    int scr = (int)fx->dispatcher(fx, 50, TEST_LIB, LT_SCREEN, lb, 0);
+    check(scr == -1, "quick assign: right-click > OPEN IN MATRIX shows the MATRIX page");
+    if (bmp) shot(child, w, h, bmp, "_quickmod_matrix");
+    int s2 = qm_steps(fx);
+    qmt(fx, QMT_ANSWER, 100 + 0);
+    qm_right_click(child, (cr.left + cr.right) / 2, (cr.top + cr.bottom) / 2);
+    SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));   /* (nothing hot, as in the first picture) */
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    unsigned char *gone = grab(child, w, h);
+    snprintf(what, sizeof what, "quick assign: right-click > REMOVE frees the row (dst %d, src %d), one undo step (%d -> %d), "
+             "the ring goes (drawn %d)", mopt(fx, 0, 0, "dst"), mopt(fx, 0, 0, "src"), s2, qm_steps(fx),
+             (int)qmt(fx, QMT_DRAWN, (float)svf));
+    check(mopt(fx, 0, 0, "dst") == 0 && mopt(fx, 0, 0, "src") == 0 && qm_steps(fx) == s2 + 1 &&
+          qmt(fx, QMT_DRAWN, (float)svf) == 0 && gone && before && region_same(before, gone, w, kr), what);
+    free(gone);
+    /* two Synths in focus: Alt-click LFO 2's panel, the ladder cutoff up 25: a row in each (Synth 2's row 1 is taken) */
+    fx->setParameter(fx, mk(0, 1, "src"), 1.0f / 25);
+    fx->setParameter(fx, mk(0, 1, "dst"), 1.0f / (PARAMS[mk(0, 1, "dst")].nopts - 1));
+    fx->dispatcher(fx, 50, TEST_FOCUS, 3, NULL, 0.0f);   /* Synths 1 and 2, Synth 1 shown */
+    with_keys(0, 1);
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, 100 + QA_LFO2));
+    with_keys(0, 0);
+    int st = qm_steps(fx);
+    armed = (int)qmt(fx, QMT_SOURCE, 0);
+    qm_drag(child, "flt_cut", s, 25);
+    snprintf(what, sizeof what, "quick assign: Alt-click on LFO 2 (source %d), the ladder cutoff with Synths 1+2 in focus: "
+             "Synth 1 row 1 (%d > %d %.1f%%), Synth 2 row 2 (%d > %d %.1f%%), Synth 3 none (%d); one undo step (%d -> %d)",
+             armed, mopt(fx, 0, 0, "src"), mopt(fx, 0, 0, "dst"), mamt(fx, 0, 0), mopt(fx, 1, 1, "src"),
+             mopt(fx, 1, 1, "dst"), mamt(fx, 1, 1), rows_to(fx, 2, d_lad), st, qm_steps(fx));
+    check(armed == 5 && mopt(fx, 0, 0, "src") == 5 && mopt(fx, 0, 0, "dst") == d_lad && fabsf(mamt(fx, 0, 0) - 25.0f) < 0.01f &&
+          mopt(fx, 1, 1, "src") == 5 && mopt(fx, 1, 1, "dst") == d_lad && fabsf(mamt(fx, 1, 1) - 25.0f) < 0.01f &&
+          mopt(fx, 0, 1, "dst") == 1 && rows_to(fx, 2, d_lad) == 0 && qm_steps(fx) == st + 1, what);
+    if (bmp) {   /* a picture: LFO 2 picked, and a mod envelope on oscillator 1's pulse width (amber) */
+        fx->setParameter(fx, mk(2, 0, "src"), 3.0f / 25);
+        fx->setParameter(fx, mk(2, 0, "dst"), (float)qmt(fx, QMT_DST_OF, (float)rnd_key("o1_pw")) / (PARAMS[mk(2, 0, "dst")].nopts - 1));
+        fx->setParameter(fx, mk(2, 0, "amt"), (60.0f + 300.0f) / 600.0f);
+        InvalidateRect(child, NULL, FALSE);
+        shot(child, w, h, bmp, "_quickmod2");
+    }
+    SendMessageA(child, WM_KEYDOWN, VK_ESCAPE, 0);
+    /* the X/Y pad: a right-click asks which of its sources (answered: Pad Y) */
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
+    intptr_t pad = qmt(fx, QMT_DEST_XY, 100 + QA_PAD);
+    qmt(fx, QMT_ANSWER, 24);
+    qm_right_click(child, (int)(pad & 0xFFFF), (int)(pad >> 16));
+    armed = (int)qmt(fx, QMT_SOURCE, 0);
+    snprintf(what, sizeof what, "quick assign: a right-click on the X/Y pad picks one of its sources (%d \"%s\")", armed, qbuf);
+    check(armed == 24 && strstr(qbuf, "Pad Y"), what);
+    /* a full matrix says so and changes nothing */
+    for (int m = 0; m < 16; m++) {
+        fx->setParameter(fx, mk(m, 0, "src"), 6.0f / 25);
+        fx->setParameter(fx, mk(m, 0, "dst"), 1.0f / (PARAMS[mk(m, 0, "dst")].nopts - 1));
+    }
+    static float full[NPARAMS], now[NPARAMS];
+    snapshot(fx, full);
+    qm_drag(child, "o1_pw", s, 30);
+    qmt(fx, QMT_HELP, 0);
+    snprintf(what, sizeof what, "quick assign: with all 16 rows in use nothing changes and the help line says so (\"%s\")", qbuf);
+    snapshot(fx, now);
+    check(count_diff(full, now) == 0 && strstr(qbuf, "All 16 matrix rows"), what);
+    SendMessageA(child, WM_KEYDOWN, VK_ESCAPE, 0);
+    free(before);
+    free(after);
+    /* back as it was */
+    for (int i = 0; i < NPARAMS; i++)
+        if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    SendMessageA(child, WM_TIMER, 1, 0);
 }
 
 /* a host unloading the DLL and loading it again (Carla after a rebuild): nothing of the old DLL stays registered, and

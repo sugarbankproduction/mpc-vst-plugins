@@ -362,6 +362,7 @@ static int connect(ed_t *e, int i, int y) {   /* the source picked -> control i:
     }
     drag_start(e, i, d, y, what);
     lib_hold(e, -1);   /* (drag_start holds it until the mouse lets go) */
+    if (e->screen == SCR_MATRIX) e->sub = e->qm.row[e->focus] / ROWS;   /* (the MATRIX page shows the row) */
     focus_names(e, who, sizeof who);
     if (full) {
         char f[24] = "";
@@ -547,7 +548,10 @@ int qm_help(ed_t *e, char *out, int n) {
                  recent ? line : "Connect as many as you like; Esc (or the DEST button again) when done.");
         return 1;
     }
-    if (recent) { snprintf(out, n, "%s", e->qm.msg); return 1; }
+    if (recent && (e->hover < 0 || e->hover >= NPARAMS || e->hover == e->qm.ctl)) {   /* (a control's own help first) */
+        snprintf(out, n, "%s", e->qm.msg);
+        return 1;
+    }
     return 0;
 }
 void qm_links_text(ed_t *e, int i, char *out, int n) {
@@ -703,9 +707,9 @@ intptr_t qm_test(ed_t *e, intptr_t op, char *buf, float opt) {
         if (a >= 100 ? !area_rect(a - 100, &b) : !dest_rect(a, &b)) return -1;
         return (b.left + b.right) / 2 | ((b.top + b.bottom) / 2) << 16;
     }
-    case QMT_HELP: {   /* the help line as it shows now */
+    case QMT_HELP: {   /* quick assign's help line now; else what modulates the control under the mouse */
         buf[0] = 0;
-        if (!qm_help(e, buf, 1024)) snprintf(buf, 1024, "%s", e->qm.msg);
+        if (!qm_help(e, buf, 1024) && e->hover >= 0 && e->hover < NPARAMS) qm_links_text(e, e->hover, buf, 1024);
         return (intptr_t)strlen(buf);
     }
     case QMT_DST_OF: return dst_of((int)lroundf(opt));
