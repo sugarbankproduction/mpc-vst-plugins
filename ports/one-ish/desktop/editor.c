@@ -1039,7 +1039,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         TrackMouseEvent(&tme);
         return 0;
     }
-    case WM_KEYDOWN:   /* Shift+F5/F6/F7: the Synth in focus (Ctrl too: added); the step editor: arrows, Delete */
+    case WM_KEYDOWN:   /* 1-3 or Shift+F5/F6/F7: the Synth in focus (Shift+1-3, Ctrl+Shift+F5-F7: added); the step editor: arrows, Delete */
         if (e && GetKeyState(VK_CONTROL) < 0 && (wp == 'Z' || wp == 'Y')) {   /* undo, redo (Ctrl+Shift+Z: redo) */
             if (wp == 'Y' || GetKeyState(VK_SHIFT) < 0) lib_redo(e);
             else lib_undo(e);
@@ -1047,6 +1047,12 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (e && wp >= VK_F5 && wp <= VK_F7 && GetKeyState(VK_SHIFT) < 0) {
             set_focus(e, (int)wp - VK_F5, GetKeyState(VK_CONTROL) < 0);
+            return 0;
+        }
+        if (e && NSYNTHS > 1 && GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 && e->mode == M_NONE &&
+            ((wp >= '1' && wp < '1' + NSYNTHS) || (wp >= VK_NUMPAD1 && wp < VK_NUMPAD1 + NSYNTHS))) {
+            int c = (int)wp - (wp >= VK_NUMPAD1 ? VK_NUMPAD1 : '1');
+            set_focus(e, c, GetKeyState(VK_SHIFT) < 0);   /* 1-3: that Synth; Shift: added to (or out of) the group */
             return 0;
         }
         if (e && e->screen == SCR_SEQ) {

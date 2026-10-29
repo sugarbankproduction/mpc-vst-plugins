@@ -216,7 +216,7 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_TAB_RANDOM: return "RANDOM: the patch randomiser. New sounds to play with, variations of this one, locks, undo.";
     case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3:
         return "SYNTH 1 / 2 / 3 (Panel Focus): the panel, the MORE pages, the matrix and the step editor show and edit this "
-               "Synth. Ctrl-click to edit several together (Shift+F5/F6/F7 too). Sections marked SHARED are the same "
+               "Synth. Ctrl-click to edit several together (keys 1 / 2 / 3 pick one, Shift+1 / 2 / 3 add one; Shift+F5/F6/F7 too). Sections marked SHARED are the same "
                "for all three.";
     case Z_TAB_SETUP: return "SETUP: the three Synths side by side: on, MIDI channel, key range (splits and layers), "
                              "transpose, octave, voices, level, pan, sends; then MIDI, master level, PLAY ALL.";

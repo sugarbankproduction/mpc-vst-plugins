@@ -366,6 +366,14 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
                  setup_moved);
         check(setup_moved == 0, what);
         rnd_click(child, s, RP_ALL, 0);   /* (off again) */
+        int got[3];   /* the keys 1-3 pick the Synth in focus (TEST_FOCUS: focus + 4 * mask) */
+        for (int c = 0; c < 3; c++) {
+            SendMessageA(child, WM_KEYDOWN, '1' + (c + 1) % 3, 1);
+            got[(c + 1) % 3] = (int)fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0);
+        }
+        snprintf(what, sizeof what, "the keys 1 / 2 / 3 pick Synth 1 / 2 / 3 (focus + 4 x mask: %d %d %d)", got[0], got[1], got[2]);
+        check(got[0] == 0 + 4 * 1 && got[1] == 1 + 4 * 2 && got[2] == 2 + 4 * 4, what);
+        SendMessageA(child, WM_KEYDOWN, '1', 1);   /* (back to Synth 1) */
 #undef PER_SYNTH
     }
 

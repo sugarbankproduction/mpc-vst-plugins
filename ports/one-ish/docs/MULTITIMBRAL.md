@@ -8,7 +8,7 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
 
 ## Playing it (desktop window)
 
-- **SYNTH 1 / 2 / 3** (console buttons, or Shift+F5 / F6 / F7): the Synth you edit. The lit button and the title line
+- **SYNTH 1 / 2 / 3** (console buttons, the keys 1 / 2 / 3 (Shift+1 / 2 / 3: added to the group, 2026-10-29), or Shift+F5 / F6 / F7): the Synth you edit. The lit button and the title line
   (`SYNTH 2 | ...`) show it. Every knob, button, LED, option list, the MORE pages, the matrix, the step editor and the
   randomiser show and change that Synth. Ctrl-click (or Ctrl+F5-F7) adds a Synth: a knob then moves the same control
   on every Synth picked (the last picked is the one drawn).
