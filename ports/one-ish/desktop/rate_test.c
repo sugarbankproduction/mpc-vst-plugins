@@ -391,6 +391,25 @@ static void input_tests(AEffect *fx) {
         check(peak < 1e-4, what);
         render(fx, 0, fs / 4, 512);
     }
+    {   /* the 16 band vocoder (modfx_type 23) as the synth effect, a chord as its carrier: the input plays it */
+        int fs = 48000, n = fs;
+        double rms[2];
+        for (int k = 0; k < 2; k++) {
+            set_rate(fx, fs, 512);
+            set_patch(fx, "v=1;mfx_on=0;modfx_on=1;modfx_type=23;modfx_mix=100;amp_a=0;amp_s=100");
+            for (int t = 0; t < n; t++) IL[t] = IR[t] = k ? (float)(0.3 * sin(2 * M_PI * 700.0 * t / fs)) : 0.0f;
+            for (int m = 0; m < 3; m++) midi(fx, 0x90, 48 + 7 * m, 100, 0);
+            render_in(fx, 0, n, 512, 0);
+            for (int m = 0; m < 3; m++) midi(fx, 0x80, 48 + 7 * m, 0, 0);
+            double e = 0;
+            for (int i = n / 2; i < n; i++) e += (double)L[i] * L[i];
+            rms[k] = sqrt(e / (n / 2));
+            render(fx, 0, fs / 2, 512);
+        }
+        snprintf(what, sizeof what, "48 kHz: the 16 band vocoder plays a chord with the input (rms %.4f), silent "
+                 "without it (rms %.2g)", rms[1], rms[0]);
+        check(rms[1] > 0.01 && rms[0] == 0, what);
+    }
 }
 
 static void bench(AEffect *fx) {

@@ -169,3 +169,282 @@ static void ext_bench(void) {   /* the EXT channel per voice: 8 voices of the de
     printf("bench: 8 voices, EXT off %6.2f / on (both filters) %6.2f us per 128-frame block: the EXT channel %+.3f us per "
            "voice\n", us[0], us[1], (us[1] - us[0]) / 8);
 }
+
+/* ---- the vocoders (src/fx/vocoder.h): the input as the modulator, the voices (or a send) as the carrier ---- */
+
+/* the vocoder alone on n samples: modulator mod (NULL: none), carrier car, into out (mono); from a fresh state */
+static void voc_run(int bands, const fxs_params_t *q, const float *mod, const float *car, float *out, int n) {
+    static voc_t v;
+    memset(&v, 0, sizeof v);
+    voc_init(&v, bands);
+    float wl[128], wr[128];
+    for (int at = 0; at < n; at += 128) {
+        int m = n - at < 128 ? n - at : 128;
+        voc_process(&v, q, mod ? mod + at : NULL, car + at, car + at, wl, wr, m);
+        for (int i = 0; i < m; i++) out[at + i] = wl[i];
+    }
+}
+static fxs_params_t voc_q(void) {
+    fxs_params_t q;
+    memset(&q, 0, sizeof q);
+    q.tone = 1; q.sens = 0.5f; q.sibil = 0;
+    return q;
+}
+static double band_energy_db(const float *x, int n, double lo, double hi) {   /* x[0..N) power between lo and hi Hz */
+    (void)n;
+    const double *p = spectrum(x);
+    double e = 1e-30;
+    for (int k = (int)(lo * N / SR); k <= (int)(hi * N / SR) && k < N / 2; k++) e += p[k];
+    return 10 * log10(e);
+}
+
+enum { VOC_N = SR * 2 };
+static float voc_car[VOC_N];
+/* the vocoder's gain (dB) between lo and hi Hz: x's energy there against the carrier's (the same last N samples) */
+static double voc_gain_db(const float *x, double lo, double hi) {
+    double out = band_energy_db(x, N, lo, hi);
+    return out - band_energy_db(voc_car + VOC_N - N, N, lo, hi);
+}
+static void vocoders(void) {
+    static float mod[VOC_N], out[VOC_N], out2[VOC_N];
+    float *car = voc_car;
+    char what[300];
+    uint32_t rng = 12345;
+    for (int i = 0; i < VOC_N; i++) car[i] = 0.5f * fx_white(&rng);   /* a carrier with every frequency in it */
+    /* bands: a band-limited modulator (a 1 kHz, then a 300 Hz, then a 3 kHz sine) puts the carrier's energy there */
+    static const double FM[3] = {1000, 300, 3000};
+    double leak[2] = {-1e9, -1e9};   /* each bank's worst leak 2.5-5x away */
+    for (int b = 0; b < 2; b++) {
+        int bands = b ? 16 : 10, good = 0;
+        char row[200] = "";
+        for (int k = 0; k < 3; k++) {
+            for (int i = 0; i < VOC_N; i++) mod[i] = (float)(0.3 * sin(2 * M_PI * FM[k] * i / SR));
+            fxs_params_t q = voc_q();
+            voc_run(bands, &q, mod, car, out, VOC_N);
+            const float *x = out + VOC_N - N;   /* the vocoder's gain, region by region: out against the carrier */
+            double at = voc_gain_db(x, FM[k] / 1.25, FM[k] * 1.25);
+            double below = voc_gain_db(x, FM[k] / 5, FM[k] / 2.5), above = voc_gain_db(x, FM[k] * 2.5, FM[k] * 5);
+            /* (at: -9 dB allows a tone halfway between two bands, at their crossover) */
+            good += at - below > (b ? 20 : 16) && at - above > (b ? 20 : 16) && at > -9 && at < 6;
+            leak[b] = fmax(leak[b], fmax(below - at, above - at));
+            snprintf(row + strlen(row), sizeof row - strlen(row), " %.0f Hz %+.1f dB, %+.0f / %+.0f;", FM[k], at, below - at,
+                     above - at);
+        }
+        snprintf(what, sizeof what, "vocoder %d bands: a sine modulator passes a noise carrier at its band, not 2.5-5x "
+                 "below / above it:%s", bands, row);
+        check(good == 3, what);
+    }
+    snprintf(what, sizeof what, "vocoder: 16 bands are finer than 10 (their worst leak 2.5-5x away %.0f dB, 10 bands' "
+             "%.0f dB)", leak[1], leak[0]);
+    check(leak[1] < leak[0] - 3, what);
+    {   /* silence in, silence out */
+        fxs_params_t q = voc_q();
+        q.noise = 1; q.sibil = 1;
+        voc_run(16, &q, NULL, car, out, VOC_N);
+        double peak0 = 0, peak1 = 0, peak2 = 0;
+        for (int i = 0; i < VOC_N; i++) peak0 = fmax(peak0, fabs(out[i]));
+        for (int i = 0; i < VOC_N; i++) mod[i] = i < SR / 2 ? (float)(0.3 * sin(2 * M_PI * 500 * i / SR)) : 0.0f;
+        static voc_t v;   /* the modulator stops: the bands die away, then the output is exactly 0 */
+        memset(&v, 0, sizeof v);
+        voc_init(&v, 16);
+        float wl[128], wr[128];
+        int zero_from = -1;
+        for (int at = 0; at < VOC_N; at += 128) {
+            voc_process(&v, &q, at < SR / 2 ? mod + at : NULL, car + at, car + at, wl, wr, 128);
+            int z = 1;
+            for (int i = 0; i < 128; i++) z &= wl[i] == 0.0f && wr[i] == 0.0f;
+            if (z && zero_from < 0 && at >= SR / 2) zero_from = at;
+            if (!z) zero_from = -1;
+        }
+        q.noise = 0;   /* a modulator with a silent carrier: nothing to play */
+        static const float none[VOC_N];
+        for (int i = 0; i < VOC_N; i++) mod[i] = (float)(0.3 * sin(2 * M_PI * 500 * i / SR));
+        q.sibil = 0;
+        voc_run(16, &q, mod, none, out, VOC_N);
+        for (int i = 0; i < VOC_N; i++) peak1 = fmax(peak1, fabs(out[i]));
+        q.noise = 1;   /* ... but NOISE gives it a carrier of its own */
+        voc_run(16, &q, mod, none, out2, VOC_N);
+        for (int i = 0; i < VOC_N; i++) peak2 = fmax(peak2, fabs(out2[i]));
+        snprintf(what, sizeof what, "vocoder: no modulator (with NOISE and SIBILANCE up) peak %.2g; after the modulator "
+                 "stops the output is exactly 0 from %.2f s; a silent carrier peak %.2g, with NOISE %.3f", peak0,
+                 zero_from / (double)SR - 0.5, peak1, peak2);
+        check(peak0 == 0 && zero_from > 0 && zero_from < SR * 3 / 2 && peak1 < 1e-9 && peak2 > 0.01, what);
+    }
+    {   /* SENSITIVITY: a -60 dBFS modulator is gated at 0% and heard at 100% */
+        for (int i = 0; i < VOC_N; i++) mod[i] = (float)(0.001 * sin(2 * M_PI * 700 * i / SR));
+        double rms[2];
+        for (int k = 0; k < 2; k++) {
+            fxs_params_t q = voc_q();
+            q.sens = k;
+            voc_run(10, &q, mod, car, out, VOC_N);
+            double e = 0;
+            for (int i = VOC_N / 2; i < VOC_N; i++) e += out[i] * out[i];
+            rms[k] = sqrt(e / (VOC_N / 2));
+        }
+        snprintf(what, sizeof what, "vocoder: a -60 dBFS modulator at SENSITIVITY 0%% rms %.2g (gated), at 100%% rms %.2g",
+                 rms[0], rms[1]);
+        check(rms[0] < 1e-6 && rms[1] > 3e-5, what);
+    }
+    {   /* SIBILANCE: a 9 kHz modulator (above the bands) passes only with it up; TONE darkens the top */
+        for (int i = 0; i < VOC_N; i++) mod[i] = (float)(0.3 * sin(2 * M_PI * 9000 * i / SR));
+        static const float none[VOC_N];
+        double s[2];
+        for (int k = 0; k < 2; k++) {
+            fxs_params_t q = voc_q();
+            q.sibil = k;
+            voc_run(16, &q, mod, none, out, VOC_N);
+            s[k] = fmax(-200.0, band_energy_db(out + VOC_N - N, N, 8800, 9200));
+        }
+        for (int i = 0; i < VOC_N; i++) mod[i] = (float)(0.3 * sin(2 * M_PI * 5000 * i / SR));
+        double t[2];
+        for (int k = 0; k < 2; k++) {
+            fxs_params_t q = voc_q();
+            q.tone = k ? 1.0f : 0.3f;
+            voc_run(16, &q, mod, car, out, VOC_N);
+            t[k] = band_energy_db(out + VOC_N - N, N, 4000, 6250);
+        }
+        snprintf(what, sizeof what, "vocoder: a 9 kHz modulator with SIBILANCE 100%% is %.0f dB louder than at 0%%; a "
+                 "5 kHz band at TONE 30%% is %.1f dB under TONE 100%%", s[1] - s[0], t[1] - t[0]);
+        check(s[1] - s[0] > 40 && t[1] - t[0] > 12, what);
+    }
+    {   /* bounded at the extremes: full-scale square modulator, saw carrier, NOISE, SIBILANCE, SENSITIVITY at 100% */
+        double worst = 0;
+        int bad = 0;
+        for (int i = 0; i < VOC_N; i++) {
+            mod[i] = (i / 50) % 2 ? 1.0f : -1.0f;
+            car[i] = 2.0f * (float)fmod(i * 110.0 / SR, 1.0) - 1.0f;
+        }
+        for (int b = 0; b < 2; b++)
+            for (int t = 0; t < 2; t++) {
+                fxs_params_t q = voc_q();
+                q.noise = 1; q.sibil = 1; q.sens = 1; q.tone = t;
+                voc_run(b ? 16 : 10, &q, mod, car, out, VOC_N);
+                for (int i = 0; i < VOC_N; i++) {
+                    if (!isfinite(out[i])) bad++;
+                    worst = fmax(worst, fabs(out[i]));
+                }
+            }
+        snprintf(what, sizeof what, "vocoder: full-scale modulator and carrier, NOISE, SIBILANCE and SENSITIVITY at 100%%: "
+                 "finite (%d not), peak %.2f", bad, worst);
+        check(!bad && worst < 12, what);
+    }
+    {   /* through the engine: the input plays the voices as a synth effect, and on a master send */
+        static float a[4][EXT_N];
+        double rms[4];
+        for (int k = 0; k < 4; k++) {   /* 0, 1: synth effect without / with input; 2, 3: master slot 1, the same */
+            void *e = E->create(NULL);
+            set(e, "mfx_on", k >= 2);
+            if (k < 2) {
+                set(e, "modfx_on", 1);
+                set(e, "modfx_type", SFX_VOC16);
+                set(e, "modfx_mix", 100);
+            } else {
+                set(e, "dly_type", MFX_VOC10);
+                set(e, "mfx_send1", 100);
+                set(e, "dly_mix", 100);
+            }
+            for (int n = 0; n < 3; n++) note(e, 1, 48 + 7 * n, 100);
+            long t = 0;
+            ext_render(e, a[k], EXT_N, k % 2 ? 700 : 0, 0.3, &t);
+            rms[k] = ext_rms(a[k], EXT_N / 2, EXT_N);
+            E->destroy(e);
+        }
+        for (int i = 0; i < EXT_N; i++) a[3][i] -= a[2][i];   /* the master slot's return: with input minus without */
+        double ret = ext_rms(a[3], EXT_N / 2, EXT_N);
+        snprintf(what, sizeof what, "vocoder in the engine: as the synth effect (mix 100%%) rms %.2g with no input, %.4f "
+                 "with one; on master slot 1 (FX1 10 Band Vocoder, the dry voices %.4f) its return rms %.4f with an input",
+                 rms[0], rms[1], rms[2], ret);
+        check(rms[0] == 0 && rms[1] > 0.01 && rms[2] > 0.01 && ret > 0.005, what);
+    }
+}
+
+static void voc_bench(void) {
+    static float mod[SR], car[SR], out[SR];
+    uint32_t rng = 99;
+    for (int i = 0; i < SR; i++) { mod[i] = 0.3f * fx_white(&rng); car[i] = 0.3f * fx_white(&rng); }
+    for (int b = 0; b < 2; b++) {
+        fxs_params_t q = voc_q();
+        q.sibil = 0.3f; q.noise = 0.2f;
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int r = 0; r < 10; r++) voc_run(b ? 16 : 10, &q, mod, car, out, SR);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        double us = ((t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) * 1e-3) / (10.0 * SR / 128);
+        printf("bench: synth FX %d band vocoder %6.2f us per 128-frame block\n", b ? 16 : 10, us);
+    }
+}
+
+/* a speech-like modulator, synthetic: a glottal buzz (120 Hz with a little vibrato and a falling pitch per syllable)
+ * through three formant resonators gliding between vowels, with a hiss burst for each "s"; 0.3 peak */
+static void voc_speech(float *x, int n) {
+    static const float F[5][3] = {{730, 1090, 2440}, {530, 1840, 2480}, {270, 2290, 3010}, {570, 840, 2410},
+                                  {300, 870, 2240}};   /* a e i o u */
+    static const int seq[] = {0, 2, 3, 1, 4, 0, 3, 2};   /* syllables: their vowels */
+    const int syl = SR * 3 / 8, nsyl = (int)(sizeof seq / sizeof seq[0]);
+    double ph = 0, st[3][2] = {{0}};
+    uint32_t rng = 777;
+    for (int i = 0; i < n; i++) {
+        int k = (i / syl) % nsyl, pos = i % syl;
+        double u = (double)pos / syl, f0 = 130 - 25 * u + 3 * sin(2 * M_PI * 5.5 * i / SR);
+        ph += f0 / SR;
+        double pulse = 0;
+        if (ph >= 1) { ph -= 1; pulse = 1; }   /* a pulse per period: rich in harmonics */
+        double env = u < 0.1 ? u / 0.1 : u > 0.75 ? fmax(0, (0.95 - u) / 0.2) : 1;   /* the syllable's shape */
+        double v = 0;
+        const float *a = F[seq[k]], *b = F[seq[(k + 1) % nsyl]];
+        for (int f = 0; f < 3; f++) {   /* two-pole resonators, gliding toward the next vowel */
+            double fr = a[f] + (b[f] - a[f]) * u * u, bw = 80 + 40 * f, r = exp(-M_PI * bw / SR);
+            double c1 = 2 * r * cos(2 * M_PI * fr / SR), c2 = -r * r;
+            double y = pulse * (1 - r) * 4 + c1 * st[f][0] + c2 * st[f][1];
+            st[f][1] = st[f][0];
+            st[f][0] = y;
+            v += y / (f + 1);
+        }
+        double hiss = 0;   /* an "s" at the end of every other syllable */
+        if (k % 2 == 1 && u > 0.8) hiss = 0.25 * fx_white(&rng) * sin(M_PI * (u - 0.8) / 0.2);
+        x[i] = (float)(0.3 * fmax(-1, fmin(1, v * env * 1.5)) + hiss * 0.3);
+    }
+}
+
+/* test/out/vocoder_demo.wav: the speech-like modulator alone, then playing a held chord through the 16 band vocoder
+ * (the synth effect, mix 100%), then the 10 band one, then the 16 band with NOISE and more SIBILANCE */
+static void voc_wav(const char *demo_path) {
+    enum { LEN = SR * 3 };
+    static float mod[LEN], buf[256];
+    static int16_t pcm[2 * 4 * (LEN + SR / 2 + 128)];
+    char dir[256], path[320];
+    snprintf(dir, sizeof dir, "%s", demo_path);
+    char *slash = strrchr(dir, '/');
+    if (slash) slash[1] = 0; else dir[0] = 0;
+    voc_speech(mod, LEN);
+    int16_t *o = pcm;
+    for (int i = 0; i < LEN + SR / 2; i++, o += 2) o[0] = o[1] = (int16_t)(i < LEN ? mod[i] * 32767 : 0);
+    for (int pass = 0; pass < 3; pass++) {
+        void *e = E->create(NULL);
+        set(e, "o2_level", 80); set(e, "o2_freq", 7); set(e, "noise_level", 0);
+        set(e, "voices", 7); set(e, "amp_a", 5); set(e, "amp_s", 100); set(e, "amp_r", 40);
+        set(e, "modfx_on", 1); set(e, "modfx_type", pass == 1 ? SFX_VOC10 : SFX_VOC16); set(e, "modfx_mix", 100);
+        set(e, "modfx_gain", 70);
+        if (pass == 2) { set(e, "modfx_noise", 40); set(e, "modfx_sibil", 70); }
+        set(e, "mfx_send2", 20);
+        static const int chord[4] = {45, 52, 57, 60};
+        for (int k = 0; k < 4; k++) note(e, 1, chord[k], 100);
+        for (int at = 0; at < LEN + SR / 2; at += 128) {
+            float in[256];
+            for (int i = 0; i < 128; i++) in[2 * i] = in[2 * i + 1] = at + i < LEN ? mod[at + i] : 0.0f;
+            one_ish_set_input(e, in, 128);
+            if (at + 128 > LEN) for (int k = 0; k < 4; k++) note(e, 0, chord[k], 0);
+            one_ish_render_float(e, buf, 128);
+            for (int i = 0; i < 128; i++, o += 2) {
+                o[0] = (int16_t)(buf[2 * i] * 32767);
+                o[1] = (int16_t)(buf[2 * i + 1] * 32767);
+            }
+        }
+        E->destroy(e);
+    }
+    snprintf(path, sizeof path, "%svocoder_demo.wav", dir);
+    uint32_t frames = (uint32_t)((o - pcm) / 2);
+    write_wav(path, pcm, frames);
+    printf("wrote %s (%.1f s: a synthetic voice alone, then playing a chord through the 16 and 10 band vocoders, then "
+           "16 bands with noise and sibilance)\n", path, frames / (double)SR);
+}

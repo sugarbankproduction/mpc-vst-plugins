@@ -39,7 +39,9 @@ ABBREV = {"Triangle": "TRI", "Sine": "SINE", "Square": "SQR", "Saw": "SAW", "Ram
 # each type uses (SFX_USES: indexes into SFX_NAMES; matched to the real list by name). Types added later, and modfx_*
 # keys not listed here, still get a page: see sfx_page().
 SFX_NAMES = ["Delay", "BBD Delay", "Tape Delay", "Echo", "Flanger", "Stereo Flanger", "Chorus", "Dual Chorus",
-             "Ensemble", "Stereo Chorus", "6-Stage Phaser", "12-Stage Phaser", "Time Phaser", "Bit Crusher", "Resonator"]
+             "Ensemble", "Stereo Chorus", "6-Stage Phaser", "12-Stage Phaser", "Time Phaser", "Bit Crusher", "Resonator",
+             "10 Band Vocoder", "16 Band Vocoder"]
+VOCODERS = [15, 16]
 SFX_COMMON = [("modfx_sync", "Tempo Sync"), ("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
               ("modfx_c2_dst", "CTRL 2 Target"), ("modfx_on", "On"), ("modfx_mix", "Mix"), ("modfx_ctrl1", "CTRL 1"),
               ("modfx_ctrl2", "CTRL 2")]
@@ -56,11 +58,13 @@ SFX_USES = [   # key, label, types
     ("modfx_fb", "Feedback", [*DELAYS, *LINES, *PHASERS]),
     ("modfx_fb_r", "Feedback R", [5, 9]),
     ("modfx_dfb", "Delay Feedback", [12]),
-    ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS]),
+    ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS, *VOCODERS]),
     ("modfx_spread", "Spread", [4, 5, 6, 8, 9, *PHASERS]),
     ("modfx_vrate", "Vibrato Rate", [7, 8]),
     ("modfx_vdepth", "Vibrato Depth", [7, 8]),
-    ("modfx_noise", "Noise", [1, *LINES, *PHASERS]),
+    ("modfx_noise", "Noise", [1, *LINES, *PHASERS, *VOCODERS]),
+    ("modfx_sibil", "Sibilance", VOCODERS),
+    ("modfx_sens", "Sensitivity", VOCODERS),
     ("modfx_wow", "Wow", [2]),
     ("modfx_flutter", "Flutter", [2]),
     ("modfx_bias", "Tape Bias", [2]),

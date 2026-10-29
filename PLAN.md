@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 364 have,
-  40 partial, 71 missing, 27 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 366 have,
+  40 partial, 69 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -229,6 +229,14 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      Carla's input): either add Carla's internal "Audio File" plugin above ONE-ish in the rack and load a WAV, or connect
      a capture device to `Carla:AudioIn1/2` in the external patchbay; then raise EXT IN LEVEL (the MIXER's MORE page)
      and hold a key.
+  14. The vocoders (audit package 11, second half). Done 2026-10-29 (offline and the desktop DLL): 10 Band Vocoder and
+     16 Band Vocoder as synth effect types and in either master slot, an original filter-bank design
+     (`src/fx/vocoder.h`): the audio input is the modulator, the voices (or the send) the carrier; MIX, SIBILANCE,
+     SENSITIVITY (a gate on the input), TONE and NOISE as the manual lists (`modfx_sibil`, `modfx_sens`; the master
+     slots' `dly_*` / `rev_*`; CTRL 2's Auto target is SIBILANCE). No input gives silence (and no work). CPU (PC, per
+     128-frame block): about 12 us (10 bands), 18-19 us (16 bands). Demo: `test/out/vocoder_demo.wav` (a synthetic voice,
+     then a chord played by it through each vocoder). To try it in Carla: route a voice recording into ONE-ish as above,
+     set SYNTH EFFECT TYPE to 16 Band Vocoder (the MORE page has its controls), MIX 100%, hold a chord.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

@@ -43,7 +43,7 @@ follows the focus, would have let automation reach only the focused Synth). 1,52
   effect (`modfx_*`), arp, chord memory and sequencer. A Synth's matrix moves its own params, its synth effect
   included; the master effects' matrix destinations follow Synth 1's matrix.
 - The audio input (desktop, 2026-10-29) is one for the instance: every Synth's EXT channel (`ext_level`,
-  `ext_route`, its own) hears the same input.
+  `ext_route`, its own) and every vocoder (a synth effect or a master slot) hears the same input.
 
 ## Voices
 

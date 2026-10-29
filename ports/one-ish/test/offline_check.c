@@ -98,7 +98,10 @@
  *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav,
  *             arp_demo.wav, seq_demo.wav, macro_demo.wav)
  *   ext       the audio input (test/ext_check.c): the EXT channel's routes into the filters, level 0 and no input
- *             change nothing, the EXT LEVEL destination (offline_check ext <dir>/demo.wav: these alone)
+ *             change nothing, the EXT LEVEL destination; the 10 and 16 band vocoders (a sine modulator puts the
+ *             carrier's energy in its band, silence in gives silence out, the gate, sibilance, tone, bounded at the
+ *             extremes, in the engine as the synth effect and on a master send); vocoder_demo.wav (offline_check
+ *             ext <dir>/demo.wav: these alone)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
  *             MACRO channel at each model; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
@@ -1076,6 +1079,18 @@ static fx_t fxs;   /* about 3.1 MB: static, not on the stack */
 /* every effect off or neutral: the master effects on with both sends at 0 (effect 1 a stereo delay at 250 ms, effect 2
  * a plate), neutral settings for the rest */
 static void set_mfx(fxs_params_t *q, int mt) { q->mtype = mt; q->type = MFX_SFX[mt] < 0 ? mt : MFX_SFX[mt]; }
+/* the vocoders' modulator in the effect-level tests: one 128-sample buzz with noise in it, the same every block (a
+ * steady 345 Hz tone rich in harmonics) */
+static const float *voc_test_mod(void) {
+    static float m[128];
+    static int made;
+    if (!made) {
+        uint32_t rng = 4242;
+        for (int i = 0; i < 128; i++) m[i] = 0.25f * (1.0f - 2.0f * i / 128.0f) + 0.05f * fx_white(&rng);
+        made = 1;
+    }
+    return m;
+}
 static fx_params_t fx_none(void) {
     fx_params_t p;
     fxs_params_t q;
@@ -1090,6 +1105,7 @@ static fx_params_t fx_none(void) {
     q.pdecay = 0.5f;
     q.structure = 0.4f; q.position = 0.5f; q.size = 0.5f; q.density = 0.7f; q.texture = 0.5f; q.note = 60; q.follow = 1;
     q.drive = 0.5f; q.bump = 0.5f; q.rev_decay_k = 0.5f; q.rev_size_k = 0.5f;   /* the open-source types: their defaults */
+    q.sibil = 0.3f; q.sens = 0.5f; q.voc_mod = voc_test_mod();   /* the vocoders: a modulator to play them */
     p.sfx = q;
     p.mfx[0] = q;
     p.mfx[1] = q;
@@ -1129,7 +1145,8 @@ static double energy_db(const float *l, const float *r, int from, int to) {
 
 static const char *const SFX_NAMES[SFX_NTYPES] = {"delay", "bbd", "tape", "echo", "flanger", "stereo_flanger", "chorus",
     "dual_chorus", "ensemble", "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator",
-    "modal_resonator", "granular", "tape_color", "density", "console", "stereo_delay", "ping_pong"};
+    "modal_resonator", "granular", "tape_color", "density", "console", "stereo_delay", "ping_pong", "vocoder10",
+    "vocoder16"};
 static const char *const REV_NAMES[REV_NTYPES] = {"plate", "room", "hall", "space", "shimmer", "blackhole"};
 
 /* the master delay and reverb, and the routing around them */
@@ -4940,7 +4957,7 @@ static void arp_wav(const char *demo_path) {
 /* ---- the step sequencer (its own file: src/stepseq.h, src/stepseq_run.h) ---- */
 #include "stepseq_check.c"
 #include "multi_check.c"   /* multitimbral: three Synths */
-#include "ext_check.c"     /* the audio input: the EXT channel (and the vocoders) */
+#include "ext_check.c"     /* the audio input: the EXT channel and the vocoders */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5288,7 +5305,7 @@ static void macro_bench(void) {
  * controls, the shimmer and blackhole reverbs, holds, type switching ---- */
 static const char *const MFX_NAME[MFX_NTYPES] = {"plate", "room", "hall", "space", "shimmer", "blackhole", "stereo_delay",
     "ping_pong", "delay", "bbd", "tape", "echo", "flanger", "stereo_flanger", "chorus", "dual_chorus", "ensemble",
-    "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator"};
+    "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator", "vocoder10", "vocoder16"};
 
 /* run `p` over `in` (both channels) for n samples from a fresh state, changing nothing on the way */
 static void fx2_run(const fx_params_t *p, const float *in, float *l, float *r, int n) {
@@ -5701,10 +5718,15 @@ static void fx2_wavs(const char *demo_path) {
 
 int main(int argc, char **argv) {
     E = mpc_engine();
-    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); return 0; }
-    if (argc > 1 && !strcmp(argv[1], "extbench")) { ext_bench(); return 0; }   /* just the audio input's bench lines */
+    if (argc > 1 && !strcmp(argv[1], "bench")) {
+        bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench();
+        return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "extbench")) { ext_bench(); voc_bench(); return 0; }   /* the input's bench lines */
     if (argc > 2 && !strcmp(argv[1], "ext")) {   /* just the audio input: offline_check ext <dir>/demo.wav */
         ext_input();
+        vocoders();
+        voc_wav(argv[2]);
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -5782,6 +5804,7 @@ int main(int argc, char **argv) {
     step_sequencer();
     multitimbral();
     ext_input();
+    vocoders();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");
@@ -5791,6 +5814,7 @@ int main(int argc, char **argv) {
     arp_wav(argc > 1 ? argv[1] : "demo.wav");
     seq_wav(argc > 1 ? argv[1] : "demo.wav");
     macro_wav(argc > 1 ? argv[1] : "demo.wav");
+    voc_wav(argc > 1 ? argv[1] : "demo.wav");
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
 }

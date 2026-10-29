@@ -515,8 +515,8 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 
 ### 18b. Effect types (Synth Effects and Master Effects share the list, p103-109)
 
-ONE-ish's synth effect offers every type below except the vocoders (Stereo Delay and Ping Pong since 2026-10-27), and
-either master effect any of them; master effect 1 is a Stereo Delay by default. Shared knobs: `modfx_mix`, `modfx_fb` (and `_r`), `modfx_time` (and `_r`, chorus/flanger ms, range per
+ONE-ish's synth effect offers every type below (Stereo Delay and Ping Pong since 2026-10-27, the vocoders since
+2026-10-29), and either master effect any of them; master effect 1 is a Stereo Delay by default. Shared knobs: `modfx_mix`, `modfx_fb` (and `_r`), `modfx_time` (and `_r`, chorus/flanger ms, range per
 type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20 Hz), `modfx_depth`, `modfx_tone`,
 `modfx_spread`, `modfx_gain` (silent to +6 dB, 50% unity), `modfx_noise`, `modfx_sync`.
 
@@ -626,8 +626,8 @@ type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20
 | TIME PHASER (four-stage phaser into a delay, p108): MIX (CTRL 1), PHASER FEEDBACK (CTRL 2), SWEEP, RATE, DEPTH, TONE, NOISE, DELAY FEEDBACK, TIME, GAIN, SYNC | 0-100%; rate 0.01-20 Hz; time 0.1-2000 ms | Have | Synth type Time Phaser: `modfx_dtime`, `modfx_dfb` for the delay | - | none/voice; shared low (4.4 us) |
 | BIT CRUSHER (crossover filter, dual crushing, p108): MIX (CTRL 1), DEPTH (CTRL 2), RATE, GAIN | depth 2-24 bit; rate 128 Hz-48 kHz | Have | Synth type Bit Crusher: `modfx_bits` 2-24, `modfx_srate` 128 Hz-44.1 kHz; `modfx_xover` (Off, 50 Hz-5 kHz): two crushers on a second-order split, the lows losing only bits, the highs bits and sample rate | - | none/voice; shared low (1.5 us) |
 | RESONATOR (three-filter bank, p108): MIX (CTRL 1), RESONANCE (CTRL 2), CUTOFF LOW/MID/HIGH, LEVEL LOW/MID/HIGH, FILTER TYPE, MOD RATE, MOD DEPTH, GAIN | cutoffs 10 Hz-22 kHz (defaults 500 Hz, 1 kHz, 5 kHz); type LP/BP/HP; mod rate 0.01-10 Hz | Have | Synth type Resonator: three state-variable filters, `modfx_cut1-3`, `modfx_lvl1-3`, `modfx_ftype`, `modfx_reso`, `modfx_rate`/`modfx_depth` sweep | - | none/voice; shared low (2.4 us) |
-| 10 BAND VOCODER (p109): MIX (CTRL 1), SIBILANCE (CTRL 2), SENSITIVITY (mic gate), TONE, NOISE | 0-100% | Missing | Needs an audio input (the modulator); on the desktop the host can supply one | L (with the input) | none/voice; shared medium |
-| 16 BAND VOCODER (p109): same parameters | 0-100% | Missing | - | (with the 10-band) | none/voice; shared medium-high |
+| 10 BAND VOCODER (p109): MIX (CTRL 1), SIBILANCE (CTRL 2), SENSITIVITY (mic gate), TONE, NOISE | 0-100% | Have | Synth type and master type 10 Band Vocoder (`src/fx/vocoder.h`, an original filter bank): the audio input (EXT's signal) is the modulator, the voices (or the send) the carrier; 10 bands 160 Hz-6.4 kHz, each a 4th-order band-pass with an envelope follower; MIX `modfx_mix`, SIBILANCE `modfx_sibil` (the modulator above 6 kHz, straight through), SENSITIVITY `modfx_sens` (a gate on the modulator, -20 to -80 dBFS), TONE `modfx_tone` (the bands above 200 Hz x 100^TONE fall away), NOISE `modfx_noise` (noise into the carrier); master slots `dly_*` / `rev_*` the same (2026-10-29, offline and the desktop DLL) | - | none/voice; shared medium (about 12 us a block on the PC) |
+| 16 BAND VOCODER (p109): same parameters | 0-100% | Have | Type 16 Band Vocoder: 16 bands 110 Hz-7.5 kHz, the same controls (2026-10-29) | - | none/voice; shared medium (about 18-19 us a block on the PC) |
 
 Beyond the Moog One (2026-10-27, offline): open-source synth effect types, MIT-licensed
 (`third_party/THIRD_PARTY.md`). **Modal Resonator**: Mutable Instruments Rings excited by the voices (its six models,
@@ -854,13 +854,13 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 15. Modulation (p67-77) | 75 | 3 | 10 | 2 | 3 |
 | 16. Arpeggiator (p78-81) | 16 | 1 | 0 | 0 | 0 |
 | 17. Sequencer (p82-95) | 28 | 4 | 1 | 0 | 0 |
-| 18. Effects (p96-111) | 85 | 0 | 3 | 0 | 1 |
+| 18. Effects (p96-111) | 87 | 0 | 1 | 0 | 1 |
 | 19. Left Hand Controller (p17-18, p112-117) | 15 | 1 | 3 | 1 | 0 |
 | 20. Browser, presets and timbres (p118-121) | 4 | 2 | 1 | 0 | 1 |
 | 21. Editing and saving (p122-123) | 1 | 0 | 3 | 0 | 2 |
 | 22. Settings (p124-139) | 6 | 5 | 20 | 11 | 7 |
 | 24. Appendices A and B (p143-158) | 1 | 2 | 3 | 1 | 0 |
-| **Total** | **364** | **40** | **71** | **27** | **25** |
+| **Total** | **366** | **40** | **69** | **27** | **25** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -898,7 +898,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial; 2026-10-29, after package 11's audio input: 44 and 40). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after package 11: 42 and 40). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -1032,6 +1032,12 @@ voice for the EXT channel; shared medium (10-band) to medium-high (16-band) for 
   not reported as latency (notes play as before). CPU: the EXT channel about 1 us a voice per block on the PC while heard (8 voices 49.1 to 56.9 us), none at level 0 or silent; the input converter about 108 us per 512-frame host
   block at 48 or 96 kHz (1-2% of the block), nothing while the input is silent. Tests: `test/ext_check.c` (offline),
   `desktop/rate_test.c` (the DLL at 44.1, 48 and 96 kHz, 64 to 1000-frame blocks and in place), `resample_test.c`.
+- Done, the vocoders (2026-10-29, offline and the desktop DLL): 10 and 16 Band Vocoder as synth effect types and in
+  either master slot (`src/fx/vocoder.h`, an original channel vocoder), the input as the modulator; MIX, SIBILANCE,
+  SENSITIVITY, TONE, NOISE (`modfx_sibil`, `modfx_sens`, `dly_sibil` / `dly_sens`, `rev_sibil` / `rev_sens`; CTRL 2's
+  Auto target is SIBILANCE). CPU per 128-frame block: about 12 us (10 bands), 18-19 us (16 bands), none while no input
+  plays. Left: SIBILANCE and SENSITIVITY as matrix destinations (only CTRL 1/2 move them), the master slots' window
+  pages (OTHER for now), effect presets.
 
 **12. Library and browser** (sections 1, 12, 13, 15a, 18a, 20, 22). Effort L in all, in four parts.
 - 12a Tags (TYPE, CATEGORY, MOOD, GROUP) set on save and used as browser filters, editable tag lists; notes per patch

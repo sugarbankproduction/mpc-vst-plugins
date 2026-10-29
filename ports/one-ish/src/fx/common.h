@@ -17,21 +17,24 @@ enum { SFX_DELAY, SFX_BBD, SFX_TAPE, SFX_ECHO, SFX_FLANGER, SFX_SFLANGER, SFX_CH
         * Console7 (airwindows.h) */
        SFX_RINGS, SFX_CLOUDS, SFX_AWTAPE, SFX_DENSITY, SFX_CONSOLE,
        /* the manual's two-tap delays (once the master delay alone; now any slot's) */
-       SFX_SDELAY, SFX_PINGPONG, SFX_NTYPES };
+       SFX_SDELAY, SFX_PINGPONG,
+       /* the manual's vocoders (vocoder.h): the audio input is the modulator, the slot's input the carrier */
+       SFX_VOC10, SFX_VOC16, SFX_NTYPES };
 #define SFX_IS_PHASER(t) ((t) == SFX_PHASER6 || (t) == SFX_PHASER12 || (t) == SFX_TPHASER)
+#define SFX_IS_VOCODER(t) ((t) == SFX_VOC10 || (t) == SFX_VOC16)
 
 /* what CTRL 1 and CTRL 2 can move: "modfx_c1_dst" / "modfx_c2_dst" options (FXD_AUTO: the type's own pick) */
 enum { FXD_AUTO, FXD_MIX, FXD_FB, FXD_FB_R, FXD_TIME, FXD_TIME_R, FXD_DTIME, FXD_DFB, FXD_RATE, FXD_RATE_R, FXD_DEPTH,
        FXD_TONE, FXD_SPREAD, FXD_GAIN, FXD_SWEEP, FXD_NOISE, FXD_VRATE, FXD_VDEPTH, FXD_FLUTTER, FXD_WOW, FXD_BIAS,
        FXD_ROOM, FXD_DECAY, FXD_BITS, FXD_SRATE, FXD_RESO, FXD_CUT1, FXD_CUT2, FXD_CUT3,
        FXD_PITCH, FXD_STRUCT, FXD_POS, FXD_SIZE, FXD_DENSITY, FXD_TEXTURE, FXD_DRIVE, FXD_BUMP, FXD_LOWCUT,
-       FXD_DTIME_R, FXD_DEPTH_R, FXD_OFFSET, FXD_FBL, FXD_FBR, FXD_XOVER, FXD_COUNT };
+       FXD_DTIME_R, FXD_DEPTH_R, FXD_OFFSET, FXD_FBL, FXD_FBR, FXD_XOVER, FXD_SIBIL, FXD_SENS, FXD_COUNT };
 static const char *const FXD_NAME[FXD_COUNT] = {
     "Auto", "Mix", "Feedback", "Feedback R", "Time", "Time R", "Delay Time", "Delay FB", "Rate", "Rate R", "Depth",
     "Tone", "Spread", "Gain", "Sweep", "Noise", "Vib Rate", "Vib Depth", "Flutter", "Wow", "Bias", "Room", "Decay",
     "Bits", "Sample Rate", "Resonance", "Cutoff Low", "Cutoff Mid", "Cutoff High",
     "Pitch", "Structure", "Position", "Size", "Density", "Texture", "Drive", "Head Bump", "Low Cut",
-    "Delay Time R", "Depth R", "Offset", "Feedback Left", "Feedback Right", "Crossover"};
+    "Delay Time R", "Depth R", "Offset", "Feedback Left", "Feedback Right", "Crossover", "Sibilance", "Sensitivity"};
 /* each type's CTRL 1 and CTRL 2 when set to Auto (the manual's pre-assignments, p103-108) */
 static const unsigned char FX_AUTO_CTRL[SFX_NTYPES][2] = {
     [SFX_DELAY] = {FXD_MIX, FXD_DTIME},   [SFX_BBD] = {FXD_MIX, FXD_FB},        [SFX_TAPE] = {FXD_MIX, FXD_FB},
@@ -42,7 +45,8 @@ static const unsigned char FX_AUTO_CTRL[SFX_NTYPES][2] = {
     /* (not in the manual: the controls each is played by) */
     [SFX_RINGS] = {FXD_STRUCT, FXD_POS},  [SFX_CLOUDS] = {FXD_POS, FXD_DENSITY}, [SFX_AWTAPE] = {FXD_DRIVE, FXD_FLUTTER},
     [SFX_DENSITY] = {FXD_DRIVE, FXD_MIX}, [SFX_CONSOLE] = {FXD_DRIVE, FXD_MIX},
-    [SFX_SDELAY] = {FXD_MIX, FXD_FB},     [SFX_PINGPONG] = {FXD_MIX, FXD_FB}};
+    [SFX_SDELAY] = {FXD_MIX, FXD_FB},     [SFX_PINGPONG] = {FXD_MIX, FXD_FB},
+    [SFX_VOC10] = {FXD_MIX, FXD_SIBIL},   [SFX_VOC16] = {FXD_MIX, FXD_SIBIL}};
 
 /* the master reverbs (original designs; SPACE is Airwindows Galactic) */
 enum { REV_PLATE, REV_ROOM, REV_HALL, REV_SPACE, REV_SHIMMER, REV_BLACKHOLE, REV_NTYPES };
@@ -50,12 +54,14 @@ enum { REV_PLATE, REV_ROOM, REV_HALL, REV_SPACE, REV_SHIMMER, REV_BLACKHOLE, REV
  * values), then every type of the manual's list the synth effect has (the open-source ones stay synth-only) */
 enum { MFX_PLATE, MFX_ROOM, MFX_HALL, MFX_SPACE, MFX_SHIMMER, MFX_BLACKHOLE, MFX_SDELAY, MFX_PINGPONG, MFX_DELAY,
        MFX_BBD, MFX_TAPE, MFX_ECHO, MFX_FLANGER, MFX_SFLANGER, MFX_CHORUS, MFX_DCHORUS, MFX_ENSEMBLE, MFX_SCHORUS,
-       MFX_PHASER6, MFX_PHASER12, MFX_TPHASER, MFX_CRUSH, MFX_RESON, MFX_NTYPES };
+       MFX_PHASER6, MFX_PHASER12, MFX_TPHASER, MFX_CRUSH, MFX_RESON,
+       MFX_VOC10, MFX_VOC16,   /* the vocoders on a send (the manual's types may sit in either slot) */
+       MFX_NTYPES };
 /* a master type's synth effect type (-1: a reverb, REV_* = MFX_*) */
 static const signed char MFX_SFX[MFX_NTYPES] = {
     -1, -1, -1, -1, -1, -1, SFX_SDELAY, SFX_PINGPONG, SFX_DELAY, SFX_BBD, SFX_TAPE, SFX_ECHO, SFX_FLANGER,
     SFX_SFLANGER, SFX_CHORUS, SFX_DCHORUS, SFX_ENSEMBLE, SFX_SCHORUS, SFX_PHASER6, SFX_PHASER12, SFX_TPHASER,
-    SFX_CRUSH, SFX_RESON};
+    SFX_CRUSH, SFX_RESON, SFX_VOC10, SFX_VOC16};
 enum { HOLD_OFF, HOLD_FREEZE, HOLD_INFINITE, HOLD_PITCH };   /* "rev_freeze" / "dly_freeze" options */
 enum { MB_DUAL, MB_STEREO };              /* "mfx_buss" options: two effects, or one with a stereo input */
 enum { RES_LP, RES_BP, RES_HP };          /* "modfx_ftype" options */
@@ -93,6 +99,9 @@ typedef struct {   /* one effect slot's settings: the synth effect's, or a maste
     float dec_lo, dec_hi;                 /* hall and shimmer LOW / HIGH DECAY: the bands' decay times x0.1..5 */
     float pitch_a, pitch_b, pdecay;       /* shimmer: A and B pitch (cents), how much of the pitched sound goes round */
     float gravity;                        /* blackhole: -1 (blooms, swells in) .. +1 (pulled down, shorter) */
+    /* the vocoders (vocoder.h) */
+    float sibil, sens;                    /* SIBILANCE and SENSITIVITY, 0..1 (TONE, NOISE and MIX as above) */
+    const float *voc_mod;                 /* the modulator for this piece (the audio input, mono), NULL: silence */
 } fxs_params_t;
 
 typedef struct {   /* what the effects read; worked out by the engine (fx_params() in engine.c) from the knobs */

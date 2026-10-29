@@ -577,6 +577,7 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
                 for (int i = 0; i < n; i++) { ml[i] += sl[j][i]; mr[i] += sr[j][i]; }
         }
         s0->fxp.ramp = CR - s0->phase;
+        s0->fxp.mfx[0].voc_mod = s0->fxp.mfx[1].voc_mod = ext ? ext + done : NULL;   /* a vocoder on a send */
         fx_master_multi(&in->mfx, &s0->fxp, nl, snd, ps, pl, pr, L, R, n);
         int bad = 0;
         for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host (and heal what made it: see heal()) */
