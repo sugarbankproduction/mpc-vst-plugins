@@ -207,6 +207,7 @@ static const char *help_for(int i) {
 
 static const char *zone_help(ed_t *e, int z) {
     if (seq_zone(z)) return seq_zone_help(e, z);   /* the step editor, the page LEDs */
+    if (z >= Z_QM && z < Z_QM_END) return qm_zone_help(e, z);   /* a DEST button (quickmod.c) */
     if (z >= Z_SET_BASE && z < Z_SET_END) return settings_zone_help(e, z);   /* the SETTINGS page */
     if (z == Z_TAB_SETTINGS) return "SETTINGS: the instrument's own settings, kept apart from the sounds: preset "
                                     "autoload, MIDI clock and channels, pedals, MIDI learn, the library and tuning.";
@@ -215,14 +216,17 @@ static const char *zone_help(ed_t *e, int z) {
     switch (z) {
     case Z_KEYS: return "Keyboard: click a key to play it (lower on the key = louder), drag across to slide between notes. "
                         "The octave buttons shift it. The computer keyboard plays it too: A S D F G H J K L the white keys from C, "
-                        "W E T Y U O P the black ones, Z / X the octave.";
+                        "W E T Y U O P the black ones, Z / X the octave. Right-click: modulate from velocity, "
+                        "aftertouch, the key, the pedals.";
     case Z_RIBBON: return "Ribbon: touch and slide along it. It sends MIDI CC 16 (position, left to right) and CC 17 (touched). "
-                          "Its settings: the triangle at its right end.";
-    case Z_PITCH: return "Pitch wheel: drag up or down to bend; it springs back to the centre. BEND + and BEND - set the range.";
-    case Z_MODW: return "Mod wheel (MIDI CC 1): drag up to bring in the mod matrix's Mod Wheel rows (vibrato in most presets).";
+                          "Its settings: the triangle at its right end. Right-click (or Alt-click): modulate from it.";
+    case Z_PITCH: return "Pitch wheel: drag up or down to bend; it springs back to the centre. BEND + and BEND - set the range. "
+                         "Right-click (or Alt-click): modulate from it.";
+    case Z_MODW: return "Mod wheel (MIDI CC 1): drag up to bring in the mod matrix's Mod Wheel rows (vibrato in most presets). "
+                        "Right-click (or Alt-click): modulate from it.";
     case Z_PAD: return "X/Y pad: drag inside it. Left/right is the matrix source Pad X (MIDI CC 2), up/down Pad Y (CC 3); "
                        "both stay where you let go. Pad Gate (CC 18) is on while you touch it. Up/down also sends "
-                       "aftertouch (the source Aftertouch, back to 0 when you let go).";
+                       "aftertouch (the source Aftertouch, back to 0 when you let go). Right-click: modulate from X, Y or its gate.";
     case Z_OCT_DOWN: case Z_OCT_UP:
         return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Hold one: 1 s back to the "
                "default octave, 2 s a MIDI panic (all notes off).";
@@ -409,7 +413,7 @@ static void knob(float cx, float cy, float r, float v, int bipolar) {
     gfx_line(s0.x, s0.y, s1.x, s1.y, lw * 0.85f, 0xFFF0EEE8);
 }
 
-static void knob_geom(int i, float *cx, float *cy, float *r, int *label_y) {   /* where a panel knob sits */
+void knob_geom(int i, float *cx, float *cy, float *r, int *label_y) {   /* where a panel knob sits */
     const RECT *b = &L.ctl[i];
     int d = L.size[i], small = L.kind[i] == K_SMALL, lh = sc(12), vh = small ? 0 : sc(11);
     int content = d + sc(9) + lh + vh, top = b->top + (rh(b) - content) / 2;
@@ -430,7 +434,7 @@ static void draw_knob(HDC dc, ed_t *e, int i) {
     text_c(dc, (int)cx, ly, tw, lh + 2, L.label[i], font_label, i == e->hover ? T_HOT : T_LABEL);
     if (!small) {   /* the value no wider than its cell (and a little), so neighbours' values don't run together */
         char val[64];
-        param_text(e, i, val, sizeof val);
+        if (!qm_value_text(e, i, val, sizeof val)) param_text(e, i, val, sizeof val);   /* (being turned: its mod amount) */
         RECT vr = {(int)cx - (rw(b) + sc(8)) / 2, ly + lh, (int)cx + (rw(b) + sc(8)) / 2, ly + lh + vh + 2};
         text(dc, &vr, val, font_value, T_VALUE, DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
@@ -684,6 +688,8 @@ static void draw_matrix(HDC dc, ed_t *e, int subs) {
             if (PARAMS[i].nopts) screen_menu(dc, e, i, c, active, font_cell);
             else screen_amount(dc, e, i, c, active, 1);
         }
+        if (qm_marked(e) == m)   /* the row a modulated knob's OPEN IN MATRIX jumped to */
+            gfx_frame((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 1.4f, 0xE0F2AA4C);
     }
 }
 
@@ -872,7 +878,8 @@ static void draw_screen(HDC dc, ed_t *e) {
     char help[480];
     const char *zh = zone_help(e, e->hover), *pm = patches_message(e), *sm = settings_message(e);
     if (sm && (!pm || e->screen == SCR_SETTINGS)) pm = sm;   /* (the SETTINGS page's own first, on that page) */
-    if (pm) {   /* what the last patch operation did (or why it couldn't) */
+    if (qm_help(e, help, sizeof help)) {   /* QUICK ASSIGN: picking, connecting, the amount (quickmod.c) */
+    } else if (pm) {   /* what the last patch operation did (or why it couldn't) */
         snprintf(help, sizeof help, "%s", pm);
     } else if ((e->hover >= 0 && e->hover < NPARAMS) || (e->hover >= Z_ABS && e->hover < Z_ABS + NPARAMS)) {
         char val[64];
@@ -882,6 +889,17 @@ static void draw_screen(HDC dc, ed_t *e) {
         const char *h = help_for(base_of(i));
         snprintf(help, sizeof help, "%s: %s%s%s%s", PARAMS[fp(e, i)].name, val,
                  shared_param(i) ? "   (shared: the same for all three Synths)" : "", h ? "\n" : "", h ? h : "");
+        if (!absolute) {   /* what modulates it, on the first line */
+            char links[200] = "", *nl = strchr(help, '\n');
+            qm_links_text(e, i, links, sizeof links);
+            if (links[0] && nl) {
+                char rest[480];
+                snprintf(rest, sizeof rest, "%s", nl);
+                snprintf(nl, sizeof help - (nl - help), "%s%s", links, rest);
+            } else if (links[0]) {
+                snprintf(help + strlen(help), sizeof help - strlen(help), "%s", links);
+            }
+        }
         e->abs = was;
     } else if (zh) {
         snprintf(help, sizeof help, "%s", zh);
@@ -903,7 +921,7 @@ static void draw_screen(HDC dc, ed_t *e) {
     } else {
         snprintf(help, sizeof help, "Drag a knob up/down (Shift: fine), scroll to nudge, double-click to reset. Click a "
                                     "red button to step, an LED to pick, right-click for a list. A module's corner "
-                                    "triangle shows its MORE page here. Play the keys and the ribbon below.");
+                                    "triangle shows its MORE page here. DEST (or Alt-click a source) then a knob: modulation.");
     }
     RECT hr = e->screen == SCR_SEQ ? seq_help_rect() : L.help;   /* (the step editor uses the top of it) */
     if (e->screen == SCR_SEQ && seq_message(e) && !pm) snprintf(help, sizeof help, "%s", seq_message(e));
@@ -1227,6 +1245,11 @@ static void paint_rect(ed_t *e, HDC out, const RECT *r) {   /* everything that s
         default: draw_button(dc, e, i); break;
         }
     }
+    gfx_end();   /* quick assign's rings, DEST buttons and the source picked (quickmod.c: its own surface) */
+    skin_bind(NULL);
+    qm_draw(dc, e, &clipr);
+    gfx_begin(dc);
+    skin_bind(gfx_g);
     draw_console(dc, e);
     draw_controller(dc, e);
     if (vis(&L.ribbon, sc(4))) draw_ribbon(dc, e);

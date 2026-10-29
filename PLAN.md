@@ -322,6 +322,34 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      1.0 us (32 particles colliding); the engine with 4 held voices 24.8 us, plus 8 balls and 32 particles playing into
      the voices 28.1 us. Off: no work at all. Left: the MPC's 8 KB chunk overflows in the every-param-changed test (8424
      bytes, the lead's call); a panel button for the pages; an optional modulation output of the particles.
+  22. Quick assign: modulation from the front panel (audit package 6, owner's request). Done 2026-10-30 (the desktop
+     window; `desktop/quickmod.c`, load_test): pick a source with the DEST button in the title strip of LFO 1-4, the
+     three envelopes or NOISE (Noise EG), or Alt-click / right-click its part of the panel: NOISE (Noise EG, Random,
+     Random Uni), the pitch and mod wheels, the X/Y pad (X, Y, gate), the ribbon, the keyboard (velocity, aftertouch,
+     the key, KB gate, sustain, sostenuto, EXP 1, EXP 2, constant), GENERATIVE (any source added to the matrix's list
+     later; none yet). The part lights amber; the help line says what to do. Then click a knob (or a switch or LED list
+     the matrix can move, or a MORE page item): it takes the row with the same source and destination, else the first
+     row with no destination, in each Synth in focus (Ctrl-picked Synths each their own row); the drag sets the amount,
+     up positive, down negative, 1% a pixel (Shift 0.2%), shown live on the help line and under the knob; the knob's
+     own value stays. Esc or DEST again ends it. Ctrl-drag a modulated knob later for its amount. Thin rings around the
+     modulated knobs show each connection's amount from the knob's setting (both ways for LFOs, the key, random, the
+     pitch wheel, the ribbon), coloured by family: envelopes amber, LFOs blue, the hands' controllers green, random
+     violet, later sources pink; a dot on a modulated switch. Hover: "modulated by ..."; right-click: each connection
+     with REMOVE and OPEN IN MATRIX (the row marked). A full matrix says so on the help line. The MATRIX page's params
+     are the only truth; every change is told to the host like a knob move; a connection and its drag, or a remove, is
+     one undo step. No engine change, no CPU cost in the audio path.
+     Destinations: 101 of the panel's 194 controls. Knobs: LFO RATE and WAVE; oscillator OCTAVE, FREQUENCY, BEAT FREQ,
+     WAVE ANGLE, PULSE WIDTH, MIX; the pitch, wave and FM mod amounts; NOISE ATTACK, RELEASE, SUSTAIN, COLOR MIX; every
+     mixer level (macro too); both cutoffs, resonances, SPACING, MIX, DRIVE, the cutoffs' EG, LFO 2 and FM amounts; each
+     envelope's six stages, KEY SCL (time scale) and its MULTI, SYNC, LOOP, LATCH; the synth effect's CTRL 1, CTRL 2,
+     MIX; SEND 1, SEND 2, SERIES, WIDTH; master FX 1 TIME, FDBK and FX 2 DECAY, SIZE; VOLUME (the matrix's Amp Level),
+     PAN, SPREAD. MORE page items with a destination too (LFO variation, delay, fades; every effect control; drift;
+     the macro channel's harmonics, timbre, morph; the EXT level). Knobs the matrix can't move: ARP GATE and SWING,
+     GENERATIVE STEPS, HITS, ROTATE, CHANCE, unison DETUNE, sequencer LENGTH, the cutoffs' KEY TRK, the envelopes' A, D,
+     R CURVE and VEL AMT, GLIDE RATE, BEND UP and DOWN; the rest are on/off switches and option lists with no
+     destination (waves of the oscillators, sync, routes, modes, types, the arp, chord and sequencer buttons). Matrix
+     destinations with no knob of their own: Pitch (all oscillators) and each LFO's Rate (st). Left: EDIT MODULATIONS
+     (the matrix filtered by a source); rings on the MORE pages' items; the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

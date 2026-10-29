@@ -66,7 +66,7 @@ user patch files (2026-10-27, offline).
 | One Synth Effect per Synth plus two Master Effects on sends | p9, p96-101 | Have | A synth effect per Synth (`modfx_*`, its own on, type, controls, mix; its own matrix moves it) and two master effects of any type on the Synths' sends (`mfx_send1/2` per Synth); five at once (2026-10-28, offline and the desktop window) | - | none/voice; shared medium |
 | Voice: 3 VCOs, ring mod, noise, external input, mixer to SVF pair and ladder, VCA | p9-10 | Have | 3 oscillators, ring mod, noise (and MACRO) and the EXT channel (the desktop plugin's stereo audio input, 2026-10-29) into the SVF pair and the ladder, then the VCA (on the MPC the input is silent: the wrapper's instrument mode has none) | - | none |
 | Each Synth: 4 LFOs and 3 EGs per voice (manual wording p10) | p10 | Have | 3 EGs and 4 LFOs per voice: an LFO runs per voice when it restarts per note or the matrix moves it per voice, else every voice follows one free-running LFO (2026-10-27, offline) | - | - |
-| Modulation: hard-wired, Quick Assign (DEST buttons), Mod Matrix with controllers and transforms | p10, p67 | Partial | Hard-wired amounts, a 16-slot matrix with controllers and the four transforms; no DEST / Expression Assign quick assign (only the ribbon's own quick assignment) | M | low |
+| Modulation: hard-wired, Quick Assign (DEST buttons), Mod Matrix with controllers and transforms | p10, p67 | Have | Hard-wired amounts, a 16-slot matrix with controllers and the four transforms; QUICK ASSIGN (`desktop/quickmod.c`, 2026-10-30, the desktop window): DEST buttons and Alt-click / right-click on the sources, a click on a knob connects it (see 15a) | - | low |
 | Programmable: every knob and hidden parameter stored in Presets | p8 | Have | Full state per instance (`get_state`/`set_state`, non-default values only, within the chunk: 8 KB on the MPC, 256 KB on the desktop (`VST2_CHUNK_MAX`, 2026-10-27)), 35 factory programs, user patch files (`patches.c`) | - | none |
 
 ## 1. Front panel, centre console, keyboard (p10-18)
@@ -75,14 +75,14 @@ user patch files (2026-10-27, offline).
 |---|---|---|---|---|---|
 | Traditional knobs, soft knobs, master encoder; lit and red buttons [HW] | p11 | Missing | The window's drawn knobs, buttons and PRESET knob stand in (mouse) | - | none |
 | MORE pages: a second layer of parameters per module [UI] | p11, every module | Have | The window's MORE triangles open each module's second layer on the centre screen (sub-pages past 16 items) | - | none |
-| DEST button on each LFO and EG: next touched control becomes a destination [UI] | p11, p43, p47, p68 | Missing | Matrix slots set by hand on the MATRIX page | M | none |
+| DEST button on each LFO and EG: next touched control becomes a destination [UI] | p11, p43, p47, p68 | Have | A DEST button in the title strip of LFO 1-4, the three envelopes and NOISE (Noise EG): lit while picked; each knob clicked then is connected in the first free matrix row of the Synths in focus, its drag the amount; DEST again or Esc ends it; QUICK ASSIGN (`desktop/quickmod.c`, 2026-10-30, the desktop window) | - | none |
 | HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Partial | The name line shows the patch (F/U, `*` when edited); each page's title the Synth in focus; the SETUP page the three Synths' on/off, channels and key ranges (2026-10-28, offline and the desktop window); the home line under the name its tags, NOTES and the host's tempo (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no timbre names | S | none |
 | SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Have | MATRIX (the MOD screen), the PATCHES page's SAVE / DELETE, and COMPARE and SNAPSHOT on the console (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); SETTINGS on the console (2026-10-29, the desktop window; `docs/SETTINGS.md`) | - | none |
 | SHIFT: fine resolution on soft knobs, latching shift [UI] | p14 | Have | Shift-drag is the fine resolution on every knob (`editor.c`); a latching shift isn't needed with a keyboard modifier | - | none |
 | New initialised preset (SHIFT + COMPARE) | p14 | Have | The "Init" program | - | none |
 | Panel Focus: SYNTH 1/2/3, multi-select for joint edits, SHIFT = solo [UI][MULTI] | p14-15 | Have | SYNTH 1/2/3 buttons on the console: the panel, MORE pages, matrix, step editor and randomiser show and edit that Synth; Ctrl-click edits several together (the last picked shown); shared sections marked SHARED (2026-10-28, offline and the desktop window). Solo: Shift-click a SYNTH button or its S half (`syn_solo`, not saved; only the soloed Synths heard, a 10 ms glide); its M half switches the Synth's ON (a double-click on the button solos, 2026-10-30), red while off; keys 1-3 pick a Synth (2026-10-29, offline and the desktop window) | - | none |
 | Keyboard Control: per-Synth ON, LOW/HIGH RANGE key zone, both = full G0..C10 [MULTI] | p15 | Partial | `syn_on`, `key_lo`, `key_hi` per Synth (SETUP page), as note names (2026-10-28, offline and the desktop window); set by value, not by pressing LOW RANGE and then a key | S | none |
-| Expression Assign buttons: MW, PAD X, PAD Y, KB, VEL, AT, EXP 1 [UI] | p15, p68 | Missing | Matrix slots set by hand | M | none |
+| Expression Assign buttons: MW, PAD X, PAD Y, KB, VEL, AT, EXP 1 [UI] | p15, p68 | Have | No buttons: Alt-click or right-click the mod wheel, the pitch wheel, the X/Y pad (X, Y or its gate), the ribbon or the keyboard (velocity, aftertouch, the key, its gate, the pedals EXP 1 / EXP 2 / sustain / sostenuto, a constant), then click the knobs as with DEST; QUICK ASSIGN (`desktop/quickmod.c`, 2026-10-30, the desktop window) | - | none |
 | Selecting presets from the browser (list, timbre pane, tag pane, tag filters) [UI] | p15-16 | Partial | The PATCHES page lists factory presets and user patches and loads on a click; PREV/NEXT and the PRESET knob step through them; the TAGS page filters the list and PREV/NEXT by TYPE, CATEGORY, MOOD and GROUP (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no timbre pane | see 20 | none |
 | 61-key keybed, velocity and aftertouch [HW] | p17, p140 | Have | Via MIDI: velocity, channel pressure; the window's 61-key keyboard plays velocity by click height | - | none |
 | Selectable velocity curves | p17, p116 | Have | `vel_curve` (see 19) | - | none |
@@ -218,7 +218,7 @@ user patch files (2026-10-27, offline).
 | LATCH: hold at sustain after key up; with LOOP keeps cycling | on/off (p42) | Have | `*_latch`: key up ignored until the voice is replayed or stolen, latch is switched off or All Notes Off (2026-10-27, offline) | - | none |
 | TIME SCALE, keeps the stage ratios; modulatable | 10% to 1000% (p44) | Have | `*_scale` 10-1000%, log knob with 100% in the middle; matrix "... Env Time Scale" per voice (2026-10-27, offline) | - | none |
 | VEL MOD AMT: velocity scales the envelope output | -100% to +100% (p45) | Have | `*_vel`: amp default 100% (as before), filter and mod 0%; also scales the envelope as a matrix source (2026-10-27, offline) | - | none |
-| DEST quick assign [UI] | p43 | Missing | - | M | none |
+| DEST quick assign [UI] | p43 | Have | Each envelope's DEST button (see 1); its stage knobs and switches are destinations too; QUICK ASSIGN (`desktop/quickmod.c`, 2026-10-30, the desktop window) | - | none |
 | Envelope picture with curves [UI] | p43, p45 | Have | Each envelope's MORE page (its triangle): the DAHDSR shape, each stage as wide as its time knob turns, bent by its curve as `src/env.h` bends it, the sustain level, LOOP / LATCH / SYNC (`desktop/more_pics.c`, 2026-10-29, desktop) | - | none |
 | EG stage times and time scale as matrix destinations | p76 | Have | Delay, attack, hold, decay, sustain, release and time scale of each EG, per voice (see 15e) | - | low-medium |
 
@@ -247,7 +247,7 @@ user patch files (2026-10-27, offline).
 | FADE OUT TIME | Off, 0.1 ms to 10.0 s (p50) | Have | `lfoN_fade_out` Off, 1 ms .. 10 s, after the fade in (2026-10-27, offline) | - | - |
 | REPEATS: a set number of cycles after note-on | Infinite, 1 to 32 (p50) | Have | `lfoN_repeats` Inf, 1..32; then the LFO stays at 0 until the next note-on (2026-10-27, offline) | - | - |
 | SMOOTHING: one-pole lowpass on the LFO | 0% to 100% (p50) | Have | `lfoN_smooth`: cutoff 1 kHz at 1% down to 0.1 Hz at 100% (2026-10-27, offline) | - | - |
-| DEST quick assign; wave picture [UI] | p47-48 | Partial | The wave picture: each LFO's MORE page draws two cycles from its start phase with `src/lfo.h`'s own wave, variation, polarity and smoothing, with its rate (2026-10-29, desktop). DEST quick assign: package 6 | M | none |
+| DEST quick assign; wave picture [UI] | p47-48 | Have | The wave picture: each LFO's MORE page draws two cycles from its start phase with `src/lfo.h`'s own wave, variation, polarity and smoothing, with its rate (2026-10-29, desktop). DEST quick assign: each LFO's DEST button (see 1), its RATE and WAVE destinations too (QUICK ASSIGN (`desktop/quickmod.c`, 2026-10-30, the desktop window)) | - | none |
 | Rate LEDs flash at the LFO, arp and sequencer rates; tempo LED on each beat [UI] | p46, p61, p78, p82 | Have | An LED by each LFO's RATE, over the arp's RATE, beside the sequencer's RATE (on each step it plays, from `seq_pos`), and TEMPO in the arp's row: rates from the params as the window reads them, the tempo and beat from the host's time info on the UI thread (120 BPM without), synced ones on the host's beat while it plays; only the LED repaints (`desktop/rate_leds.c`, 2026-10-29, desktop; about 0.05 ms) | - | none |
 
 ## 10. VCA (p50-52)
@@ -318,7 +318,7 @@ user patch files (2026-10-27, offline).
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | Hard-wired: pitch (LFO 1, Mod EG), wave (LFO 3 to angle and width), FM, cutoff (EG, LFO 2, FM) | p67 | Have | All of them; each amount is also a matrix destination (2026-10-27, offline) | - | - |
-| Quick Assign: DEST and Expression Assign; ADD DESTINATION, EDIT MODULATIONS, DONE, CANCEL; turning the destination knob sets the amount without moving the knob's own value [UI] | p68-69 | Missing | - (the ribbon's `ribbon_dst`/`ribbon_amt` is the only quick assignment) | M | none |
+| Quick Assign: DEST and Expression Assign; ADD DESTINATION, EDIT MODULATIONS, DONE, CANCEL; turning the destination knob sets the amount without moving the knob's own value [UI] | p68-69 | Partial | QUICK ASSIGN (`desktop/quickmod.c`, 2026-10-30, the desktop window): DEST and the expression sources (see 1); every knob clicked is ADD DESTINATION (the row with the same source and destination is reused), its drag the amount (up positive, down negative) without moving the knob; Esc or DEST again is DONE; each connection one undo step (Ctrl+Z is CANCEL, one at a time); Ctrl-drag later changes an amount; rings on the modulated knobs, a right-click to REMOVE or OPEN IN MATRIX. Not: EDIT MODULATIONS (the matrix filtered by the source) | S | none |
 | Matrix slots (numbered list; the count is not stated in this manual) | p70 | Have | 16 slots (`mod1_*` .. `mod16_*`) (2026-10-27, offline) | - | low (control rate; empty slots skipped) |
 | Per-slot DISABLE/ENABLE without deleting | p70 | Have | `modN_on` per slot (default On): off, the slot keeps its settings and does nothing (the effect pass too); on the MATRIX page a click on the row's number switches it (red: off) (2026-10-29, offline and the desktop window) | - | none |
 | SOURCE AMOUNT | -300% to +300% (p70) | Have | `modN_amt` -300% .. +300% (2026-10-27, offline) | - | - |
@@ -837,22 +837,22 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 
 | Module | Have | Partial | Missing | Missing [HW] | Missing [UI] |
 |---|---|---|---|---|---|
-| 0. Architecture and overview (p8-10) | 8 | 2 | 0 | 0 | 0 |
-| 1. Front panel, centre console, keyboard (p10-18) | 10 | 3 | 3 | 1 | 2 |
+| 0. Architecture and overview (p8-10) | 9 | 1 | 0 | 0 | 0 |
+| 1. Front panel, centre console, keyboard (p10-18) | 12 | 3 | 1 | 1 | 0 |
 | 2. Rear panel (p19-21) | 1 | 2 | 3 | 3 | 0 |
 | 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
 | 5. Noise (p29-30) | 9 | 0 | 0 | 0 | 0 |
 | 6. Mixer (p31-32) | 8 | 0 | 1 | 1 | 0 |
 | 7. Filters (p33-39) | 23 | 1 | 0 | 0 | 0 |
-| 8. Envelopes (p40-45) | 20 | 0 | 1 | 0 | 1 |
-| 9. LFOs (p46-49) | 22 | 1 | 0 | 0 | 0 |
+| 8. Envelopes (p40-45) | 21 | 0 | 0 | 0 | 0 |
+| 9. LFOs (p46-49) | 23 | 0 | 0 | 0 | 0 |
 | 10. VCA (p50-52) | 5 | 0 | 0 | 0 | 0 |
 | 11. Output (p53-56) | 0 | 0 | 6 | 4 | 0 |
 | 12. Performance Sets and text entry (p57-60) | 5 | 0 | 0 | 0 | 0 |
 | 13. Master Clock (p60-62) | 5 | 0 | 3 | 3 | 0 |
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
-| 15. Modulation (p67-77) | 80 | 2 | 6 | 2 | 3 |
+| 15. Modulation (p67-77) | 80 | 3 | 5 | 2 | 2 |
 | 16. Arpeggiator (p78-81) | 17 | 0 | 0 | 0 | 0 |
 | 17. Sequencer (p82-95) | 32 | 0 | 1 | 0 | 0 |
 | 18. Effects (p96-111) | 87 | 0 | 1 | 0 | 1 |
@@ -861,7 +861,7 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
 | 22. Settings (p124-139) | 15 | 2 | 14 | 11 | 1 |
 | 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
-| **Total** | **418** | **16** | **41** | **27** | **8** |
+| **Total** | **423** | **15** | **37** | **27** | **4** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -982,6 +982,12 @@ that LFO: it needs a per-sample path).
 - Files: `desktop/patches.c`, `desktop/editor.c` (console buttons); snapshot files beside the patches.
 
 **6. Quick assign and the matrix screen** (sections 0, 1, 8, 9, 15a). Effort M. CPU: none.
+- Done 2026-10-30 (the desktop window; `desktop/quickmod.c`, load_test): the quick assign part. DEST buttons on LFO
+  1-4, the three envelopes and NOISE; Alt-click or right-click the wheels, the X/Y pad, the ribbon, the keyboard (and
+  GENERATIVE: sources added to the matrix later) for the expression sources; a click on a knob connects it in the
+  focused Synths' matrix, its drag sets the amount; rings on the modulated knobs; right-click REMOVE / OPEN IN MATRIX.
+  101 panel controls have a destination (the map is in PLAN.md item 22). Left: EDIT MODULATIONS, and the matrix
+  page's items below.
 - DEST buttons on the four LFOs and three EGs, and the Expression Assign buttons (MW, PAD X, PAD Y, KB, VEL, AT,
   EXP 1): the next control touched becomes the destination, and turning it sets the amount without moving the knob;
   ADD DESTINATION, EDIT MODULATIONS (the matrix filtered by that source), DONE, CANCEL.
