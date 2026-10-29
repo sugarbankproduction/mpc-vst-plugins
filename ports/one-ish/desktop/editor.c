@@ -1030,7 +1030,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER: {   /* values the host or a preset changed: redraw */
         if (!e) return 0;
-        if (wp == 2) { rate_leds_tick(e); return 0; }   /* the rate LEDs: only the ones that changed repaint */
+        if (wp == 2) { rate_leds_tick(e); pics_tick(e); return 0; }   /* the rate LEDs: only the ones that changed
+                                                                         * repaint; the balls' box while it shows */
         if (e->corners == 0 && e->corner_tries < 100) {   /* the host's window sized to us yet? (for 5 s) */
             e->corner_tries++;
             e->corners = square_corners(w);

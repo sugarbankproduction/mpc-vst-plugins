@@ -57,6 +57,9 @@ void hr_process(hostrate_t *h, struct AEffect *fx, hr_render_t render, float **i
  * its own, at h + this); not part of the reported latency (see the top of this file). -1 on the old path. */
 double hr_input_delay(const hostrate_t *h);
 long hr_input_dry(const hostrate_t *h);   /* engine frames that found no input in time since the instance began (0) */
+/* (2026-10-29) the balls and particles' view ("phys_view", "s2_phys_view" ...) straight from the engine, without the
+ * wrapper's lock: only for readouts the engine makes safe from any thread (src/physgen_run.h's seqlock). UI thread */
+int hr_peek_view(hostrate_t *h, int synth, char *buf, int n);
 /* load_test only (effVendorSpecific TEST_LEGACY): 1 = the old path (the wrapper's own int16 output at 44.1 kHz, MIDI
  * at the block start), to compare against; set before the first block */
 void hr_set_legacy(hostrate_t *h, int on);

@@ -192,6 +192,7 @@ void paint(ed_t *e, HDC out);
 void leds_geom(int i, int *x0, int *y0, int *row, RECT *button);
 /* more_pics.c: a MORE page's picture (an envelope, an LFO, the filters, the mixer) in rect a of the screen */
 void pics_draw(HDC dc, ed_t *e, int page, RECT a);
+void pics_tick(ed_t *e);   /* the rate timer: a moving picture (the balls' box) repaints, only its own area */
 /* rate_leds.c: the LEDs that flash at the LFO, arpeggiator and sequencer rates and on the beat */
 #define RATE_TIMER_MS 15
 void rate_leds_tick(ed_t *e);                        /* the UI timer: what is lit now; repaints the LEDs that changed */

@@ -1,5 +1,6 @@
 /* Any host sample rate and float output for the desktop plugin: see hostrate.h. */
 #include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "editor.h"
@@ -117,6 +118,12 @@ double hr_input_delay(const hostrate_t *h) {
     return (in_lead_for(fs) + rs_delay_io(fs, RS_RATE)) * (double)fs / RS_RATE + rs_delay_for(fs);
 }
 long hr_input_dry(const hostrate_t *h) { return h->in_dry; }
+int hr_peek_view(hostrate_t *h, int synth, char *buf, int n) {
+    char key[16];
+    if (synth) snprintf(key, sizeof key, "s%d_phys_view", synth + 1);
+    else snprintf(key, sizeof key, "phys_view");
+    return h && h->eng ? h->api->get_param(h->eng, key, buf, n) : 0;
+}
 int hr_latency(const hostrate_t *h) { return h->legacy ? 0 : rs_delay_for(__atomic_load_n(&h->pending_fs, __ATOMIC_RELAXED)); }
 
 int hr_set_rate(hostrate_t *h, float rate) {

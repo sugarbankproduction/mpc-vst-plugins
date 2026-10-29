@@ -294,6 +294,19 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      (cutoff, resonance and a fourth lane); KEY, SCALE, LENGTH and SEED there; GENERATE and RE-ROLL, one undo step each.
      The generator is pure (a seed in, a pattern out) for the randomiser to call later. The window runs it; the engine
      is unchanged (no CPU cost, no new params).
+  21. Bouncing balls and particles (the GENERATIVE section, beyond the Moog One). Done 2026-10-29 (offline and the
+     desktop window; `src/physgen.h`, `src/physgen_run.h`, `test/physgen_check.c`, load_test): per Synth, 1-8 balls
+     bounce in a box (SPEED, GRAVITY, BOX SIZE, BOUNCE); the floor plays a degree of the Synth's KEY and SCALE by where
+     a ball lands, the ceiling an octave up, the walls the root and the fifth; a pool of 32 particles falls from an
+     emitter (RATE, SPREAD, LIFE, ATTRACTION) and plays crossing a line, colliding or dying. Shared: MAX NOTES/S (a cap),
+     DYNAMICS, NOTE LENGTH, SYNC to the host tempo (1/4 .. 1/32, triplets), FREE or HELD KEYS (from the lowest key),
+     KEY RESTARTS, LOW OCTAVE, OCTAVES (20 `phys_*` params per Synth). Notes go the Euclid / Turing way (`play_step`),
+     deterministic from a seed per Synth; positions are never saved. Two MORE pages (BOUNCING BALLS, PARTICLES; in the
+     MORE index) show the box moving, read from the engine's `phys_view` through a seqlock (no lock). Old sounds play
+     sample for sample as before (golden check). CPU on the PC per 128-frame block: the world alone 0.04 us (8 balls),
+     1.0 us (32 particles colliding); the engine with 4 held voices 24.8 us, plus 8 balls and 32 particles playing into
+     the voices 28.1 us. Off: no work at all. Left: the MPC's 8 KB chunk overflows in the every-param-changed test (8424
+     bytes, the lead's call); a panel button for the pages; an optional modulation output of the particles.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

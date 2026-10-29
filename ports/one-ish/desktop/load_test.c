@@ -1043,6 +1043,64 @@ static int page_has(AEffect *fx, int page, const char *key) {   /* is key among 
     }
     return 0;
 }
+/* the bouncing balls and particles' pages (2026-10-29): both open from the MORE index, show their params and their box,
+ * and the box moves (two pictures of it a little apart differ) */
+enum { PT_ROWS = 8, PT_SLOTS = 2 * PT_ROWS };   /* as editor.h's ROWS and SLOTS */
+static unsigned char phys_px[2][4096 * 2048 * 3];
+static int phys_grab(HWND child, int w, int h, unsigned char *px) {   /* the window's pixels (24-bit rows, bottom up) */
+    HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+    HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+    HGDIOBJ old = SelectObject(dc, bm);
+    SendMessageA(child, WM_PRINTCLIENT, (WPARAM)dc, PRF_CLIENT);
+    BITMAPINFOHEADER bi = {sizeof bi, w, -h, 1, 24, BI_RGB, 0, 0, 0, 0, 0};   /* (top down) */
+    int stride = (w * 3 + 3) & ~3, ok = stride * h <= (int)sizeof phys_px[0];
+    if (ok) GetDIBits(dc, bm, 0, h, px, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+    SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
+    return ok ? stride : 0;
+}
+static void open_page(HWND child, float s, int page) {   /* through the MORE index: its sub-page, then the page's slot */
+    for (int k = 0; k <= page / PT_SLOTS; k++) click_zone(child, s, ZONE_TAB_MORE);
+    int slot = page % PT_SLOTS, r = slot % PT_ROWS, col = slot / PT_ROWS;
+    float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
+    click(child, s, x0 + col * (half + 8.0f) + half * 0.3f, ZONE_SCREEN[1] + 80.0f + 22.0f * r + 11.0f);
+}
+static void phys_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[200];
+    int ok = PG_BALLS >= 0 && PG_PARTICLES >= 0 && PAGES[PG_BALLS].pic == PIC_PHYS && PAGES[PG_PARTICLES].pic == PIC_PHYS;
+    check(ok, "BOUNCING BALLS and PARTICLES: two MORE pages, each with the box");
+    if (!ok) return;
+    check(page_has(fx, PG_BALLS, "phys_balls") && page_has(fx, PG_BALLS, "phys_gravity") &&
+          page_has(fx, PG_PARTICLES, "phys_rate") && page_has(fx, PG_PARTICLES, "phys_trigger") &&
+          page_has(fx, PG_PARTICLES, "phys_max"), "... their params are on them");
+    set_option(fx, "phys_balls_on", "On");
+    set_option(fx, "phys_parts_on", "On");
+    static const struct { int page; const char *suffix; } P[] = {{PG_BALLS, "_more_balls"}, {PG_PARTICLES, "_more_particles"}};
+    /* the picture's area (editor.c's rows, the last PIC_ROWS of them), in pixels */
+    int x0 = (int)((ZONE_SCREEN[0] + 8) * s), x1 = (int)((ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8) * s);
+    int y0 = (int)((ZONE_SCREEN[1] + 80 + 22 * (PT_ROWS - PIC_ROWS)) * s), y1 = (int)((ZONE_SCREEN[1] + 80 + 22 * PT_ROWS) * s);
+    for (int k = 0; k < 2; k++) {
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        int st0 = phys_grab(child, w, h, phys_px[0]);
+        open_page(child, s, P[k].page);
+        play(fx, 30, 512);
+        int st = phys_grab(child, w, h, phys_px[1]), opened = 0, moved = 0;
+        for (int y = y0; st && st0 && y < y1 && y < h; y++)
+            for (int x = x0; x < x1 && x < w; x++) opened += memcmp(&phys_px[0][y * st + 3 * x], &phys_px[1][y * st + 3 * x], 3) != 0;
+        memcpy(phys_px[0], phys_px[1], (size_t)st * h);
+        play(fx, 30, 512);
+        phys_grab(child, w, h, phys_px[1]);
+        for (int y = y0; st && y < y1 && y < h; y++)
+            for (int x = x0; x < x1 && x < w; x++) moved += memcmp(&phys_px[0][y * st + 3 * x], &phys_px[1][y * st + 3 * x], 3) != 0;
+        snprintf(what, sizeof what, "the %s page opens from the MORE index and draws its box (%d pixels new), which moves "
+                 "(%d pixels changed 0.35 s later)", P[k].suffix + 6, opened, moved);
+        check(opened > 500 && moved > 20, what);
+        if (bmp) shot(child, w, h, bmp, P[k].suffix);
+    }
+    set_option(fx, "phys_balls_on", "Off");
+    set_option(fx, "phys_parts_on", "Off");
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
 static void master_pages(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     char what[160];
     if (PG_DELAY < 0 || PG_REVERB < 0) return;
@@ -1177,6 +1235,7 @@ static void editor(AEffect *fx, const char *bmp) {
         check(after < held / 10, what);
         ribbon_test(fx, child, cr.right / (float)BASE_W);
         random_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        phys_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         click_zone(child, cr.right / (float)BASE_W, ZONE_TAB_MATRIX);   /* the matrix's first rows again */
         fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);   /* back to the first preset for the pictures */
         play(fx, 400, 512);

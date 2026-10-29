@@ -1,7 +1,9 @@
 /* The MORE pages' pictures on the desktop editor's centre screen (see editor.c), drawn under a page's items in the
  * screen's own colours: an envelope's shape with its curves (the three envelope pages), an LFO's wave with its
  * variation, polarity, start phase and smoothing (the LFO pages), the two filters' routing, modes and response curves
- * (FILTERS) and the mixer's levels as a bar graph with the filters each source goes to (MIXER).
+ * (FILTERS), the mixer's levels as a bar graph with the filters each source goes to (MIXER), and the box with the
+ * bouncing balls and particles moving in it (BOUNCING BALLS, PARTICLES; 2026-10-29: the one moving picture, read from
+ * the engine's "phys_view" and repainted by pics_tick while its page shows).
  *
  * Every picture is worked out from the focused Synth's params each time the page is painted, with the engine's own
  * shapes where they are in headers (src/env.h's stage curve, src/lfo.h's waves), so it shows what plays. A page is
@@ -19,6 +21,12 @@
 #include "skin.h"
 #include "../src/env.h"
 #include "../src/lfo.h"
+#include "hostrate.h"
+#pragma GCC diagnostic push   /* (only its sizes: the box's line, emitter and ball radius) */
+#pragma GCC diagnostic ignored "-Wunused-function"
+#pragma GCC diagnostic ignored "-Wunused-variable"
+#include "../src/physgen.h"
+#pragma GCC diagnostic pop
 
 #define T_LCD RGB(150, 215, 232)       /* as editor_draw.c */
 #define T_LCD_DIM RGB(90, 130, 145)
@@ -295,6 +303,72 @@ static void pic_mixer(HDC dc, ed_t *e, RECT a) {
     }
 }
 
+/* ---- the bouncing balls and particles (2026-10-29): the box as the engine has it now (the "phys_view" readout,
+ * read without a lock: hostrate.c hr_peek_view), the walls and the LINE lit as they play, each ball (lit when it just
+ * played), the emitter and the particles; beside it what plays. Repainted by pics_tick while the page shows ---- */
+static void pic_phys(HDC dc, ed_t *e, RECT a) {
+    char v[1024] = "";
+    int nb = 0, np = 0, wall = 0, used = 0;
+    if (e->hr && hr_peek_view(e->hr, e->focus, v, sizeof v) > 0) sscanf(v, "%d %d %d;%n", &nb, &np, &wall, &used);
+    int parts = opt(e, ix("phys_", "parts_on")), balls = opt(e, ix("phys_", "balls_on"));
+    int line = parts && opt(e, ix("phys_", "trigger")) == PHT_LINE;
+    float side = (float)(a.bottom - a.top) - sc(6.0f), x0 = a.left + sc(8.0f), y0 = a.top + sc(3.0f);
+    gfx_rect(x0, y0, side, side, C_DIM);
+    for (float g = 0.25f; g < 1.0f; g += 0.25f) {   /* a faint grid */
+        gfx_line(x0 + g * side, y0, x0 + g * side, y0 + side, 1.0f, C_GRID);
+        gfx_line(x0, y0 + g * side, x0 + side, y0 + g * side, 1.0f, C_GRID);
+    }
+    gfx_frame(x0, y0, side, side, 1.0f, C_RULE);
+    static const float W[4][4] = {{0, 1, 1, 1}, {0, 0, 1, 0}, {0, 0, 0, 1}, {1, 0, 1, 1}};   /* floor, ceiling, left, right */
+    for (int k = 0; k < 4; k++)
+        if (wall >> k & 1)
+            gfx_line(x0 + W[k][0] * side, y0 + W[k][1] * side, x0 + W[k][2] * side, y0 + W[k][3] * side, 2.5f * L.s, C_TRACE);
+    if (line) {
+        float ly = y0 + (1.0f - PH_LINE_Y) * side;
+        if (wall >> 4 & 1) gfx_line(x0, ly, x0 + side, ly, 2.0f * L.s, C_TRACE);
+        else for (float x = x0; x < x0 + side; x += 5.0f * L.s) gfx_line(x, ly, fminf(x + 2.5f * L.s, x0 + side), ly, 1.0f, C_LIT);
+    }
+    if (parts) gfx_circle(x0 + PH_EMIT_X * side, y0 + (1.0f - PH_EMIT_Y) * side, 3.0f * L.s, 1.0f, C_LIT);
+    const char *p = v + used;
+    for (int i = 0; i < nb + np; i++) {
+        int x, y, f, u;
+        if (sscanf(p, "%d,%d,%d;%n", &x, &y, &f, &u) != 3) break;
+        p += u;
+        float cx = x0 + x * 0.001f * side, cy = y0 + (1.0f - y * 0.001f) * side;
+        float r = i < nb ? fmaxf(PH_BALL_R * side, 2.5f * L.s) : 1.6f * L.s;
+        if (f) gfx_disc(cx, cy, r * 2.0f, C_GLOW);
+        gfx_disc(cx, cy, r, f ? C_TRACE : i < nb ? C_LIT : 0xFF6FA9BC);
+    }
+    char t[96];
+    RECT lr = {(int)(x0 + side + sc(12.0f)), a.top + sc(2), a.right - sc(4), a.top + sc(16)};
+    static const char *const PLAY[] = {"crossing the line", "colliding", "dying"};
+    if (!balls && !parts) snprintf(t, sizeof t, "Off: switch BALLS or PARTICLES on");
+    else snprintf(t, sizeof t, "%s%s%s", balls ? "BALLS" : "", balls && parts ? " + " : "", parts ? "PARTICLES" : "");
+    txt(dc, lr, t, T_LCD, DT_LEFT | DT_VCENTER);
+    OffsetRect(&lr, 0, sc(15));
+    if (balls) {
+        snprintf(t, sizeof t, "%d ball%s: walls play the key", nb, nb == 1 ? "" : "s");
+        txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
+        OffsetRect(&lr, 0, sc(15));
+    }
+    if (parts) {
+        snprintf(t, sizeof t, "%d particle%s, playing %s", np, np == 1 ? "" : "s", PLAY[opt(e, ix("phys_", "trigger")) % 3]);
+        txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
+        OffsetRect(&lr, 0, sc(15));
+    }
+    snprintf(t, sizeof t, "Key %s %s, %s", opt_name(e, ix("key_", "root")), opt_name(e, ix("key_", "scale")),
+             opt(e, ix("phys_", "keys")) ? "from the held keys" : "free");
+    txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
+}
+
+/* the rate timer (every RATE_TIMER_MS): the balls' box, every other tick (about 33 a second), only its own area */
+void pics_tick(ed_t *e) {
+    static unsigned n;
+    if (!e->wnd || e->screen < 0 || e->screen >= NPAGES || PAGES[e->screen].pic != PIC_PHYS || ++n % 2) return;
+    RECT a = {L.row[0].left, L.row[ROWS - PIC_ROWS].top, L.row[0].right, L.row[ROWS - 1].bottom};
+    InvalidateRect(e->wnd, &a, FALSE);
+}
+
 void pics_draw(HDC dc, ed_t *e, int page, RECT a) {
     if (page < 0 || page >= NPAGES || !PAGES[page].pic) return;
     gfx_begin(dc);
@@ -306,6 +380,7 @@ void pics_draw(HDC dc, ed_t *e, int page, RECT a) {
     case PIC_LFO: pic_lfo(dc, e, PAGES[page].pic_key, a); break;
     case PIC_FILTER: pic_filters(dc, e, a); break;
     case PIC_MIXER: pic_mixer(dc, e, a); break;
+    case PIC_PHYS: pic_phys(dc, e, a); break;
     }
     gfx_end();
     skin_bind(NULL);

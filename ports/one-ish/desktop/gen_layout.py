@@ -169,7 +169,7 @@ MFX_USES = [
 ]
 MFX_COMMON = [("mix", "Mix"), ("gain", "Gain")]
 # a MORE page's picture (more_pics.c), drawn over its last PIC_ROWS rows: an envelope, an LFO, the filters, the mixer
-PICS = {"ENV": 1, "LFO": 2, "FILTER": 3, "MIXER": 4}
+PICS = {"ENV": 1, "LFO": 2, "FILTER": 3, "MIXER": 4, "PHYS": 5}   # PHYS: the box (2026-10-29)
 PIC_ROWS = 3
 # the rate LEDs (rate_leds.c): what each flashes with
 RATE_KINDS = {"LFO": 0, "ARP": 1, "SEQ": 2, "TEMPO": 3}
@@ -402,6 +402,16 @@ def build(lay):
         ("gen_rot", "Euclid Rotation"), ("gen_prob", "Step Probability"), ("gen_vel_rand", "Velocity Random"),
         ("gen_tm_on", "Turing On"), ("gen_tm_len", "Turing Length"), ("gen_tm_change", "Turing Change"),
         ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves"), ("key_root", "Key"), ("key_scale", "Scale")])
+    # the bouncing balls and particles (2026-10-29): two pages (the MORE index lists them), each with the box moving
+    shared = [("phys_max", "Max Notes/s"), ("phys_dyn", "Dynamics"), ("phys_len", "Note Length"), ("phys_sync", "Sync"),
+              ("phys_keys", "Keys"), ("phys_restart", "Key Restarts"), ("phys_octave", "Low Octave"),
+              ("phys_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")]
+    world = [("phys_speed", "Speed"), ("phys_gravity", "Gravity"), ("phys_size", "Box Size"), ("phys_bounce", "Bounce")]
+    L.page("BALLS", "BOUNCING BALLS", "Balls bounce in a box: each wall they hit plays a note in the KEY.",
+           [("phys_balls_on", "Balls On"), ("phys_balls", "Balls")] + world + shared, pic=("PHYS", "phys_"))
+    L.page("PARTICLES", "PARTICLES", "Particles fall from the top: the LINE, a collision or their end plays a note.",
+           [("phys_parts_on", "Particles On"), ("phys_rate", "Rate"), ("phys_spread", "Spread"), ("phys_life", "Life"),
+            ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + world + shared, pic=("PHYS", "phys_"))
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
@@ -673,7 +683,7 @@ def emit(lay, zones, out):
     lines.append("#define NPAGES %d" % len(pages))
     for pid in ("LFO1", "LFO2", "LFO3", "LFO4", "OSC1", "OSC2", "OSC3", "POLY", "ARP", "CHORD", "GEN", "SFX", "MFX",
                 "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "SEQ", "ENV1", "ENV2", "ENV3", "MIXER",
-                "FILTERS", "OTHER"):
+                "FILTERS", "OTHER", "BALLS", "PARTICLES"):
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
     # the rate LEDs: what each flashes with (RL_*: an LFO's rate (n 0-3), the arpeggiator's, the sequencer's, the beat)
     lines.append("enum { %s };" % ", ".join("RL_%s = %d" % (k, v) for k, v in RATE_KINDS.items()))
