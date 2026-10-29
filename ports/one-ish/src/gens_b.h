@@ -13,7 +13,8 @@
  * next gap (1, 2, 3, 4, 6 or 8 steps). Counts in fixed arrays (uint16, halved when one gets full). It starts from a
  * gentle built-in table (mostly steps of one or two degrees, leaning home to the root; gaps of one or two steps), so it
  * plays something before it has heard anything. Choosing: CREATIVITY 0 takes the most likely step every time; above
- * 0 it draws at random, flatter the higher (a temperature), and at 100 it also wanders off the table a little.
+ * 0 it draws at random, flatter the higher (a temperature), and over 50 it also wanders off the table a little (more
+ * towards 100).
  *
  * Fixed-size arrays, a seeded random sequence of their own (seq.h's xorshift), no allocation, no locks, no files: safe
  * in the audio thread, and the same seed always gives the same notes. */
@@ -220,8 +221,8 @@ static inline int mk_gap_class(float steps) {
 }
 
 /* pick from n weights with CREATIVITY c (0 .. 1): c 0 the largest (the first of equals), above it a draw with the
- * weights sharpened or flattened (temperature 0.1 .. 2), and towards 100 a little of every choice in `wander` (a mask
- * of the indices it may wander to). `out` gets each choice's share (0 .. 1, for the window) when not NULL */
+ * weights sharpened or flattened (temperature 0.1 .. 2), and over 50 (more towards 100) a little of every choice in
+ * `wander` (a mask of the indices it may wander to). `out` gets each choice's share (0 .. 1, for the window) when not NULL */
 static inline int mk_pick(const uint16_t *w, int n, float c, uint32_t wander, uint32_t *rng, float *out) {
     float p[MK_IV > MK_RC ? MK_IV : MK_RC], max = 0.0f, sum = 0.0f;
     int best = -1;
@@ -230,7 +231,7 @@ static inline int mk_pick(const uint16_t *w, int n, float c, uint32_t wander, ui
         if (out) for (int i = 0; i < n; i++) out[i] = i == n / 2;
         return n / 2;
     }
-    float inv = 1.0f / (0.1f + 1.9f * c), floor_ = 0.15f * c * c;
+    float inv = 1.0f / (0.1f + 1.9f * c), floor_ = c > 0.5f ? 0.6f * (c - 0.5f) * (c - 0.5f) : 0.0f;
     for (int i = 0; i < n; i++) {
         p[i] = w[i] > 0 ? powf(w[i] / max, inv) : 0.0f;
         if (wander >> i & 1) p[i] += floor_;

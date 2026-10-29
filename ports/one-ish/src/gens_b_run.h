@@ -169,7 +169,7 @@ static void mk_start(one_t *s) {
     gb_run_t *g = &s->gb;
     g->mk_rng = (0x27d4eb2fu * (uint32_t)(s->idx + 1)) ^ 0x165667b1u;
     g->mk_wait = 0;
-    g->mk_gap = 0;
+    g->mk_gap = g->l_gap >= 0 ? g->l_gap : 0;   /* its rhythm goes on from the last gap it heard */
     g->mk_tokens = GB_BURST;
     g->mk_line = -1;
     g->hist_n = g->hist_head = 0;
