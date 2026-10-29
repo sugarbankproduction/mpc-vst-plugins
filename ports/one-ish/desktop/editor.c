@@ -877,6 +877,7 @@ static void press(ed_t *e, int x, int y) {
         controller_move(e, x, y);
         return;
     }
+    if (settings_learn_pick(e, absolute ? i : fp(e, i))) { e->abs = 0; return; }   /* MIDI LEARN takes the control */
     int screen = e->hit_screen, n = PARAMS[i].nopts;
     RECT r = e->hit_rect;
     int k = screen ? (n ? K_MENU : K_AMOUNT) : L.kind[i];
@@ -935,6 +936,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         }
         octave_hold(e);
         lib_tick(e);   /* an undo step after a pause, a set's number held, a MIDI program change, the tempo */
+        settings_tick(e);   /* MIDI LEARN: a CC heard */
         int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
             float v = e->fx->getParameter(e->fx, i);
@@ -1254,6 +1256,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         break;
     case effProcessEvents:   /* host MIDI waits for the engine block nearest its time (hostrate.c) */
         if (e && ptr) lib_midi_events(e, ptr);   /* a program change for a user patch: noted, loaded on the UI thread */
+        if (e && ptr) settings_midi_seen(e, ptr);   /* (MIDI LEARN listens: the last CC, lock-free) */
         if (e && e->hr && ptr && hr_events(e->hr, fx, ptr)) return 1;
         break;
     case effSetProgram:   /* the host's or the browser's: the patch shown follows (patches.c) */

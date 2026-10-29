@@ -1244,9 +1244,85 @@ static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp
     check(strstr(buf, "tempo=99") && strstr(buf, "rx_clock=0") && strstr(buf, "sustain_cc=64"),
           "SETTINGS: a hand-edited file loads (unknown lines skipped, the rest at their defaults)");
 
+    /* MIDI LEARN: LEARN, a control, a CC from the host: that CC moves it (and the host hears of it) */
+    st(fx, STT_RESTORE, NULL, NULL, 0);
+    int cut = rnd_key("flt_cut"), svf2 = -1, wave = rnd_key("lfo1_wave");
+    for (int i = 0; i < NPARAMS; i++)
+        if (!strcmp(PARAMS[i].key, "s2_svf_cut")) svf2 = i;
+    if (cut < NPARAMS && svf2 >= 0 && wave < NPARAMS) {
+        st(fx, STT_LEARN, NULL, NULL, 0);
+        int picked = (int)st(fx, STT_LEARN_PICK, NULL, NULL, (float)cut);
+        send_midi(fx, 0xB0, 64, 100);   /* reserved (the sustain pedal): refused, still waiting */
+        int stage = (int)st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        send_midi(fx, 0xB0, 64, 0);   /* (the pedal up again: it went to the engine as the sustain pedal) */
+        st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        st(fx, STT_MESSAGE, NULL, buf, 0);
+        snprintf(what, sizeof what, "LEARN: a reserved CC is refused (\"%s\")", buf);
+        check(picked == 1 && stage == 2 && strstr(buf, "reserved"), what);
+        send_midi(fx, 0xB0, 74, 10);
+        stage = (int)st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        int nmap = (int)st(fx, STT_MAP, NULL, buf, 0);
+        snprintf(what, sizeof what, "LEARN: CC 74 is learned for the ladder cutoff (\"%s\"), saved in the file", buf);
+        check(stage == 0 && nmap == 1 && !strcmp(buf, "74,flt_cut,7;") && file_has(settings_file, "map=74,flt_cut,7"),
+              what);
+        int told = automated[cut];
+        send_midi(fx, 0xB0, 74, 127);
+        play(fx, 8, 512);
+        float hi = fx->getParameter(fx, cut);
+        send_midi(fx, 0xB0, 74, 0);
+        play(fx, 8, 512);
+        snprintf(what, sizeof what, "LEARN: CC 74 then moves the cutoff through the DLL (%.3f, %.3f), the host told (%d)",
+                 hi, fx->getParameter(fx, cut), automated[cut] - told);
+        check(hi == 1.0f && fx->getParameter(fx, cut) == 0.0f && automated[cut] > told, what);
+        st(fx, STT_LEARN, NULL, NULL, 0);   /* 14-bit: the CC's LSB (CC + 32) follows it */
+        st(fx, STT_LEARN_PICK, NULL, NULL, (float)svf2);
+        send_midi(fx, 0xB0, 7, 64);
+        send_midi(fx, 0xB0, 39, 0);
+        st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        st(fx, STT_LEARN, NULL, NULL, 0);
+        st(fx, STT_LEARN_PICK, NULL, NULL, (float)wave);
+        send_midi(fx, 0xB0, 21, 0);
+        st(fx, STT_LEARN_TICK, NULL, NULL, 0);
+        st(fx, STT_MAP, NULL, buf, 0);
+        send_midi(fx, 0xB0, 7, 100);
+        send_midi(fx, 0xB0, 39, 50);
+        play(fx, 4, 512);
+        float v14 = fx->getParameter(fx, svf2);
+        snprintf(what, sizeof what, "LEARN: CC 7+39 is found to be 14-bit for Synth 2's SVF cutoff (%.5f), CC 21 an "
+                 "option (\"%s\")", v14, buf);
+        check(strstr(buf, "7,s2_svf_cut,14;") && strstr(buf, "21,lfo1_wave,7;")
+                  && fabsf(v14 - (100 * 128 + 50) / 16383.0f) < 1e-4f, what);
+        st(fx, STT_MAP_BITS, NULL, NULL, 0);   /* CC 74 can't be 14-bit; CC 7 goes back to 7; CC 21 to 14 */
+        st(fx, STT_MAP_BITS, NULL, NULL, 1);
+        st(fx, STT_MAP_BITS, NULL, NULL, 2);
+        st(fx, STT_MAP, NULL, buf, 0);
+        snprintf(what, sizeof what, "LEARN: 7/14-BIT toggles, 14 only on CC 0-31 (\"%s\")", buf);
+        check(strstr(buf, "74,flt_cut,7;") && strstr(buf, "7,s2_svf_cut,7;") && strstr(buf, "21,lfo1_wave,14;"), what);
+        st(fx, STT_SET, "exp1_cc=21", NULL, 0);   /* a pedal moved onto a learned CC: the pedal wins */
+        st(fx, STT_MAP, NULL, buf, 0);
+        check(!strstr(buf, "21,"), "LEARN: a pedal moved onto a learned CC takes it (the mapping goes)");
+        st(fx, STT_SET, "exp1_cc=11", NULL, 0);
+        /* NRPN after the manual's table reaches the engine through the DLL (the wrapper's own NRPN is off) */
+        send_midi(fx, 0xB0, 99, 1150 >> 7);
+        send_midi(fx, 0xB0, 98, 1150 & 127);
+        send_midi(fx, 0xB0, 6, 64);
+        send_midi(fx, 0xB0, 38, 0);
+        play(fx, 4, 512);
+        snprintf(what, sizeof what, "NRPN 1150 (ladder cutoff) sets it through the DLL (%.4f)", fx->getParameter(fx, cut));
+        check(fabsf(fx->getParameter(fx, cut) - 8192 / 16383.0f) < 1e-3f, what);
+        if (bmp) {
+            st(fx, STT_TAB, NULL, NULL, (float)ST_MIDI);
+            st(fx, STT_LEARN, NULL, NULL, 0);
+            shot(child, w, h, bmp, "_settings_midi");
+        }
+        st(fx, STT_MAP_CLEAR, NULL, NULL, 0);
+        check(st(fx, STT_MAP, NULL, NULL, 0) == 0 && !file_has(settings_file, "map="), "LEARN: CLEAR ALL empties the map");
+    }
+
     if (bmp) {
         for (int t = 0; t < ST_TABS; t++) {
-            static const char *const SUFFIX[ST_TABS] = {"_settings", "_settings_library", "_settings_tuning"};
+            static const char *const SUFFIX[ST_TABS] = {"_settings", "_settings_midi_empty", "_settings_library",
+                                                        "_settings_tuning"};
             st(fx, STT_TAB, NULL, NULL, (float)t);
             shot(child, w, h, bmp, SUFFIX[t]);
         }

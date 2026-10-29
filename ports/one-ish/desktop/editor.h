@@ -282,6 +282,9 @@ int settings_cue_step(ed_t *e, int to);
 int settings_cue_title(ed_t *e, char *out, int n);
 int settings_cue_load(ed_t *e);
 int settings_midi_keep(ed_t *e, float *keep);  /* MIDI I/O FROM PRESET off: a load keeps the channels (keep[4]) */
+void settings_midi_seen(ed_t *e, const void *events);   /* the host's MIDI (its thread): the last CC, for LEARN */
+int settings_learn_pick(ed_t *e, int i);       /* a control clicked while LEARN waits for one (its own index) */
+void settings_tick(ed_t *e);                   /* the window's timer */
 void settings_midi_put(ed_t *e, const float *keep);
 void settings_open(ed_t *e);
 void settings_title(ed_t *e, char *out, int n);

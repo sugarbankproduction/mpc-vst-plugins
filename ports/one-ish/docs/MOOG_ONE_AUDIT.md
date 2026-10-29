@@ -803,10 +803,10 @@ Cross-reference only: these rows repeat items already counted above and are left
 |---|---|---|---|---|---|
 | USB computer keyboard for naming and Panel Focus shortcuts (SHIFT/CTRL + F5-F7) [UI][MULTI] | p143 | Have | The computer keyboard types names in the window; Shift+F5/F6/F7 pick the Synth in focus (Ctrl too: add it) (2026-10-28, offline and the desktop window) | - | none |
 | MIDI CONTROL OUTPUT: panel moves sent as CC, MIDI MAP or NRPN; ALWAYS SEND NRPN NUM [HW] | p144 | Missing | The host records knob moves as automation (`audioMasterAutomate`) | - | none |
-| LEARN MIDI CC: map a CC to any panel control, 7- or 14-bit, CLEAR / ADD MAPPING | p145-146 | Partial | Every parameter is a host-automatable VST parameter, so hosts with MIDI learn can map it; the plugin has no MIDI learn of its own | M | none |
-| EDIT MIDI MAPPING list, reserved CCs [UI] | p147-148 | Partial | Host side only | (with learn) | none |
-| NRPN input for every parameter per Synth (table p149-158: LFO wave and free/synced rate; oscillator octave, frequency, beat, saw, triangle, PW, mix, wave, sync; pitch mod; ring mod source; wave mod; FM; noise; polyphony; mixer; filters; cutoff mod; three envelopes with free and synced times, multi trig, sync, loop, latch; VCA; output) | p149-158 | Missing | Only CC 1, 4, 11, 16, 17, 64, 66, 120, 121, 123, pitch bend and channel pressure are read | M | none |
-| 14-bit parameter resolution over MIDI | p145 | Missing | Host parameter resolution (VST2 parameters are floats) | S (with learn) | none |
+| LEARN MIDI CC: map a CC to any panel control, 7- or 14-bit, CLEAR / ADD MAPPING | p145-146 | Have | SETTINGS > MIDI: LEARN, click any control (of the Synth in focus), move a CC; 14-bit found by itself (the CC's LSB, CC + 32, following it) and switchable to 7; a CC learned again or a control learned again replaces its old mapping; CANCEL. The map is kept in the settings file (the manual keeps it with the global settings, not per sound) and reaches every instance's engine as a fixed 128-entry table; a mapped CC moves its param as host automation would, and the host is told (2026-10-29, offline and the desktop window, `docs/SETTINGS.md`) | - | none |
+| EDIT MIDI MAPPING list, reserved CCs [UI] | p147-148 | Have | SETTINGS > MIDI lists every mapping (CC, control, 7-BIT / 14-BIT, DELETE, CLEAR ALL) and the reserved CCs (0-3, 6, 16-18, 32, 38, 66, 96-101, 120-127 and the pedals'); a reserved CC is refused while learning, and a pedal moved onto a learned CC takes it (2026-10-29, the desktop window) | - | none |
+| NRPN input for every parameter per Synth (table p149-158: LFO wave and free/synced rate; oscillator octave, frequency, beat, saw, triangle, PW, mix, wave, sync; pitch mod; ring mod source; wave mod; FM; noise; polyphony; mixer; filters; cutoff mod; three envelopes with free and synced times, multi trig, sync, loop, latch; VCA; output) | p149-158 | Have | Every number of the table for all three Synths (Synth 2 = Synth 1 + 3840, Synth 3 + 7680; MASTER VOLUME the shared master level; HEADPHONES not a plugin's), on any channel, CC 99/98 then 6/38, 14 bits: options in the manual's bands mapped onto ONE-ish's lists (LFO TRI/PULSE/SAW/S&H, SVF LP/HP/BP/NOTCH ...), free times and rates only while unsynced and synced ones only while synced, MONO as 1 voice / back to the default. The oscillators' SAW and TRIANGLE both set ONE-ish's one wave angle. The wrapper's own NRPN (number = param index) is off for ONE-ish (`"nrpn": false`) (2026-10-29, offline and the desktop DLL) | - | none |
+| 14-bit parameter resolution over MIDI | p145 | Have | 14-bit learned CCs and NRPN data set params at 1/16383 of their range (2026-10-29, offline) | - | none |
 
 ---
 
@@ -823,7 +823,7 @@ outside Carla's fixed settings.
 | Microtuning: Scala `.scl` / `.kbm` files | Missing (only master tune and fine tune) | M | Not in this manual; common in desktop synths. Per-voice pitch already comes from one function (`update_note_hz`), so a table lookup is cheap |
 | Undo / redo of any edit in the window | Have (2026-10-29, offline and the desktop window; `docs/PATCHES.md`): every edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, randomiser, loads) is a step of the whole state; a drag or a wheel burst is one; 100 steps; Ctrl+Z / Ctrl+Y and the SNAPSHOTS page's UNDO / REDO | - | Host automation is not a step |
 | The 14 open-source effect params on the window | Missing (generic host editor only) | S | `desktop/gen_layout.py` |
-| MIDI learn in the plugin | Missing | M | Same as the LEARN MIDI CC row (24) |
+| MIDI learn in the plugin | Have (2026-10-29, the SETTINGS page's MIDI tab) | - | Same as the LEARN MIDI CC row (24) |
 | Poly aftertouch / MPE | Not read (channel pressure only, as on the Moog One) | M | Not a Moog One feature; owner's call |
 
 ---
@@ -859,8 +859,8 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 20. Browser, presets and timbres (p118-121) | 6 | 1 | 0 | 0 | 0 |
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
 | 22. Settings (p124-139) | 12 | 4 | 15 | 11 | 2 |
-| 24. Appendices A and B (p143-158) | 1 | 2 | 3 | 1 | 0 |
-| **Total** | **388** | **35** | **52** | **27** | **9** |
+| 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
+| **Total** | **392** | **33** | **50** | **27** | **9** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -898,7 +898,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after package 8: 38 and 38). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after packages 8 and 14a: 35 and 36). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -1081,8 +1081,8 @@ effect: up to 3 synth effects and 2 master effects at once).
   and two sends per Synth into the shared master effects; Panel Focus with multi-select and Shift/Ctrl+F5-F7; a SETUP
   page; INTO S1/2/3 and SAVE S1/2/3 on the PATCHES page; PLAY ALL; the randomiser per Synth; three factory
   performances. Left: per-Synth outputs (MAIN / SUB), solo, setting a range by pressing a key, sequencer OUTPUT to
-  another Synth, the sustain pedal's target, timbre names on the home line, NRPN for Synths 2 and 3, the master
-  effects moved by Synth 2 and 3's matrices.
+  another Synth, the sustain pedal's target, timbre names on the home line, the master effects moved by Synth 2 and
+  3's matrices (NRPN for Synths 2 and 3: done with package 14a, 2026-10-29).
 - Three timbres per preset, each with every sound setting, its own arp and sequencer; split, layer and zones (per
   Synth ON, LOW and HIGH RANGE, full range); Panel Focus (one Synth, several together, solo; the computer keyboard's
   SHIFT/CTRL + F5-F7 shortcuts); a MIDI channel per Synth (MIDI IN ROUTE PER SYNTH); a shared voice pool with each
@@ -1099,7 +1099,10 @@ effect: up to 3 synth effects and 2 master effects at once).
 
 **14. MIDI, part 2: learn, NRPN, MIDI out** (sections 22b, 24). Effort M each. CPU: none.
 - 14a MIDI learn in the plugin (click a control, move a CC; 7- or 14-bit; clear, add; the mapping list with reserved
-  CCs), and NRPN input after the manual's table (p149-158) for Synth 1 (2 and 3 with package 13).
+  CCs), and NRPN input after the manual's table (p149-158) for Synth 1 (2 and 3 with package 13). Done 2026-10-29
+  (offline and the desktop window; `docs/SETTINGS.md`): the SETTINGS page's MIDI tab, the map in the settings file
+  and in each engine as a fixed table (`src/midi_in*.h`, set by the "midicfg" command), NRPN for all three Synths;
+  the wrapper's own NRPN (param index) is off for ONE-ish (`vst.json` `"nrpn": false`). Left: 14b.
 - 14b MIDI out of the plugin's own notes (keys, arp, sequencer) on a chosen channel, for desktop hosts (MPC ignores
   it). Needs the wrapper to send events to the host.
 - Depends on: package 8 (the settings page holds the mapping).

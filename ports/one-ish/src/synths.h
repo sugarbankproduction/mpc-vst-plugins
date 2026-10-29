@@ -149,7 +149,8 @@ static void midi(void *inst, const uint8_t *m, int len) {
     if (len < 2 || m[0] >= 0xf0) return;
     int st = m[0] & 0xf0, ch = m[0] & 0x0f, note = m[1] & 0x7f, vel = len > 2 ? m[2] & 0x7f : 0;
     uint8_t mm[3];
-    if (st == 0xb0 && len > 2) {   /* the pedals' CC numbers (SETTINGS): as the Synths know them */
+    if (st == 0xb0 && len > 2) {   /* NRPN, learned CCs, the pedals' CC numbers (SETTINGS: src/midi_in_run.h) */
+        if (mi_cc(in, ch, note, vel)) return;
         int r = mi_pedal(&in->mi, note);
         if (r < 0) return;
         if (r != note) {
@@ -439,6 +440,8 @@ static int get_param(void *inst, const char *key, char *buf, int n) {
         return snprintf(buf, n, "%d", t);
     }
     if (!strcmp(key, "midicfg")) return mi_text(in, buf, n);   /* readouts for the tests: the MIDI settings, */
+    if (!strcmp(key, "midimap")) return mi_map_text(in, buf, n);   /* the learned CC map, */
+    if (!strcmp(key, "nrpn_table")) return mi_nrpn_check(in, buf, n);   /* the NRPN table's keys, */
     if (!strcmp(key, "bpm")) return snprintf(buf, n, "%g", in->syn[0]->bpm);   /* the tempo the Synths follow */
     if (!strcmp(key, "heals")) {
         int h = 0;
@@ -466,6 +469,7 @@ static int get_param(void *inst, const char *key, char *buf, int n) {
 /* engine.h: the params the engine set itself (CHORD LEARN, the sequencer's PLAY ...), one key per call */
 int mpc_engine_changed(void *inst, char *key, int len) {
     inst_t *in = inst;
+    if (mi_changed(in, key, len)) return 1;   /* set from MIDI: NRPN, a learned CC (src/midi_in_run.h) */
     for (int c = 0; c < NSYN; c++) {
         one_t *s = in->syn[c];
         if (s->moved) {   /* LOAD INTO SYNTH moved everything: its ON as the marker (the window reads them all) */

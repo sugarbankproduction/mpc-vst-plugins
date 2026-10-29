@@ -188,7 +188,7 @@ static const char *zone_help(ed_t *e, int z) {
     if (seq_zone(z)) return seq_zone_help(e, z);   /* the step editor, the page LEDs */
     if (z >= Z_SET_BASE && z < Z_SET_END) return settings_zone_help(e, z);   /* the SETTINGS page */
     if (z == Z_TAB_SETTINGS) return "SETTINGS: the instrument's own settings, kept apart from the sounds: preset "
-                                    "autoload, MIDI clock and channels, pedals, the library and tuning.";
+                                    "autoload, MIDI clock and channels, pedals, MIDI learn, the library and tuning.";
     if (z >= Z_PATCH_ACT) return patches_zone_help(z);   /* the PATCHES page */
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) return "MORE: shows this module's other controls on the screen (click again for its next page, if any).";
     switch (z) {
@@ -812,8 +812,8 @@ static void draw_screen(HDC dc, ed_t *e) {
     else draw_page(dc, e, subs);
     /* help: what the control under the mouse does */
     char help[480];
-    const char *zh = zone_help(e, e->hover), *pm = patches_message(e);
-    if (!pm) pm = settings_message(e);
+    const char *zh = zone_help(e, e->hover), *pm = patches_message(e), *sm = settings_message(e);
+    if (sm && (!pm || e->screen == SCR_SETTINGS)) pm = sm;   /* (the SETTINGS page's own first, on that page) */
     if (pm) {   /* what the last patch operation did (or why it couldn't) */
         snprintf(help, sizeof help, "%s", pm);
     } else if ((e->hover >= 0 && e->hover < NPARAMS) || (e->hover >= Z_ABS && e->hover < Z_ABS + NPARAMS)) {

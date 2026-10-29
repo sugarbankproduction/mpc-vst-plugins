@@ -117,3 +117,103 @@ static void midi_settings(void) {
     check(exp1 >= 0 && amp >= 0 && open > 0.01 && fabs(still - open) < open * 0.05 && shut < open * 0.05, what);
     E->destroy(e);
 }
+/* NRPN after the manual's table, and the learned CC map */
+static void nrpn_send(void *e, int ch, int num, int val, int lsb) {
+    cc(e, ch, 99, num >> 7);
+    cc(e, ch, 98, num & 127);
+    cc(e, ch, 6, val >> 7);
+    if (lsb) cc(e, ch, 38, val & 127);
+}
+static void midi_learn_nrpn(void) {
+    char what[256], b[64];
+    void *e = E->create(NULL);
+    int found = 0, missing = -1;
+    E->get_param(e, "nrpn_table", b, sizeof b);
+    sscanf(b, "%d %d", &found, &missing);
+    snprintf(what, sizeof what, "NRPN: every number of the manual's table finds its param in each Synth (%d keys, %d "
+             "missing)", found, missing);
+    check(found > 300 && missing == 0, what);
+    /* continuous, 14 bits: Synth 1 ladder cutoff 1150, Synth 2's 4990, Synth 3's 8830 */
+    nrpn_send(e, 0, 1150, 8192, 1);
+    nrpn_send(e, 0, 1150 + 3840, 16383, 1);
+    nrpn_send(e, 0, 1150 + 7680, 0, 1);
+    double c1 = get(e, "flt_cut"), c2 = get(e, "s2_flt_cut"), c3 = get(e, "s3_flt_cut");
+    snprintf(what, sizeof what, "NRPN: ladder cutoff 1150 / 4990 / 8830 set Synth 1, 2, 3 (%.3f, %.3f, %.3f)", c1, c2, c3);
+    check(fabs(c1 - 100.0 * 8192 / 16383) < 1e-3 && c2 == 100 && c3 == 0, what);
+    nrpn_send(e, 0, 1150, 0x55 << 7, 0);   /* the MSB alone: coarse */
+    check(fabs(get(e, "flt_cut") - 100.0 * (0x55 << 7) / 16383) < 1e-3, "NRPN: the data MSB alone sets the value");
+    /* options in the manual's bands */
+    static const struct { int num; const char *key; int val; double want; } O[] = {
+        {451, "lfo1_wave", 4096, 2}, {451, "lfo1_wave", 12288, 5}, {152, "o1_oct", 3276, 0}, {152, "o1_oct", 3277, 1},
+        {152, "o1_oct", 16383, 4}, {958, "svf_mode", 8192, 1}, {958, "svf_mode", 4096, 2}, {1102, "flt_route", 0, 1},
+        {1159, "flt_slope", 0, 3}, {1159, "flt_slope", 16383, 0}, {65, "fm_route", 10922, 2}, {217, "o2_sync", 8192, 1},
+        {662, "fenv_latch", 8192, 1}, {1209, "unison", 8192, 1}, {800, "noise_color_pair", 5461, 1}};
+    int bad = 0;
+    for (unsigned k = 0; k < sizeof O / sizeof O[0]; k++) {
+        nrpn_send(e, 0, O[k].num, O[k].val, 1);
+        if (get(e, O[k].key) != O[k].want) { bad++; printf("     NRPN %d = %d: %s is %g, want %g\n", O[k].num, O[k].val, O[k].key, get(e, O[k].key), O[k].want); }
+    }
+    snprintf(what, sizeof what, "NRPN: %d option values land in the manual's bands (%d wrong)",
+             (int)(sizeof O / sizeof O[0]), bad);
+    check(!bad, what);
+    /* synced and free rates: each only while the LFO / envelope is that way */
+    set(e, "lfo2_sync", 0);
+    nrpn_send(e, 0, 514, 16383, 1);   /* RATE SYNC'D while free: ignored */
+    double free_rate = get(e, "lfo2_rate");
+    nrpn_send(e, 0, 513, 0, 1);
+    double free0 = get(e, "lfo2_rate");
+    set(e, "lfo2_sync", 1);
+    nrpn_send(e, 0, 514, 8192, 1);   /* "1" beat: LFO_DIV[6] */
+    double sync1 = get(e, "lfo2_rate");
+    snprintf(what, sizeof what, "NRPN: LFO 2 RATE SYNC'D only while synced (free %.1f -> %.1f; synced 1 beat: knob %.1f)",
+             free_rate, free0, sync1);
+    check(free0 == 0 && fabs(sync1 - 50) < 1e-3 && free_rate != 0, what);
+    set(e, "amp_sync", 1);
+    nrpn_send(e, 0, 722, 10922, 1);   /* attack synced 4 beats: SYNC_DIV "1 bar" (index 2) -> knob 80 */
+    snprintf(what, sizeof what, "NRPN: an envelope's synced time picks the nearest division (4 beats: knob %.1f)",
+             get(e, "amp_a"));
+    check(fabs(get(e, "amp_a") - 80) < 1e-3, what);
+    /* mono, master volume, an RPN deselects */
+    nrpn_send(e, 0, 1203, 16383, 1);
+    double mono = get(e, "voices");
+    nrpn_send(e, 0, 1203, 0, 1);
+    double poly = get(e, "voices");
+    nrpn_send(e, 0, 1, 0, 1);
+    double ml = get(e, "master_level");
+    cc(e, 0, 101, 0);
+    cc(e, 0, 100, 0);
+    cc(e, 0, 6, 127);   /* an RPN's data: not the NRPN's */
+    snprintf(what, sizeof what, "NRPN: MONO on / off (voices %g, %g), MASTER VOLUME 0 (%g), an RPN deselects (%g)",
+             mono, poly, ml, get(e, "master_level"));
+    const param_t *pv = &PARAMS[pindex("voices")];
+    check(mono == 0 && poly == round(pv->def * (pv->nopts - 1)) && ml == 0 && get(e, "master_level") == 0, what);
+    /* the host hears about it */
+    int told = 0;
+    char key[64];
+    while (mpc_engine_changed(e, key, sizeof key) > 0) told += !strcmp(key, "s2_flt_cut") || !strcmp(key, "master_level");
+    check(told == 2, "NRPN: the host is told of the params it moved (mpc_engine_changed)");
+    E->destroy(e);
+
+    /* the learned CC map */
+    e = E->create(NULL);
+    midicfg(e, "map=74:flt_cut:7,7:s2_svf_cut:14,20:lfo1_wave:7,64:volume:7,1:pan:7,39:pan:7,nonsense:x:7");
+    E->get_param(e, "midimap", b, sizeof b);
+    snprintf(what, sizeof what, "learn: the map is taken; reserved CCs, a 14-bit pair's LSB and nonsense refused (\"%s\")", b);
+    check(!strcmp(b, "7:s2_svf_cut:14,20:lfo1_wave:7,74:flt_cut:7"), what);
+    cc(e, 0, 74, 127);
+    double l1 = get(e, "flt_cut");
+    cc(e, 0, 74, 0);
+    double l0 = get(e, "flt_cut");
+    cc(e, 3, 7, 64);
+    cc(e, 3, 39, 0);
+    double m14 = get(e, "s2_svf_cut");
+    cc(e, 3, 39, 127);
+    double m14b = get(e, "s2_svf_cut");
+    cc(e, 0, 20, 127);
+    snprintf(what, sizeof what, "learn: CC 74 moves Synth 1's cutoff (%.1f, %.1f); CC 7 + 39 14-bit Synth 2's SVF "
+             "(%.4f, %.4f); CC 20 an option (%g)", l1, l0, m14, m14b, get(e, "lfo1_wave"));
+    check(l1 == 100 && l0 == 0 && fabs(m14 - 100.0 * 8192 / 16383) < 1e-3 && fabs(m14b - 100.0 * (8192 + 127) / 16383) < 1e-3
+              && get(e, "lfo1_wave") == PARAMS[pindex("lfo1_wave")].nopts - 1,
+          what);
+    E->destroy(e);
+}

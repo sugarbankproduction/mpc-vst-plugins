@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 388 have,
-  35 partial, 52 missing, 27 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 392 have,
+  33 partial, 50 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -258,6 +258,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      the PRESET knob point, a click loads), RECEIVE MIDI CLOCK with an own tempo, MIDI I/O FROM PRESET (off: loads keep
      the MIDI channels), the sustain / EXP 1 / EXP 2 pedal CC numbers, RESTORE DEFAULT SETTINGS, the version and the
      folders. Defaults behave exactly as before. No CPU cost (nothing in the audio path but a pedal number lookup).
+     MIDI learn on the page's MIDI tab (LEARN, click a control of the Synth in focus, move a CC; 7- or 14-bit; the map
+     with 7/14-BIT, DELETE, CLEAR ALL and the reserved CCs), kept in the settings file and sent to every engine as a
+     fixed 128-entry table; NRPN input after the manual's table for all three Synths (the wrapper's own param-index NRPN
+     is off for ONE-ish). A learned CC or an NRPN moves its param as host automation would, and the host is told.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

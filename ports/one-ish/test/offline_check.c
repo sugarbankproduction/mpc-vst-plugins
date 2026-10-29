@@ -5733,6 +5733,7 @@ int main(int argc, char **argv) {
     }
     if (argc > 2 && !strcmp(argv[1], "midi")) {   /* just the MIDI settings, learn, NRPN, tuning: offline_check midi x */
         midi_settings();
+        midi_learn_nrpn();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -5812,6 +5813,7 @@ int main(int argc, char **argv) {
     ext_input();
     vocoders();
     midi_settings();
+    midi_learn_nrpn();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

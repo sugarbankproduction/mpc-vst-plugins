@@ -7,6 +7,10 @@
  *            the Synths run at TEMPO), MIDI I/O FROM PRESET (off: loading a preset or patch keeps the MIDI channels:
  *            MIDI IN (ALL) and each Synth's channel), the CC numbers of the SUSTAIN, EXP 1 and EXP 2 pedals, RESTORE
  *            DEFAULT SETTINGS
+ *   MIDI     MIDI LEARN (manual p144-148): LEARN, click a control, move a knob or fader on the controller: that CC
+ *            now moves the control (7-bit, or 14-bit when its LSB, CC + 32, follows). The map lists every mapping
+ *            (7/14-BIT, DELETE, CLEAR ALL) and the reserved CCs. The map is a setting like the others (the manual
+ *            keeps it with the global settings, not with a sound). NRPN input (the manual's table) needs nothing here.
  *   LIBRARY  where the patches and this file live, how many there are, the version
  *   TUNING   MASTER FREQUENCY and MASTER FINE TUNE (the shared params: they stay part of the sound, as before)
  *
@@ -55,12 +59,18 @@ static const item_t ITEM[SI_COUNT] = {
     {"EXP 2 PEDAL CC", "exp2_cc", IK_NUM, 0, 119, 1, 4, "",
      "EXP 2 PEDAL: the CC number of the pedal the mod matrix reads as Exp 2 (4, foot controller, on most)."},
 };
-typedef struct { float v[SI_COUNT]; } settings_t;
+typedef struct { int cc, bits; char key[48]; } mapping_t;   /* a learned CC: the param's key, 7 or 14 bits */
+typedef struct {
+    float v[SI_COUNT];
+    mapping_t map[MAP_MAX];   /* MIDI LEARN, in the order learned */
+    int nmap;
+} settings_t;
 static settings_t G;
 static int g_loaded;
 
 static void defaults(settings_t *s) {
     for (int k = 0; k < SI_COUNT; k++) s->v[k] = ITEM[k].def;
+    s->nmap = 0;
 }
 
 /* CC numbers a pedal can't take: what the engine reads for other things (bank select, mod wheel, the pad, data entry,
@@ -95,7 +105,11 @@ static void file_text(const settings_t *s, char *out, int n) {
     int used = snprintf(out, n, "%s %d\r\n", HEADER, FORMAT_VERSION);
     for (int k = 0; k < SI_COUNT && used < n; k++)
         used += snprintf(out + used, n - used, "%s=%g\r\n", ITEM[k].key, s->v[k]);
+    for (int k = 0; k < s->nmap && used < n; k++)   /* "map=<cc>,<param key>,<7|14>" */
+        used += snprintf(out + used, n - used, "map=%d,%s,%d\r\n", s->map[k].cc, s->map[k].key, s->map[k].bits);
 }
+static int map_add(const char *key, int cc, int bits);
+static int map_drop_cc(int cc);
 
 static int set_key(settings_t *s, const char *key, const char *val) {   /* 1: a known key */
     for (int k = 0; k < SI_COUNT; k++)
@@ -114,6 +128,12 @@ static void parse(settings_t *s, char *t) {
         char *eq = strchr(line, '=');
         if (!eq || line[0] == '#' || !strncmp(line, HEADER, sizeof HEADER - 1)) continue;
         *eq = 0;
+        if (!strcmp(line, "map")) {   /* a learned CC: kept when its param exists and its CC is free */
+            int cc, bits, at = 0;
+            char key[48];
+            if (s == &G && sscanf(eq + 1, "%d,%47[^,],%d%n", &cc, key, &bits, &at) == 3 && at > 0) map_add(key, cc, bits);
+            continue;
+        }
         set_key(s, line, eq + 1);
     }
 }
@@ -161,10 +181,12 @@ const char *settings_message(ed_t *e) {
     return e->st.msg[0] && GetTickCount() - e->st.msg_at < 6000 ? e->st.msg : NULL;
 }
 
-static void send(ed_t *e) {   /* the MIDI settings, as the engine's "midicfg" command */
-    char b[256];
-    snprintf(b, sizeof b, "midicfg\nrx_clock=%d;tempo=%g;sustain=%d;exp1=%d;exp2=%d", (int)G.v[SI_RX_CLOCK],
-             G.v[SI_TEMPO], (int)G.v[SI_SUSTAIN], (int)G.v[SI_EXP1], (int)G.v[SI_EXP2]);
+static void send(ed_t *e) {   /* the MIDI settings and the learned map, as the engine's "midicfg" command */
+    static char b[256 + MAP_MAX * 64];
+    int used = snprintf(b, sizeof b, "midicfg\nrx_clock=%d;tempo=%g;sustain=%d;exp1=%d;exp2=%d;map=",
+                        (int)G.v[SI_RX_CLOCK], G.v[SI_TEMPO], (int)G.v[SI_SUSTAIN], (int)G.v[SI_EXP1], (int)G.v[SI_EXP2]);
+    for (int k = 0; k < G.nmap && used < (int)sizeof b; k++)
+        used += snprintf(b + used, sizeof b - used, "%s%d:%s:%d", k ? "," : "", G.map[k].cc, G.map[k].key, G.map[k].bits);
     wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(b) + 1, b, 0);
 }
 static void redraw_one(ed_t *e) { if (e->wnd) InvalidateRect(e->wnd, NULL, FALSE); }
@@ -195,7 +217,9 @@ static void change(ed_t *e, int k, float v) {
     }
     if (v == G.v[k]) return;
     G.v[k] = v;
+    int gone = is_pedal(k) ? map_drop_cc((int)v) : 0;   /* a pedal on a learned CC: the pedal wins */
     apply_all();
+    if (gone) say(e, "CC %d was a learned mapping; it is the pedal's now (the mapping is gone).", (int)v);
     if (!save_file()) say(e, "Couldn't save the settings file (the folder may be read-only); they apply until you close.");
 }
 
@@ -268,7 +292,152 @@ void settings_midi_put(ed_t *e, const float *keep) {   /* after it: the channels
     }
 }
 
+/* ---- MIDI LEARN: the map (manual p144-148) ---- */
+static int map_find_cc(int cc) {   /* the mapping that uses this CC (its own, or a 14-bit pair's LSB), or -1 */
+    for (int k = 0; k < G.nmap; k++)
+        if (G.map[k].cc == cc || (G.map[k].bits == 14 && G.map[k].cc + 32 == cc)) return k;
+    return -1;
+}
+static int map_find_key(const char *key) {
+    for (int k = 0; k < G.nmap; k++)
+        if (!strcmp(G.map[k].key, key)) return k;
+    return -1;
+}
+static void map_remove(int k) {
+    if (k < 0 || k >= G.nmap) return;
+    memmove(&G.map[k], &G.map[k + 1], sizeof G.map[0] * (size_t)(G.nmap - k - 1));
+    G.nmap--;
+}
+static int map_drop_cc(int cc) {   /* 1: a mapping used it and is gone */
+    int k = map_find_cc(cc);
+    map_remove(k);
+    return k >= 0;
+}
+/* why a CC can't be learned (NULL: it can). The same list as the engine's (src/midi_in.h mi_fixed), plus the pedals */
+static const char *reserved_why(int cc) {
+    if (cc < 0 || cc > 119) return "a channel mode message";
+    if (cc == (int)G.v[SI_SUSTAIN]) return "the sustain pedal";
+    if (cc == (int)G.v[SI_EXP1] || cc == (int)G.v[SI_EXP2]) return "an expression pedal";
+    switch (cc) {
+    case 0: case 32: return "bank select";
+    case 1: return "the mod wheel";
+    case 2: case 3: case 18: return "the X/Y pad";
+    case 6: case 38: return "NRPN data";
+    case 16: case 17: return "the ribbon";
+    case 66: return "the sostenuto pedal";
+    }
+    if (cc >= 96 && cc <= 101) return "NRPN and RPN numbers";
+    return NULL;
+}
+static int learnable(int i) {   /* a param a CC can move */
+    return i >= 0 && i < NPARAMS && !PARAMS[i].string_display && PARAMS[i].nopts != 1 && !PARAMS[i].momentary;
+}
+/* a mapping (replacing whatever used the CC, its LSB, or the param). 14-bit only on CC 0-31 with a free LSB */
+static int map_add(const char *key, int cc, int bits) {
+    int i = index_of(key);
+    if (!learnable(i) || reserved_why(cc)) return 0;
+    if (bits != 14 || cc > 31 || reserved_why(cc + 32)) bits = 7;
+    map_remove(map_find_key(key));
+    map_remove(map_find_cc(cc));
+    if (bits == 14) map_remove(map_find_cc(cc + 32));
+    if (G.nmap >= MAP_MAX) return 0;
+    snprintf(G.map[G.nmap].key, sizeof G.map[0].key, "%s", key);
+    G.map[G.nmap].cc = cc;
+    G.map[G.nmap].bits = bits;
+    G.nmap++;
+    return 1;
+}
+static void param_label(int i, char *out, int n) {   /* "S1 Ladder Cutoff", "S2 ...", or a shared one's own name */
+    if (shared_param(i) || synth_of(i)) snprintf(out, n, "%s", PARAMS[i].name);
+    else snprintf(out, n, "S1 %s", PARAMS[i].name);
+}
+static void map_changed(ed_t *e) {
+    apply_all();
+    if (!save_file()) say(e, "Couldn't save the settings file (the folder may be read-only); the map applies until you close.");
+}
+
+/* the host's MIDI (any thread: the host's events, before the engine): the last CC, for LEARN. A CC's LSB (CC + 32)
+ * right after it marks it 14-bit. NRPN and RPN traffic is not a control to learn. */
+void settings_midi_seen(ed_t *e, const void *events) {
+    const struct { int32_t n; intptr_t reserved; VstMidiEvent *ev[1]; } *list = events;
+    for (int k = 0; k < list->n; k++) {
+        const VstMidiEvent *m = list->ev[k];
+        if (!m || m->type != 1 || (m->midiData[0] & 0xF0) != 0xB0) continue;
+        int cc = m->midiData[1] & 127;
+        if (cc == 6 || cc == 38 || (cc >= 96 && cc <= 101)) continue;
+        unsigned w = __atomic_load_n(&e->st.seen, __ATOMIC_RELAXED);
+        if (cc >= 32 && cc < 64 && (int)(w & 127) == cc - 32) w |= 128;
+        else w = (((w >> 8) + 1) << 8) | (unsigned)cc;
+        __atomic_store_n(&e->st.seen, w, __ATOMIC_RELEASE);
+    }
+}
+
+static void learn_cancel(ed_t *e) { e->st.learn = 0; e->st.heard_at = 0; }
+static void learn_arm(ed_t *e) {
+    e->st.learn = 1;
+    e->st.heard_at = 0;
+    e->st.tab = ST_MIDI;
+    settings_open(e);
+    say(e, "LEARN: click the control on the panel you want to move from your controller.");
+}
+int settings_learn_pick(ed_t *e, int i) {   /* a control clicked while LEARN waits for one: 1 taken (not edited) */
+    if (e->st.learn != 1) return 0;
+    char nm[64];
+    if (!learnable(i)) { say(e, "That control can't be moved by a CC. Click another, or CANCEL."); return 1; }
+    e->st.learn = 2;
+    e->st.learn_param = i;
+    e->st.seen0 = __atomic_load_n(&e->st.seen, __ATOMIC_ACQUIRE);
+    e->st.heard_at = 0;
+    param_label(i, nm, sizeof nm);
+    int k = map_find_key(PARAMS[i].key);
+    if (k >= 0) say(e, "%s: now on CC %d (%d-bit). Move a knob or fader on your controller to change it.", nm,
+                    G.map[k].cc, G.map[k].bits);
+    else say(e, "%s: now move a knob or fader on your controller.", nm);
+    e->st.tab = ST_MIDI;
+    settings_open(e);
+    return 1;
+}
+/* the timer (every 50 ms): a CC heard since LEARN picked its control is taken 250 ms later (its LSB may follow).
+ * force: at once (load_test). Returns the learn stage. */
+static int learn_tick(ed_t *e, int force) {
+    if (e->st.learn != 2) return e->st.learn;
+    unsigned w = __atomic_load_n(&e->st.seen, __ATOMIC_ACQUIRE);
+    if (w >> 8 == e->st.seen0 >> 8) return 2;   /* nothing new */
+    if (!e->st.heard_at) e->st.heard_at = GetTickCount() | 1;
+    if (!force && GetTickCount() - e->st.heard_at < 250) return 2;
+    int cc = (int)(w & 127), bits = w & 128 ? 14 : 7;
+    const char *why = reserved_why(cc);
+    if (why) {
+        say(e, "CC %d is reserved (%s). Move another knob or fader, or CANCEL.", cc, why);
+        e->st.seen0 = w;
+        e->st.heard_at = 0;
+        return 2;
+    }
+    char nm[64];
+    int i = e->st.learn_param;
+    param_label(i, nm, sizeof nm);
+    learn_cancel(e);
+    if (!map_add(PARAMS[i].key, cc, bits)) { say(e, "The map is full (%d mappings): DELETE one first.", MAP_MAX); return 0; }
+    map_changed(e);
+    say(e, "CC %d (%d-bit) now moves %s. LEARN again for another.", cc, G.map[map_find_key(PARAMS[i].key)].bits, nm);
+    return 0;
+}
+void settings_tick(ed_t *e) { learn_tick(e, 0); }
+
+static void map_bits(ed_t *e, int k) {   /* 7 <-> 14 bit (14 only on CC 0-31, its LSB free) */
+    mapping_t m = G.map[k];
+    if (m.bits == 14) G.map[k].bits = 7;
+    else if (m.cc > 31 || reserved_why(m.cc + 32)) {
+        say(e, "CC %d can only be 7-bit: 14-bit needs a CC from 0 to 31 (its LSB is that CC + 32).", m.cc);
+        return;
+    } else {
+        map_add(m.key, m.cc, 14);   /* (whatever used its LSB goes) */
+    }
+    map_changed(e);
+}
+
 static int restore_defaults(ed_t *e) {
+    learn_cancel(e);
     defaults(&G);
     apply_all();
     int ok = save_file();
@@ -280,12 +449,13 @@ static int restore_defaults(ed_t *e) {
 /* ---- the page ---- */
 enum { Z_TAB = Z_SET_BASE, Z_ROW = Z_SET_BASE + 100, Z_BTN = Z_SET_BASE + 500 };   /* Z_ROW + row * 4 + part */
 enum { PART_MAIN, PART_DOWN, PART_UP };
-enum { B_RESTORE, B_OPEN_PATCHES, B_OPEN_SETTINGS, B_COUNT };
-static const char *const TAB_NAME[ST_TABS] = {"GLOBAL", "LIBRARY", "TUNING"};
+enum { B_RESTORE, B_OPEN_PATCHES, B_OPEN_SETTINGS, B_LEARN, B_CLEAR_MAP, B_COUNT };
+static const char *const TAB_NAME[ST_TABS] = {"GLOBAL", "MIDI", "LIBRARY", "TUNING"};
 static const char *const TUNING_KEY[] = {"master_tune", "fine_tune"};
 enum { NTUNING = sizeof TUNING_KEY / sizeof TUNING_KEY[0] };
+enum { MAP_ROWS = ROWS - 2 };   /* the MIDI tab: LEARN, then this many mappings per sub-page, then the reserved CCs */
 
-int settings_subs(ed_t *e) { (void)e; return 1; }
+int settings_subs(ed_t *e) { return e->st.tab == ST_MIDI && G.nmap > MAP_ROWS ? (G.nmap + MAP_ROWS - 1) / MAP_ROWS : 1; }
 
 void settings_title(ed_t *e, char *out, int n) {
     snprintf(out, n, "SETTINGS:  %s", TAB_NAME[e->st.tab]);
@@ -313,10 +483,27 @@ static void row_parts(int row, RECT *name, RECT *val, RECT *down, RECT *up) {   
 static RECT button_rect(int b) {   /* RESTORE: GLOBAL's last row; the OPEN buttons: LIBRARY's last two, on the right */
     RECT r = L.row[ROWS - 1], nm, d, u;
     if (b == B_RESTORE) InflateRect(&r, -sc(4), -sc(2));
+    else if (b == B_LEARN) { r = L.row[0]; r.right = r.left + sc(96); InflateRect(&r, -sc(4), -sc(2)); }
+    else if (b == B_CLEAR_MAP) { r.left = r.right - sc(76); InflateRect(&r, -sc(4), -sc(2)); }
     else row_parts(b == B_OPEN_PATCHES ? ROWS - 2 : ROWS - 1, &nm, &r, &d, &u);
     return r;
 }
-static int button_shown(ed_t *e, int b) { return b == B_RESTORE ? e->st.tab == ST_GLOBAL : e->st.tab == ST_LIBRARY; }
+static int button_shown(ed_t *e, int b) {
+    return b == B_RESTORE ? e->st.tab == ST_GLOBAL : b >= B_LEARN ? e->st.tab == ST_MIDI : e->st.tab == ST_LIBRARY;
+}
+/* a mapping's row on the MIDI tab (row 1 .. MAP_ROWS): CC, the control, 7/14-BIT, DELETE */
+static void map_parts(int row, RECT *cc, RECT *name, RECT *bits, RECT *del) {
+    RECT r = L.row[row];
+    int bw = sc(60);
+    SetRect(cc, r.left + sc(4), r.top, r.left + sc(54), r.bottom);
+    SetRect(del, r.right - sc(4) - bw, r.top + sc(2), r.right - sc(4), r.bottom - sc(2));
+    SetRect(bits, del->left - sc(6) - bw, del->top, del->left - sc(6), del->bottom);
+    SetRect(name, cc->right + sc(4), r.top, bits->left - sc(6), r.bottom);
+}
+static int map_at(ed_t *e, int row) {   /* the mapping shown on a row, or -1 */
+    int k = e->sub * MAP_ROWS + row - 1;
+    return row >= 1 && row <= MAP_ROWS && k < G.nmap ? k : -1;
+}
 static int tuning_index(int row) { return row < NTUNING ? index_of(TUNING_KEY[row]) : -1; }
 
 int settings_hit(ed_t *e, POINT pt) {
@@ -336,6 +523,16 @@ int settings_hit(ed_t *e, POINT pt) {
             if (PtInRect(&all, pt)) return Z_ROW + row * 4 + PART_MAIN;
         }
     }
+    if (e->st.tab == ST_MIDI)
+        for (int row = 1; row <= MAP_ROWS; row++) {
+            RECT c, nm, bits, del;
+            if (map_at(e, row) < 0) continue;
+            map_parts(row, &c, &nm, &bits, &del);
+            if (PtInRect(&bits, pt)) return Z_ROW + row * 4 + PART_DOWN;
+            if (PtInRect(&del, pt)) return Z_ROW + row * 4 + PART_UP;
+            RECT all = {c.left, c.top, nm.right, c.bottom};
+            if (PtInRect(&all, pt)) return Z_ROW + row * 4 + PART_MAIN;
+        }
     for (int b = 0; b < B_COUNT; b++) {
         if (!button_shown(e, b)) continue;
         RECT r = button_rect(b);
@@ -393,6 +590,20 @@ int settings_press(ed_t *e, int z) {   /* 1: z was the page's */
                            "ONE-ish", MB_OKCANCEL | MB_ICONQUESTION) == IDOK)
             restore_defaults(e);
         if (b == B_OPEN_PATCHES || b == B_OPEN_SETTINGS) open_folder(e, b == B_OPEN_SETTINGS);
+        if (b == B_LEARN) {   /* LEARN, or CANCEL while learning */
+            if (e->st.learn) { learn_cancel(e); say(e, "LEARN cancelled: nothing changed."); }
+            else learn_arm(e);
+        }
+        if (b == B_CLEAR_MAP && G.nmap
+            && MessageBoxA(e->wnd ? GetAncestor(e->wnd, GA_ROOT) : NULL, "Delete every learned MIDI CC mapping?",
+                           "ONE-ish", MB_OKCANCEL | MB_ICONQUESTION) == IDOK) {
+            G.nmap = 0;
+            map_changed(e);
+        }
+    } else if (z >= Z_ROW && e->st.tab == ST_MIDI) {
+        int row = (z - Z_ROW) / 4, part = (z - Z_ROW) % 4, k = map_at(e, row);
+        if (k >= 0 && part == PART_DOWN) map_bits(e, k);
+        if (k >= 0 && part == PART_UP) { map_remove(k); map_changed(e); }
     } else if (z >= Z_ROW) {
         int row = (z - Z_ROW) / 4, part = (z - Z_ROW) % 4, dir = part == PART_DOWN ? -1 : 1;
         if (e->st.tab == ST_GLOBAL && row < SI_COUNT && (part != PART_MAIN || ITEM[row].kind == IK_ONOFF))
@@ -463,10 +674,52 @@ static void value_row(HDC dc, ed_t *e, int row, const char *name, const char *va
     }
 }
 
+/* the MIDI tab: LEARN and what it waits for, the mappings, the reserved CCs */
+static void draw_midi(HDC dc, ed_t *e) {
+    static const char *const STAGE[3] = {
+        "LEARN, a control on the panel, then a knob on your controller.",
+        "Now click the control to learn.",
+        "Now move a knob or fader on your controller."};
+    button(dc, button_rect(B_LEARN), e->st.learn ? "CANCEL" : "LEARN", e->st.learn != 0, e->hover == Z_BTN + B_LEARN);
+    RECT st = L.row[0];
+    st.left = button_rect(B_LEARN).right + sc(8);
+    label(dc, st, STAGE[e->st.learn < 0 || e->st.learn > 2 ? 0 : e->st.learn], font_cell, e->st.learn ? S_HOT : S_DIM,
+          DT_LEFT);
+    for (int row = 1; row <= MAP_ROWS; row++) {
+        int k = map_at(e, row), z = Z_ROW + row * 4;
+        RECT c, nm, bits, del;
+        map_parts(row, &c, &nm, &bits, &del);
+        if (k < 0) {
+            if (row == 1 && !G.nmap) label(dc, nm, "No CCs learned yet.", font_cell, S_DIM, DT_LEFT);
+            continue;
+        }
+        char t[64], name[80];
+        int i = index_of(G.map[k].key);
+        snprintf(t, sizeof t, G.map[k].bits == 14 ? "CC %d+%d" : "CC %d", G.map[k].cc, G.map[k].cc + 32);
+        if (i >= 0) param_label(i, name, sizeof name);
+        else snprintf(name, sizeof name, "%s (not in this version)", G.map[k].key);
+        int hot = e->hover >= z && e->hover < z + 3;
+        label(dc, c, t, font_cell, hot ? S_HOT : S_LCD, DT_LEFT);
+        label(dc, nm, name, font_cell, hot ? S_HOT : S_LCD, DT_LEFT);
+        button(dc, bits, G.map[k].bits == 14 ? "14-BIT" : "7-BIT", G.map[k].bits == 14, e->hover == z + PART_DOWN);
+        button(dc, del, "DELETE", 0, e->hover == z + PART_UP);
+    }
+    RECT rs = L.row[ROWS - 1];
+    rs.left += sc(4);
+    rs.right = button_rect(B_CLEAR_MAP).left - sc(6);
+    char res[160];
+    snprintf(res, sizeof res, "Reserved: 0-3 6 16-18 32 38 66 96-101 120+, pedals %d %d %d",
+             (int)G.v[SI_SUSTAIN], (int)G.v[SI_EXP1], (int)G.v[SI_EXP2]);
+    label(dc, rs, res, font_tiny, S_DIM, DT_LEFT);
+    button(dc, button_rect(B_CLEAR_MAP), "CLEAR ALL", 0, e->hover == Z_BTN + B_CLEAR_MAP);
+}
+
 void settings_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_draw.c draws */
     for (int t = 0; t < ST_TABS; t++) button(dc, tab_rect(t), TAB_NAME[t], e->st.tab == t, e->hover == Z_TAB + t);
     char v[MAX_PATH + 32];
-    if (e->st.tab == ST_GLOBAL) {
+    if (e->st.tab == ST_MIDI) {
+        draw_midi(dc, e);
+    } else if (e->st.tab == ST_GLOBAL) {
         for (int k = 0; k < SI_COUNT; k++) {
             const item_t *it = &ITEM[k];
             if (is_pedal(k)) snprintf(v, sizeof v, "CC %d", (int)G.v[k]);
@@ -518,6 +771,7 @@ const char *settings_zone_help(ed_t *e, int z) {
     if (z >= Z_TAB && z < Z_TAB + ST_TABS) {
         static const char *const H[ST_TABS] = {
             "GLOBAL: how the instrument behaves: preset autoload, the MIDI clock, channels from presets, the pedals.",
+            "MIDI: MIDI LEARN. Map your controller's knobs and faders (their CCs) to any control on the panel.",
             "LIBRARY: where your patches and the settings file are, how many patches, the version.",
             "TUNING: the master frequency (the A above middle C) and the master fine tune."};
         return H[z - Z_TAB];
@@ -526,7 +780,16 @@ const char *settings_zone_help(ed_t *e, int z) {
                                        "Patches, presets and sounds are not changed.";
     if (z == Z_BTN + B_OPEN_PATCHES) return "Opens the folder with your patch files in Explorer.";
     if (z == Z_BTN + B_OPEN_SETTINGS) return "Opens the folder with the settings file in Explorer.";
-    int row = (z - Z_ROW) / 4;
+    if (z == Z_BTN + B_LEARN) return "LEARN: click it, then a control on the panel, then move a knob or fader on your "
+                                     "controller: that CC moves the control from now on. Click again to CANCEL.";
+    if (z == Z_BTN + B_CLEAR_MAP) return "CLEAR ALL: deletes every learned mapping (asks first).";
+    int row = (z - Z_ROW) / 4, part = (z - Z_ROW) % 4;
+    if (e->st.tab == ST_MIDI && z >= Z_ROW)
+        return part == PART_DOWN ? "7-BIT / 14-BIT: 14-bit uses the CC (0-31) as the coarse part and CC + 32 as the "
+                                   "fine part, for smooth sweeps from controllers that send both."
+             : part == PART_UP ? "DELETE: this CC no longer moves the control."
+                               : "A learned mapping: this CC, from any MIDI channel, moves this control (and the host "
+                                 "sees it as automation). NRPN messages after the instrument's table always work too.";
     if (e->st.tab == ST_GLOBAL && z >= Z_ROW && row < SI_COUNT) return ITEM[row].help;
     if (e->st.tab == ST_TUNING && z >= Z_ROW && row == 0)
         return "MASTER FREQUENCY: the pitch of the A above middle C, 400-480 Hz (440 standard). Click < > or scroll: "
@@ -538,7 +801,10 @@ const char *settings_zone_help(ed_t *e, int z) {
 }
 
 void settings_help(ed_t *e, char *out, int n) {
-    if (e->st.tab == ST_LIBRARY)
+    if (e->st.tab == ST_MIDI)
+        snprintf(out, n, "MIDI LEARN: a CC moves one control (learning a CC or a control again moves it). The map is "
+                         "kept with these settings, for every sound. NRPN after the instrument's table always works.");
+    else if (e->st.tab == ST_LIBRARY)
         snprintf(out, n, "Your patches are files in the patch folder (PATCHES page: save, import, export). The "
                          "settings on this page are kept in the settings file, apart from any sound.");
     else if (e->st.tab == ST_TUNING)
@@ -567,6 +833,20 @@ intptr_t settings_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case STT_CUE: cue_check(e); return e->st.cue;
     case STT_CUE_LOAD: return settings_cue_load(e);
     case STT_TAB: e->st.tab = (int)lroundf(opt) % ST_TABS; settings_open(e); return 1;
+    case STT_LEARN: learn_arm(e); return 1;
+    case STT_LEARN_PICK: return settings_learn_pick(e, (int)lroundf(opt)) && e->st.learn == 2;
+    case STT_LEARN_TICK: return learn_tick(e, 1);
+    case STT_MAP: {
+        int used = 0;
+        buf[0] = 0;
+        for (int k = 0; k < G.nmap && used < 1000; k++)
+            used += snprintf(buf + used, 1024 - used, "%d,%s,%d;", G.map[k].cc, G.map[k].key, G.map[k].bits);
+        return G.nmap;
+    }
+    case STT_MAP_BITS: { int k = (int)lroundf(opt); if (k < 0 || k >= G.nmap) return 0; map_bits(e, k); return 1; }
+    case STT_MAP_DELETE: { int k = (int)lroundf(opt); if (k < 0 || k >= G.nmap) return 0; map_remove(k); map_changed(e); return 1; }
+    case STT_MAP_CLEAR: G.nmap = 0; map_changed(e); return 1;
+    case STT_MESSAGE: snprintf(buf, 1024, "%s", e->st.msg); return 1;
     }
     return 0;
 }
