@@ -229,24 +229,38 @@ RECT matrix_cell(int r, int col) {
     return c;
 }
 
-/* the randomiser page: RANDOMISE and MUTATE side by side (rows 0-1), the amount bar (row 2, right), the section locks
- * (rows 3-6, two columns), UNDO and REDO (row 7, left) */
+/* the randomiser page: RANDOMISE and MUTATE side by side (rows 0-1), the WILD and AMOUNT bars under them (row 2), the
+ * column titles (row 3), then three columns (rows 4-7): the locks (four, then three with UNDO / REDO under them) and
+ * what RANDOMISE also changes (the ARPEGGIATOR, GENERATIVE and SEQUENCER ticks, ALL 3 SYNTHS) */
+RECT rnd_col(int col) {   /* column col (0-2) of rows 4-7, its left and right edges */
+    int cw = (rw(&L.row[0]) - 2 * sc(8)) / 3, x = L.row[0].left + col * (cw + sc(8));
+    RECT r = {x, L.row[4].top, x + cw, L.row[7].bottom};
+    return r;
+}
 RECT rnd_rect(int z) {
     int half = (rw(&L.row[0]) - sc(8)) / 2, xl = L.row[0].left, xr = xl + half + sc(8);
     RECT r = {0, 0, 0, 0};
     if (z == Z_RND_GO || z == Z_RND_MUTATE) {
         int x = z == Z_RND_GO ? xl : xr;
         SetRect(&r, x, L.row[0].top + sc(3), x + half, L.row[1].bottom - sc(3));
-    } else if (z == Z_RND_AMOUNT) {
-        SetRect(&r, xr + sc(54), L.row[2].top + sc(4), xr + half - sc(40), L.row[2].bottom - sc(4));
+    } else if (z == Z_RND_AMOUNT || z == Z_RND_WILD) {   /* a bar between its name and its value */
+        int x = z == Z_RND_WILD ? xl : xr;
+        SetRect(&r, x + sc(54), L.row[2].top + sc(4), x + half - sc(40), L.row[2].bottom - sc(4));
     } else if (z >= Z_RND_LOCK && z < Z_RND_LOCK + RS_COUNT) {
-        int k = z - Z_RND_LOCK, x = k < 4 ? xl : xr, row = 3 + k % 4;
-        SetRect(&r, x, L.row[row].top + sc(2), x + half, L.row[row].bottom - sc(2));
+        int k = z - Z_RND_LOCK, row = 4 + k % 4;
+        RECT c = rnd_col(k / 4);
+        SetRect(&r, c.left, L.row[row].top + sc(2), c.right, L.row[row].bottom - sc(2));
     } else if (z == Z_RND_UNDO || z == Z_RND_REDO) {
-        int q = (half - sc(8)) / 2, x = xl + (z == Z_RND_REDO ? q + sc(8) : 0);
+        RECT c = rnd_col(1);
+        int q = (rw(&c) - sc(6)) / 2, x = c.left + (z == Z_RND_REDO ? q + sc(6) : 0);
         SetRect(&r, x, L.row[7].top + sc(2), x + q, L.row[7].bottom - sc(2));
+    } else if (z >= Z_RND_ALSO && z < Z_RND_ALSO + 3) {
+        RECT c = rnd_col(2);
+        int row = 4 + z - Z_RND_ALSO;
+        SetRect(&r, c.left, L.row[row].top + sc(2), c.right, L.row[row].bottom - sc(2));
     } else if (z == Z_RND_ALL) {
-        SetRect(&r, xr, L.row[7].top + sc(2), xr + half, L.row[7].bottom - sc(2));
+        RECT c = rnd_col(2);
+        SetRect(&r, c.left, L.row[7].top + sc(2), c.right, L.row[7].bottom - sc(2));
     }
     return r;
 }
@@ -531,12 +545,41 @@ static void rnd_apply(ed_t *e, const float *target) {
         if (i != link && fabsf(target[i] - cur[i]) > 1e-7f) edit_value(e, i, target[i]);
     if (link >= 0 && target[link] > 0.5f) edit_value(e, link, target[link]);
 }
-/* a new sound for the focused Synth: RANDOMISE (0) or MUTATE (1) of cur; returns the archetype (RANDOMISE) */
+/* SEQUENCER lit: the hook for a sequence generator (notes written into the focused Synth's steps, before the
+ * sequencer's settings and lanes are made). Nothing yet: the steps' notes stay as they are. */
+static void rnd_seq_notes(ed_t *e, int mutate, uint32_t *seed) {
+    (void)e; (void)mutate; (void)seed;
+}
+static int rnd_seq_has_notes(ed_t *e) {   /* the focused Synth's sequence has a note to play (within its length) */
+    seq_read(e);
+    int len = e->sq.len < 1 ? 1 : e->sq.len > SQ_STEPS ? SQ_STEPS : e->sq.len;
+    for (int s = 0; s < len; s++)
+        for (int l = 0; l < SQ_NL && !(e->sq.q.rest >> s & 1u); l++)
+            if (sq_has(&e->sq.q.n[s][l])) return 1;
+    return 0;
+}
+/* a new sound for the focused Synth: RANDOMISE (0) or MUTATE (1) of cur; returns the archetype (RANDOMISE). SEQUENCER
+ * lit: its notes (the hook), then its modulation lanes go to the engine here, the settings with the rest of out. */
 static int rnd_make(ed_t *e, const float *cur, float *out, int mutate) {
-    int a = mutate ? (rnd_mutate(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed), 0)
-                   : rnd_generate(cur, out, e->rnd_locks, &e->rnd_seed);
+    rnd_opts_t o = {e->rnd_wild, e->rnd_also, 0};
+    int seq = e->rnd_also >> RS_SEQ & 1u;
+    if (seq) {
+        rnd_seq_notes(e, mutate, &e->rnd_seed);
+        o.seq_notes = rnd_seq_has_notes(e);
+    }
+    int a = mutate ? (rnd_mutate_x(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed, &o), 0)
+                   : rnd_generate_x(cur, out, e->rnd_locks, &e->rnd_seed, &o);
     for (int i = 0; i < NPARAMS && e->focus; i++)   /* Synth 2 or 3: the shared master effects stay as they are */
         if (shared_param(i)) out[i] = cur[i];
+    if (seq) {
+        static sq_seq_t q;
+        int li = rnd_key("seq_length");
+        seq_read(e);
+        q = e->sq.q;
+        if (rnd_seq_lanes(q.m, li < NPARAMS ? (int)lroundf(rnd_real(li, out[li])) : 16, out, mutate, e->rnd_amount, &o,
+                          &e->rnd_seed))
+            seq_load(e, &q);
+    }
     return a;
 }
 /* all: the other Synths get a sound of their own too (ON, channels and key ranges stay: the randomiser never
@@ -561,6 +604,7 @@ static void rnd_action(ed_t *e, int mutate, int all) {   /* RANDOMISE (0) or MUT
     int a = rnd_make(e, cur, out, mutate);
     if (mutate) snprintf(name, sizeof name, "Mutation %d (%.0f%%)", ++e->mut_count, e->rnd_amount * 100.0f);
     else snprintf(name, sizeof name, "Random %d: %s", ++e->rnd_count, RND_ARCH[a]);
+    if (e->rnd_wild > 0.0f) snprintf(name + strlen(name), sizeof name - strlen(name), ", wild %.0f%%", e->rnd_wild * 100.0f);
     rnd_apply(e, out);
     if (all && NSYNTHS > 1) {
         int focus = e->focus;
@@ -576,6 +620,7 @@ static void rnd_action(ed_t *e, int mutate, int all) {   /* RANDOMISE (0) or MUT
         }
         e->focus = focus;
         e->focus_mask = mask;
+        if (e->rnd_also >> RS_SEQ & 1u) seq_read(e);   /* (the step editor shows the focused Synth's sequence again) */
         snprintf(name + strlen(name), sizeof name - strlen(name), " (all 3)");
     }
     rnd_snapshot(e, cur);   /* as the plugin took it */
@@ -597,10 +642,10 @@ static void rnd_step(ed_t *e, int dir) {   /* UNDO (-1) / REDO (+1) through the 
     lib_hold(e, -1);
     InvalidateRect(e->wnd, NULL, FALSE);
 }
-static void rnd_set_amount(ed_t *e, int x) {   /* the amount bar: 0 .. 100% across it */
-    RECT b = rnd_rect(Z_RND_AMOUNT);
+static void rnd_set_amount(ed_t *e, int x, int wild) {   /* the AMOUNT (or WILD) bar: 0 .. 100% across it */
+    RECT b = rnd_rect(wild ? Z_RND_WILD : Z_RND_AMOUNT);
     float v = (x - b.left) / (float)(rw(&b) > 0 ? rw(&b) : 1);
-    e->rnd_amount = roundf((v < 0 ? 0 : v > 1 ? 1 : v) * 100.0f) / 100.0f;
+    *(wild ? &e->rnd_wild : &e->rnd_amount) = roundf((v < 0 ? 0 : v > 1 ? 1 : v) * 100.0f) / 100.0f;
 }
 
 static float option_norm(int i, int opt) { return PARAMS[i].nopts > 1 ? (float)opt / (PARAMS[i].nopts - 1) : 0.0f; }
@@ -666,10 +711,11 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (PtInRect(&L.sub_next, pt) && screen_subs(e) > 1) return Z_SUB_NEXT;
     if (lib_screen(e->screen)) return lib_hit(e, pt);   /* the patch list and the library's pages (library.c) */
     if (e->screen == SCR_RANDOM) {
-        static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_RND_ALL};
+        static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_WILD, Z_RND_UNDO, Z_RND_REDO, Z_RND_ALL,
+                                Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2};
         for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
             RECT r = rnd_rect(Z[k]);
-            if (Z[k] == Z_RND_AMOUNT) InflateRect(&r, sc(4), sc(4));   /* easier to catch */
+            if (Z[k] == Z_RND_AMOUNT || Z[k] == Z_RND_WILD) InflateRect(&r, sc(4), sc(4));   /* easier to catch */
             if (PtInRect(&r, pt)) return Z[k];
         }
         for (int k = 0; k < RS_COUNT; k++) {
@@ -805,8 +851,8 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
         if (!e->ribbon_on) ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 127);
         e->ribbon_cc = cc;
         e->ribbon_on = 1;
-    } else if (e->mode == M_RND_AMOUNT) {
-        rnd_set_amount(e, x);
+    } else if (e->mode == M_RND_AMOUNT || e->mode == M_RND_WILD) {
+        rnd_set_amount(e, x, e->mode == M_RND_WILD);
     } else if (e->mode == M_ENC) {
         int steps = (e->enc_y - y) / sc(18);
         if (steps) {
@@ -818,7 +864,7 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
         return;
     }
     static const int Z[] = {0, 0, Z_KEYS, Z_PITCH, Z_MODW, Z_PAD, 0, Z_RIBBON, 0};   /* by mode (M_*) */
-    if (e->mode == M_RND_AMOUNT) invalidate(e, &L.screen);
+    if (e->mode == M_RND_AMOUNT || e->mode == M_RND_WILD) invalidate(e, &L.screen);
     else if (e->mode > 0 && e->mode < (int)(sizeof Z / sizeof Z[0]) && Z[e->mode]) invalidate_zone(e, Z[e->mode]);
     else invalidate(e, NULL);
 }
@@ -930,6 +976,9 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
     } else if (z >= Z_RND_LOCK && z < Z_RND_LOCK + RS_COUNT) {
         e->rnd_locks ^= 1u << (z - Z_RND_LOCK);
         InvalidateRect(e->wnd, NULL, FALSE);
+    } else if (z >= Z_RND_ALSO && z < Z_RND_ALSO + 3) {   /* ARPEGGIATOR, GENERATIVE, SEQUENCER */
+        e->rnd_also ^= 1u << (RS_ARP + z - Z_RND_ALSO);
+        InvalidateRect(e->wnd, NULL, FALSE);
     } else if (z == Z_SUB_PREV) {
         show(e, e->screen, (e->sub + subs - 1) % subs);
     } else if (z == Z_SUB_NEXT) {
@@ -969,6 +1018,7 @@ static void press(ed_t *e, int x, int y) {
     case Z_RIBBON: e->mode = M_RIBBON; e->ribbon_cc = -1; break;
     case Z_ENCODER: e->mode = M_ENC; e->enc_y = y; e->enc_moved = 0; break;
     case Z_RND_AMOUNT: e->mode = M_RND_AMOUNT; break;
+    case Z_RND_WILD: e->mode = M_RND_WILD; break;
     default:
         if (i >= Z_KEYS) { press_zone(e, i); return; }
         break;
@@ -1165,9 +1215,9 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             lib_touch(e, NULL);   /* (committed after a pause) */
             if (seq_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;
         }
-        if (i == Z_RND_AMOUNT) {
-            float v = e->rnd_amount + dir * 0.01f;
-            e->rnd_amount = roundf((v < 0 ? 0 : v > 1 ? 1 : v) * 100.0f) / 100.0f;
+        if (i == Z_RND_AMOUNT || i == Z_RND_WILD) {
+            float *a = i == Z_RND_WILD ? &e->rnd_wild : &e->rnd_amount, v = *a + dir * 0.01f;
+            *a = roundf((v < 0 ? 0 : v > 1 ? 1 : v) * 100.0f) / 100.0f;
             InvalidateRect(w, NULL, FALSE);
             return 0;
         }
@@ -1439,7 +1489,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->pad_x = 0.5f;
         e->ribbon = 0.5f;
         e->ribbon_cc = -1;
-        e->rnd_amount = 0.2f;
+        e->rnd_amount = 0.2f;   /* (WILD 0, no ticks: rnd_wild and rnd_also start at 0) */
         e->hr = hr;
         eds[i] = e;
         wrapped_dispatch = fx->dispatcher;

@@ -228,11 +228,22 @@ static const char *zone_help(ed_t *e, int z) {
                              "transpose, octave, voices, level, pan, sends; then MIDI, master level, PLAY ALL.";
     case Z_TAB_SEQ: return "SEQ: the step sequencer's step editor (64 steps in four pages, note lanes and modulation lanes). "
                            "Click again for its other view.";
-    case Z_RND_GO: return "RANDOMISE: a new sound, made to be playable (heard, not harsh, in tune). Locked sections stay as "
-                          "they are; volume, tuning, bend and keyboard settings are never changed.";
-    case Z_RND_MUTATE: return "MUTATE: a variation of the sound playing now. AMOUNT sets how far: 10-20% a nudge, 100% a lot. "
-                              "Click again for another variation.";
+    case Z_RND_GO: return "RANDOMISE: a new sound, made to be playable (heard, not harsh, in tune). WILD sets how strange. "
+                          "Locked sections stay as they are; volume, tuning, bend and keyboard settings are never changed.";
+    case Z_RND_MUTATE: return "MUTATE: a variation of the sound playing now. AMOUNT sets how far: 10-20% a nudge, 100% a lot; "
+                              "WILD makes the moves bigger and stranger. Click again for another variation.";
     case Z_RND_AMOUNT: return "AMOUNT: how far MUTATE moves the sound (drag or scroll). Default 20%.";
+    case Z_RND_WILD: return "WILD: how strange RANDOMISE and MUTATE get (drag or scroll). 0% the tame, playable sounds; higher: "
+                            "more matrix rows (often every slot), any source to any destination with controllers and "
+                            "transforms, audio-rate LFOs, odd filter routings, FM, ring and sync, extreme envelopes, unusual "
+                            "effects. Still always heard and kept out of harshness. Default 0%.";
+    case Z_RND_ALSO: return "ARPEGGIATOR (lit): RANDOMISE and MUTATE also set the arpeggiator: on or off, pattern, octaves, "
+                            "division, gate, swing. Off: it stays as it is.";
+    case Z_RND_ALSO + 1: return "GENERATIVE (lit): RANDOMISE and MUTATE also set the GENERATIVE section: the Euclidean rhythm "
+                                "(steps, hits, rotation), probability, the Turing melody, KEY and SCALE. Off: they stay.";
+    case Z_RND_ALSO + 2: return "SEQUENCER (lit): RANDOMISE and MUTATE also set the sequencer's settings (on, division, length, "
+                                "swing, trigger and transpose by the keys if it has notes) and its modulation lanes. The "
+                                "steps' notes stay. Ctrl+Z takes the lanes back too; the randomiser's UNDO only the settings.";
     case Z_RND_UNDO: return "UNDO: back to the sound before (the last 32 are kept, your own edits in between too).";
     case Z_RND_REDO: return "REDO: forward again after UNDO.";
     case Z_RND_ALL: return "ALL 3 SYNTHS: lit, RANDOMISE and MUTATE give all three Synths a new sound (each its own; ON, "
@@ -750,25 +761,39 @@ static void draw_random(HDC dc, ed_t *e) {
     text(dc, &L.head, d, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     screen_button(dc, rnd_rect(Z_RND_GO), "RANDOMISE", 0, e->hover == Z_RND_GO, font_big);
     screen_button(dc, rnd_rect(Z_RND_MUTATE), "MUTATE", 0, e->hover == Z_RND_MUTATE, font_big);
-    int half = (rw(&L.row[0]) - sc(8)) / 2, xr = L.row[0].left + half + sc(8);
-    RECT lk = {L.row[2].left, L.row[2].top, L.row[2].left + half, L.row[2].bottom};
+    int half = (rw(&L.row[0]) - sc(8)) / 2;
+    for (int b = 0; b < 2; b++) {   /* WILD (under RANDOMISE: both buttons use it) and AMOUNT (under MUTATE) */
+        int z = b ? Z_RND_AMOUNT : Z_RND_WILD, hot = e->hover == z, x = L.row[2].left + b * (half + sc(8));
+        float v = b ? e->rnd_amount : e->rnd_wild;
+        RECT bar = rnd_rect(z), al = {x, L.row[2].top, bar.left - sc(4), L.row[2].bottom};
+        RECT av = {bar.right + sc(4), L.row[2].top, x + half, L.row[2].bottom};
+        unsigned fill = b ? 0xFF96D7E8 : 0xFFE8B96A;   /* WILD in amber */
+        text(dc, &al, b ? "AMOUNT" : "WILD", font_cell, hot ? T_HOT : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        float cy = (bar.top + bar.bottom) / 2.0f;
+        gfx_rect((float)bar.left, cy - 3.0f * L.s, (float)rw(&bar), 6.0f * L.s, 0xFF1C2C36);
+        gfx_rect((float)bar.left, cy - 3.0f * L.s, rw(&bar) * v, 6.0f * L.s, fill);
+        if (hot) gfx_frame((float)bar.left - 1, (float)bar.top, (float)rw(&bar) + 2, (float)rh(&bar), 1.0f, 0x6096D7E8);
+        char pct[16];
+        snprintf(pct, sizeof pct, "%.0f%%", v * 100.0f);
+        text(dc, &av, pct, font_cell, T_LCD, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
+    RECT c0 = rnd_col(0), c1 = rnd_col(1), c2 = rnd_col(2);
+    RECT lk = {c0.left, L.row[3].top, c1.right, L.row[3].bottom}, al = {c2.left, L.row[3].top, c2.right, L.row[3].bottom};
     text(dc, &lk, "LOCK (lit = keep as it is):", font_cell, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    RECT bar = rnd_rect(Z_RND_AMOUNT), al = {xr, L.row[2].top, bar.left - sc(4), L.row[2].bottom};
-    RECT av = {bar.right + sc(4), L.row[2].top, xr + half, L.row[2].bottom};
-    int hot = e->hover == Z_RND_AMOUNT;
-    text(dc, &al, "AMOUNT", font_cell, hot ? T_HOT : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    float cy = (bar.top + bar.bottom) / 2.0f;
-    gfx_rect((float)bar.left, cy - 3.0f * L.s, (float)rw(&bar), 6.0f * L.s, 0xFF1C2C36);
-    gfx_rect((float)bar.left, cy - 3.0f * L.s, rw(&bar) * e->rnd_amount, 6.0f * L.s, 0xFF96D7E8);
-    if (hot) gfx_frame((float)bar.left - 1, (float)bar.top, (float)rw(&bar) + 2, (float)rh(&bar), 1.0f, 0x6096D7E8);
-    char pct[16];
-    snprintf(pct, sizeof pct, "%.0f%%", e->rnd_amount * 100.0f);
-    text(dc, &av, pct, font_cell, T_LCD, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    text(dc, &al, "ALSO RANDOMISE:", font_cell, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     for (int k = 0; k < RS_COUNT; k++)
         screen_button(dc, rnd_rect(Z_RND_LOCK + k), RND_SECTION[k], e->rnd_locks >> k & 1u, e->hover == Z_RND_LOCK + k,
                       font_cell);
     screen_button(dc, rnd_rect(Z_RND_UNDO), "UNDO", 0, e->hover == Z_RND_UNDO && e->hist_pos > 0, font_cell);
     screen_button(dc, rnd_rect(Z_RND_REDO), "REDO", 0, e->hover == Z_RND_REDO && e->hist_pos < e->hist_n - 1, font_cell);
+    for (int k = 0; k < 3; k++) {   /* the tick buttons: a box ticked (filled) when lit */
+        RECT r = rnd_rect(Z_RND_ALSO + k);
+        int lit = e->rnd_also >> (RS_ARP + k) & 1u;
+        screen_button(dc, r, RND_SECTION[RS_ARP + k], lit, e->hover == Z_RND_ALSO + k, font_cell);
+        float bs = 7.0f * L.s, bx = r.left + 5.0f * L.s, by = (r.top + r.bottom) / 2.0f - bs / 2;
+        gfx_frame(bx, by, bs, bs, 1.0f, lit ? 0xFF0B1621 : 0xFF3E6273);
+        if (lit) gfx_rect(bx + 2.0f * L.s, by + 2.0f * L.s, bs - 4.0f * L.s, bs - 4.0f * L.s, 0xFF0B1621);
+    }
     if (NSYNTHS > 1) screen_button(dc, rnd_rect(Z_RND_ALL), "ALL 3 SYNTHS", e->rnd_all, e->hover == Z_RND_ALL, font_cell);
 }
 
@@ -840,8 +865,8 @@ static void draw_screen(HDC dc, ed_t *e) {
         snprintf(help, sizeof help, "%s", zh);
     } else if (lib_notes_help(e, help, sizeof help)) {   /* SHOW NOTES: the patch's notes */
     } else if (e->screen == SCR_RANDOM) {
-        snprintf(help, sizeof help, "RANDOMISE makes a new sound; MUTATE a variation of this one (AMOUNT: how far). "
-                                    "Light a section to keep it. UNDO / REDO step through the last sounds. Keys: R, M; Shift: all 3 Synths. Like it? "
+        snprintf(help, sizeof help, "RANDOMISE makes a new sound; MUTATE a variation of this one (AMOUNT: how far; WILD: how "
+                                    "strange). Light a LOCK to keep a section, a tick to change the arp, GENERATIVE or sequencer too. UNDO / REDO step through the last sounds. Keys: R, M; Shift: all 3 Synths. Like it? "
                                     "Save it in your host (a preset or the project).");
     } else if (lib_screen(e->screen)) {
         lib_help(e, help, sizeof help);
