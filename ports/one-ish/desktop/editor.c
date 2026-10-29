@@ -546,7 +546,7 @@ int screen_subs(ed_t *e) {
     if (e->screen == SCR_PATCHES) return patches_subs(e);
     if (e->screen == SCR_SETUP) return 2;
     int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
-    int per = e->screen == SCR_MATRIX ? ROWS : SLOTS;
+    int per = e->screen == SCR_MATRIX ? ROWS : e->screen == SCR_INDEX ? SLOTS : page_slots(e->screen);
     return n > per ? (n + per - 1) / per : 1;
 }
 
@@ -626,10 +626,10 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
             if (PtInRect(&all, pt)) return Z_PAGE + p;
         }
     } else {
-        int items[512], n = page_items(e, e->screen, items);
-        for (int j = e->sub * SLOTS; j < n && j < (e->sub + 1) * SLOTS; j++) {
+        int items[512], n = page_items(e, e->screen, items), per = page_slots(e->screen);
+        for (int j = e->sub * per; j < n && j < (e->sub + 1) * per; j++) {
             RECT nm, c;
-            slot_rects(j % SLOTS, &nm, &c);
+            slot_rects(page_slot(e->screen, j), &nm, &c);
             if (PtInRect(&c, pt)) { e->hit_screen = 1; e->hit_rect = c; return ITEMS[items[j]].param; }
         }
     }
@@ -875,6 +875,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         CREATESTRUCTA *cs = (CREATESTRUCTA *)lp;
         SetWindowLongPtrA(w, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
         SetTimer(w, 1, 50, NULL);
+        SetTimer(w, 2, RATE_TIMER_MS, NULL);   /* the rate LEDs (rate_leds.c) */
         skin_acquire();   /* the shared look (skin.c), kept while any editor window is open */
         return 0;
     }
@@ -892,6 +893,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER: {   /* values the host or a preset changed: redraw */
         if (!e) return 0;
+        if (wp == 2) { rate_leds_tick(e); return 0; }   /* the rate LEDs: only the ones that changed repaint */
         if (e->corners == 0 && e->corner_tries < 100) {   /* the host's window sized to us yet? (for 5 s) */
             e->corner_tries++;
             e->corners = square_corners(w);
@@ -1025,6 +1027,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             e->mode = M_NONE;
         }
         KillTimer(w, 1);
+        KillTimer(w, 2);
         skin_release();
         return 0;
     }

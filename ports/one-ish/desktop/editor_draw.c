@@ -644,14 +644,23 @@ static void draw_page(HDC dc, ed_t *e, int subs) {
     snprintf(t, sizeof t, "MORE:  %s", PAGES[e->screen].title);
     title_line(dc, e, t, subs);
     text(dc, &L.head, PAGES[e->screen].note, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    for (int j = e->sub * SLOTS; j < n && j < (e->sub + 1) * SLOTS; j++) {
+    int per = page_slots(e->screen);
+    for (int j = e->sub * per; j < n && j < (e->sub + 1) * per; j++) {
         const lay_item_t *it = &ITEMS[items[j]];
         RECT nm, c;
-        slot_rects(j % SLOTS, &nm, &c);
+        slot_rects(page_slot(e->screen, j), &nm, &c);
         text(dc, &nm, it->label, font_cell, it->param == e->hover ? T_HOT : T_LCD_DIM,
              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         if (PARAMS[it->param].nopts) screen_menu(dc, e, it->param, c, 1, font_cell);
         else screen_amount(dc, e, it->param, c, 1, 0);
+    }
+    if (PAGES[e->screen].pic) {   /* its picture under the items (more_pics.c: its own drawing surface) */
+        RECT a = {L.row[0].left, L.row[ROWS - PIC_ROWS].top + sc(2), L.row[0].right, L.row[ROWS - 1].bottom};
+        gfx_end();
+        skin_bind(NULL);
+        pics_draw(dc, e, e->screen, a);
+        gfx_begin(dc);
+        skin_bind(gfx_g);
     }
 }
 
@@ -766,7 +775,8 @@ static void draw_screen(HDC dc, ed_t *e) {
     if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
     int subs = screen_subs(e);
     if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
-    for (int r = 0; r < ROWS && e->screen != SCR_SEQ; r++)   /* (the step editor has its own rows) */
+    int striped = e->screen >= 0 && e->screen < NPAGES ? page_rows(e->screen) : ROWS;   /* (not under a picture) */
+    for (int r = 0; r < striped && e->screen != SCR_SEQ; r++)   /* (the step editor has its own rows) */
         if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0x109CC8E6);
     if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
     else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
@@ -1073,6 +1083,7 @@ static void bake(HDC dc) {
         text(dc, &L.brand, "ONE-ish", font_brand, RGB(196, 198, 202), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     controller_static(dc);
+    rate_leds_static(dc);   /* (skin_text only: no GDI+ of its own) */
     ribbon_static();
     keys_static();
     {   /* our name, burnt into the front rail under the keys */
@@ -1100,6 +1111,7 @@ static void paint_rect(ed_t *e, HDC out, const RECT *r) {   /* everything that s
         if (vis(&wr, 0)) draw_wave(e, &WAVES[w]);
     }
     if (vis(&L.euclid, sc(4))) draw_euclid(dc, e);
+    rate_leds_draw(e, &clipr);
     int pad = sc(16);
     for (int c = 0; c < NCTLS; c++) {
         int i = CTLS[c].param;

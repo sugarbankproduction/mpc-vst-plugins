@@ -871,6 +871,114 @@ static void gdi_test(AEffect *fx) {
     check(gdi1 <= gdi0 + 2 && user1 <= user0 + 2, what);
 }
 
+/* a param set to its option named `name`, as a host would (0 if the param or the option isn't there) */
+static int set_option(AEffect *fx, const char *key, const char *name) {
+    int i = rnd_key(key);
+    if (i >= NPARAMS) return 0;
+    for (int k = 0; k < PARAMS[i].nopts; k++)
+        if (!strcmp(PARAMS[i].opts[k], name)) {
+            fx->setParameter(fx, i, PARAMS[i].nopts > 1 ? (float)k / (PARAMS[i].nopts - 1) : 0.0f);
+            return 1;
+        }
+    return 0;
+}
+
+/* the MORE pages with pictures (more_pics.c): two envelopes, the filters, the mixer, two LFOs; some settings changed
+ * for the pictures, then put back */
+static void pictures(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    static const struct { const char *key; float v; } SET[] = {
+        {"amp_s", 0.6f}, {"amp_acurve", 0.9f}, {"amp_hold", 0.35f}, {"fenv_loop", 1.0f}, {"svf_res", 0.6f},
+        {"flt_res", 0.75f}, {"flt_route", 1.0f}, {"flt_mix", 0.6f}, {"svf_space", 0.7f}, {"svf_mode", 1.0f / 3},
+        {"o2_level", 0.7f}, {"o2_svf", 1.0f}, {"noise_level", 0.4f}, {"noise_svf", 1.0f}, {"noise_lad", 0.0f},
+        {"lfo2_wave", 4.0f / 6}, {"lfo2_var", 0.3f}, {"lfo2_phase", 0.25f}, {"lfo3_wave", 5.0f / 6},
+        {"lfo3_smooth", 0.35f}, {"lfo3_polarity", 1.0f}};
+    enum { NSET = sizeof SET / sizeof SET[0] };
+    float was[NSET];
+    for (int k = 0; k < NSET; k++) {
+        int i = rnd_key(SET[k].key);
+        was[k] = i < NPARAMS ? fx->getParameter(fx, i) : 0.0f;
+        if (i < NPARAMS) fx->setParameter(fx, i, SET[k].v);
+    }
+    static const struct { int page; const char *suffix; } P[] = {
+        {PG_ENV1, "_more_env1"}, {PG_ENV2, "_more_env2"}, {PG_FILTERS, "_more_filters"}, {PG_MIXER, "_more_mixer"},
+        {PG_LFO2, "_more_lfo2"}, {PG_LFO3, "_more_lfo3"}};
+    for (unsigned k = 0; k < sizeof P / sizeof P[0]; k++) {
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        char what[96];
+        snprintf(what, sizeof what, "the %s page (with its picture) opens from its MORE triangle", P[k].suffix + 6);
+        check(P[k].page >= 0 && PAGES[P[k].page].pic && click_more(child, s, P[k].page), what);
+        if (bmp) shot(child, w, h, bmp, P[k].suffix);
+    }
+    for (int k = 0; k < NSET; k++)
+        if (rnd_key(SET[k].key) < NPARAMS) fx->setParameter(fx, rnd_key(SET[k].key), was[k]);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+/* the rate LEDs (rate_leds.c): over 1.5 s of their timer they flash (the TEMPO LED on the beat at 120 BPM: this host
+ * gives no tempo; LFO 1 at a few Hz), and each repaint asks for only the LEDs' own small squares; one LED's repaint
+ * is timed */
+#define RATE_TIMER 2   /* as editor.c's timer id */
+static void rate_led_test(AEffect *fx, HWND child, int w, int h) {
+    char what[200];
+    if (NRATES == 0) return;
+    float s = w / (float)BASE_W;
+    int lfo = rnd_key("lfo1_rate"), lsync = rnd_key("lfo1_sync");
+    float was = lfo < NPARAMS ? fx->getParameter(fx, lfo) : 0, wsync = lsync < NPARAMS ? fx->getParameter(fx, lsync) : 0;
+    if (lsync < NPARAMS) fx->setParameter(fx, lsync, 0.0f);
+    if (lfo < NPARAMS) fx->setParameter(fx, lfo, 0.5f);   /* a few Hz */
+    HWND parent = GetParent(child);   /* shown (off the screen): a hidden window keeps no update region */
+    RECT home;
+    GetWindowRect(parent, &home);
+    SetWindowPos(parent, NULL, -w - 400, -h - 400, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    ValidateRect(child, NULL);
+    int ticks = 0, changes = 0, biggest = 0, rects = 0;
+    HRGN rgn = CreateRectRgn(0, 0, 0, 0);
+    RECT one = {0, 0, 0, 0};
+    for (double t0 = now_ms(); now_ms() - t0 < 1500.0; ticks++) {
+        Sleep(15);
+        SendMessageA(child, WM_TIMER, RATE_TIMER, 0);
+        int kind = GetUpdateRgn(child, rgn, FALSE);
+        if (kind != NULLREGION && kind != ERROR) {
+            changes++;
+            DWORD size = GetRegionData(rgn, 0, NULL);
+            RGNDATA *d = size ? malloc(size) : NULL;
+            if (d && GetRegionData(rgn, size, d))
+                for (DWORD k = 0; k < d->rdh.nCount; k++, rects++) {
+                    RECT r = ((RECT *)d->Buffer)[k];
+                    int big = r.right - r.left > r.bottom - r.top ? r.right - r.left : r.bottom - r.top;
+                    if (big > biggest) biggest = big;
+                    one = r;
+                }
+            free(d);
+        }
+        ValidateRect(child, NULL);
+    }
+    DeleteObject(rgn);
+    snprintf(what, sizeof what, "the rate LEDs flash: %d repaints in %d timer ticks over 1.5 s", changes, ticks);
+    check(changes >= 4, what);
+    snprintf(what, sizeof what, "a flashing LED repaints only its own square (%d rects, the biggest %d px)", rects, biggest);
+    check(rects > 0 && biggest <= (int)lroundf(16 * s) + 2, what);
+    HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+    HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+    HGDIOBJ old = SelectObject(dc, bm);
+    HRGN clip = CreateRectRgnIndirect(&one);
+    SelectClipRgn(dc, clip);
+    double ms = 0;
+    for (int k = 0; k < 20; k++) ms += print_ms(child, dc) / 20;
+    SelectClipRgn(dc, NULL);
+    DeleteObject(clip);
+    SelectObject(dc, old);
+    DeleteObject(bm);
+    DeleteDC(dc);
+    ReleaseDC(NULL, screen);
+    printf("     paint: a rate LED %.3f ms\n", ms);
+    snprintf(what, sizeof what, "a rate LED repaints in %.3f ms (target under 2)", ms);
+    check(ms < 2, what);
+    SetWindowPos(parent, NULL, home.left, home.top, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_HIDEWINDOW);
+    if (lfo < NPARAMS) fx->setParameter(fx, lfo, was);
+    if (lsync < NPARAMS) fx->setParameter(fx, lsync, wsync);
+}
+
 /* open the editor the way a host does (a parent window, effEditGetRect, effEditOpen), paint it, save a picture of it
  * as a 24-bit BMP if asked (and of the matrix's second page and some MORE pages), close it */
 static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
@@ -888,6 +996,7 @@ static void editor(AEffect *fx, const char *bmp) {
     HWND child = GetWindow(parent, GW_CHILD);
     check(ok && child, "the editor window opens inside the host's window");
     if (child) paint_timing(fx, child, w, h);
+    if (child) rate_led_test(fx, child, w, h);
     if (child) {   /* play the on-screen keyboard: a click on a white key must sound, letting go must stop it */
         fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
         play(fx, 700, 512);   /* let the last preset's tails die away */
@@ -921,12 +1030,18 @@ static void editor(AEffect *fx, const char *bmp) {
         click_zone(child, s, ZONE_TAB_MATRIX);   /* the matrix again: rows 9-16 */
         shot(child, w, h, bmp, "_matrix2");
         if (click_more(child, s, PG_LFO1)) shot(child, w, h, bmp, "_more_lfo1");
-        if (PG_SFX >= 0) {   /* the synth effect's page for one type (stereo flanger: two sub-pages) */
+        pictures(fx, child, s, bmp, w, h);
+        if (PG_SFX >= 0) {   /* the synth effect's page for some of its types (stereo flanger: two sub-pages) */
+            static const char *const T[][2] = {{"Stereo Flanger", "_more_synthfx"}, {"Modal Resonator", "_more_sfx_rings"},
+                                               {"Granular", "_more_sfx_clouds"}, {"Tape Color", "_more_sfx_tape"}};
             int type = ITEMS[PAGES[PG_SFX].first].param;
             float was = fx->getParameter(fx, type);
-            fx->setParameter(fx, type, 5.0f / 14.0f);
-            click_more(child, s, PG_SFX);
-            shot(child, w, h, bmp, "_more_synthfx");
+            for (unsigned k = 0; k < sizeof T / sizeof T[0]; k++) {
+                if (!set_option(fx, "modfx_type", T[k][0])) continue;
+                click_zone(child, s, ZONE_TAB_MATRIX);
+                click_more(child, s, PG_SFX);
+                shot(child, w, h, bmp, T[k][1]);
+            }
             fx->setParameter(fx, type, was);
         }
         click_zone(child, s, ZONE_TAB_MORE);
