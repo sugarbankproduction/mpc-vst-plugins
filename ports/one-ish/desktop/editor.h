@@ -53,7 +53,8 @@ enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 key
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
        Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
        Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_FOCUS1, Z_FOCUS2, Z_FOCUS3,
-       Z_TAB_SETUP, Z_TAB_SETTINGS, Z_RND_ALL, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
+       Z_TAB_SETUP, Z_TAB_SETTINGS, Z_RND_ALL, Z_MUTE1, Z_MUTE2, Z_MUTE3, Z_SOLO1, Z_SOLO2, Z_SOLO3,
+       Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
 enum { SCR_SETUP = -11, NSYNTHS = 3 };   /* the centre screen's SETUP page (the three Synths side by side) */
@@ -179,6 +180,9 @@ int screen_subs(ed_t *e);                     /* how many sub-pages the screen h
 void slot_rects(int slot, RECT *name, RECT *ctl);   /* a page's slot 0..SLOTS-1: its name and its control */
 RECT matrix_cell(int r, int col);             /* the matrix on the screen: row r, column 0 (#) .. MX_COLS */
 RECT rnd_rect(int z);                         /* the randomiser page: where control z (Z_RND_*) sits */
+RECT focus_part(int c, int part);             /* SYNTH c's button: its cap (0), M (1) and S (2) halves */
+int synth_muted(ed_t *e, int c);              /* SYNTH c off (its ON) / soloed (never saved) */
+int synth_soloed(ed_t *e, int c);
 static inline int note_of_white(int j, int base) {   /* white key j of the keyboard, from note `base` (a C) */
     static const int s[] = {0, 2, 4, 5, 7, 9, 11};
     return base + 12 * (j / 7) + s[j % 7];

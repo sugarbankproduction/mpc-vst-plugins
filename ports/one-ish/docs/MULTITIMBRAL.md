@@ -12,6 +12,10 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   (`SYNTH 2 | ...`) show it. Every knob, button, LED, option list, the MORE pages, the matrix, the step editor and the
   randomiser show and change that Synth. Ctrl-click (or Ctrl+F5-F7) adds a Synth: a knob then moves the same control
   on every Synth picked (the last picked is the one drawn).
+- **M | S** beside each SYNTH button (2026-10-29): M switches the Synth off and on (its ON; red while off; saved with the
+  sound; a double-click on the SYNTH button does the same). S solos it (Shift-click the SYNTH button too): while any
+  Synth is soloed only the soloed ones are heard, the others keep playing silently; never saved (`syn_solo`, kept out
+  of states, patches and the randomiser; a 10 ms glide so it never clicks).
 - **Shared** sections stay the same whichever Synth is in focus, and say so on the panel: MASTER EFFECTS, DELAY and
   REVERB (the two master effects) are marked SHARED. SYNTH OUTPUT (level, pan, spread) belongs to the Synth, and so
   do the SEND 1 and SEND 2 knobs in the MASTER EFFECTS panel: how much of the Synth in focus goes into each.
@@ -98,7 +102,6 @@ gets three Synths (and how its page shows them) is the owner's later call.
 ## Not built
 
 - Per-Synth outputs (MAIN / SUB as extra VST2 output pairs), SUB VOLUME.
-- SHIFT + SYNTH (solo a Synth).
 - Setting a key range by pressing LOW RANGE and then a key (the range is set as a value).
 - The master effects' matrix destinations follow Synth 1's matrix only.
 - Sequencer OUTPUT to another Synth or all of them; the sustain pedal's target Synth.

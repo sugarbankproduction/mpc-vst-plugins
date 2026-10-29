@@ -3801,8 +3801,8 @@ static void matrix_wiring(void) {
             if (!p->nopts && fabs(v - def) < 1e-3) v = p->min + (p->max - p->min) * 0.876543;
             set(a, p->key, v);
         }
-        /* (not in a saved state on purpose: the sequencer's PLAY, REC and STEP MOD, and its step readout) */
-        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos", "seq_all"};
+        /* (not in a saved state on purpose: the sequencer's PLAY, REC and STEP MOD, its step readout, and SOLO) */
+        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos", "seq_all", "syn_solo"};
         int kept = 0;
         for (int i = 0; i < NPARAMS; i++) kept += s1_key(PARAMS[i].key);
         for (int i = 0; i < NPARAMS; i++) {

@@ -251,6 +251,27 @@ RECT rnd_rect(int z) {
     return r;
 }
 
+/* SYNTH c's button (the Panel Focus): its select cap on the left, the M | S split cap beside it (MUTE: the Synth's ON
+ * off, red; SOLO: only the soloed Synths heard, lit); the label under both */
+RECT focus_part(int c, int part) {
+    RECT z = L.focus[c], r;
+    int top = z.top + sc(6), bh = sc(13), x = z.left + sc(2), cap = sc(22), half = sc(9);
+    if (part == 0) SetRect(&r, x, top, x + cap, top + bh);
+    else {
+        int x0 = x + cap + sc(2) + (part == 2 ? half + sc(1) : 0);
+        SetRect(&r, x0, top, x0 + half, top + bh);
+    }
+    return r;
+}
+static int syn_key(int c, int solo) { return synth_param(rnd_key(solo ? "syn_solo" : "syn_on"), c); }
+int synth_muted(ed_t *e, int c) { return e->fx->getParameter(e->fx, syn_key(c, 0)) < 0.5f; }
+int synth_soloed(ed_t *e, int c) { return e->fx->getParameter(e->fx, syn_key(c, 1)) > 0.5f; }
+static void edit_abs(ed_t *e, int i, float v);
+static void synth_toggle(ed_t *e, int c, int solo) {   /* M (the Synth's ON) or S, as a click on the SETUP page would */
+    int i = syn_key(c, solo);
+    edit_abs(e, i, e->fx->getParameter(e->fx, i) > 0.5f ? 0.0f : 1.0f);
+}
+
 static int square_corners(HWND wnd);   /* (below: the host window's corners) */
 
 /* ---- what to repaint: only the parts a change touches (the whole window takes longer to paint) ---- */
@@ -273,6 +294,8 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
 }
 static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control, the screen, what shows it */
     if (i < 0 || i >= NPARAMS) { invalidate(e, NULL); return; }
+    if (i == rnd_key("syn_on") || i == rnd_key("syn_solo"))   /* the SYNTH buttons' M | S */
+        for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]);
     if (!IsRectEmpty(&L.ctl[i])) {   /* on the panel: the control, its label and value (they spill a little) */
         RECT r = L.ctl[i];
         InflateRect(&r, sc(16), sc(6));
@@ -317,6 +340,8 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_TAB_RANDOM: r = &L.tab_random; break;
     case Z_TAB_SEQ: r = &L.tab_seq; break;
     case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3: r = &L.focus[z - Z_FOCUS1]; break;
+    case Z_MUTE1: case Z_MUTE2: case Z_MUTE3: r = &L.focus[z - Z_MUTE1]; break;
+    case Z_SOLO1: case Z_SOLO2: case Z_SOLO3: r = &L.focus[z - Z_SOLO1]; break;
     case Z_TAB_SETUP: r = &L.tab_setup; break;
     case Z_TAB_SETTINGS: r = &L.tab_settings; break;
     case Z_EUCLID: r = &L.euclid; break;
@@ -465,6 +490,13 @@ static void edit_value(ed_t *e, int i, float v) {   /* a one-shot change, bracke
     begin_edit(e, i, 0);
     set_value(e, i, v);
     begin_edit(e, i, 1);
+}
+static void edit_abs(ed_t *e, int i, float v) {   /* the same for a param's own index (any Synth's, not the focus's) */
+    int was = e->abs;
+    e->abs = 1;
+    edit_value(e, i, v);
+    e->abs = was;
+    for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]);
 }
 
 /* ---- the randomiser: results go in param by param like knob moves; a history of sounds for UNDO / REDO ---- */
@@ -701,6 +733,14 @@ static int hit(ed_t *e, int x, int y) {
     int s = hit_on_screen(e, pt);
     if (s >= 0) return s;
     if ((s = seq_hit_panel(e, pt)) >= 0) return s;   /* the SEQUENCER module's page LEDs */
+    for (int c = 0; c < NSYNTHS && NSYNTHS > 1; c++) {   /* a SYNTH button's M | S halves (a little taller to catch) */
+        RECT m = focus_part(c, 1), so = focus_part(c, 2);
+        m.bottom += sc(3);
+        so.bottom += sc(3);
+        so.right += sc(2);
+        if (PtInRect(&m, pt)) return Z_MUTE1 + c;
+        if (PtInRect(&so, pt)) return Z_SOLO1 + c;
+    }
     static const struct { RECT *r; int z; } Z[] = {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
         {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
@@ -866,8 +906,13 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         show(e, PG_ANALOG, 0);
     } else if (z == Z_TAB_RANDOM) {
         show(e, SCR_RANDOM, 0);
+    } else if (z >= Z_MUTE1 && z <= Z_MUTE3) {
+        synth_toggle(e, z - Z_MUTE1, 0);
+    } else if (z >= Z_SOLO1 && z <= Z_SOLO3) {
+        synth_toggle(e, z - Z_SOLO1, 1);
     } else if (z >= Z_FOCUS1 && z <= Z_FOCUS3) {   /* PANEL FOCUS (Ctrl: several Synths at once) */
-        set_focus(e, z - Z_FOCUS1, GetKeyState(VK_CONTROL) < 0);
+        if (GetKeyState(VK_SHIFT) < 0 && NSYNTHS > 1) synth_toggle(e, z - Z_FOCUS1, 1);   /* SHIFT + SYNTH: solo */
+        else set_focus(e, z - Z_FOCUS1, GetKeyState(VK_CONTROL) < 0);
     } else if (z == Z_TAB_SETUP) {   /* the three Synths side by side; again: its next page */
         show(e, SCR_SETUP, e->screen == SCR_SETUP ? (e->sub + 1) % subs : 0);
     } else if (z == Z_TAB_SEQ) {   /* the step editor; again: its other view (NOTES / MODS) */
@@ -1104,6 +1149,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp), i = hit(e, x, y);
         if (seq_zone(i) && i < Z_SEQ_BASE + 200) { lib_touch(e, NULL); seq_double(e, i); lib_commit(e); }   /* an empty step cell: a new note */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);
+        else if (i >= Z_FOCUS1 && i <= Z_FOCUS3 && NSYNTHS > 1) synth_toggle(e, i - Z_FOCUS1, 0);   /* mute (the first
+                                                                                 * click picked the Synth already) */
         else if (i >= 0) press(e, x, y);   /* a second click on a button or a key counts as a click */
         return 0;
     }

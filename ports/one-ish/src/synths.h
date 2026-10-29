@@ -42,6 +42,7 @@ typedef struct inst {
     float ext[128];          /* the next render's audio input, mono (one_ish_set_input); ext_n frames of it, 0: silence */
     int ext_n;
     midi_in_t mi;            /* the MIDI input settings (the window's SETTINGS page: src/midi_in.h) */
+    float solo_g[NSYN];      /* SOLO: each Synth's gain, gliding to 1 (heard) or 0 (another Synth soloed) */
 } inst_t;
 
 /* the shared params: one copy, in Synth 1's values (presets/make_synths.py GLOBAL keeps the same list) */
@@ -268,7 +269,8 @@ static void set_param(void *inst, const char *key, const char *val) {
  * left out (each Synth's readout says so). Synth 1 and the shared values never: should they alone not fit, nothing is
  * saved (0, and stderr says so). */
 static int state_keeps(const one_t *s, int i) {
-    if (!KEYS[i][0] || s->val[i] == s->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD) return 0;
+    if (!KEYS[i][0] || s->val[i] == s->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD ||
+        i == P_SYN_SOLO) return 0;
     return i != P_SEQ_ALL && !(s->idx > 0 && engine_global(i));
 }
 static int state_put(char *buf, int n, int used, const char *fmt, const char *key, float v) {   /* counts past n */
@@ -410,7 +412,9 @@ static void set_state(inst_t *in, const char *str) {
 
 /* LOAD INTO SYNTH n: a sound's own values (a single-Synth patch or preset, or a performance's Synth 1) into Synth c,
  * which keeps its setup (on, channel, key range) ; the shared values and the other Synths stay as they are */
-static int load_skip(int k) { return engine_global(k) || k == P_SYN_ON || k == P_SYN_CH || k == P_KEY_LO || k == P_KEY_HI; }
+static int load_skip(int k) {
+    return engine_global(k) || k == P_SYN_ON || k == P_SYN_CH || k == P_KEY_LO || k == P_KEY_HI || k == P_SYN_SOLO;
+}
 static void load_value(inst_t *in, int c, const char *key, const char *val) {
     one_t *s = in->syn[c];
     if (!strcmp(key, "seq")) { sq_decode(val, &s->sq.q, MD_COUNT, MS_COUNT); return; }
@@ -559,6 +563,7 @@ static void *create(const char *data_dir) {
     mi_init(&in->mi);
     for (int c = 0; c < NSYN; c++)
         if (!(in->syn[c] = synth_create(in, c, pidx[c]))) { destroy(in); return NULL; }
+    for (int c = 0; c < NSYN; c++) in->solo_g[c] = 1.0f;
     return in;
 }
 
@@ -597,6 +602,24 @@ static int synth_live(one_t *s) {
     for (int i = 0; i < MAX_VOICES; i++)
         if (s->voice[i].env[ENV_AMP].stage != ENV_IDLE) return 1;
     return s->fx.ss.state == FS_RUN && s->quiet < (int64_t)(FX_TAIL_S * SR);
+}
+
+/* SOLO (syn_solo, never saved): while any Synth is soloed only the soloed ones are heard (their sends too: the master
+ * effects take these buffers). Each gain glides over about 10 ms, so a solo never clicks; a Synth another one's solo
+ * silences keeps playing (its notes and sequence go on), it is only not heard. */
+#define SOLO_GLIDE (1.0f / (0.010f * SR))
+static void solo_gain(inst_t *in, one_t *const *live, int nl, float (*sl)[128], float (*sr)[128], int n) {
+    int any = 0;
+    for (int c = 0; c < NSYN; c++) any |= in->syn[c]->val[P_SYN_SOLO] > 0.5f;
+    for (int j = 0; j < nl; j++) {
+        float *g = &in->solo_g[live[j]->idx], to = !any || live[j]->val[P_SYN_SOLO] > 0.5f ? 1.0f : 0.0f;
+        if (*g == to && to == 1.0f) continue;
+        for (int i = 0; i < n; i++) {
+            *g += *g < to ? fminf(SOLO_GLIDE, to - *g) : -fminf(SOLO_GLIDE, *g - to);
+            sl[j][i] *= *g;
+            sr[j][i] *= *g;
+        }
+    }
 }
 
 static void render_to(void *inst, int16_t *out, float *fout, int frames) {
@@ -638,6 +661,7 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         if (n > 128) n = 128;
         for (int j = 0; j < nl; j++) live[j]->ext = ext ? ext + done : NULL;
         for (int j = 0; j < nl; j++) synth_piece(live[j], n, sl[j], sr[j]);
+        solo_gain(in, live, nl, sl, sr, n);
         float *L = ml, *R = mr;   /* the mix of the Synths (one: its own buffers, as they are) */
         if (nl == 1) {
             L = sl[0];

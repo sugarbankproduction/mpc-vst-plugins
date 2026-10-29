@@ -3,7 +3,8 @@
  *   params      Synth 2 and 3 have a copy of every Synth 1 param but the shared ones; the engine agrees which are shared
  *   independent a Synth 2 or 3 param moves only that Synth; a shared one moves all three; automation of Synth 2 (on or
  *               off) leaves Synth 1's samples exactly as they were
- *   sounds      Synths 2 and 3 play their own sounds; off, they are silent and cost nothing
+ *   sounds      Synths 2 and 3 play their own sounds; off, they are silent and cost nothing; SOLO: only the soloed
+ *               ones heard (the same samples as the others turned down), never saved
  *   channels    Omni, one channel for all, Per Synth
  *   ranges      a split (each half its own Synth) and a layer (both)
  *   pool        16 voices shared: never more sounding; a new note of one Synth steals another's; No Stealing waits
@@ -35,7 +36,7 @@ static double off_default(int i) {
 static int is_transient(const char *k) {   /* not kept in a state on purpose (or readouts) */
     const char *r = !strncmp(k, "s2_", 3) || !strncmp(k, "s3_", 3) ? k + 3 : k;
     return !strcmp(r, "seq_play") || !strcmp(r, "seq_rec") || !strcmp(r, "seq_step_mod") || !strcmp(r, "seq_pos")
-           || !strcmp(r, "seq_all");
+           || !strcmp(r, "seq_all") || !strcmp(r, "syn_solo");
 }
 static int log_notes(void *e, const char *key) {   /* note-ons in a Synth's "gen_log" since the last read */
     static char b[8192];
@@ -167,6 +168,43 @@ static void multitimbral(void) {
         snprintf(what, sizeof what, "Synth 2 off: nothing of it is heard (rms %.6f)", r);
         check(r < 1e-5, what);
         E->destroy(e);
+
+        /* SOLO: Synth 2 soloed is Synth 2 alone (past the 10 ms glide: the same samples as Synth 1 turned down) */
+        void *a = two_synths(), *b = two_synths(), *c = two_synths();   /* c: no solo, rendered alongside */
+        set(b, "volume", 0);
+        set(a, "s2_syn_solo", 1);
+        note(a, 1, 57, 100);
+        note(b, 1, 57, 100);
+        note(c, 1, 57, 100);
+        static float xa[N], xb[N];
+        render_f(a, xa, N);
+        render_f(b, xb, N);
+        double worst = 0, ra = 0;
+        for (int i = SR / 50; i < N; i++) { worst = fmax(worst, fabs(xa[i] - xb[i])); ra += xa[i] * xa[i]; }
+        ra = sqrt(ra / (N - SR / 50));
+        snprintf(what, sizeof what, "SOLO Synth 2: only Synth 2 heard (largest difference to Synth 1 turned down %.2g, "
+                 "rms %.3f, %.0f Hz)", worst, ra, peak_hz(xa));
+        check(worst < 1e-6 && ra > 0.01, what);
+        set(a, "syn_solo", 1);   /* both soloed: both heard, as with no solo */
+        set(a, "s2_syn_solo", 0);
+        set(a, "syn_solo", 0);
+        render_f(c, xb, N);   /* (c catches up with a) */
+        render_f(a, xa, N);
+        render_f(c, xb, N);
+        render_f(a, xa, N);
+        render_f(c, xb, N);
+        worst = 0;
+        for (int i = 0; i < N; i++) worst = fmax(worst, fabs(xa[i] - xb[i]));
+        snprintf(what, sizeof what, "SOLO off again: both heard as before (largest difference %.2g)", worst);
+        check(worst < 1e-6, what);
+        static char st[16384];
+        set(a, "s2_syn_solo", 1);
+        int n = E->get_param(a, "state", st, sizeof st);
+        snprintf(what, sizeof what, "SOLO is not saved with the sound (state %d bytes)", n);
+        check(n > 0 && !strstr(st, "syn_solo"), what);
+        E->destroy(a);
+        E->destroy(b);
+        E->destroy(c);
     }
 
     /* ---- MIDI channels ---- */

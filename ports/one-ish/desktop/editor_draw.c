@@ -216,8 +216,14 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_TAB_RANDOM: return "RANDOM: the patch randomiser. New sounds to play with, variations of this one, locks, undo.";
     case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3:
         return "SYNTH 1 / 2 / 3 (Panel Focus): the panel, the MORE pages, the matrix and the step editor show and edit this "
-               "Synth. Ctrl-click to edit several together (keys 1 / 2 / 3 pick one, Shift+1 / 2 / 3 add one; Shift+F5/F6/F7 too). Sections marked SHARED are the same "
-               "for all three.";
+               "Synth. Ctrl-click to edit several together (keys 1 / 2 / 3 pick one, Shift+1 / 2 / 3 add one; Shift+F5/F6/F7 too). "
+               "Double-click mutes or unmutes it, Shift-click solos it. Sections marked SHARED are the same for all three.";
+    case Z_MUTE1: case Z_MUTE2: case Z_MUTE3:
+        return "M (MUTE): red, this Synth is off (its ON on the SETUP page): it stops and plays nothing. Saved with the "
+               "sound. Double-clicking the SYNTH button does the same.";
+    case Z_SOLO1: case Z_SOLO2: case Z_SOLO3:
+        return "S (SOLO): lit, you hear only the soloed Synths (several can be); the others keep playing silently. Not "
+               "saved with the sound: a listening aid. Shift-click the SYNTH button does the same.";
     case Z_TAB_SETUP: return "SETUP: the three Synths side by side: on, MIDI channel, key range (splits and layers), "
                              "transpose, octave, voices, level, pan, sends; then MIDI, master level, PLAY ALL.";
     case Z_TAB_SEQ: return "SEQ: the step sequencer's step editor (64 steps in four pages, note lanes and modulation lanes). "
@@ -867,6 +873,24 @@ static void panel_button(HDC dc, const RECT *r, const char *label, int lit, int 
     text_c(dc, cx, (int)y + bh + sc(5), rw(r) + sc(10), sc(14), label, font_label, hot ? T_HOT : T_LABEL);
 }
 
+/* SYNTH c: the select cap (lit: in focus), the M | S split cap (M red: off; S lit: soloed), the label under both */
+static void synth_button(HDC dc, ed_t *e, int c, const char *label) {
+    const RECT *z = &L.focus[c];
+    if (!vis(z, sc(8))) return;
+    RECT cap = focus_part(c, 0), m = focus_part(c, 1), s = focus_part(c, 2);
+    int hot = e->hover == Z_FOCUS1 + c, mhot = e->hover == Z_MUTE1 + c, shot = e->hover == Z_SOLO1 + c;
+    int muted = synth_muted(e, c), solo = synth_soloed(e, c);
+    skin_button((float)cap.left, (float)cap.top, (float)rw(&cap), (float)rh(&cap), SK_CONSOLE,
+                e->focus_mask >> c & 1u ? SK_ON : hot ? SK_HOT : SK_UP);
+    skin_button((float)m.left, (float)m.top, (float)rw(&m), (float)rh(&m), muted ? SK_RED : SK_BLACK,
+                muted ? SK_ON : mhot ? SK_HOT : SK_UP);
+    skin_button((float)s.left, (float)s.top, (float)rw(&s), (float)rh(&s), SK_CONSOLE, solo ? SK_ON : shot ? SK_HOT : SK_UP);
+    text(dc, &m, "M", font_tiny, muted ? RGB(255, 236, 228) : mhot ? T_HOT : T_LABEL, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    text(dc, &s, "S", font_tiny, solo ? RGB(40, 34, 24) : shot ? T_HOT : T_LABEL, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    int cx = (z->left + z->right) / 2;
+    text_c(dc, cx, cap.bottom + sc(5), rw(z) + sc(10), sc(14), label, font_label, hot || mhot || shot ? T_HOT : T_LABEL);
+}
+
 static void encoder_geom(float *cx, float *cy, float *r) {
     *r = (float)sc(31);
     *cx = (float)((L.encoder.left + L.encoder.right) / 2);
@@ -883,7 +907,8 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.tab_seq, "SEQ", e->screen == SCR_SEQ, e->hover == Z_TAB_SEQ);
     static const char *const FOCUS_NAME[NSYNTHS] = {"SYNTH 1", "SYNTH 2", "SYNTH 3"};
     for (int c = 0; c < NSYNTHS; c++)   /* PANEL FOCUS: lit = the panel shows (and edits) that Synth */
-        panel_button(dc, &L.focus[c], FOCUS_NAME[c], e->focus_mask >> c & 1u, e->hover == Z_FOCUS1 + c);
+        if (NSYNTHS > 1) synth_button(dc, e, c, FOCUS_NAME[c]);
+        else panel_button(dc, &L.focus[c], FOCUS_NAME[c], e->focus_mask >> c & 1u, e->hover == Z_FOCUS1 + c);
     panel_button(dc, &L.tab_setup, "SETUP", e->screen == SCR_SETUP, e->hover == Z_TAB_SETUP);
     panel_button(dc, &L.tab_settings, "SETTINGS", e->screen == SCR_SETTINGS, e->hover == Z_TAB_SETTINGS);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);

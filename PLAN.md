@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 417 have,
-  17 partial, 41 missing, 27 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 418 have,
+  16 partial, 41 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -222,7 +222,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      2026-10-29): Synths 2 and 3 off cost nothing measurable (1, 4, 8 voices 9.40, 33.91, 67.20 us against 9.15, 33.69,
      66.07 before: within 3%); 16 voices 135 us (8.4 a voice); 16 voices of a busy patch with a chorus 124 us in Synth 1
      alone, 134 us shared 6/5/5 by three Synths with a chorus each (+8%: two more synth effects).
-     Left: per-Synth outputs, solo, sequencer OUTPUT to another Synth, the sustain pedal's target, a range set by
+     Left (solo and the M | S buttons done 2026-10-29): per-Synth outputs, sequencer OUTPUT to another Synth, the sustain pedal's target, a range set by
      pressing a key, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
   13. The library (audit packages 5, 12a, 12b). Done 2026-10-29 (offline and the desktop window; `desktop/library.c`,
      `docs/PATCHES.md`): UNDO / REDO of any edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, the

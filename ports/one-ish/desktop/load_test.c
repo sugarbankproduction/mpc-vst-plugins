@@ -1534,6 +1534,41 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
         px[c] = grab(child, w, h);
         if (c == 1 && bmp) shot(child, w, h, bmp, "_focus2");
     }
+    {   /* the M | S halves beside each SYNTH button, and a double-click on the button itself */
+        static const short *const FZ[3] = {ZONE_FOCUS1, ZONE_FOCUS2, ZONE_FOCUS3};
+        float on0 = getkey(fx, "s2_syn_on"), s3_was = getkey(fx, "s3_syn_on");
+        click(child, s, FZ[1][0] + 30.5f, FZ[1][1] + 12.0f);   /* Synth 2's M */
+        float on1 = getkey(fx, "s2_syn_on");
+        click(child, s, FZ[1][0] + 30.5f, FZ[1][1] + 12.0f);
+        float on2 = getkey(fx, "s2_syn_on");
+        snprintf(what, sizeof what, "Synth 2's M switches it off and on (ON %.0f -> %.0f -> %.0f)", on0, on1, on2);
+        check(on0 != on1 && on2 == on0, what);
+        click(child, s, FZ[2][0] + 40.5f, FZ[2][1] + 12.0f);   /* Synth 3's S */
+        float so1 = getkey(fx, "s3_syn_solo"), so_other = getkey(fx, "s2_syn_solo");
+        click(child, s, FZ[2][0] + 40.5f, FZ[2][1] + 12.0f);
+        float so2 = getkey(fx, "s3_syn_solo");
+        snprintf(what, sizeof what, "Synth 3's S solos it and lets go (%.0f, %.0f; Synth 2's solo %.0f)", so1, so2, so_other);
+        check(so1 == 1.0f && so2 == 0.0f && so_other == 0.0f, what);
+        if (bmp) {   /* a picture: Synth 2 muted, Synth 3 soloed */
+            setkey(fx, "s2_syn_on", 0.0f); setkey(fx, "s3_syn_on", 1.0f); setkey(fx, "s3_syn_solo", 1.0f);
+            InvalidateRect(child, NULL, FALSE);
+            shot(child, w, h, bmp, "_mute_solo");
+            setkey(fx, "s3_syn_solo", 0.0f);
+        }
+        float m0 = getkey(fx, "s3_syn_on");
+        LPARAM at = MAKELPARAM((int)lroundf((FZ[2][0] + 12) * s), (int)lroundf((FZ[2][1] + 12) * s));
+        SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);
+        SendMessageA(child, WM_LBUTTONUP, 0, at);
+        SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, at);
+        SendMessageA(child, WM_LBUTTONUP, 0, at);
+        float m1 = getkey(fx, "s3_syn_on");
+        intptr_t f = fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0);
+        snprintf(what, sizeof what, "a double-click on SYNTH 3 picks it and mutes it (focus %d, ON %.0f -> %.0f)",
+                 (int)(f % 4), m0, m1);
+        check(f % 4 == 2 && m0 != m1, what);
+        setkey(fx, "s2_syn_on", on0);
+        setkey(fx, "s3_syn_on", s3_was);
+    }
     click_zone(child, s, ZONE_FOCUS1);
     px[3] = grab(child, w, h);
     int ok = px[0] && px[1] && px[2] && px[3];

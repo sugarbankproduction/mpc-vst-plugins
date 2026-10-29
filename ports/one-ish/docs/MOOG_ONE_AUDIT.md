@@ -79,7 +79,7 @@ user patch files (2026-10-27, offline).
 | SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Have | MATRIX (the MOD screen), the PATCHES page's SAVE / DELETE, and COMPARE and SNAPSHOT on the console (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); SETTINGS on the console (2026-10-29, the desktop window; `docs/SETTINGS.md`) | - | none |
 | SHIFT: fine resolution on soft knobs, latching shift [UI] | p14 | Have | Shift-drag is the fine resolution on every knob (`editor.c`); a latching shift isn't needed with a keyboard modifier | - | none |
 | New initialised preset (SHIFT + COMPARE) | p14 | Have | The "Init" program | - | none |
-| Panel Focus: SYNTH 1/2/3, multi-select for joint edits, SHIFT = solo [UI][MULTI] | p14-15 | Partial | SYNTH 1/2/3 buttons on the console: the panel, MORE pages, matrix, step editor and randomiser show and edit that Synth; Ctrl-click edits several together (the last picked shown); shared sections marked SHARED (2026-10-28, offline and the desktop window); no solo | S (solo) | none |
+| Panel Focus: SYNTH 1/2/3, multi-select for joint edits, SHIFT = solo [UI][MULTI] | p14-15 | Have | SYNTH 1/2/3 buttons on the console: the panel, MORE pages, matrix, step editor and randomiser show and edit that Synth; Ctrl-click edits several together (the last picked shown); shared sections marked SHARED (2026-10-28, offline and the desktop window). Solo: Shift-click a SYNTH button or its S half (`syn_solo`, not saved; only the soloed Synths heard, a 10 ms glide); its M half (or a double-click) switches the Synth's ON, red while off; keys 1-3 pick a Synth (2026-10-29, offline and the desktop window) | - | none |
 | Keyboard Control: per-Synth ON, LOW/HIGH RANGE key zone, both = full G0..C10 [MULTI] | p15 | Partial | `syn_on`, `key_lo`, `key_hi` per Synth (SETUP page), as note names (2026-10-28, offline and the desktop window); set by value, not by pressing LOW RANGE and then a key | S | none |
 | Expression Assign buttons: MW, PAD X, PAD Y, KB, VEL, AT, EXP 1 [UI] | p15, p68 | Missing | Matrix slots set by hand | M | none |
 | Selecting presets from the browser (list, timbre pane, tag pane, tag filters) [UI] | p15-16 | Partial | The PATCHES page lists factory presets and user patches and loads on a click; PREV/NEXT and the PRESET knob step through them; the TAGS page filters the list and PREV/NEXT by TYPE, CATEGORY, MOOD and GROUP (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no timbre pane | see 20 | none |
@@ -837,7 +837,7 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | Module | Have | Partial | Missing | Missing [HW] | Missing [UI] |
 |---|---|---|---|---|---|
 | 0. Architecture and overview (p8-10) | 8 | 2 | 0 | 0 | 0 |
-| 1. Front panel, centre console, keyboard (p10-18) | 9 | 4 | 3 | 1 | 2 |
+| 1. Front panel, centre console, keyboard (p10-18) | 10 | 3 | 3 | 1 | 2 |
 | 2. Rear panel (p19-21) | 1 | 2 | 3 | 3 | 0 |
 | 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
@@ -860,7 +860,7 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
 | 22. Settings (p124-139) | 15 | 2 | 14 | 11 | 1 |
 | 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
-| **Total** | **417** | **17** | **41** | **27** | **8** |
+| **Total** | **418** | **16** | **41** | **27** | **8** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -898,7 +898,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after packages 8, 14a and 16: 34 and 35; then packages 3, 4 and 2's leftovers: 12 and 17). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after packages 8, 14a and 16: 34 and 35; then packages 3, 4 and 2's leftovers: 12 and 17; solo: 12 and 16). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -1093,7 +1093,7 @@ effect: up to 3 synth effects and 2 master effects at once).
   and sequencer; ON, key range, MIDI channel per Synth; one 16-voice pool with each Synth's poly count; a synth effect
   and two sends per Synth into the shared master effects; Panel Focus with multi-select and Shift/Ctrl+F5-F7; a SETUP
   page; INTO S1/2/3 and SAVE S1/2/3 on the PATCHES page; PLAY ALL; the randomiser per Synth; three factory
-  performances. Left: per-Synth outputs (MAIN / SUB), solo, setting a range by pressing a key, sequencer OUTPUT to
+  performances. Solo and M | S buttons done 2026-10-29. Left: per-Synth outputs (MAIN / SUB), setting a range by pressing a key, sequencer OUTPUT to
   another Synth, the sustain pedal's target, timbre names on the home line, the master effects moved by Synth 2 and
   3's matrices (NRPN for Synths 2 and 3: done with package 14a, 2026-10-29).
 - Three timbres per preset, each with every sound setting, its own arp and sequencer; split, layer and zones (per

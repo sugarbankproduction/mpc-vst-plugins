@@ -624,6 +624,7 @@ pad_y_pos
 eg_times
 arp_follow_swing
 seq_host_ss
+syn_solo
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1618,3 +1619,5 @@ s2_arp_follow_swing
 s2_seq_host_ss
 s3_arp_follow_swing
 s3_seq_host_ss
+s2_syn_solo
+s3_syn_solo
