@@ -12,7 +12,7 @@
  * a new sound, MUTATE a variation of this one by AMOUNT, the lock buttons keep sections as they are, UNDO / REDO step
  * through the last RND_HIST sounds (the focused Synth's; ALL 3 SYNTHS or Shift+R / Shift+M change all three, R and M
  * are RANDOMISE and MUTATE). WILD sets how strange both get; the ARPEGGIATOR, GENERATIVE and SEQUENCER ticks add those
- * sections (SEQUENCER: its settings and modulation lanes; rnd_seq_notes is the hook for a sequence generator). Each
+ * sections (SEQUENCER: its settings and modulation lanes; notes from the sequence generator, seq_random_notes in seq_page.c). Each
  * result is set param by param through the same path as a knob (setParameter,
  * audioMasterAutomate between begin/end edit), so the host and the window follow it.
  *
@@ -547,40 +547,26 @@ static void rnd_apply(ed_t *e, const float *target) {
         if (i != link && fabsf(target[i] - cur[i]) > 1e-7f) edit_value(e, i, target[i]);
     if (link >= 0 && target[link] > 0.5f) edit_value(e, link, target[link]);
 }
-/* SEQUENCER lit: the hook for a sequence generator (notes written into the focused Synth's steps, before the
- * sequencer's settings and lanes are made). Nothing yet: the steps' notes stay as they are. */
-static void rnd_seq_notes(ed_t *e, int mutate, uint32_t *seed) {
-    (void)e; (void)mutate; (void)seed;
-}
-static int rnd_seq_has_notes(ed_t *e) {   /* the focused Synth's sequence has a note to play (within its length) */
-    seq_read(e);
-    int len = e->sq.len < 1 ? 1 : e->sq.len > SQ_STEPS ? SQ_STEPS : e->sq.len;
-    for (int s = 0; s < len; s++)
-        for (int l = 0; l < SQ_NL && !(e->sq.q.rest >> s & 1u); l++)
-            if (sq_has(&e->sq.q.n[s][l])) return 1;
-    return 0;
-}
 /* a new sound for the focused Synth: RANDOMISE (0) or MUTATE (1) of cur; returns the archetype (RANDOMISE). SEQUENCER
  * lit: its notes (the hook), then its modulation lanes go to the engine here, the settings with the rest of out. */
 static int rnd_make(ed_t *e, const float *cur, float *out, int mutate) {
     rnd_opts_t o = {e->rnd_wild, e->rnd_also, 0};
     int seq = e->rnd_also >> RS_SEQ & 1u;
-    if (seq) {
-        rnd_seq_notes(e, mutate, &e->rnd_seed);
-        o.seq_notes = rnd_seq_has_notes(e);
-    }
+    if (seq) o.seq_notes = 1;   /* (the sequence always has notes after: kept, or new ones from the generator below) */
     int a = mutate ? (rnd_mutate_x(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed, &o), 0)
                    : rnd_generate_x(cur, out, e->rnd_locks, &e->rnd_seed, &o);
     for (int i = 0; i < NPARAMS && e->focus; i++)   /* Synth 2 or 3: the shared master effects stay as they are */
         if (shared_param(i)) out[i] = cur[i];
-    if (seq) {
+    if (seq) {   /* the notes (the sequence generator, in the key just picked), then the lanes: one load */
         static sq_seq_t q;
-        int li = rnd_key("seq_length");
+        int li = rnd_key("seq_length"), ki = rnd_key("key_root"), si = rnd_key("key_scale");
+        int len = li < NPARAMS ? (int)lroundf(rnd_real(li, out[li])) : 16;
+        int key = ki < NPARAMS ? (int)lroundf(rnd_real(ki, out[ki])) : 0;
+        int scale = si < NPARAMS ? (int)lroundf(rnd_real(si, out[si])) : KS_MINOR;
         seq_read(e);
         q = e->sq.q;
-        if (rnd_seq_lanes(q.m, li < NPARAMS ? (int)lroundf(rnd_real(li, out[li])) : 16, out, mutate, e->rnd_amount, &o,
-                          &e->rnd_seed))
-            seq_load(e, &q);
+        int notes = seq_random_notes(e, mutate, e->rnd_amount, e->rnd_wild, key, scale, len, &e->rnd_seed, &q);
+        if (rnd_seq_lanes(q.m, len, out, mutate, e->rnd_amount, &o, &e->rnd_seed) | notes) seq_load(e, &q);
     }
     return a;
 }

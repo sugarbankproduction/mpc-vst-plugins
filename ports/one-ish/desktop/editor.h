@@ -279,6 +279,8 @@ void seq_panel_draw(HDC dc, ed_t *e);
 const char *seq_zone_help(ed_t *e, int z);
 void seq_help(ed_t *e, char *out, int n);
 void seq_load(ed_t *e, const sq_seq_t *q);   /* a whole sequence into the focused Synth's sequencer (the randomiser's lanes) */
+int seq_random_notes(ed_t *e, int mutate, float amount, float wild, int key, int scale, int len, uint32_t *seed,
+                     sq_seq_t *q);          /* the randomiser's SEQUENCER tick: new notes into q (1) or kept (0) */
 const char *seq_message(ed_t *e);
 RECT seq_help_rect(void);
 intptr_t seq_test(ed_t *e, intptr_t op, char *buf);

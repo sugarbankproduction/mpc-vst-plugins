@@ -187,9 +187,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      heard and safe). Three tick buttons, ARPEGGIATOR, GENERATIVE and SEQUENCER (off by default): lit, that section is
      randomised too (arp on, pattern, octaves, division, gate, swing; Euclid, Turing, KEY and SCALE; the sequencer's
      on, division, length, swing, triggering and transposing by the keys (only if it has notes) and its modulation
-     lanes). The sequencer has no play-direction setting. Not done: the steps' notes (a sequence generator,
-     `src/seqgen.h`, is a separate job: editor.c's `rnd_seq_notes()` is the empty hook for it); the randomiser's UNDO
-     does not bring back the lanes (Ctrl+Z does).
+     lanes). The sequencer has no play-direction setting. The steps' notes too (wired at the merge, 2026-10-29):
+     RANDOMISE writes a pattern with the sequence generator (`seq_random_notes`, desktop/seq_page.c: random GEN options,
+     wider with WILD, in the KEY and SCALE just picked), MUTATE keeps the notes or with probability AMOUNT makes new ones;
+     load_test checks every note is in key. The randomiser's UNDO does not bring back the sequence (Ctrl+Z does).
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27

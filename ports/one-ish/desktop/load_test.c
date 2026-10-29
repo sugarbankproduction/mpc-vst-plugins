@@ -24,6 +24,7 @@
 #define TEST_FOCUS 0x4F314643      /* as editor.h: the Panel Focus */
 #include "patches.h"   /* TEST_PATCH and its operations, for the user patch tests */
 #include "seq_page.h"   /* TEST_SEQ and its operations, for the step sequencer's page */
+#include "../src/keyscale.h"   /* KEY and SCALE: the randomiser's SEQUENCER tick writes notes in them */
 #include "settings.h"   /* TEST_SETTINGS and its operations, for the SETTINGS page */
 #include "../src/stepseq.h"   /* to read back the sequence the engine holds */
 
@@ -369,6 +370,31 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         rnd_click(child, s, RP_WILD, 0);
         rnd_click(child, s, RP_ALSO, 0);
         rnd_click(child, s, RP_ALSO, 1);
+    }
+    /* the SEQUENCER tick: RANDOMISE writes a pattern with the sequence generator, every note in the Synth's KEY and
+     * SCALE (as the randomiser left them) */
+    {
+        rnd_click(child, s, RP_ALSO, 2);
+        rnd_click(child, s, RP_GO, 0);
+        int key = (int)lroundf(fx->getParameter(fx, rnd_key("key_root")) * 11),
+            scale = (int)lroundf(fx->getParameter(fx, rnd_key("key_scale")) * (KS_COUNT - 1));
+        static char b[SQT_BUF];
+        sq_seq_t q;
+        sq_clear(&q);
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_TEXT, b, 0);   /* (the focused Synth's) */
+        int dec = sq_decode(b, &q, 4096, 4096), notes = 0, in_key = 1;
+        for (int st = 0; st < SQ_STEPS; st++)
+            for (int l = 0; l < SQ_NL; l++)
+                if (sq_has(&q.n[st][l])) {
+                    int pc = ((q.n[st][l].note - key) % 12 + 12) % 12, in = 0;
+                    for (int i = 0; i < KS_SIZE[scale]; i++) in |= KS_STEPS[scale][i] == pc;
+                    in_key &= in;
+                    notes++;
+                }
+        snprintf(what, sizeof what, "SEQUENCER lit: RANDOMISE writes a pattern (%d notes, all in the Synth's key and scale: %d)",
+                 notes, in_key);
+        check(dec && notes > 0 && in_key, what);
+        rnd_click(child, s, RP_ALSO, 2);
     }
 
     /* the keys R and M, and ALL 3 SYNTHS: params changed per Synth (by the key's "s2_" / "s3_" prefix) */

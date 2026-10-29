@@ -702,6 +702,43 @@ static void gen_run(ed_t *e, int reroll) {
     say(e, "Synth %d: a %s pattern in %s %s, %d of %d steps playing (seed %u). RE-ROLL for another; Ctrl+Z undoes it.",
         e->focus + 1, GEN_STYLES[o.style], gen_key_name(e), gen_scale_name(e), played, o.len, (unsigned)*seed);
 }
+/* the randomiser's SEQUENCER tick (2026-10-29): RANDOMISE writes a new pattern into q (random generator options, wider
+ * as WILD rises, in the key and scale the randomiser just picked); MUTATE keeps the notes, or with probability AMOUNT
+ * makes new ones with the Synth's GEN options (always, if there are none). The options and seed land in the GEN view.
+ * 1: q has new notes (its lanes are the randomiser's to fill next). */
+static uint32_t rn_next(uint32_t *s) {
+    uint32_t x = *s ? *s : 1;
+    x ^= x << 13; x ^= x >> 17; x ^= x << 5;
+    return *s = x;
+}
+static int rn_range(uint32_t *s, int lo, int hi) { return hi <= lo ? lo : lo + (int)(rn_next(s) % (uint32_t)(hi - lo + 1)); }
+int seq_random_notes(ed_t *e, int mutate, float amount, float wild, int key, int scale, int len, uint32_t *seed,
+                     sq_seq_t *q) {
+    int has = 0;
+    for (int s = 0; s < len && s < SQ_STEPS && !has; s++)
+        for (int l = 0; l < SQ_NL && !(q->rest >> s & 1u); l++) has |= sq_has(&q->n[s][l]);
+    if (mutate && has && (rn_next(seed) % 1000u) >= (uint32_t)(amount * 1000.0f)) return 0;
+    seqgen_opts_t *o = gen_opts(e);
+    if (!mutate) {
+        int w = (int)lroundf(wild * 100.0f);
+        o->style = rn_range(seed, 0, SG_STYLES - 1);
+        o->rhythm = rn_range(seed, 0, SG_RHYTHMS - 1);
+        o->density = rn_range(seed, 35 - w / 5, 80 + w / 5);
+        o->range = rn_range(seed, 1, 2 + w / 50);
+        o->variation = rn_range(seed, 10, 60 + w * 4 / 10);
+        o->accent = rn_range(seed, 20, 80);
+        o->fills = rn_range(seed, 0, 40 + w * 6 / 10);
+        o->mods = rn_range(seed, 0, 50 + w / 2);
+    }
+    uint32_t *gs = &e->sq.gen_seed[gen_synth(e)];
+    *gs = rn_next(seed) % 99999u + 1;
+    seqgen_opts_t op = *o;
+    op.len = len < 1 ? 1 : len > SQ_STEPS ? SQ_STEPS : len;
+    uint32_t sd = *gs;
+    seqgen_make(&op, key, scale, &sd, q);
+    return 1;
+}
+
 /* the values row: KEY and SCALE (the focused Synth's params), LENGTH, SEED (a new one generates at once) */
 static void gen_field_step(ed_t *e, int f, int d) {
     if (f == 0 && P_KEY >= 0) set_option(e, P_KEY, ((gen_key(e) + d) % 12 + 12) % 12);
