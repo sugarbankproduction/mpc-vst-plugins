@@ -1319,6 +1319,33 @@ static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp
         check(st(fx, STT_MAP, NULL, NULL, 0) == 0 && !file_has(settings_file, "map="), "LEARN: CLEAR ALL empties the map");
     }
 
+    /* MICROTUNING: a Scala scale and keyboard map from the repo's test files into Synth 1, kept in the project and in a
+     * patch file; the TUNING tab's picture shows them (then they are cleared) */
+    const char *scl = "ports/one-ish/test/scales/ji-5-limit.scl", *kbm = "ports/one-ish/test/scales/ji-on-d.kbm";
+    if (GetFileAttributesA(scl) != INVALID_FILE_ATTRIBUTES) {
+        int ok1 = (int)st(fx, STT_TUN_LOAD, scl, NULL, 0), ok2 = (int)st(fx, STT_TUN_LOAD, kbm, NULL, 1);
+        st(fx, STT_TUN_NAMES, NULL, buf, 0);
+        void *chunk = NULL;
+        intptr_t n = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+        int in_project = n > 0 && chunk && strstr(chunk, ";tun_scl=ji-5-limit|12,") && strstr(chunk, ";tun_kbm=ji-on-d|");
+        snprintf(what, sizeof what, "TUNING: a .scl and a .kbm load into Synth 1 (\"%s\") and go into the project", buf);
+        check(ok1 == 1 && ok2 == 1 && !strcmp(buf, "ji-5-limit|ji-on-d") && in_project, what);
+        pt(fx, PT_SAVE_AS, "Tuning Test", NULL, 1);
+        st(fx, STT_TUN_CLEAR, NULL, NULL, 0);
+        st(fx, STT_TUN_CLEAR, NULL, NULL, 1);
+        st(fx, STT_TUN_NAMES, NULL, buf, 0);
+        int cleared = !strcmp(buf, "|");
+        pt(fx, PT_LOAD, "Tuning Test", NULL, 0);
+        st(fx, STT_TUN_NAMES, NULL, buf, 0);
+        snprintf(what, sizeof what, "TUNING: CLEAR takes them off (%s); a user patch brings them back (\"%s\")",
+                 cleared ? "yes" : "NO", buf);
+        check(cleared && !strcmp(buf, "ji-5-limit|ji-on-d"), what);
+        check(st(fx, STT_TUN_LOAD, "ports/one-ish/test/scales/ji-on-d.kbm", NULL, 0) == 0,
+              "TUNING: a keyboard map loaded as a scale is refused");
+    } else {
+        printf("     (TUNING: the test scales aren't here; run from the repo root to check them)\n");
+    }
+
     if (bmp) {
         for (int t = 0; t < ST_TABS; t++) {
             static const char *const SUFFIX[ST_TABS] = {"_settings", "_settings_midi_empty", "_settings_library",
@@ -1327,6 +1354,9 @@ static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp
             shot(child, w, h, bmp, SUFFIX[t]);
         }
     }
+    if (pt(fx, PT_LOAD, "Tuning Test", NULL, 0) == PE_OK) pt(fx, PT_DELETE, NULL, NULL, 0);
+    st(fx, STT_TUN_CLEAR, NULL, NULL, 0);
+    st(fx, STT_TUN_CLEAR, NULL, NULL, 1);
     st(fx, STT_RESTORE, NULL, NULL, 0);
 }
 

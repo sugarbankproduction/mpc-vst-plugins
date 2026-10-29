@@ -139,6 +139,8 @@ o2_wave=0
   case, every parameter off its default (its output gives the bytes), and fails when it leaves less than 15% of the
   desktop chunk free or no longer fits the MPC's in either form (2026-10-28, offline). A state too big for the chunk is
   never saved cut short: nothing is saved, the engine says so on stderr and the window on its screen.
+- A Synth's microtuning (2026-10-29, `docs/SETTINGS.md`), when it has one, is one or two more lines, `tun_scl=` and
+  `tun_kbm=` (`s2_` / `s3_` for Synths 2 and 3), in the engine's compact form (`src/tuning.h`).
 - The step sequencer's steps, when there are any, are one more line, `seq=<text>` (the engine's own form, see
   `docs/SEQUENCER.md`): a patch keeps its sequence, and loading a patch without the line empties the sequencer
   (2026-10-27, offline). A typical sequence adds a few hundred characters.

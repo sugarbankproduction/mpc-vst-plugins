@@ -2,7 +2,8 @@
 
 Added 2026-10-29, tested offline (`test/midi_check.c` through `test/run.sh`) and in the desktop window (`load_test.exe`),
 not yet by the owner in Carla. After the Moog One manual's SETTINGS screen (p124-139). Code: `desktop/settings.c`
-(the page and the file), `src/midi_in.h` and `src/midi_in_run.h` (the engine's side: settings, MIDI learn, NRPN).
+(the page and the file), `src/midi_in.h` and `src/midi_in_run.h` (the engine's side: settings, MIDI learn, NRPN),
+`desktop/scala.c` and `src/tuning.h` (microtuning).
 
 ## What it is
 
@@ -56,6 +57,26 @@ there are, the version and the build date.
 **TUNING**: MASTER FREQUENCY (400-480 Hz) and MASTER FINE TUNE (+-100 cents). These two stay part of the sound, as they
 always were (shared by its three Synths), so old sounds keep their tuning.
 
+Below them, **microtuning** for the Synth in focus (beyond the Moog One manual; audit package 16):
+
+- **SCALE: LOAD .SCL** picks a Scala scale file (the format of the free Scala program; thousands of scales are
+  published in it). **CLEAR** goes back to the usual 12-tone tuning.
+- **KEYBOARD MAP: LOAD .KBM** picks a Scala keyboard map: which key plays the scale's first degree, which key has which
+  frequency (the reference), and which keys play which degree or are left out (silent). Without one, key 60 (middle C)
+  plays the first degree at its usual pitch and every key up or down the next degree.
+- The scale and map belong to the sound: they are saved with the project, in patch files (`tun_scl=` / `tun_kbm=`
+  lines), and go with SAVE S1/2/3 and INTO S1/2/3. Each Synth has its own. Master tune and fine tune still move
+  everything. A sound without a scale (every sound made before) plays exactly as before.
+- While gliding, the pitch moves smoothly between the two keys' tuned pitches. Pitch tracking (an oscillator's TRACK)
+  follows the tuned pitches; the filters' keyboard tracking and the matrix's Keyboard source still count keys.
+- Loading a scale is not a parameter move, so a host may not mark the project as changed; save it after loading one.
+
+Tested offline (`test/tuning_check.c` with the files in `test/scales/`): a 12-tone equal scale gives exactly the usual
+samples; 19-EDO puts every key a 19th of an octave from key 60 (within 0.001 cent); 5-limit just intonation with a
+keyboard map (D as the first degree, A at 440 Hz, G# left out) gives the just pitches and a silent G#. CPU (PC,
+2026-10-29, `test/run.sh`'s bench): 8 gliding voices 62.63 us per 128-frame block without a scale, 63.60 with 19-EDO
+(+1.5%, about 0.12 us a voice); without a scale nothing changes.
+
 ## The file
 
 `%USERPROFILE%\Documents\ONE-ish\Settings.txt` (beside the Patches folder; `%APPDATA%\ONE-ish` when Documents is
@@ -87,6 +108,12 @@ NRPN selection per channel), not in any state; `get_param("midicfg")`, `"midimap
 which are exactly the behaviour from before, plus NRPN input. In `midi()`: NRPN, then a learned CC, then the pedals'
 numbers; a param set from MIDI is reported through `mpc_engine_changed`. Nothing allocates, locks or touches a file
 there; the table changes only through the command (the wrapper's engine lock, from the window's thread).
+
+Microtuning: the window reads the file (`desktop/scala.c`) and sends a compact text as `tunscl<n>\n<name>|<count>,<cents
+...>` or `tunkbm<n>\n<name>|<size>,<first>,<last>,<middle>,<ref>,<freq>,<octave>,<map ...>` (`tunclear<n>` both off).
+The engine (`src/tuning.h`) works out a 128-key pitch table from it, outside the audio path, and keeps the texts in
+the state as `tun_scl=` / `tun_kbm=` (`s2_` / `s3_` for Synths 2 and 3); `get_param("tun_pitch<key>")` reads a key's
+pitch (tests).
 
 MIDI LEARN listens to the host's MIDI in the window's layer (`settings_midi_seen`, on the host's thread: one atomic word
 with the last CC, a count and the 14-bit mark); the window's timer picks it up 250 ms after it came, so the LSB can

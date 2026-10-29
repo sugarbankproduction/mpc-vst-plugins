@@ -262,6 +262,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      with 7/14-BIT, DELETE, CLEAR ALL and the reserved CCs), kept in the settings file and sent to every engine as a
      fixed 128-entry table; NRPN input after the manual's table for all three Synths (the wrapper's own param-index NRPN
      is off for ONE-ish). A learned CC or an NRPN moves its param as host automation would, and the host is told.
+     Microtuning on the TUNING tab: a Scala `.scl` scale and `.kbm` keyboard map per Synth, read by the window, kept
+     in the sound (state, patches, SAVE / INTO SYNTH); master tune and fine tune still apply; tested offline with
+     12-TET (identical samples), 19-EDO and just intonation with a keyboard map (`ports/one-ish/test/scales/`).
+     Left: MIDI out of the plugin's notes (package 14b); the sustain pedal's target Synth; the owner's check in Carla.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

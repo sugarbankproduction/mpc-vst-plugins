@@ -1,9 +1,13 @@
-/* MIDI input settings, MIDI learn, NRPN and microtuning (src/midi_in.h, src/midi_in_run.h, src/tuning.h): included by
- * offline_check.c after the multitimbral checks, so it uses that file's helpers (check, set, note, patch, render_f,
- * peak_hz, get, setkv, gen_events, gen_render_pos, gen_pick ...).
+/* MIDI input settings, MIDI learn and NRPN (src/midi_in.h, src/midi_in_run.h): included by offline_check.c after the
+ * multitimbral checks, so it uses that file's helpers (check, set, note, patch, render_f, peak_hz, get, setkv,
+ * gen_events, gen_render_pos, gen_pick ...). Microtuning: test/tuning_check.c.
  *   settings  the "midicfg" command: defaults are exactly a fresh instance's samples; RECEIVE CLOCK off ignores the
  *             host's tempo and song position (the arp runs at the page's own tempo) and on again follows the host;
- *             the pedals' CC numbers (sustain on another CC holds notes, its old CC no longer does; EXP 1 / EXP 2) */
+ *             the pedals' CC numbers (sustain on another CC holds notes, its old CC no longer does; EXP 1 / EXP 2)
+ *   nrpn      every number of the manual's table finds its param in each Synth; 14 bits and the MSB alone; options in
+ *             the manual's bands; synced and free rates and times each in their own mode; MONO; MASTER VOLUME; an RPN
+ *             deselects; the host is told (mpc_engine_changed)
+ *   learn     the CC map: reserved CCs, a 14-bit pair's LSB and nonsense refused; 7-bit, 14-bit, an option */
 
 static void midicfg(void *e, const char *text) {
     char b[512];

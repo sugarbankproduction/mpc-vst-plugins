@@ -288,8 +288,9 @@ static void parse(char *t, char *state, int n, parsed_t *r) {
         trim(key);
         trim(val);
         if (!strcmp(key, "name")) { snprintf(r->name, sizeof r->name, "%s", val); continue; }
-        if (!strcmp(key, "seq") || !strcmp(key, "s2_seq") || !strcmp(key, "s3_seq")) {   /* a Synth's steps (src/stepseq.h
-                                                                                           * text): passed on as they are */
+        const char *base = key[0] == 's' && (key[1] == '2' || key[1] == '3') && key[2] == '_' ? key + 3 : key;
+        if (!strcmp(base, "seq") || !strcmp(base, "tun_scl") || !strcmp(base, "tun_kbm")) {   /* a Synth's steps
+                                                  * (src/stepseq.h) or scale and keyboard map (src/tuning.h): as they are */
             int len = snprintf(NULL, 0, ";%s=%s", key, val);
             if (used + len >= n) { r->bad++; continue; }
             used += snprintf(state + used, n - used, ";%s=%s", key, val);

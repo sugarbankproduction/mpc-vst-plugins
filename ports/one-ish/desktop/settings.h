@@ -29,6 +29,9 @@ enum { STT_GET = 1,   /* buf <- the settings as the file holds them */
        STT_MAP_DELETE,  /* mapping opt: deleted */
        STT_MAP_CLEAR,   /* every mapping deleted, without asking */
        STT_MESSAGE,   /* buf <- the page's last message */
+       STT_TUN_LOAD,  /* a Scala file (buf: its path; opt 0 .scl, 1 .kbm) into the Synth in focus; 1 loaded */
+       STT_TUN_CLEAR,   /* opt 0: the scale off; 1: the keyboard map back to the default */
+       STT_TUN_NAMES,   /* buf <- "<scale name>|<map name>" of the Synth in focus ("" none) */
        STT_COUNT_ };
 
 typedef struct {

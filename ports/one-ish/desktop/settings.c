@@ -12,7 +12,9 @@
  *            (7/14-BIT, DELETE, CLEAR ALL) and the reserved CCs. The map is a setting like the others (the manual
  *            keeps it with the global settings, not with a sound). NRPN input (the manual's table) needs nothing here.
  *   LIBRARY  where the patches and this file live, how many there are, the version
- *   TUNING   MASTER FREQUENCY and MASTER FINE TUNE (the shared params: they stay part of the sound, as before)
+ *   TUNING   MASTER FREQUENCY and MASTER FINE TUNE (the shared params: they stay part of the sound, as before), and
+ *            MICROTUNING (package 16, beyond the manual): the focused Synth's Scala scale (.scl) and keyboard map
+ *            (.kbm), read here (scala.c) and kept in the sound's state by the engine (src/tuning.h)
  *
  * The file: Settings.txt beside the Patches folder (%USERPROFILE%\Documents\ONE-ish\Settings.txt), or the path in the
  * environment variable ONEISH_SETTINGS (load_test). Plain text, "key=value" per line after the header line
@@ -29,6 +31,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include "editor.h"
+#include "scala.h"
+#include <commdlg.h>
 #include <shellapi.h>
 #include <shlobj.h>
 
@@ -449,7 +453,9 @@ static int restore_defaults(ed_t *e) {
 /* ---- the page ---- */
 enum { Z_TAB = Z_SET_BASE, Z_ROW = Z_SET_BASE + 100, Z_BTN = Z_SET_BASE + 500 };   /* Z_ROW + row * 4 + part */
 enum { PART_MAIN, PART_DOWN, PART_UP };
-enum { B_RESTORE, B_OPEN_PATCHES, B_OPEN_SETTINGS, B_LEARN, B_CLEAR_MAP, B_COUNT };
+enum { B_RESTORE, B_OPEN_PATCHES, B_OPEN_SETTINGS, B_LEARN, B_CLEAR_MAP, B_LOAD_SCL, B_CLEAR_SCL, B_LOAD_KBM,
+       B_CLEAR_KBM, B_COUNT };
+enum { TUN_ROW_SCL = 3, TUN_ROW_KBM = 4 };   /* the TUNING tab's rows for the focused Synth's scale and keyboard map */
 static const char *const TAB_NAME[ST_TABS] = {"GLOBAL", "MIDI", "LIBRARY", "TUNING"};
 static const char *const TUNING_KEY[] = {"master_tune", "fine_tune"};
 enum { NTUNING = sizeof TUNING_KEY / sizeof TUNING_KEY[0] };
@@ -485,11 +491,82 @@ static RECT button_rect(int b) {   /* RESTORE: GLOBAL's last row; the OPEN butto
     if (b == B_RESTORE) InflateRect(&r, -sc(4), -sc(2));
     else if (b == B_LEARN) { r = L.row[0]; r.right = r.left + sc(96); InflateRect(&r, -sc(4), -sc(2)); }
     else if (b == B_CLEAR_MAP) { r.left = r.right - sc(76); InflateRect(&r, -sc(4), -sc(2)); }
+    else if (b >= B_LOAD_SCL) {   /* LOAD and CLEAR at the right of the scale's and the map's rows */
+        r = L.row[b <= B_CLEAR_SCL ? TUN_ROW_SCL : TUN_ROW_KBM];
+        int clear = b == B_CLEAR_SCL || b == B_CLEAR_KBM, bw = sc(66);
+        r.right -= sc(4) + (clear ? 0 : bw + sc(6));
+        r.left = r.right - bw;
+        InflateRect(&r, 0, -sc(2));
+    }
     else row_parts(b == B_OPEN_PATCHES ? ROWS - 2 : ROWS - 1, &nm, &r, &d, &u);
     return r;
 }
 static int button_shown(ed_t *e, int b) {
-    return b == B_RESTORE ? e->st.tab == ST_GLOBAL : b >= B_LEARN ? e->st.tab == ST_MIDI : e->st.tab == ST_LIBRARY;
+    return b == B_RESTORE ? e->st.tab == ST_GLOBAL : b >= B_LOAD_SCL ? e->st.tab == ST_TUNING
+         : b >= B_LEARN ? e->st.tab == ST_MIDI : e->st.tab == ST_LIBRARY;
+}
+
+/* ---- MICROTUNING (package 16): the focused Synth's Scala scale and keyboard map, saved with its sound ----
+ * The file is read and checked here (scala.c), on the window's thread; the engine gets the compact text through the
+ * chunk call ("tunscl<n>" / "tunkbm<n>", src/synths.h) and keeps it in the sound's state. */
+static void tun_names(ed_t *e, char *scl, char *kbm, int n) {   /* the names, from the engine's state */
+    void *chunk = NULL;
+    scl[0] = kbm[0] = 0;
+    intptr_t len = wrapped_call(e->fx, effGetChunk, 0, 0, &chunk, 0);
+    if (len <= 0 || !chunk) return;
+    for (int w = 0; w < 2; w++) {
+        char key[24];
+        if (e->focus) snprintf(key, sizeof key, ";s%d_tun_%s=", e->focus + 1, w ? "kbm" : "scl");
+        else snprintf(key, sizeof key, ";tun_%s=", w ? "kbm" : "scl");
+        const char *p = strstr((const char *)chunk, key);
+        if (!p) continue;
+        p += strlen(key);
+        snprintf(w ? kbm : scl, n, "%.*s", (int)strcspn(p, "|;"), p);
+    }
+}
+static int tun_load(ed_t *e, const char *path, int kbm) {   /* 1: loaded */
+    static char text[65536], out[4096];
+    char err[160];
+    FILE *f = fopen(path, "rb");
+    if (!f) { say(e, "Couldn't open that file."); return 0; }
+    size_t n = fread(text, 1, sizeof text - 1, f);
+    int whole = feof(f);
+    fclose(f);
+    text[n] = 0;
+    if (!whole) { say(e, "That file is too big to be a %s.", kbm ? "keyboard map" : "scale"); return 0; }
+    if (!(kbm ? kbm_compact : scl_compact)(text, path, out, sizeof out, err, sizeof err)) {
+        say(e, "Couldn't use that %s: %s.", kbm ? "keyboard map" : "scale", err);
+        return 0;
+    }
+    static char cmd[4200];
+    snprintf(cmd, sizeof cmd, "%s%d\n%s", kbm ? "tunkbm" : "tunscl", e->focus + 1, out);
+    wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(cmd) + 1, cmd, 0);
+    char nm[64], s[64], k[64];
+    snprintf(nm, sizeof nm, "%.*s", (int)strcspn(out, "|"), out);
+    tun_names(e, s, k, sizeof s);
+    if (kbm && !s[0]) say(e, "Keyboard map '%s' kept for Synth %d; it applies once a scale is loaded.", nm, e->focus + 1);
+    else say(e, "%s '%s' now tunes Synth %d (saved with the sound).", kbm ? "Keyboard map" : "Scale", nm, e->focus + 1);
+    return 1;
+}
+static void tun_clear_one(ed_t *e, int kbm) {
+    char cmd[32];
+    snprintf(cmd, sizeof cmd, "%s%d\n", kbm ? "tunkbm" : "tunscl", e->focus + 1);
+    wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(cmd) + 1, cmd, 0);
+    say(e, kbm ? "Synth %d: the keyboard map is back to the default." : "Synth %d: back to the usual 12-tone tuning.",
+        e->focus + 1);
+}
+static void tun_pick(ed_t *e, int kbm) {   /* LOAD: the file dialog, then the file */
+    char path[MAX_PATH] = "";
+    OPENFILENAMEA o = {0};
+    o.lStructSize = sizeof o;
+    o.hwndOwner = e->wnd ? GetAncestor(e->wnd, GA_ROOT) : NULL;
+    o.lpstrFilter = kbm ? "Scala keyboard maps (*.kbm)\0*.kbm\0All files\0*.*\0"
+                        : "Scala scales (*.scl)\0*.scl\0All files\0*.*\0";
+    o.lpstrFile = path;
+    o.nMaxFile = sizeof path;
+    o.lpstrTitle = kbm ? "Load a keyboard map" : "Load a scale";
+    o.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_HIDEREADONLY | OFN_NOCHANGEDIR;
+    if (GetOpenFileNameA(&o)) tun_load(e, path, kbm);
 }
 /* a mapping's row on the MIDI tab (row 1 .. MAP_ROWS): CC, the control, 7/14-BIT, DELETE */
 static void map_parts(int row, RECT *cc, RECT *name, RECT *bits, RECT *del) {
@@ -590,6 +667,8 @@ int settings_press(ed_t *e, int z) {   /* 1: z was the page's */
                            "ONE-ish", MB_OKCANCEL | MB_ICONQUESTION) == IDOK)
             restore_defaults(e);
         if (b == B_OPEN_PATCHES || b == B_OPEN_SETTINGS) open_folder(e, b == B_OPEN_SETTINGS);
+        if (b == B_LOAD_SCL || b == B_LOAD_KBM) tun_pick(e, b == B_LOAD_KBM);
+        if (b == B_CLEAR_SCL || b == B_CLEAR_KBM) tun_clear_one(e, b == B_CLEAR_KBM);
         if (b == B_LEARN) {   /* LEARN, or CANCEL while learning */
             if (e->st.learn) { learn_cancel(e); say(e, "LEARN cancelled: nothing changed."); }
             else learn_arm(e);
@@ -763,6 +842,34 @@ void settings_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dr
             param_text(e, i, v, sizeof v);
             value_row(dc, e, r, NAME[r], v, 1, 0);
         }
+        char scl[64], kbm[64], h[96];
+        tun_names(e, scl, kbm, sizeof scl);
+        RECT hd = L.row[2];
+        hd.left += sc(4);
+        snprintf(h, sizeof h, "SYNTH %d MICROTUNING (Scala files, saved with the sound)", e->focus + 1);
+        label(dc, hd, h, font_tiny, S_DIM, DT_LEFT);
+        for (int w = 0; w < 2; w++) {
+            RECT nm, vr, d, u;
+            row_parts(w ? TUN_ROW_KBM : TUN_ROW_SCL, &nm, &vr, &d, &u);
+            vr.right = button_rect(w ? B_LOAD_KBM : B_LOAD_SCL).left - sc(6);
+            const char *val = w ? (kbm[0] ? kbm : scl[0] ? "default (key 60 = degree 0)" : "-")
+                                : scl[0] ? scl : "none: the usual 12-tone tuning";
+            label(dc, nm, w ? "KEYBOARD MAP" : "SCALE", font_cell, S_DIM, DT_LEFT);
+            label(dc, vr, val, font_cell, (w ? kbm[0] : scl[0]) ? S_HOT : S_LCD, DT_LEFT);
+            button(dc, button_rect(w ? B_LOAD_KBM : B_LOAD_SCL), w ? "LOAD .KBM" : "LOAD .SCL", 0,
+                   e->hover == Z_BTN + (w ? B_LOAD_KBM : B_LOAD_SCL));
+            button(dc, button_rect(w ? B_CLEAR_KBM : B_CLEAR_SCL), "CLEAR", 0,
+                   e->hover == Z_BTN + (w ? B_CLEAR_KBM : B_CLEAR_SCL));
+        }
+        static const char *const INFO[3] = {
+            "A scale tunes the Synth in focus (SYNTH 1/2/3 picks it).",
+            "A keyboard map: which key plays which degree, the reference pitch.",
+            "Master tune still applies. No scale: the usual tuning."};
+        for (int r = 0; r < 3; r++) {
+            RECT ir = L.row[5 + r];
+            ir.left += sc(4);
+            label(dc, ir, INFO[r], font_tiny, S_DIM, DT_LEFT);
+        }
     }
 }
 
@@ -773,7 +880,8 @@ const char *settings_zone_help(ed_t *e, int z) {
             "GLOBAL: how the instrument behaves: preset autoload, the MIDI clock, channels from presets, the pedals.",
             "MIDI: MIDI LEARN. Map your controller's knobs and faders (their CCs) to any control on the panel.",
             "LIBRARY: where your patches and the settings file are, how many patches, the version.",
-            "TUNING: the master frequency (the A above middle C) and the master fine tune."};
+            "TUNING: the master frequency (the A above middle C), the master fine tune, and microtuning (Scala scales "
+            "and keyboard maps) for the Synth in focus."};
         return H[z - Z_TAB];
     }
     if (z == Z_BTN + B_RESTORE) return "RESTORE DEFAULT SETTINGS: every setting on this page back to how ONE-ish came. "
@@ -783,6 +891,12 @@ const char *settings_zone_help(ed_t *e, int z) {
     if (z == Z_BTN + B_LEARN) return "LEARN: click it, then a control on the panel, then move a knob or fader on your "
                                      "controller: that CC moves the control from now on. Click again to CANCEL.";
     if (z == Z_BTN + B_CLEAR_MAP) return "CLEAR ALL: deletes every learned mapping (asks first).";
+    if (z == Z_BTN + B_LOAD_SCL) return "LOAD .SCL: a Scala scale for the Synth in focus (thousands are free online, "
+                                        "e.g. the Scala archive). It is kept in the sound: save the patch or project.";
+    if (z == Z_BTN + B_LOAD_KBM) return "LOAD .KBM: a Scala keyboard map: which key plays degree 0, the reference key "
+                                        "and frequency, and which keys play which degrees (or none).";
+    if (z == Z_BTN + B_CLEAR_SCL) return "CLEAR: the Synth in focus goes back to the usual 12-tone tuning.";
+    if (z == Z_BTN + B_CLEAR_KBM) return "CLEAR: the default keyboard map (key 60 plays degree 0 at middle C's pitch).";
     int row = (z - Z_ROW) / 4, part = (z - Z_ROW) % 4;
     if (e->st.tab == ST_MIDI && z >= Z_ROW)
         return part == PART_DOWN ? "7-BIT / 14-BIT: 14-bit uses the CC (0-31) as the coarse part and CC + 32 as the "
@@ -808,7 +922,8 @@ void settings_help(ed_t *e, char *out, int n) {
         snprintf(out, n, "Your patches are files in the patch folder (PATCHES page: save, import, export). The "
                          "settings on this page are kept in the settings file, apart from any sound.");
     else if (e->st.tab == ST_TUNING)
-        snprintf(out, n, "Tuning for the whole sound. Click < > or scroll over a value (Shift: finer).");
+        snprintf(out, n, "Tuning, all part of the sound: master frequency and fine tune (click < > or scroll, Shift "
+                         "finer), and the focused Synth's own scale and keyboard map (LOAD a Scala file).");
     else
         snprintf(out, n, "Settings kept apart from the sounds: loading a sound or a project never changes them. Click "
                          "a value to change it (or scroll over it). They are saved at once, for every ONE-ish.");
@@ -847,6 +962,14 @@ intptr_t settings_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case STT_MAP_DELETE: { int k = (int)lroundf(opt); if (k < 0 || k >= G.nmap) return 0; map_remove(k); map_changed(e); return 1; }
     case STT_MAP_CLEAR: G.nmap = 0; map_changed(e); return 1;
     case STT_MESSAGE: snprintf(buf, 1024, "%s", e->st.msg); return 1;
+    case STT_TUN_LOAD: { char p[MAX_PATH]; snprintf(p, sizeof p, "%s", buf); return tun_load(e, p, opt > 0.5f); }
+    case STT_TUN_CLEAR: tun_clear_one(e, opt > 0.5f); return 1;
+    case STT_TUN_NAMES: {
+        char s[64], k[64];
+        tun_names(e, s, k, sizeof s);
+        snprintf(buf, 1024, "%s|%s", s, k);
+        return 1;
+    }
     }
     return 0;
 }

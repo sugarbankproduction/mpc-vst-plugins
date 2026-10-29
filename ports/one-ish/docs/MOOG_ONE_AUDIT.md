@@ -820,8 +820,8 @@ outside Carla's fixed settings.
 |---|---|---|---|
 | Plays in tune at any host sample rate (44.1, 48, 88.2, 96 kHz) | Have (2026-10-27, desktop, offline): the engine still runs at 44.1 kHz and `desktop/hostrate.c` converts it to the host's rate (`desktop/resample.c`, a 72-tap windowed sinc: flat to 20 kHz, images 103 dB down), reporting the converter's latency (40 samples at 48 kHz, 79 at 96 kHz). A4 within 0.01 cent at 44.1/48/96 kHz, synced arp steps on the host's timeline (`desktop/rate_test.c`) | - | Wrapper and MPC unchanged. CPU about 40 us per 512-frame block for the converter (0.4% of real time at 48 kHz) |
 | Full-resolution output | Have (2026-10-27, desktop, offline): float samples from the engine (`one_ish_render_float`, the int16 path's samples before its last step), through a desktop-only engine table the wrapper is compiled against; 44.1 kHz output matches the old 16-bit output sample for sample when quantised | - | Shared wrapper not changed (only renamed symbols at compile time, desktop build) |
-| Microtuning: Scala `.scl` / `.kbm` files | Missing (only master tune and fine tune) | M | Not in this manual; common in desktop synths. Per-voice pitch already comes from one function (`update_note_hz`), so a table lookup is cheap |
 | Undo / redo of any edit in the window | Have (2026-10-29, offline and the desktop window; `docs/PATCHES.md`): every edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, randomiser, loads) is a step of the whole state; a drag or a wheel burst is one; 100 steps; Ctrl+Z / Ctrl+Y and the SNAPSHOTS page's UNDO / REDO | - | Host automation is not a step |
+| Microtuning: Scala `.scl` / `.kbm` files | Have (2026-10-29, offline and the desktop window): SETTINGS > TUNING loads a scale and a keyboard map into the Synth in focus (read on the window's thread, `desktop/scala.c`); kept per Synth in the sound's state (`tun_scl`, `tun_kbm`; a 12-note just scale with a map about 220 bytes), in patches and with SAVE / INTO SYNTH; master tune and fine tune still apply; a 12-TET scale gives exactly the usual samples (`src/tuning.h`, `test/tuning_check.c`) | - | A table lookup per control step: +0.12 us a voice on the PC (8 voices 63.60 against 62.63 us per block); no scale, no change at all |
 | The 14 open-source effect params on the window | Missing (generic host editor only) | S | `desktop/gen_layout.py` |
 | MIDI learn in the plugin | Have (2026-10-29, the SETTINGS page's MIDI tab) | - | Same as the LEARN MIDI CC row (24) |
 | Poly aftertouch / MPE | Not read (channel pressure only, as on the Moog One) | M | Not a Moog One feature; owner's call |
@@ -898,7 +898,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after packages 8 and 14a: 35 and 36). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41; after packages 8, 14a and 16: 34 and 36). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -1116,6 +1116,9 @@ doubles a voice).
 - Files: `src/osc.h`, `src/ladder.h`, `src/svf.h`, the voice loop in `src/engine.c`.
 
 **16. Optional: microtuning** (beyond the manual). Effort M. CPU: none (a table lookup per note).
+- Done 2026-10-29 (offline and the desktop window; `docs/SETTINGS.md`): per Synth, in the sound's state, loaded on
+  the SETTINGS page's TUNING tab; tested with 12-TET (identical samples), 19-EDO and 5-limit just intonation with a
+  keyboard map (`test/scales/`). Keyboard tracking of the filters and the Keyboard source still count keys, not pitch.
 - Scala `.scl` scales and `.kbm` keyboard maps, loaded from the window and saved with the sound; master tune and fine
   tune still apply.
 - Depends on: package 8 (where a global tuning lives).

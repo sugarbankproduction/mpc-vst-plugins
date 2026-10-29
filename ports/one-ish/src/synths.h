@@ -218,6 +218,17 @@ static void set_param(void *inst, const char *key, const char *val) {
             if (nl && c < NSYN) sq_command(in->syn[c], nl + 1);
             return;
         }
+        if (!strncmp(val, "tun", 3)) {   /* MICROTUNING from the window: "tunscl<n>\n<scale>", "tunkbm<n>\n<map>",
+                                          * "tunclear<n>\n" (src/tuning.h's compact texts; Synth n, 1 if left out) */
+            const char *nl = strchr(val, '\n'), *d = val + 3 + strcspn(val + 3, "123456789\n");
+            int c = *d >= '1' && *d <= '9' ? *d - '1' : 0;
+            if (!nl || c >= NSYN) return;
+            tuning_t *t = &in->syn[c]->tun;
+            if (!strncmp(val, "tunscl", 6)) tun_set(t, nl + 1, t->kbm);
+            else if (!strncmp(val, "tunkbm", 6)) tun_set(t, t->scl, nl + 1);
+            else if (!strncmp(val, "tunclear", 8)) tun_clear(t);
+            return;
+        }
         if (!strncmp(val, "midicfg\n", 8)) {   /* the window's SETTINGS page (src/midi_in_run.h) */
             mi_command(in, val + 8);
             return;
@@ -293,6 +304,28 @@ static int state_seq(one_t *s, char *buf, int n, int used) {   /* its sequence, 
     else s->sq.lost = 1;
     return used;
 }
+/* its scale and keyboard map (MICROTUNING, src/tuning.h), when it has one and they fit */
+static int state_tun(one_t *s, char *buf, int n, int used, int prefixed) {
+    char p[8] = "";
+    if (prefixed && s->idx) snprintf(p, sizeof p, "s%d_", s->idx + 1);
+    if (s->tun.scl[0] && used + (int)strlen(p) + 10 + (int)strlen(s->tun.scl) < n)
+        used += snprintf(buf + used, n - used, ";%stun_scl=%s", p, s->tun.scl);
+    if (s->tun.kbm[0] && used + (int)strlen(p) + 10 + (int)strlen(s->tun.kbm) < n)
+        used += snprintf(buf + used, n - used, ";%stun_kbm=%s", p, s->tun.kbm);
+    return used;
+}
+/* a state's "tun_scl" / "tun_kbm" for Synth s (a scale first, then its map: the map alone waits for a scale) */
+static int tun_value(one_t *s, const char *rest, const char *val) {
+    char keep[TUN_SCL_MAX];
+    if (!strcmp(rest, "tun_scl")) { tun_set(&s->tun, val, s->tun.kbm); return 1; }
+    if (!strcmp(rest, "tun_kbm")) {
+        snprintf(keep, sizeof keep, "%s", s->tun.scl);
+        if (!tun_set(&s->tun, keep, val)) tun_set(&s->tun, keep, "");   /* (a damaged map: the scale alone) */
+        return 1;
+    }
+    return 0;
+}
+
 static int get_state(inst_t *in, char *buf, int n) {
     char prev[64];
     int used = 0, v2, last = NSYN - 1;
@@ -316,6 +349,7 @@ static int get_state(inst_t *in, char *buf, int n) {
     for (int c = 0; c < NSYN; c++) {
         in->syn[c]->sq.lost = c > last;   /* (a Synth left out: its readout says its sequence wasn't saved) */
         if (c <= last) used = state_seq(in->syn[c], buf, n, used);
+        if (c <= last) used = state_tun(in->syn[c], buf, n, used, 1);
     }
     if (last < NSYN - 1) fprintf(stderr, "ONE-ish: the state is too long for the chunk: Synths %d-%d not saved\n",
                                  last + 2, NSYN);
@@ -348,6 +382,7 @@ static void state_value(inst_t *in, int arg, const char *key, const char *val) {
     int c = key_synth(key, &rest);
     if (c >= NSYN) return;   /* (a Synth this build doesn't have) */
     if (!strcmp(rest, "seq")) { sq_decode(val, &in->syn[c]->sq.q, MD_COUNT, MS_COUNT); return; }   /* (damaged: none) */
+    if (tun_value(in->syn[c], rest, val)) return;   /* its scale, its keyboard map */
     if (c == 0 && store_retired(in->syn[0], key, val)) return;
     const pkey_t *e = key_find(in, key);
     if (!e || e->slot < 0) return;
@@ -358,7 +393,8 @@ static void set_state(inst_t *in, const char *str) {
     if (strlen(str) >= sizeof in->state_buf) return;   /* never restore half a state */
     for (int c = 0; c < NSYN; c++) {   /* a state saved before a param (or a Synth) existed leaves it at its default */
         load_defaults(in->syn[c]);
-        sq_clear(&in->syn[c]->sq.q);   /* and one saved without a sequence has none */
+        sq_clear(&in->syn[c]->sq.q);   /* and one saved without a sequence has none, */
+        tun_clear(&in->syn[c]->tun);   /* nor a scale */
     }
     state_walk(in, str, state_value, 0);
     for (int c = 0; c < NSYN; c++) {
@@ -377,6 +413,7 @@ static int load_skip(int k) { return engine_global(k) || k == P_SYN_ON || k == P
 static void load_value(inst_t *in, int c, const char *key, const char *val) {
     one_t *s = in->syn[c];
     if (!strcmp(key, "seq")) { sq_decode(val, &s->sq.q, MD_COUNT, MS_COUNT); return; }
+    if (tun_value(s, key, val)) return;   /* the sound's scale and keyboard map */
     if (store_retired(s, key, val)) {   /* (an old patch's bend range; dly_pp, a shared one, is put back) */
         for (int k = 0; k < P_COUNT; k++)
             if (engine_global(k)) s->val[k] = in->syn[0]->val[k];
@@ -396,6 +433,7 @@ static void synth_load(inst_t *in, int c, const char *str) {
     for (int k = 0; k < P_COUNT; k++)
         if (load_skip(k)) s->val[k] = keep[k];
     sq_clear(&s->sq.q);
+    tun_clear(&s->tun);
     state_walk(in, str, load_value, c);
     s->sq.lost = 0;
     sq_lanes_changed(s);
@@ -423,7 +461,7 @@ static int synth_state(inst_t *in, int c, char *buf, int n) {
         int len = sq_encode(&s->sq.q, s->sq_text, sizeof s->sq_text);
         if (used + 5 + len < n) used += snprintf(buf + used, n - used, ";seq=%s", s->sq_text);
     }
-    return used;
+    return state_tun(s, buf, n, used, 0);   /* (as Synth 1's keys: a single-Synth sound) */
 }
 
 static int get_param(void *inst, const char *key, char *buf, int n) {
@@ -452,6 +490,14 @@ static int get_param(void *inst, const char *key, char *buf, int n) {
     int c = key_synth(key, &rest);
     if (c >= NSYN) return 0;
     one_t *s = in->syn[c];
+    if (!strcmp(rest, "tun_scl")) return snprintf(buf, n, "%s", s->tun.scl);   /* MICROTUNING: the texts, */
+    if (!strcmp(rest, "tun_kbm")) return snprintf(buf, n, "%s", s->tun.kbm);
+    if (!strncmp(rest, "tun_pitch", 9)) {   /* "tun_pitch<key>": that key's pitch in semitones (69 = A at 440 Hz) */
+        int k = atoi(rest + 9);
+        if (k < 0 || k > 127) return 0;
+        return snprintf(buf, n, "%.9g;%d", s->tun.on ? tun_pitch(&s->tun, (float)k) : (float)k,
+                        s->tun.on ? s->tun.play[k] : 1);
+    }
     size_t len = strlen(key);
     if (len > 8 && !strcmp(key + len - 8, "_display")) {   /* "<key>_display" (a copy's: "s2_<key>_display") */
         char base[48];
