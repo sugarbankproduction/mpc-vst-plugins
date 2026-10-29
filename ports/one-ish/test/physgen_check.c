@@ -1,7 +1,10 @@
 /* The bouncing balls and particles (src/physgen.h, src/physgen_run.h; 2026-10-29): off is silent and changes nothing,
  * the same settings give the same notes, every note is in the Synth's key and scale, MAX NOTES/S holds, the defaults
  * are moderate, each Synth runs its own, HELD KEYS, KEY RESTARTS, SYNC on the grid, the view, and a saved sound keeps
- * the settings but not the positions. Included from offline_check.c (its helpers: set, get, note, check). */
+ * the settings but not the positions. Included from offline_check.c (its helpers: set, get, note, check).
+ * (2026-10-30, physgen2_checks) the walls (an open floor plays nothing from the floor, silent walls bounce quietly,
+ * particles leave), KEY LAUNCH and KEY EMIT, FOLLOW OCTAVE, and the generators' eight matrix sources (listed, moving,
+ * finite, gliding, heard). */
 #pragma push_macro("SCALES")   /* (seq.h's SCALES is not tuning_check.c's) */
 #undef SCALES
 #include "../src/physgen.h"
@@ -471,11 +474,11 @@ static void physgen2_checks(void) {
         }
         check(ok && moved && smooth, "the eight generator sources move, stay finite in 0..1, and glide (no zipper)");
         E->destroy(a);
-        /* in use: BALL 1 HEIGHT to the ladder's cutoff changes a held note's sound */
+        /* in use: BALL 1 HEIGHT to the pitch changes a held note (the balls climb it) */
         void *b = patch(SAW, 5, 300, 70, 250), *c = patch(SAW, 5, 300, 70, 250);
         char kv[200];
         snprintf(kv, sizeof kv, "phys_balls_on=1,phys_floor=1,phys_ceil=1,phys_left=1,phys_right=1,mod1_on=1,mod1_src=%d,"
-                 "mod1_dst=%d,mod1_amt=100,mod1_via=0", MS_BALL_Y, MD_LAD_CUT);
+                 "mod1_dst=%d,mod1_amt=100,mod1_via=0", MS_BALL_Y, MD_PITCH);
         setkv(b, kv);
         setkv(c, kv);
         set(c, "phys_balls_on", 0);   /* (the same slot, no balls: the source stays at 0) */
@@ -492,7 +495,7 @@ static void physgen2_checks(void) {
                 fin &= isfinite(fb[i]);
             }
         }
-        snprintf(what, sizeof what, "BALL 1 HEIGHT -> Ladder Cutoff: the held note follows the ball (difference %.1f dB "
+        snprintf(what, sizeof what, "BALL 1 HEIGHT -> Pitch: the held note follows the ball (difference %.1f dB "
                  "under the note)", 10.0 * log10((dif + 1e-30) / (lvl + 1e-30)));
         check(dif > 1e-3 * lvl && lvl > 0.0 && fin, what);
         E->destroy(b); E->destroy(c);
@@ -526,20 +529,21 @@ static void physgen_bench(void) {
     printf("bench: particles, the full pool colliding (%d live): %6.3f us per 128-frame block (%ld hits)\n", live, us, hits);
     enum { BLOCKS = 20000 };
     int16_t buf[256];
-    double eng[3];
-    for (int k = 0; k < 3; k++) {   /* a held 4-note chord; then the same with 8 balls and the full pool playing too;
+    double eng[4];
+    for (int k = 0; k < 4; k++) {   /* a held 4-note chord; then the same with 8 balls and the full pool playing too;
                                      * (2026-10-30) then with a silent floor, an open left wall and three slots driven
-                                     * by the generators' sources (BALL HIT, BALL 1 HEIGHT, PARTICLE COUNT) */
+                                     * by the generators' sources (BALL HIT, BALL 1 HEIGHT, PARTICLE COUNT); then the
+                                     * same three slots from LFO 1, Mod Env and Velocity (what any three slots cost) */
         void *e = patch(SAW, 5, 300, 70, 250);
         set(e, "voices", 7);
         for (int n = 0; n < 4; n++) note(e, 1, 48 + 3 * n, 100);
         if (k) setkv(e, "phys_balls_on=1,phys_balls=8,phys_parts_on=1,phys_rate=100,phys_life=100,phys_trigger=1,"
                         "phys_attract=50,phys_max=8,phys_len=20");
-        if (k == 2) {
+        if (k >= 2) {
             char kv[256];
             snprintf(kv, sizeof kv, "phys_floor=1,phys_left=2,mod2_src=%d,mod2_dst=%d,mod2_amt=40,mod3_src=%d,mod3_dst=%d,"
-                     "mod3_amt=20,mod4_src=%d,mod4_dst=%d,mod4_amt=30", MS_BALL_HIT, MD_LAD_CUT, MS_BALL_Y, MD_SVF_CUT,
-                     MS_PART_COUNT, MD_AMP);
+                     "mod3_amt=20,mod4_src=%d,mod4_dst=%d,mod4_amt=30", k == 2 ? MS_BALL_HIT : MS_LFO1, MD_LAD_CUT,
+                     k == 2 ? MS_BALL_Y : MS_MENV, MD_SVF_CUT, k == 2 ? MS_PART_COUNT : MS_VEL, MD_AMP);
             setkv(e, kv);
         }
         for (int b = 0; b < 2000; b++) E->render(e, buf, 128);
@@ -552,5 +556,5 @@ static void physgen_bench(void) {
     printf("bench: engine, 4 held voices %6.2f us; with 8 balls and 32 particles playing (up to 8 notes/s into the 8 "
            "voices) %6.2f us per 128-frame block\n", eng[0], eng[1]);
     printf("bench: engine, the same with a silent floor, an open wall and 3 matrix slots from the generators' sources "
-           "%6.2f us per 128-frame block\n", eng[2]);
+           "%6.2f us (the same 3 slots from LFO 1, Mod Env, Velocity: %6.2f us) per 128-frame block\n", eng[2], eng[3]);
 }
