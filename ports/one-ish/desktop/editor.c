@@ -310,6 +310,7 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
 }
 static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control, the screen, what shows it */
     if (i < 0 || i >= NPARAMS) { invalidate(e, NULL); return; }
+    qm_matrix_changed(e, i);   /* a matrix row: the knobs' modulation rings (quickmod.c) */
     if (i == rnd_key("syn_on") || i == rnd_key("syn_solo"))   /* the SYNTH buttons' M | S */
         for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]);
     if (!IsRectEmpty(&L.ctl[i])) {   /* on the panel: the control, its label and value (they spill a little) */
@@ -760,6 +761,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
 static int hit(ed_t *e, int x, int y) {
     POINT pt = {x, y};
     e->hit_screen = 0;
+    int q = qm_hit(e, pt);   /* a DEST button (quickmod.c) */
+    if (q >= 0) return q;
     for (int k = 0; k < NMORES; k++)
         if (PtInRect(&L.more[k], pt)) return Z_PAGE + MORES[k].page;
     for (int c = 0; c < NCTLS; c++)
@@ -1021,6 +1024,7 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
 
 static void press(ed_t *e, int x, int y) {
     int i = hit(e, x, y);
+    if (qm_press(e, i, x, y)) return;   /* QUICK ASSIGN: a source picked, a knob connected (quickmod.c) */
     if (seq_zone(i)) {   /* the step editor and the page LEDs (seq_page.c); a drag on a note or a value follows */
         lib_touch(e, NULL);   /* (a step edit is an undo step; a click that changes nothing is none) */
         if (seq_press(e, i, x, y, GetKeyState(VK_SHIFT) < 0)) { e->mode = M_SEQ; SetCapture(e->wnd); }
@@ -1121,6 +1125,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         }
         octave_hold(e);
         lib_tick(e);   /* an undo step after a pause, a set's number held, a MIDI program change, the tempo */
+        qm_tick(e);   /* quick assign's message runs out */
         settings_tick(e);   /* MIDI LEARN: a CC heard */
         int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
@@ -1157,6 +1162,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         if (e->mode == M_SEQ) { seq_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
+        if (e->mode == M_QMOD) { qm_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode != M_NONE) { controller_move(e, x, y); return 0; }
         int h = hit(e, x, y);
         if (h != e->hover) {
@@ -1169,6 +1175,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_KEYDOWN:   /* 1-3 or Shift+F5/F6/F7: the Synth in focus (Shift+1-3, Ctrl+Shift+F5-F7: added); the step editor: arrows, Delete */
+        if (e && qm_key(e, (int)wp)) return 0;   /* Esc: quick assign done */
         if (e && GetKeyState(VK_CONTROL) < 0 && (wp == 'Z' || wp == 'Y')) {   /* undo, redo (Ctrl+Shift+Z: redo) */
             if (wp == 'Y' || GetKeyState(VK_SHIFT) < 0) lib_redo(e);
             else lib_undo(e);
@@ -1215,7 +1222,10 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_RBUTTONDOWN: {   /* a list of options for any option control */
         if (!e) return 0;
-        int i = hit(e, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+        int i = hit(e, GET_X_LPARAM(lp), GET_Y_LPARAM(lp)), q = 0;
+        if (!seq_zone(i)) q = qm_right(e, i, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));   /* connections, or a source */
+        if (q == 1) return 0;
+        if (q == 2) { pick_option(e, i, e->hit_rect); return 0; }
         if (seq_zone(i)) { lib_touch(e, NULL); seq_right(e, i); }   /* the step editor: delete, a step's rest */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts > 1) pick_option(e, i, e->hit_rect);
         return 0;
@@ -1227,6 +1237,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             seq_release(e);
             e->mode = M_NONE;
             lib_commit(e);
+        } else if (e->mode == M_QMOD) {
+            qm_release(e);
         } else if (e->mode == M_PARAM) {
             if (e->drag >= 0) begin_edit(e, e->drag, 1);
             e->drag = -1;
@@ -1240,6 +1252,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_LBUTTONDBLCLK: {   /* back to the default */
         if (!e) return 0;
         int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp), i = hit(e, x, y);
+        if (e->qm.src) { press(e, x, y); return 0; }   /* (quick assign on: a second click, not a reset) */
         if (seq_zone(i) && i < Z_SEQ_BASE + 200) { lib_touch(e, NULL); seq_double(e, i); lib_commit(e); }   /* an empty step cell: a new note */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);
         else if (i >= Z_FOCUS1 && i <= Z_FOCUS3 && NSYNTHS > 1) synth_toggle(e, i - Z_FOCUS1, 0);   /* mute (the first
@@ -1450,6 +1463,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             }
             return e->focus + 4 * (intptr_t)e->focus_mask;
         }
+        if (idx == TEST_QM && e && ptr) return qm_test(e, v, ptr, opt);   /* load_test: quick assign */
         if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
         if (idx == TEST_SETTINGS && e && ptr) return settings_test(e, v, ptr, opt);   /* load_test: the settings */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
@@ -1533,6 +1547,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->ribbon = 0.5f;
         e->ribbon_cc = -1;
         e->rnd_amount = 0.2f;   /* (WILD 0, no ticks: rnd_wild and rnd_also start at 0) */
+        e->qm.dst = e->qm.ctl = e->qm.last_row = e->qm.last_dst = e->qm.mark = -1;   /* (quick assign: nothing yet) */
         e->hr = hr;
         eds[i] = e;
         wrapped_dispatch = fx->dispatcher;

@@ -114,6 +114,20 @@ typedef struct {
     int seq_step;              /* the sequencer's step last seen running (-1: stopped) and when it changed */
     double seq_at;
 } rate_ui_t;
+/* QUICK ASSIGN (quickmod.c): a mod source picked on the panel, then the knobs it should move clicked and turned for
+ * their amounts; the matrix rows they make are the MATRIX page's own params */
+typedef struct {
+    int src;                 /* the source picked (a matrix source option); 0: none */
+    int dst, ctl;            /* while a knob is turned for its amount: its destination (MD_*) and panel index */
+    int row[NSYNTHS];        /* each Synth in focus's matrix row for it (-1: none) */
+    int drag_y, last_row, last_dst;   /* the connection made or turned last: a Ctrl-drag picks it again */
+    float from;              /* the focused Synth's amount (%) when the drag began */
+    int mark;                /* the MATRIX row "open in MATRIX" jumped to (-1: none) */
+    int answer;              /* load_test: the menu choice taken instead of showing a menu (0: show it) */
+    char msg[220];           /* what the last action did, for the help line, and since when */
+    DWORD msg_at;
+    unsigned char drawn[NPARAMS];   /* a control drawn with a modulation ring (repainted when the matrix changes) */
+} qm_ui_t;
 #define RND_HIST 32   /* sounds the randomiser's UNDO / REDO keep (the oldest goes) */
 enum { MLOG = 64 };
 typedef struct {
@@ -160,8 +174,10 @@ typedef struct {
     struct lib *lib;                           /* undo, compare, snapshots, tags, sets (library.c; NULL: none) */
     HWND idle;                                 /* a hidden window whose timer loads MIDI program changes */
     settings_ui_t st;                          /* the SETTINGS page (settings.c) */
+    qm_ui_t qm;                                /* QUICK ASSIGN (quickmod.c) */
 } ed_t;
-enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD };
+enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
+       M_QMOD };
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -195,6 +211,29 @@ static inline int note_of_white(int j, int base) {   /* white key j of the keybo
 /* editor_draw.c */
 void paint(ed_t *e, HDC out);
 void leds_geom(int i, int *x0, int *y0, int *row, RECT *button);
+void knob_geom(int i, float *cx, float *cy, float *r, int *label_y);   /* where a panel knob sits */
+/* quickmod.c: QUICK ASSIGN. A DEST button (on the LFOs, the envelopes and NOISE), or Alt-click / right-click on a
+ * source (also the wheels, the X/Y pad, the ribbon, the keyboard) picks a mod source; a click on a knob then connects
+ * it in the focused Synths' matrix and the drag sets the amount. Rings on the knobs show what is modulated. */
+#define Z_QM 660000        /* hit codes: a DEST button, Z_QM + its area */
+#define Z_QM_END 660032
+#define TEST_QM 0x4F31514D /* VENDOR_SPECIFIC index: load_test's quick assign operations (QMT_*, quickmod.c) */
+enum { QMT_SOURCE = 1, QMT_ANSWER, QMT_DRAWN, QMT_DEST_XY, QMT_HELP, QMT_DST_OF };
+int qm_hit(ed_t *e, POINT pt);                  /* a DEST button under pt (Z_QM + area), or -1 */
+int qm_press(ed_t *e, int i, int x, int y);     /* a left click (i: hit()'s); 1: quick assign took it */
+void qm_drag(ed_t *e, int x, int y, int fine);  /* M_QMOD: the amount follows the mouse */
+void qm_release(ed_t *e);
+int qm_right(ed_t *e, int i, int x, int y);     /* a right click: 1 taken, 2 show the control's own options, 0 not */
+int qm_key(ed_t *e, int vk);                    /* Esc: quick assign done (1: taken) */
+void qm_tick(ed_t *e);                          /* the window's timer: an old message goes */
+void qm_draw(HDC dc, ed_t *e, const RECT *clip);   /* the rings, the DEST buttons, the source picked */
+int qm_value_text(ed_t *e, int i, char *out, int n);   /* the amount under the knob being turned (1) */
+int qm_help(ed_t *e, char *out, int n);         /* the help line while quick assign is on (1) */
+void qm_links_text(ed_t *e, int i, char *out, int n);   /* appended to a control's help: what modulates it */
+const char *qm_zone_help(ed_t *e, int z);
+int qm_marked(ed_t *e);                         /* the MATRIX row to mark (-1: none) */
+void qm_matrix_changed(ed_t *e, int i);         /* param i (a panel index) changed: rings to repaint if it is the matrix's */
+intptr_t qm_test(ed_t *e, intptr_t op, char *buf, float opt);
 /* more_pics.c: a MORE page's picture (an envelope, an LFO, the filters, the mixer) in rect a of the screen */
 void pics_draw(HDC dc, ed_t *e, int page, RECT a);
 void pics_tick(ed_t *e);   /* the rate timer: a moving picture (the balls' box) repaints, only its own area */
