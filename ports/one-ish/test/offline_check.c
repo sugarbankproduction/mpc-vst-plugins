@@ -4958,6 +4958,7 @@ static void arp_wav(const char *demo_path) {
 #include "stepseq_check.c"
 #include "multi_check.c"   /* multitimbral: three Synths */
 #include "ext_check.c"     /* the audio input: the EXT channel and the vocoders */
+#include "modx_check.c"    /* modulation extras: the step-mod destinations, slot ENABLE, the pad (2026-10-29) */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5735,6 +5736,11 @@ int main(int argc, char **argv) {
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "modx")) {   /* just the 2026-10-29 packages: offline_check modx */
+        mod_extras();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "macro")) {   /* just the MACRO channel: offline_check macro <dir>/demo.wav */
         macro_osc();
         macro_nan();
@@ -5805,6 +5811,7 @@ int main(int argc, char **argv) {
     multitimbral();
     ext_input();
     vocoders();
+    mod_extras();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

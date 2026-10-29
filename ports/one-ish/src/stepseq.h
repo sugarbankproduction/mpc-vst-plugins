@@ -27,10 +27,12 @@
 #define SQ_RATCH 3
 #define SQ_TEXT_MAX 5200     /* the longest sq_encode text (a full sequence, every field different) and its NUL */
 #define SQ_VERSION 1
+#define SQ_VERSION_WIDE 2    /* (2026-10-29) the same with two-byte destinations: written only when a lane needs one */
 
 typedef struct { uint8_t note, vel, gate, flags; } sq_note_t;
 typedef struct {
-    uint8_t dest, ctl, amt;  /* the mod matrix's destination (0: lane unused) and source (0: no controller); 0..100% */
+    uint16_t dest;           /* the mod matrix's destination (0: lane unused) */
+    uint8_t ctl, amt;        /* and source (0: no controller); 0..100% */
     int8_t off[SQ_STEPS];    /* -100..100 (% of the destination's matrix range), or SQ_NO_OFF */
 } sq_mlane_t;
 typedef struct {
@@ -124,10 +126,12 @@ static inline int sq_b64_val(char c) {
  * step then lane order, each a header byte (lane in bits 0-2; bit 3: a step byte follows, else the last note's step;
  * bit 4 velocity, bit 5 gate, bit 6 ratchet/tie byte follow, else the last note's) and its note number; then the
  * modulation lanes in use: their count, and each its lane, destination, controller, amount, an 8-byte bitmap of the
- * steps with an offset, and those offsets */
+ * steps with an offset, and those offsets. Version 2 (SQ_VERSION_WIDE, only when a lane's destination is past 255: the
+ * matrix list grew) writes each destination as two bytes, low first; anything else stays version 1, as before. */
 static inline int sq_pack(const sq_seq_t *q, uint8_t *b) {
-    int n = 0, cnt = 0;
-    b[n++] = SQ_VERSION;
+    int n = 0, cnt = 0, wide = 0;
+    for (int l = 0; l < SQ_ML; l++) wide |= q->m[l].dest > 255;
+    b[n++] = wide ? SQ_VERSION_WIDE : SQ_VERSION;
     for (int k = 0; k < 8; k++) b[n++] = (uint8_t)(q->rest >> (8 * k));
     int at = n;
     n += 2;
@@ -155,7 +159,9 @@ static inline int sq_pack(const sq_seq_t *q, uint8_t *b) {
     for (int l = 0; l < SQ_ML; l++) {
         const sq_mlane_t *m = &q->m[l];
         if (!m->dest) continue;
-        b[n++] = (uint8_t)l; b[n++] = m->dest; b[n++] = m->ctl; b[n++] = m->amt;
+        b[n++] = (uint8_t)l; b[n++] = (uint8_t)m->dest;
+        if (wide) b[n++] = (uint8_t)(m->dest >> 8);
+        b[n++] = m->ctl; b[n++] = m->amt;
         uint8_t *bits = b + n;
         memset(bits, 0, 8);
         n += 8;
@@ -199,7 +205,9 @@ static inline int sq_decode(const char *t, sq_seq_t *q, int maxdest, int maxsrc)
     int i = 0;
 #define SQ_NEED(k) do { if (i + (k) > n) return 0; } while (0)
     SQ_NEED(11);
-    if (bb[i++] != SQ_VERSION) return 0;
+    int wide = bb[i] == SQ_VERSION_WIDE;
+    if (bb[i] != SQ_VERSION && !wide) return 0;
+    i++;
     for (int k = 0; k < 8; k++) tmp.rest |= (uint64_t)bb[i++] << (8 * k);
     int cnt = bb[i] | bb[i + 1] << 8, ps = 0, pv = 100, pg = 50, pf = 0, last = -1;
     i += 2;
@@ -223,11 +231,13 @@ static inline int sq_decode(const char *t, sq_seq_t *q, int maxdest, int maxsrc)
     int nm = bb[i++];
     if (nm > SQ_ML) return 0;
     for (int k = 0; k < nm; k++) {
-        SQ_NEED(12);
-        int l = bb[i++], dest = bb[i++], ctl = bb[i++], amt = bb[i++];
+        SQ_NEED(12 + wide);
+        int l = bb[i++], dest = bb[i++];
+        if (wide) dest |= bb[i++] << 8;
+        int ctl = bb[i++], amt = bb[i++];
         if (l >= SQ_ML || dest < 1 || dest >= maxdest || ctl >= maxsrc || amt > 100 || tmp.m[l].dest) return 0;
         sq_mlane_t *m = &tmp.m[l];
-        m->dest = (uint8_t)dest; m->ctl = (uint8_t)ctl; m->amt = (uint8_t)amt;
+        m->dest = (uint16_t)dest; m->ctl = (uint8_t)ctl; m->amt = (uint8_t)amt;
         const uint8_t *set = bb + i;
         i += 8;
         for (int s = 0; s < SQ_STEPS; s++)
@@ -269,7 +279,7 @@ static inline int sq_factory(sq_seq_t *q, int id, int md_lad_cut, int md_svf_cut
             sq_set_note(q, s, 0, line[s], s % 4 == 0 ? 118 : 92, s == 5 ? 100 : 45, s == 9 || s == 15 ? 2 : 1, s == 5);
         }
         sq_mlane_t *m = &q->m[0];
-        m->dest = (uint8_t)md_lad_cut;
+        m->dest = (uint16_t)md_lad_cut;
         m->ctl = (uint8_t)ms_wheel;   /* the mod wheel brings the sweep in */
         m->amt = 0;
         for (int s = 0; s < 16; s++) m->off[s] = (int8_t)(s % 4 == 0 ? 60 : s % 2 ? -25 : 30);
@@ -286,7 +296,7 @@ static inline int sq_factory(sq_seq_t *q, int id, int md_lad_cut, int md_svf_cut
                                                          bar == 3 && h == 7);
             }
         sq_mlane_t *m = &q->m[0];
-        m->dest = (uint8_t)md_svf_cut;
+        m->dest = (uint16_t)md_svf_cut;
         for (int s = 0; s < 32; s++) m->off[s] = (int8_t)(-20 + (s % 8) * 6);
         return 32;
     }
@@ -339,4 +349,5 @@ typedef struct {
     int was_on, was_play, was_trig, was_tr, was_rec, was_sm, was_hold;   /* the switches as last seen */
     unsigned rev;            /* counts edits (the window re-reads the sequence when it moves) */
     int lost;                /* the last saved state had no room for the sequence */
+    int nenv_lanes;          /* (2026-10-29) a lane reaches the noise EG */
 } sq_run_t;

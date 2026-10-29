@@ -206,7 +206,8 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_PREV: case Z_NEXT: return "Previous / next patch: the factory presets (F), then your own (U).";
     case Z_NAME: return "The patch playing now (F: factory, U: yours; * = changed since it was loaded or saved). Click "
                         "for the patch list, where you can also save, rename, delete, import and export.";
-    case Z_TAB_MATRIX: return "MATRIX: the 16 mod matrix rows, 8 at a time (click again, or scroll over the screen, for the others).";
+    case Z_TAB_MATRIX: return "MATRIX: the 16 mod matrix rows, 8 at a time (click again, or scroll over the screen, for the others). "
+                              "Click a row's number to switch the row off (red) or on again: its settings are kept.";
     case Z_TAB_MORE: return "MORE: the list of every module's MORE page. The small triangles on the modules open them directly.";
     case Z_TAB_ANALOG: return "ANALOG: the analog character page (drift and per-voice differences).";
     case Z_TAB_RANDOM: return "RANDOM: the patch randomiser. New sounds to play with, variations of this one, locks, undo.";
@@ -625,12 +626,13 @@ static void draw_matrix(HDC dc, ed_t *e, int subs) {
         int m = e->sub * ROWS + r;
         if (m >= NMATRIX) break;
         const short *row = MATRIX[m];
-        int active = option_of(e, row[MX_SRC]) > 0 && option_of(e, row[MX_DST]) > 0;
+        int enabled = MATRIX_ON[m] < 0 || option_of(e, MATRIX_ON[m]) > 0;   /* the number toggles it (2026-10-29) */
+        int active = enabled && option_of(e, row[MX_SRC]) > 0 && option_of(e, row[MX_DST]) > 0;
         char num[8];
         snprintf(num, sizeof num, "%d", m + 1);
         RECT nr = matrix_cell(r, 0);
         nr.right += sc(4);
-        text(dc, &nr, num, font_cell, active ? T_LCD : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &nr, num, font_cell, !enabled ? RGB(214, 96, 84) : active ? T_LCD : T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
         for (int k = 0; k < MX_COLS; k++) {
             int i = row[k];
             if (i < 0) continue;

@@ -252,6 +252,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      128-frame block): about 12 us (10 bands), 18-19 us (16 bands). Demo: `test/out/vocoder_demo.wav` (a synthetic voice,
      then a chord played by it through each vocoder). To try it in Carla: route a voice recording into ONE-ish as above,
      set SYNTH EFFECT TYPE to 16 Band Vocoder (the MORE page has its controls), MIX 100%, hold a chord.
+  16. Modulation extras (audit package 3). Done 2026-10-29 (offline and the desktop window; `test/modx_check.c`): the
+     manual's step-mod destinations in the matrix and the sequencer's lanes (oscillator octave, the noise EG's attack,
+     sustain and release, each envelope's multi trig, sync, loop and latch, each LFO's wave; 275 destinations), an
+     ENABLE per matrix slot (click a row's number on the MATRIX page), PAD POLARITY, X/Y HOLD and LOAD SAVED POS (the
+     wheel and pad saved with the sound; CTRL page). Old sounds play sample for sample as before; CPU on the PC within
+     2% of before (8 voices 67.4 against 66.4 us, A/B on the same machine, 2026-10-29).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

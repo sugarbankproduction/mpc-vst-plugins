@@ -228,6 +228,10 @@ enum {
     P_EXT_LEVEL, P_EXT_ROUTE,
     /* the vocoders' SIBILANCE and SENSITIVITY: the synth effect's, then each master slot's (src/fx/vocoder.h) */
     P_MODFX_SIBIL, P_MODFX_SENS, P_DLY_SIBIL, P_DLY_SENS, P_REV_SIBIL, P_REV_SENS,
+    /* (2026-10-29) each matrix slot's ENABLE; the X/Y pad's polarity and hold, LOAD SAVED POS and the saved wheel and
+     * pad positions */
+    P_MOD1_ON, P_MOD16_ON = P_MOD1_ON + MOD_SLOTS - 1, P_PAD_POLARITY, P_PAD_HOLD, P_LOAD_POS, P_WHEEL_POS, P_PAD_X_POS,
+    P_PAD_Y_POS,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -356,6 +360,9 @@ static const char *const KEYS[P_COUNT] = {
     "syn_on", "syn_ch", "key_lo", "key_hi", "master_level", "seq_all",
     "ext_level", "ext_route",
     "modfx_sibil", "modfx_sens", "dly_sibil", "dly_sens", "rev_sibil", "rev_sens",
+    "mod1_on", "mod2_on", "mod3_on", "mod4_on", "mod5_on", "mod6_on", "mod7_on", "mod8_on", "mod9_on", "mod10_on",
+    "mod11_on", "mod12_on", "mod13_on", "mod14_on", "mod15_on", "mod16_on", "pad_polarity", "pad_hold", "load_pos",
+    "wheel_pos", "pad_x_pos", "pad_y_pos",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -414,6 +421,7 @@ static const short BANK[2][BK_COUNT] = {
 };
 
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
+#define NOCT 5         /* their options: 32' .. 2' */
 enum { FLT_PARALLEL, FLT_SERIES };
 
 /* tempo-synced LFO rates (the rate knob picks one): beats per LFO cycle */
@@ -500,6 +508,12 @@ typedef struct {
     float mac_harm, mac_timbre, mac_morph;   /* its three knobs with the matrix's modulation, 0..1 */
     int mac_trig;            /* a note-on it hasn't seen yet (kept until the channel is heard) */
     int dying;               /* stolen for another Synth (the pool, src/synths.h): fading out, not counted as sounding */
+    /* (2026-10-29) the step-mod list's destinations */
+    env_cfg_t ncfg_v;        /* the noise EG's settings with this voice's modulation (when it has any) */
+    float nq[3];             /* the attack knob, release knob and sustain they were worked out for ... */
+    unsigned ngen;           /* ... and the shared settings' generation */
+    float multi_mat[NENV];   /* the matrix's MULTI TRIG modulation at the last control step (gate_on adds the sequencer's) */
+    float lfo_wdm[NLFO];     /* the matrix's LFO wave modulation from the last control step */
 } voice_t;
 
 typedef struct {
@@ -522,6 +536,7 @@ typedef struct {
     uint8_t mod_list[MOD_SLOTS];   /* the matrix slots in use, and how many */
     int mod_n;
     int mod_env, mod_lfo;    /* a slot in use goes to an envelope's / an LFO's settings */
+    int mod_nenv;            /* ... or the noise EG's (2026-10-29) */
     uint8_t fx_list[MOD_SLOTS];   /* the slots in use that reach the effects (mod_list has the others), and how many */
     int fx_n;
     int fx_mod;              /* a slot or the ribbon reaches the effects: the effect pass runs */
@@ -719,10 +734,44 @@ static float lfo_hz(const one_t *s, int n) { return lfo_rate_hz(s, n, s->val[lfo
 /* an LFO delay or fade knob (0: off, then 1 ms .. 10 s) in samples */
 static float lfo_samples(float knob) { return knob > 0.0f ? env_ms(fminf(knob, 100.0f)) * 0.001f * SR : 0.0f; }
 
+/* ---- (2026-10-29) the step-mod list's destinations, the matrix slots' ENABLE, the pad's polarity, hold and saved
+ * positions ---- */
+/* which kind of per-voice setting a matrix destination reaches: an envelope's (times, sustain, switches), an LFO's
+ * (rate ... fades, wave), the noise EG's */
+static int md_env(int d) { return (d >= MD_FENV_DELAY && d <= MD_ENV_END) || (d >= MD_FENV_MULTI && d <= MD_ENVSW_END); }
+static int md_lfo(int d) { return (d >= MD_LFO1_RATE && d <= MD_LFO_END) || (d >= MD_LFO1_WAVE && d <= MD_LFO_WAVE_END); }
+static int md_nenv(int d) { return d >= MD_NOISE_A && d <= MD_NOISE_R; }
+/* a switch or option list moved by modulation m (+-1 = the whole list): the setting plus m times the list's span,
+ * rounded to a whole step and kept in the list */
+static int md_step(float setting, float m, int nopts) {
+    return (int)clampf(roundf(setting + m * (float)(nopts - 1)), 0.0f, (float)(nopts - 1));
+}
+/* PAD POLARITY: Bipolar makes Pad X and Y -1..1 (the centre 0) instead of 0..1 */
+static int pad_bipolar(const one_t *s) { return s->val[P_PAD_POLARITY] > 0.5f; }
+static float pad_src(const one_t *s, float v) { return pad_bipolar(s) ? 2.0f * v - 1.0f : v; }
+/* X/Y HOLD off: lifting the finger sends the pad back to its rest (0, or the centre when bipolar) */
+static void pad_release(one_t *s) {
+    if (s->val[P_PAD_HOLD] > 0.5f) return;
+    s->pad_x = s->pad_y = pad_bipolar(s) ? 0.5f : 0.0f;
+}
+/* LOAD SAVED POS ("load_pos": Off, Mod Wheel, Pad, Both; bit 0 the wheel, bit 1 the pad): a state saved with it holds
+ * the mod wheel's and the pad's positions (wheel_pos, pad_x_pos, pad_y_pos, 0..100%); loading it puts them back */
+static void positions_capture(one_t *s) {   /* (get_state: before the values are written) */
+    int lp = (int)s->val[P_LOAD_POS];
+    if (lp & 1) s->val[P_WHEEL_POS] = s->wheel * 100.0f;
+    if (lp & 2) { s->val[P_PAD_X_POS] = s->pad_x * 100.0f; s->val[P_PAD_Y_POS] = s->pad_y * 100.0f; }
+}
+static void positions_load(one_t *s) {
+    int lp = (int)s->val[P_LOAD_POS];
+    if (lp & 1) s->wheel = s->val[P_WHEEL_POS] * 0.01f;
+    if (lp & 2) { s->pad_x = s->val[P_PAD_X_POS] * 0.01f; s->pad_y = s->val[P_PAD_Y_POS] * 0.01f; }
+}
+
 /* the LFOs' settings that don't change per voice */
 static void apply_lfos(one_t *s) {
     s->bipolar = 1u << MS_KEY | 1u << MS_RAND | 1u << MS_BEND
-                 | (uint32_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON;
+                 | (uint32_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON
+                 | (uint32_t)pad_bipolar(s) * (1u << MS_PAD_X | 1u << MS_PAD_Y);
     static const int src[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
     for (int n = 0; n < NLFO; n++) {
         const float *x = lfo_x(s, n);
@@ -741,11 +790,12 @@ static void apply_lfos(one_t *s) {
  * skipped) or the effects (else the effect pass is skipped) */
 static void apply_matrix(one_t *s) {
     uint8_t all[MOD_SLOTS];
-    int n = mod_active(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], all), rd = (int)s->val[P_RIBBON_DST];
+    int n = mod_active(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], &s->val[P_MOD1_ON], all), rd = (int)s->val[P_RIBBON_DST];
     s->fx_stale = 1;   /* a setting changed: the next render works the effect settings out again */
     s->mod_n = s->fx_n = 0;
-    s->mod_env = rd >= MD_FENV_DELAY && rd <= MD_ENV_END;
-    s->mod_lfo = rd >= MD_LFO1_RATE && rd <= MD_LFO_END;
+    s->mod_env = md_env(rd);
+    s->mod_lfo = md_lfo(rd);
+    s->mod_nenv = md_nenv(rd) || s->sq.nenv_lanes;
     memset(s->fx_dst, 0, sizeof s->fx_dst);
     if (rd >= MD_FX_FIRST && rd <= MD_FX_END) s->fx_dst[(rd - MD_FX_FIRST) >> 6] |= 1ull << ((rd - MD_FX_FIRST) & 63);
     for (int k = 0; k < n; k++) {
@@ -756,8 +806,9 @@ static void apply_matrix(one_t *s) {
             continue;
         }
         s->mod_list[s->mod_n++] = all[k];
-        s->mod_env |= d >= MD_FENV_DELAY && d <= MD_ENV_END;
-        s->mod_lfo |= d >= MD_LFO1_RATE && d <= MD_LFO_END;
+        s->mod_env |= md_env(d);
+        s->mod_lfo |= md_lfo(d);
+        s->mod_nenv |= md_nenv(d);
     }
     s->mod_env |= s->sq.env_lanes;   /* the step sequencer's modulation lanes reach them like slots */
     s->mod_lfo |= s->sq.lfo_lanes;
@@ -1177,12 +1228,20 @@ static void forget(one_t *s, int note) {
         }
 }
 
-static void gate_on(voice_t *v) {
+static float sq_dest_now(const one_t *s, int d, const float *src);   /* src/stepseq_run.h */
+/* envelope n's MULTI TRIG for a note starting now: the setting, or with modulation reaching it, the matrix's (from the
+ * last control step) and the sequencer's lanes as they are on this step */
+static int env_multi(const one_t *s, const voice_t *v, int n) {
+    if (!s->mod_env) return v->env[n].cfg->multi;
+    int d = MD_FENV_MULTI + MDS_COUNT * n + MDS_MULTI;
+    return md_step(s->val[P_FENV_MULTI + EX_STRIDE * n], v->multi_mat[n] + sq_dest_now(s, d, v->src), 2);
+}
+static void gate_on(const one_t *s, voice_t *v) {
     /* a legato note (this voice's key still down) restarts an envelope only with its MULTI TRIG on */
     int legato = v->gate && !v->sustained && v->env[ENV_AMP].stage != ENV_IDLE;
     for (int n = 0; n < NENV; n++)
-        if (!legato || v->env[n].cfg->multi) env_gate_on(&v->env[n]);
-    if (!legato || v->env[ENV_AMP].cfg->multi) {   /* the noise EG and the MACRO channel's trigger go with the amp's */
+        if (!legato || env_multi(s, v, n)) env_gate_on(&v->env[n]);
+    if (!legato || env_multi(s, v, ENV_AMP)) {   /* the noise EG and the MACRO channel's trigger go with the amp's */
         env_gate_on(&v->nenv);
         v->mac_trig = 1;
     }
@@ -1431,7 +1490,7 @@ static void note_on(one_t *s, int note, int vel) {
         v->age = age;
         stack_voice(v, k, stack);
         start_note(s, v, note, legato);
-        gate_on(v);
+        gate_on(s, v);
         lfo_note_on(s, v);
     }
 }
@@ -1449,7 +1508,7 @@ static void note_off(one_t *s, int note) {
                 int start = !v->gate;   /* this voice wasn't playing (a switch from poly or to unison): start it */
                 if (start) stack_voice(v, k, stack);
                 start_note(s, v, key, 1);
-                if (start) { gate_on(v); lfo_note_on(s, v); }
+                if (start) { gate_on(s, v); lfo_note_on(s, v); }
             }
         }
         return;
@@ -1885,7 +1944,10 @@ static void synth_midi(one_t *s, const uint8_t *m, int len) {
     else if (st == 0xb0 && d1 == 4) s->exp2 = d2 / 127.0f;
     else if (st == 0xb0 && d1 == PAD_X_CC) s->pad_x = d2 / 127.0f;
     else if (st == 0xb0 && d1 == PAD_Y_CC) s->pad_y = d2 / 127.0f;
-    else if (st == 0xb0 && d1 == PAD_TOUCH_CC) s->pad_gate = d2 >= 64 ? 1.0f : 0.0f;
+    else if (st == 0xb0 && d1 == PAD_TOUCH_CC) {
+        s->pad_gate = d2 >= 64 ? 1.0f : 0.0f;
+        if (d2 < 64) pad_release(s);   /* X/Y HOLD off: back to its rest */
+    }
     else if (st == 0xb0 && (d1 == RIBBON_CC || d1 == RIBBON_TOUCH_CC)) ribbon_cc(s, d1, d2);
     else if (st == 0xb0 && d1 == 121) {   /* reset all controllers */
         s->wheel = s->aftertouch = s->bend = s->exp1 = s->exp2 = s->pad_x = s->pad_y = s->pad_gate = 0.0f;
@@ -1925,6 +1987,7 @@ static void synth_after(one_t *s, int k) {
     link_cutoffs(s, k);
     apply(s);
     if (k < 0 || (k >= P_ARP_ON && k <= P_ARP_PEND_MODE)) s->adirty = 1;   /* what the arp's pattern is built from */
+    if (k < 0 || (k >= P_WHEEL_POS && k <= P_PAD_Y_POS)) positions_load(s);   /* LOAD SAVED POS: a state, or a preset */
     /* a new origin or SPRING with no finger on the ribbon: it goes back to its (new) origin */
     if ((k < 0 || k == P_RIBBON_ORIGIN || k == P_RIBBON_MODE) && !s->rib_touch
         && (int)s->val[P_RIBBON_MODE] == RIB_SPRING)
@@ -1940,7 +2003,9 @@ static void synth_after(one_t *s, int k) {
     s->hold = hold_on(s);
     for (int i = 0; i < MAX_VOICES; i++)   /* LATCH off: envelopes it held open after key up now release */
         for (int n = 0; n < NENV; n++)
-            if (!s->ecfg[n].latch && s->voice[i].env[n].held && !s->voice[i].gate) env_release(&s->voice[i].env[n]);
+            if (!(s->mod_env ? s->voice[i].env[n].cfg->latch : s->ecfg[n].latch) && s->voice[i].env[n].held
+                && !s->voice[i].gate)   /* (with modulation reaching an envelope: the voice's own LATCH) */
+                env_release(&s->voice[i].env[n]);
     perf_after_set(s, k);
     sq_sync_params(s);
     synth_switch(s);   /* ON off: everything it plays lets go */
@@ -2165,8 +2230,10 @@ static void voice_lfos(const one_t *s, voice_t *v) {
         if (f[0] > 0.0f || f[1] > 0.0f || f[2] > 0.0f
             || (s->mod_lfo && (dm[MDL_DELAY] != 0.0f || dm[MDL_FADE_IN] != 0.0f || dm[MDL_FADE_OUT] != 0.0f)))
             g = lfo_fade(s, v, n, dm, &waiting);
+        float wdm = s->mod_lfo ? v->lfo_wdm[n] : 0.0f;   /* LFO WAVE as a destination (2026-10-29) */
+        int wave = wdm != 0.0f ? md_step(s->val[lfo_base(n) + 1], wdm, LFO_WAVES) : (int)s->val[lfo_base(n) + 1];
         int own = x[L_RESET] > 0.5f || repeats >= 1
-                  || (s->mod_lfo && (dm[MDL_RATE] != 0.0f || dm[MDL_SEMIS] != 0.0f || dm[MDL_VAR] != 0.0f));
+                  || (s->mod_lfo && (dm[MDL_RATE] != 0.0f || dm[MDL_SEMIS] != 0.0f || dm[MDL_VAR] != 0.0f || wdm != 0.0f));
         if (!own) {
             v->lfo_own &= ~(1u << n);
             y = s->lfo_val[n];
@@ -2179,8 +2246,7 @@ static void voice_lfos(const one_t *s, voice_t *v) {
                 lfo_advance(l, fminf(hz * CR / SR, 0.5f));
             }
             if (repeats >= 1 && l->cycles >= repeats) y = 0.0f;
-            else y = lfo_smooth(l, lfo_polar(s, n, lfo_shape(l, (int)s->val[lfo_base(n) + 1], x[L_VAR] * 0.01f + dm[MDL_VAR])),
-                                s->lfo_coef[n]);
+            else y = lfo_smooth(l, lfo_polar(s, n, lfo_shape(l, wave, x[L_VAR] * 0.01f + dm[MDL_VAR])), s->lfo_coef[n]);
         }
         v->lfo_out[n] = y * g;
     }
@@ -2190,15 +2256,45 @@ static void voice_lfos(const one_t *s, voice_t *v) {
  * and the time scale's 10% .. 1000%, both log), 1000 + the division when synced, or ENV_Q_OFF for a delay or hold
  * at 0 */
 #define ENV_Q_OFF -1e9f
-static float env_q(const one_t *s, int n, float knob, int zero_off, float scale_knob) {
+static float env_q(const one_t *s, int n, float knob, int zero_off, float scale_knob, int sync) {
+    (void)s;
+    (void)n;
     if (zero_off && knob <= 0.0f) return ENV_Q_OFF;
-    if (s->val[P_FENV_SYNC + EX_STRIDE * n] > 0.5f) return 1000.0f + (float)env_div(knob);
+    if (sync) return 1000.0f + (float)env_div(knob);
     return 0.04f * knob + 0.02f * (scale_knob - 50.0f);
 }
 static float env_q_ms(const one_t *s, float q) {
     if (q <= ENV_Q_OFF * 0.5f) return 0.0f;
     if (q >= 999.0f) return 60000.0f / s->bpm * SYNC_DIV[(int)(q - 1000.0f)].beats;
     return exp2f(q * 3.3219281f);   /* 10^q */
+}
+
+/* LATCH modulated off after the key went up (it held the envelope open): it lets go now, as LATCH switched off does.
+ * Only while modulation reaches an envelope (otherwise synth_after does it when the switch moves). */
+static void env_unlatch(const one_t *s, voice_t *v, int n) {
+    env_t *e = &v->env[n];
+    if (s->mod_env && !e->cfg->latch && e->held && !v->gate) env_release(e);
+}
+
+/* (2026-10-29) the noise EG with the matrix's NOISE EG ATTACK, SUSTAIN and RELEASE: its own settings while any of them
+ * moves (worked out again when a time moves by more than 1% or the sustain switch flips), else the shared ones */
+static void voice_nenv(const one_t *s, voice_t *v, const float *dm) {
+    float ma = dm[MD_NOISE_A], ms = dm[MD_NOISE_SUS], mr = dm[MD_NOISE_R];
+    if (!s->mod_nenv || (ma == 0.0f && ms == 0.0f && mr == 0.0f)) { v->nenv.cfg = &s->ncfg; return; }
+    float a = clampf(s->val[P_NOISE_A] + 100.0f * ma, 0.0f, 100.0f), r = clampf(s->val[P_NOISE_R] + 100.0f * mr, 0.0f, 100.0f);
+    float sus = (float)md_step(s->val[P_NOISE_SUS], ms, 2);
+    env_cfg_t *c = &v->ncfg_v;
+    if (v->nenv.cfg == c && fabsf(a - v->nq[0]) < 0.11f && fabsf(r - v->nq[1]) < 0.11f && sus == v->nq[2]
+        && v->ngen == s->env_gen)
+        return;   /* within 1% (the knob is 25 per decade: 1% of a time is 0.11 of it), the same switch */
+    v->ngen = s->env_gen;
+    v->nq[0] = a;
+    v->nq[1] = r;
+    v->nq[2] = sus;
+    float na = env_ms(a), nr = env_ms(r);
+    *c = s->ncfg;
+    env_config(c, (const float[5]){0.0f, na, 0.0f, nr, nr}, sus, 0.0f, 0.5f, 0.5f, SR);
+    v->nenv.cfg = c;
 }
 
 /* one voice's envelope settings with the matrix's envelope destinations: the stage times move on the time knobs'
@@ -2216,26 +2312,35 @@ static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
         return;
     }
     for (int n = 0; n < NENV; n++) {
-        const float *m = &dm[MD_FENV_DELAY + MDE_COUNT * n];
-        float dq = v->an_env_dq[n];
-        int any = 0;
-        for (int k = 0; k < MDE_COUNT && s->mod_env; k++) any |= m[k] != 0.0f;
-        if (!any && dq == 0.0f) { v->env[n].cfg = &s->ecfg[n]; continue; }
+        const float *m = &dm[MD_FENV_DELAY + MDE_COUNT * n], *sw = &dm[MD_FENV_MULTI + MDS_COUNT * n];
         const float *e = &s->val[P_ENV_A + ENV_STRIDE * n], *x = &s->val[P_FENV_DELAY + EX_STRIDE * n];
+        float dq = v->an_env_dq[n];
+        int any = 0, swm = 0;   /* (swm: the switches MULTI TRIG, SYNC, LOOP, LATCH are modulated, 2026-10-29) */
+        for (int k = 0; k < MDE_COUNT && s->mod_env; k++) any |= m[k] != 0.0f;
+        for (int k = 0; k < MDS_COUNT && s->mod_env; k++) swm |= sw[k] != 0.0f;
+        if (!any && !swm && dq == 0.0f) {
+            v->env[n].cfg = &s->ecfg[n];
+            env_unlatch(s, v, n);
+            continue;
+        }
         const float knob[5] = {x[X_DELAY], e[0], x[X_HOLD], e[1], e[3]};
+        int sync = swm ? md_step(x[X_SYNC], sw[MDS_SYNC], 2) : x[X_SYNC] > 0.5f;
         env_cfg_t *c = &v->ecfg[n];
         int fresh = v->env[n].cfg != c || v->egen[n] != s->env_gen;
-        if (!any && !fresh && !v->env_mod[n]) continue;   /* the card's times alone, already worked out */
-        v->env_mod[n] = any;
+        if (!any && !swm && !fresh && !v->env_mod[n]) continue;   /* the card's times alone, already worked out */
+        v->env_mod[n] = any || swm;
         if (fresh) {   /* start from the shared settings */
             *c = s->ecfg[n];
             v->egen[n] = s->env_gen;
-            for (int k = 0; k < 5; k++) v->eq[n][k] = env_q(s, n, knob[k], k == 0 || k == 2, x[X_SCALE]);
+            for (int k = 0; k < 5; k++) v->eq[n][k] = env_q(s, n, knob[k], k == 0 || k == 2, x[X_SCALE], x[X_SYNC] > 0.5f);
         }
         const float bend[5] = {0.0f, -x[X_ACURVE] * 0.01f, 0.0f, x[X_DCURVE] * 0.01f, x[X_RCURVE] * 0.01f};
         float scale = clampf(x[X_SCALE] + 100.0f * m[MDE_SCALE], 0.0f, 100.0f);
+        c->multi = swm ? md_step(x[X_MULTI], sw[MDS_MULTI], 2) : s->ecfg[n].multi;
+        c->loop = swm ? md_step(x[X_LOOP], sw[MDS_LOOP], 2) : s->ecfg[n].loop;
+        c->latch = swm ? md_step(x[X_LATCH], sw[MDS_LATCH], 2) : s->ecfg[n].latch;
         for (int k = 0; k < 5; k++) {
-            float q = env_q(s, n, clampf(knob[k] + 100.0f * m[knob_md[k]], 0.0f, 100.0f), k == 0 || k == 2, scale);
+            float q = env_q(s, n, clampf(knob[k] + 100.0f * m[knob_md[k]], 0.0f, 100.0f), k == 0 || k == 2, scale, sync);
             if (q > ENV_Q_OFF * 0.5f && q < 999.0f) q += dq;   /* a free time (not off, not tempo-synced) */
             if (fabsf(q - v->eq[n][k]) < 0.0043f) continue;   /* within 1% */
             v->eq[n][k] = q;
@@ -2245,6 +2350,7 @@ static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
         c->has_hold = v->eq[n][2] > ENV_Q_OFF * 0.5f;
         c->sustain = clampf(e[2] * 0.01f + m[MDE_SUSTAIN], 0.0f, 1.0f);
         v->env[n].cfg = c;
+        env_unlatch(s, v, n);
     }
 }
 
@@ -2282,8 +2388,8 @@ static void control_voice(one_t *s, voice_t *v) {
     src[MS_NOISE_EG] = v->noise_env;
     src[MS_SOSTENUTO] = s->sostenuto ? 1.0f : 0.0f;
     src[MS_RIBBON] = ribbon_value(s);
-    src[MS_PAD_X] = s->pad_x;
-    src[MS_PAD_Y] = s->pad_y;
+    src[MS_PAD_X] = pad_src(s, s->pad_x);
+    src[MS_PAD_Y] = pad_src(s, s->pad_y);
     src[MS_PAD_GATE] = s->pad_gate;
     /* the voice's slots (none reaches an effect: those are the effect pass's); the MACRO destinations sit past them */
     memset(dm + MD_MAC_HARM, 0, sizeof(float) * (MD_COUNT - MD_MAC_HARM));
@@ -2291,9 +2397,12 @@ static void control_voice(one_t *s, voice_t *v) {
     int rd = (int)p[P_RIBBON_DST];   /* the ribbon's quick assignment, to a voice destination */
     if (rd > MD_OFF && (rd < MD_FX_FIRST || (rd > MD_FX_END && rd < MD_COUNT)))
         dm[rd] += src[MS_RIBBON] * p[P_RIBBON_AMT] * 0.01f;
+    for (int n = 0; n < NENV && s->mod_env; n++) v->multi_mat[n] = dm[MD_FENV_MULTI + MDS_COUNT * n + MDS_MULTI];
     if (s->sq.mod_live) sq_mod_voice(s, src, dm);   /* the sequencer's modulation lanes */
     memcpy(v->lfo_dm, &dm[MD_LFO1_RATE], sizeof v->lfo_dm);   /* the LFOs read these next step */
+    memcpy(v->lfo_wdm, &dm[MD_LFO1_WAVE], sizeof v->lfo_wdm);
     voice_envs(s, v, dm);
+    voice_nenv(s, v, dm);
     float fenv = src[MS_FENV], key_oct = kc / 12.0f;
 
     float semis = v->lfo_out[0] * (p[P_PITCH_LFO] * 0.01f + dm[MD_PITCH_LFO1]) * LFO_PITCH_ST
@@ -2302,10 +2411,16 @@ static void control_voice(one_t *s, voice_t *v) {
     float dr[NDRIFT] = {0};   /* analog drift, -1..1 x the amount per oscillator and for the cutoffs; off: none at all */
     float drift = clampf(p[P_DRIFT] * 0.01f + dm[MD_DRIFT], 0.0f, 1.0f);
     if (drift > 0.0f) drift_step(s, v, dr, drift);
-    const float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST + v->an_tune[0],
-                                   dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST + v->an_tune[1],
-                                   dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2) + dr[2] * DRIFT_ST + v->an_tune[2]};
-    for (int n = 0; n < NOSC; n++) v->beat_mod[n] = dm[MD_O1_BEAT + n] * BEAT_HZ;
+    float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST + v->an_tune[0],
+                             dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST + v->an_tune[1],
+                             dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2) + dr[2] * DRIFT_ST + v->an_tune[2]};
+    for (int n = 0; n < NOSC; n++) {
+        v->beat_mod[n] = dm[MD_O1_BEAT + n] * BEAT_HZ;
+        if (dm[MD_O1_OCT + n] != 0.0f) {   /* OCTAVE as a destination: whole octaves within the footage list */
+            float o = p[P_O1_WAVE + OSC_STRIDE * n + O_OCT];
+            osc_semis[n] += 12.0f * ((float)md_step(o, dm[MD_O1_OCT + n], NOCT) - o);
+        }
+    }
     set_pitch(s, v, semis, osc_semis);
 
     v->cut += (p[P_FLT_CUT] - v->cut) * s->glide;
@@ -2598,8 +2713,8 @@ static int fx_mod_step(one_t *s, uint64_t *dirty) {
         src[MS_EXP2] = s->exp2;
         src[MS_CONST] = 1.0f;
         src[MS_RIBBON] = ribbon_value(s);
-        src[MS_PAD_X] = s->pad_x;
-        src[MS_PAD_Y] = s->pad_y;
+        src[MS_PAD_X] = pad_src(s, s->pad_x);
+        src[MS_PAD_Y] = pad_src(s, s->pad_y);
         src[MS_PAD_GATE] = s->pad_gate;
         mod_eval_list(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->fx_list, s->fx_n, src, s->bipolar, dm, 0);
         int rd = (int)s->val[P_RIBBON_DST];

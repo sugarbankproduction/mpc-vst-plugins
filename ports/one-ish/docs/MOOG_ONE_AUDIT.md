@@ -87,7 +87,7 @@ user patch files (2026-10-27, offline).
 | Selectable velocity curves | p17, p116 | Have | `vel_curve` (see 19) | - | none |
 | OCTAVE buttons; both = default octave; hold both = MIDI panic | p17, p112 | Have | `octave_shift` -2..+2 per Synth; the window's OCTAVE buttons: held 1 s back to the default octave, 2 s a MIDI panic (pedals up, All Notes Off, All Sound Off on every channel) (2026-10-28, the desktop window) | - | none |
 | Oscillator OLED waveform displays [UI] | p10, p22 | Have | Each oscillator panel draws its wave from wave, angle, pulse width and mix (`draw_wave`), static as on the instrument | - | none |
-| Mod wheel position saved with the preset | p18, p113 | Missing | The wheel's position is MIDI state, not saved (see LOAD SAVED POS, 19) | S | none |
+| Mod wheel position saved with the preset | p18, p113 | Have | With LOAD SAVED POS (19) on Mod Wheel or Both, the wheel's position is saved with the sound (`wheel_pos`) and put back when it loads; the window's wheel follows (2026-10-29, offline and the desktop window) | - | none |
 
 ## 2. Rear panel (p19-21)
 
@@ -146,7 +146,7 @@ user patch files (2026-10-27, offline).
 | Noise EG: ATTACK | 1 ms to 10 s (p29) | Have | `noise_a` 1 ms-10 s (log knob), shaping the noise when `noise_env` is On (default Off) (2026-10-27, offline) | - | low |
 | Noise EG: RELEASE | 1 ms to 10 s (p29) | Have | `noise_r` 1 ms-10 s | - | low |
 | Noise EG: SUSTAIN button (off: release acts as decay after the attack) | on/off (p29) | Have | `noise_sus` | - | none |
-| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Partial | Source "Noise EG" (per voice, 0..1); its attack, sustain and release are not destinations (see 15e) | S | low |
+| Noise EG as a matrix source; its stages as destinations | p29, p75-76 | Have | Source "Noise EG" (per voice, 0..1); destinations "Noise EG Attack", "Noise EG Sustain", "Noise EG Release" (see 15e) (2026-10-29, offline) | - | low |
 | Colours: white, red (-6 dB/oct), purple (+6 dB/oct) | p30 | Have | Red: white through a 40 Hz one-pole low-pass; purple: its first difference; same RMS as white. Measured -6.1 / +5.8 dB/oct over 250 Hz-4 kHz (2026-10-27, offline) | - | low |
 | COLOR pair select | Red+White, Red+Purple, White+Purple (p30) | Have | `noise_color_pair` | - | none |
 | COLOR MIX between the two selected colours (also a matrix destination) | knob (p30, p76) | Have | `noise_color_mix` 0-100%, equal-power crossfade; matrix destination "Noise Color Mix" (2026-10-27, offline) | - | low |
@@ -319,7 +319,7 @@ user patch files (2026-10-27, offline).
 | Hard-wired: pitch (LFO 1, Mod EG), wave (LFO 3 to angle and width), FM, cutoff (EG, LFO 2, FM) | p67 | Have | All of them; each amount is also a matrix destination (2026-10-27, offline) | - | - |
 | Quick Assign: DEST and Expression Assign; ADD DESTINATION, EDIT MODULATIONS, DONE, CANCEL; turning the destination knob sets the amount without moving the knob's own value [UI] | p68-69 | Missing | - (the ribbon's `ribbon_dst`/`ribbon_amt` is the only quick assignment) | M | none |
 | Matrix slots (numbered list; the count is not stated in this manual) | p70 | Have | 16 slots (`mod1_*` .. `mod16_*`) (2026-10-27, offline) | - | low (control rate; empty slots skipped) |
-| Per-slot DISABLE/ENABLE without deleting | p70 | Partial | Set the source to Off or the amount to 0 (the setting is lost) | S | none |
+| Per-slot DISABLE/ENABLE without deleting | p70 | Have | `modN_on` per slot (default On): off, the slot keeps its settings and does nothing (the effect pass too); on the MATRIX page a click on the row's number switches it (red: off) (2026-10-29, offline and the desktop window) | - | none |
 | SOURCE AMOUNT | -300% to +300% (p70) | Have | `modN_amt` -300% .. +300% (2026-10-27, offline) | - | - |
 | CONTROLLER with its own amount (negative inverts; a controller alone acts as a source) | -100% to +100% (p71) | Have | `modN_via` with `modN_via_amt` -100..+100% (default +100%); a slot with only a controller uses it as the source (2026-10-27, offline) | - | - |
 | Order: controller and transform first, source amount last | p70 | Have | As the manual (2026-10-27, offline) | - | - |
@@ -392,9 +392,9 @@ user patch files (2026-10-27, offline).
 | Oscillator 1-3: TRIANGLE (angle) | Have | "Osc n Angle" | - | - |
 | Oscillator 1-3: PULSE (width) | Have | "Osc n PW" | - | - |
 | Oscillator 1-3: MIX | Have | "Osc n Wave Mix" | - | - |
-| Oscillator 1-3: OCTAVE (step-mod list, p91) | Missing | - | S | none |
+| Oscillator 1-3: OCTAVE (step-mod list, p91) | Have | "Osc n Octave": whole octaves within 32'..2', +-100% = the whole list (+25% one octave) (2026-10-29, offline) | - | none |
 | Noise: COLOR MIX | Have | "Noise Color Mix" (+-100% = the whole knob) | - | - |
-| Noise: ATTACK, SUSTAIN, RELEASE (noise EG) | Missing | The noise EG exists (`noise_a`, `noise_sus`, `noise_r`); its stages are not destinations | S | none |
+| Noise: ATTACK, SUSTAIN, RELEASE (noise EG) | Have | "Noise EG Attack" / "Release" (+-the whole knob), "Noise EG Sustain" (a switch: +50% on, -50% off); per voice, worked out again only when a time moves by 1% (2026-10-29, offline) | - | none |
 | Mixer: OSC 1, 2, 3 LEVEL | Have | "Osc n Level" | - | - |
 | Mixer: RMOD LEVEL | Have | "Ring Level" | - | - |
 | Mixer: NOISE LEVEL | Have | "Noise Level" | - | - |
@@ -417,13 +417,13 @@ user patch files (2026-10-27, offline).
 | EG 1-3: ATTACK, DECAY, RELEASE | Have | Per voice: a voice with envelope modulation gets its own envelope settings; a stage is recalculated when its time moves by over 1% (2026-10-27, offline) | - | low-medium: about 0.9 us per voice per block with three envelopes swept by an LFO, none when unused |
 | EG 1-3: SUSTAIN | Have | "... Env Sustain" (per voice) | - | - |
 | EG 1-3: TIME SCALE | Have | "... Env Time Scale" (per voice) | - | - |
-| EG 1-3: MULTI TRIGGER, SYNC, LOOP, LATCH (step-mod list, p91) | Missing | - (switches: a step-mod offset would flip them) | S | none |
+| EG 1-3: MULTI TRIGGER, SYNC, LOOP, LATCH (step-mod list, p91) | Have | "... Env Multi Trig", "... Env Sync", "... Env Loop", "... Env Latch", per voice: switches, +50% turns one on, -50% off; a note on a step reads that step's MULTI TRIG at once; latch modulated off after key up lets go (2026-10-29, offline) | - | none |
 | LFO 1-4: RATE | Have | "LFO n Rate" (+-100% = the whole knob; per voice) | - | - |
 | LFO 1-4: RATE (SEMITONES) | Have | "LFO n Rate (st)" (+-100% = +-24 st) | - | - |
 | LFO 1-4: VARIATION | Have | "LFO n Variation" | - | - |
 | LFO 1-4: DELAY | Have | "LFO n Delay" | - | - |
 | LFO 1-4: FADE IN TIME, FADE OUT TIME (RAMP UP/DOWN TIME in the step-mod list) | Have | "LFO n Fade In", "LFO n Fade Out" | - | - |
-| LFO 1-4: WAVEFORM (step-mod list, p91) | Missing | - | S | none |
+| LFO 1-4: WAVEFORM (step-mod list, p91) | Have | "LFO n Wave": +-100% = the whole wave list, in whole steps, per voice (2026-10-29, offline) | - | none |
 
 ## 16. Arpeggiator (p78-81)
 
@@ -471,7 +471,7 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | Per-step RATCHET (repeats inside one step) | 1 to 4 (p88) | Have | per note (2026-10-27, offline) | - | none |
 | Edit all notes of a step at once; delete a note, a step or a lane (SHIFT + DELETE) [UI] | p88, p90 | Partial | delete a note (or an offset) and a modulation lane; no editing of a step's notes together, no step delete button (the engine has `clearstep`) (2026-10-27, offline) | S | none |
 | Modulation lanes: one destination each, bipolar % offset per step, CONTROLLER and AMOUNT per lane | p89-91 | Have | 8 lanes, -100..+100% per step, a controller with an amount (2026-10-27, offline) | - | low |
-| Step-mod destination list (CATEGORY/DESTINATION) | p91 (see 15e) | Partial | the mod matrix's whole destination list (voices and effects); not yet the 15e step-mod-only ones (octave, EG switches, LFO waveform) (2026-10-27, offline) | S | none |
+| Step-mod destination list (CATEGORY/DESTINATION) | p91 (see 15e) | Have | the mod matrix's whole destination list (voices and effects), the step-mod-only ones too (octave, noise EG, EG switches, LFO wave: 2026-10-29); STEP MOD records the footage, EG switch, noise EG and LFO wave controls as offsets (a list's move as its steps); a lane past destination 255 saves in a two-byte form, older sequences as before (2026-10-29, offline) | - | none |
 | SYNC | off/on (p92) | Have | `seq_sync`: host tempo, and its song position while it plays (2026-10-27, offline) | - | none |
 | CLOCK DIVISION (also divides the free rate) | 4, 2, 1, 1/2, 1/4, 1/8, 1/16, 1/32 (p92) | Have | `seq_div`, named 1/1 .. 1/128 (2026-10-27, offline) | - | none |
 | CLOCK TIMING | Straight, Dotted, Triplet (p92) | Have | `seq_timing` (2026-10-27, offline) | - | none |
@@ -690,10 +690,10 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | PITCH BEND UP (SHIFT = finer than semitones) | -24 to +24 st (p115) | Have | `bend_up` -24..+24 st, fine values allowed; the old `bend_range` is retired (an older project's value sets both directions) (2026-10-27, offline) | - | none |
 | PITCH BEND DOWN | -24 to +24 st (p115) | Have | `bend_down` -24..+24 st (default -2: down a whole tone) (2026-10-27, offline) | - | none |
 | MOD wheel, not spring-loaded | p113 | Have | CC 1; the window's wheel stays where it is left | - | - |
-| X/Y PAD: X, Y, pressure, gate; X/Y HOLD saves the held value | p113-114 | Partial | The window has a pad: X as CC 2, Y as CC 3 (and channel pressure), touch as CC 18: the matrix sources Pad X, Pad Y, Pad Gate (2026-10-27, offline); no pressure or HOLD | S | none |
-| PAD POLARITY | Unipolar, Bipolar (p115) | Missing | - | S | none |
+| X/Y PAD: X, Y, pressure, gate; X/Y HOLD saves the held value | p113-114 | Partial | The window has a pad: X as CC 2, Y as CC 3 (and channel pressure), touch as CC 18: the matrix sources Pad X, Pad Y, Pad Gate (2026-10-27, offline); X/Y HOLD `pad_hold` (default On, as before; Off: let go, the pad returns to its rest, the window's dot too) (2026-10-29, offline and the desktop window); no pressure (a mouse has none) | S | none |
+| PAD POLARITY | Unipolar, Bipolar (p115) | Have | `pad_polarity`: Unipolar (0..1, as before) or Bipolar (-1..1, the middle 0) for Pad X and Y (2026-10-29, offline) | - | none |
 | VELOCITY CURVE, per Synth | Soft, Medium, Hard, Compress, Expand (p116) | Have | `vel_curve`: Soft sqrt(v), Medium v (default, as before), Hard v^2, Compress and Expand flatten or steepen around the middle; all keep both ends (2026-10-27, offline) | - | none |
-| LOAD SAVED POS. (mod wheel, pad position with the Synth) | Off, Mod Wheel, Pad, Both (p117) | Missing | The wheel and pad positions are not saved | S | none |
+| LOAD SAVED POS. (mod wheel, pad position with the Synth) | Off, Mod Wheel, Pad, Both (p117) | Have | `load_pos` per Synth: a saved sound holds the wheel's and pad's positions (`wheel_pos`, `pad_x_pos`, `pad_y_pos`, taken as the state is saved) and loading it puts them back (CTRL page) (2026-10-29, offline and the desktop window) | - | none |
 | SEMITONE TRANSP. | -12 to Off to +12 (p117) | Have | `transpose` -12..+12 st (2026-10-27, offline) | - | none |
 | KEY TRACK CENTER for all key tracking | C0 to G10, default middle C (p117) | Have | `key_center` MIDI note 0-127, shown as "C4 (60)": both filters' tracking, the Keyboard matrix source and oscillator pitch tracking (2026-10-27, offline) | - | none |
 | HEADPHONES jacks [HW] | p114 | Missing | - | - | none |
@@ -708,7 +708,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | Load a Timbre from any preset into any Synth [MULTI] | p119 | Have | PATCHES page INTO S1/2/3: a factory preset or user patch loads into the focused Synth only (its setup kept), the engine's `synthload` (2026-10-28, offline and the desktop window) | - | none |
 | SAVE PRESET / SAVE PRESET AS, unique names, overwrite prompt [UI] | p120 | Have | The PATCHES page: SAVE, SAVE AS (asks before replacing a same-named patch; names compare case-insensitively), RENAME, DELETE (2026-10-27, offline) | - | none |
 | SAVE TIMBRE to a new single-Timbre preset [UI][MULTI] | p121 | Have | PATCHES page SAVE S1/2/3: the focused Synth's sound as a user patch (2026-10-28, offline and the desktop window) | - | none |
-| A preset restores everything (sequences, matrices, arps, effects, held wheel and pad) | p119 | Partial | The state restores every ONE-ish parameter; not the held mod wheel or pad (and no sequences yet) | S | none |
+| A preset restores everything (sequences, matrices, arps, effects, held wheel and pad) | p119 | Have | The state restores every ONE-ish parameter and the sequences (2026-10-27); the held mod wheel and pad with LOAD SAVED POS (2026-10-29, offline) | - | none |
 
 ## 21. Editing and saving (p122-123)
 
@@ -939,6 +939,12 @@ beside the engine work.
 - Files: `src/stepseq.h`, `src/stepseq_run.h`, `desktop/seq_page.c`, `params.json`.
 
 **3. Modulation engine extras** (sections 5, 15, 19, 20). Effort M. CPU: low (control rate).
+- Done 2026-10-29 (offline and the desktop window; `test/modx_check.c`): the 22 destinations below (275 in all, after Ext Level; per
+  voice; switches and lists move in whole steps), `modN_on` for every slot (the MATRIX page: click a row's number),
+  `pad_polarity`, `pad_hold`, `load_pos` with `wheel_pos` / `pad_x_pos` / `pad_y_pos` (the CTRL page), STEP MOD on the
+  new destinations; sequences with a lane past destination 255 save in a two-byte form (older ones as before). Old
+  sounds give the same samples (`test/golden_check.c`); the CPU is unchanged (PLAN.md). Left: PAD PRESSURE (a mouse has
+  none), the matrix page's other package 6 items.
 - New matrix destinations: oscillator OCTAVE (x3), noise EG ATTACK / SUSTAIN / RELEASE, the EG switches MULTI TRIG /
   SYNC / LOOP / LATCH (x3), LFO WAVEFORM (x4). Step mod and the matrix both use them.
 - A per-slot ENABLE param, so a slot can be switched off without losing its settings.
