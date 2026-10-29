@@ -244,7 +244,7 @@ enum {
     P_PH_DYN,
     /* (2026-10-30) the window's LINKs (desktop/hub.c): shared, stored only; the engine does nothing with them */
     P_LINK_KEY, P_LINK_SCALE, P_LINK_ARP, P_LINK_SEQ, P_LINK_LFO1, P_LINK_LFO2, P_LINK_LFO3, P_LINK_LFO4, P_LINK_PHYS,
-    P_LINK_SEND,
+    P_LINK_SEND, P_LINK_CUT,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -381,7 +381,7 @@ static const char *const KEYS[P_COUNT] = {
     "phys_spread", "phys_life", "phys_attract", "phys_trigger", "phys_keys", "phys_restart", "phys_sync", "phys_len",
     "phys_octave", "phys_range", "phys_max", "phys_dyn",
     "link_key", "link_scale", "link_arp", "link_seq", "link_lfo1", "link_lfo2", "link_lfo3", "link_lfo4", "link_phys",
-    "link_send",
+    "link_send", "link_cut",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */

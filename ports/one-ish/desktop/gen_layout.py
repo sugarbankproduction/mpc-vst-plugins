@@ -528,9 +528,11 @@ def build(lay):
         ("svf_cut", "SVF Cutoff"), ("svf_res", "SVF Resonance"), ("svf_mode", "SVF Mode"), ("svf_pair", "SVF Pair"),
         ("svf_space", "SVF Spacing"), ("flt_cut", "Ladder Cutoff"), ("flt_res", "Ladder Resonance"),
         ("flt_mode", "Ladder Mode"), ("flt_slope", "Ladder Slope"), ("flt_drive", "Ladder Drive"),
-        ("flt_route", "Route"), ("flt_mix", "Mix (SVF > Ladder)"), ("flt_link", "Link Cutoff")], pic=("FILTER", ""))
+        ("flt_route", "Route"), ("flt_mix", "Mix (SVF > Ladder)"), ("flt_link", "Link Cutoff"),
+        ("link_cut", "Cutoffs: All 3 Synths")], pic=("FILTER", ""))
     L.ctl("svf_cut", "big", X + 1256, 36, 100, 100, "CUTOFF")
     L.ctl("flt_cut", "big", X + 1410, 36, 100, 100, "CUTOFF")
+    L.ctl("link_cut", "toggle", X + 1356, 60, 54, 40, "ALL 3")   # (2026-10-30) both cutoffs in all 3 Synths, relative
     L.ctl("flt_link", "toggle", X + 1356, 104, 54, 44, "LINK CUTOFF")
     L.ctl("svf_res", "knob", X + 1240, 148, 58, 66, "RESONANCE")
     L.ctl("svf_space", "knob", X + 1298, 148, 56, 66, "SPACING")
@@ -656,7 +658,8 @@ HUB_LATER = ("LIFE", "ORBITS", "PEND", "RAIN", "MARKOV")
 LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
                ("link_arp", ("arp_div", "arp_timing", "arp_sync", "arp_rate")),
                ("link_seq", ("seq_div", "seq_timing", "seq_sync", "seq_rate")),
-               ("link_send", ("mfx_send1", "mfx_send2"))] + \
+               ("link_send", ("mfx_send1", "mfx_send2")),
+               ("link_cut", ("svf_cut", "flt_cut"))] + \
               [("link_lfo%d" % n, tuple("lfo%d_%s" % (n, s) for s in ("rate", "sync", "timing"))) for n in range(1, 5)]
 
 

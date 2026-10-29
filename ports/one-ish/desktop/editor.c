@@ -509,9 +509,13 @@ static void set_value(ed_t *e, int i, float v) {   /* i: a panel index (the focu
     int t[NSYNTHS], n = edit_targets(e, i, t);
     lib_touch(e, NULL);   /* an undo step (a drag or a burst of wheel clicks: one) */
     v = v < 0 ? 0 : v > 1 ? 1 : v;
+    float d = v - e->fx->getParameter(e->fx, t[0]);
+    int rel = n > 1 && link_relative(e, i);   /* ALL 3 (the cutoffs): the others move by as much, offsets kept */
     for (int k = 0; k < n; k++) {
-        e->fx->setParameter(e->fx, t[k], v);
-        if (e->host) e->host(e->fx, audioMasterAutomate, t[k], 0, NULL, v);
+        float vk = rel && k ? e->fx->getParameter(e->fx, t[k]) + d : v;
+        vk = vk < 0 ? 0 : vk > 1 ? 1 : vk;
+        e->fx->setParameter(e->fx, t[k], vk);
+        if (e->host) e->host(e->fx, audioMasterAutomate, t[k], 0, NULL, vk);
     }
     invalidate_param(e, base_of(i));
 }

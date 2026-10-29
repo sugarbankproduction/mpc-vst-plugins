@@ -660,6 +660,7 @@
   {"key": "link_lfo4", "name": "Link LFO 4 Rate", "options": ["Off", "On"], "default": "Off"},
   {"key": "link_phys", "name": "Link Balls/Particles", "options": ["Off", "On"], "default": "Off"},
   {"key": "link_send", "name": "Link FX Sends", "options": ["Off", "On"], "default": "Off"},
+  {"key": "link_cut", "name": "Link Cutoffs (3 Synths)", "options": ["Off", "On"], "default": "Off"},
   {"key": "s2_o1_wave", "name": "S2 Osc 1 Wave", "options": ["Tri", "Saw"], "default": "Saw"},
   {"key": "s2_amp_a", "name": "S2 Amp Attack", "min": 0, "max": 100, "default": 17.5, "dynamic_display": true},
   {"key": "s2_amp_d", "name": "S2 Amp Decay", "min": 0, "max": 100, "default": 61.9, "dynamic_display": true},

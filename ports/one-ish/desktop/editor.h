@@ -72,7 +72,8 @@ enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 100
        HT_TEMPO,              /* the TEMPO setting (x 1000) */
        HT_RESTORE,            /* how many generators GEN OFF would bring back */
        HT_LINKED,             /* opt = a panel index: 1 when its LINK is lit */
-       HT_VOL_MASTER };       /* 1: SYNTH OUTPUT's MASTER is lit */
+       HT_VOL_MASTER,         /* 1: SYNTH OUTPUT's MASTER is lit */
+       HT_SUB };              /* the screen's sub-page shown now */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
@@ -342,6 +343,7 @@ void settings_tempo_set(ed_t *e, int own, float bpm, int save);   /* both (save 
 /* hub.c (2026-10-30): the GENERATIVE hub page, GEN OFF, the console's TEMPO readout, the LINKs across the Synths */
 int link_lit(ed_t *e, int i);                  /* panel index i has a LINK, lit: edits go to all three Synths */
 int link_param(int i);                         /* the LINK param of panel index i (-1: none) */
+int link_relative(ed_t *e, int i);             /* lit and relative (ALL 3: the cutoffs move by the same amount) */
 int panel_source(ed_t *e, int i);              /* what panel control i moves now (VOLUME: master_level, MASTER lit) */
 int master_param(void);                        /* master_level's index (-1: none) */
 RECT hub_rect(int z);                          /* where hub zone z sits (the page's or the console's) */

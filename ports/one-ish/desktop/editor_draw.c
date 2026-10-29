@@ -196,6 +196,9 @@ static const char *help_for(int i) {
         {"volume", "Volume: the Synth in focus's own level. Light MASTER under it and the knob becomes MASTER, the whole instrument's level."},
         {"master_level", "MASTER: the level of the whole instrument, all three Synths together (shared; saved with the sound). SYNTH OUTPUT's MASTER button off: the knob is VOLUME again."},    };
     const char *key = PARAMS[i].key;
+    if (!strcmp(key, "link_cut")) return "ALL 3: lit, turning either CUTOFF moves that cutoff on all three Synths by the "
+                                         "same amount (each keeps its own offset; a cutoff at its end stays there). One "
+                                         "undo step, the host told. Saved with the sound.";
     if (!strncmp(key, "link_", 5)) return "LINK: lit, changing this setting (or group) on the Synth in focus sets the same "
                                          "on all three Synths: one undo step, the host told of each. Off, each Synth "
                                          "keeps its own. Saved with the sound.";

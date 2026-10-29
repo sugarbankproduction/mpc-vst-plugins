@@ -33,6 +33,7 @@
 enum { HUB_ROWS = 6 };   /* generator rows per column (two columns) */
 
 /* ---- LINK ---- */
+static int key_ix(const char *k);
 static short LINKMAP[NPARAMS];
 static int linkmap_ready;
 int link_param(int i) {
@@ -49,9 +50,13 @@ int link_lit(ed_t *e, int i) {
     int l = link_param(i);
     return l >= 0 && e->fx->getParameter(e->fx, l) > 0.5f;
 }
+int link_relative(ed_t *e, int i) {   /* lit, and a relative one (ALL 3 over LINK CUTOFF: the cutoffs) */
+    static int cut = -2;
+    if (cut == -2) cut = key_ix("link_cut");
+    return cut >= 0 && link_param(i) == cut && link_lit(e, i);
+}
 
 /* ---- SYNTH OUTPUT's MASTER: while it is lit the section's VOLUME knob is master_level (the whole instrument) ---- */
-static int key_ix(const char *k);
 int master_param(void) {
     static int m = -2;
     if (m == -2) m = key_ix("master_level");
@@ -283,6 +288,7 @@ intptr_t hub_test(ed_t *e, intptr_t op, float opt) {
     case HT_RESTORE: return hub_restore_n(e);
     case HT_LINKED: return link_lit(e, (int)lroundf(opt));
     case HT_VOL_MASTER: return e->vol_master;
+    case HT_SUB: return e->sub;
     }
     return 0;
 }
