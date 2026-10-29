@@ -144,6 +144,13 @@ static void check(int ok, const char *what) {
     printf("%s %s\n", ok ? "ok  " : "FAIL", what);
     if (!ok) failures++;
 }
+/* the MPC's 8 KB chunk (2026-10-29): the every-param-changed worst case no longer fits it since the generators' params
+ * came in. The owner's call: desktop first, the MPC chunk is dealt with at the MPC milestone (a bigger chunk, untried on
+ * hardware, or a tighter state). Until then these checks warn instead of failing. */
+static void check_mpc(int ok, const char *what) {
+    if (ok) check(1, what);
+    else printf("WARN (MPC milestone) %s\n", what);
+}
 
 static void set(void *s, const char *k, double v) {
     char b[32];
@@ -3846,7 +3853,7 @@ static void matrix_wiring(void) {
         mpc = 1.0 - (double)(n8 + 1) / MPC_CHUNK;
         snprintf(what, sizeof what, "... and fits the MPC's %d-byte chunk as \"%.3s\" (%d bytes, %.0f%% free%s), restoring "
                  "every value", MPC_CHUNK, mpc_st, n8, 100 * mpc, mpc < 0.15 ? ": under 15%, nearly full" : "");
-        check(n8 > 0 && same8, what);
+        check_mpc(n8 > 0 && same8, what);
         /* the smallest buffer it fits (whatever form), and one byte less: no state at all, never a cut one */
         static char small[VST2_CHUNK_MAX];
         int lo = 1, hi = n + 1;

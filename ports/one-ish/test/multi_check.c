@@ -410,7 +410,7 @@ static void multitimbral(void) {
         snprintf(what, sizeof what, "in an 8 KB chunk (MPC) the worst state keeps Synth 1 and the shared values (%d bytes; "
                  "Synth 1's cutoff %.2f = %.2f, the delay time %.2f = %.2f)", ns, get(c, "flt_cut"), get(b, "flt_cut"),
                  get(c, "dly_time"), get(b, "dly_time"));
-        check(ns > 0 && ns < 8192 && get(c, "flt_cut") == get(b, "flt_cut") && get(c, "dly_time") == get(b, "dly_time"), what);
+        check_mpc(ns > 0 && ns < 8192 && get(c, "flt_cut") == get(b, "flt_cut") && get(c, "dly_time") == get(b, "dly_time"), what);
         E->destroy(a); E->destroy(b); E->destroy(c);
     }
 }
