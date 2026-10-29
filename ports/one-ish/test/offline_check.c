@@ -4059,7 +4059,7 @@ static void randomiser(void) {
 static int rnd_rows_of(const float *n) {   /* matrix rows that do something: a source, a destination and an amount */
     int rows = 0;
     for (int k = 1; k <= 16; k++) {
-        char ks[16], kd[16], ka[16];
+        char ks[24], kd[24], ka[24];
         snprintf(ks, sizeof ks, "mod%d_src", k);
         snprintf(kd, sizeof kd, "mod%d_dst", k);
         snprintf(ka, sizeof ka, "mod%d_amt", k);
