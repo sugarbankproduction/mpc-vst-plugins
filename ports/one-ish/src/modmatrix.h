@@ -33,6 +33,7 @@ enum {
     MS_BALL_Y, MS_BALL_X, MS_BALL_SPEED, MS_BALL_HIT, MS_PART_COUNT, MS_PART_HIT, MS_TURING, MS_EUCLID,
     MS_COUNT
 };
+_Static_assert(MS_COUNT <= 64, "the bipolar flags (engine.c s->bipolar, mod_eval_list) hold one bit per source in 64");
 
 enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };   /* transforms, params.json order */
 

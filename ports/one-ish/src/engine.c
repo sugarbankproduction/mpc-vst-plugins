@@ -817,9 +817,10 @@ static void positions_load(one_t *s) {
 
 /* the LFOs' settings that don't change per voice */
 static void apply_lfos(one_t *s) {
-    s->bipolar = 1u << MS_KEY | 1u << MS_RAND | 1u << MS_BEND
-                 | (uint32_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON
-                 | (uint32_t)pad_bipolar(s) * (1u << MS_PAD_X | 1u << MS_PAD_Y);
+    /* (2026-10-30: 64 bits, one per source; every source past these is unipolar, 0..1) */
+    s->bipolar = 1ull << MS_KEY | 1ull << MS_RAND | 1ull << MS_BEND
+                 | (uint64_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON
+                 | (uint64_t)pad_bipolar(s) * (1ull << MS_PAD_X | 1ull << MS_PAD_Y);
     static const int src[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
     for (int n = 0; n < NLFO; n++) {
         const float *x = lfo_x(s, n);
@@ -829,7 +830,7 @@ static void apply_lfos(one_t *s) {
         s->lfo_fade[n][1] = lfo_samples(x[L_FADE_IN]);
         s->lfo_fade[n][2] = lfo_samples(x[L_FADE_OUT]);
         s->lfo_hz[n] = lfo_hz(s, n);
-        if ((int)x[L_POLARITY] == POL_BIPOLAR) s->bipolar |= 1u << src[n];
+        if ((int)x[L_POLARITY] == POL_BIPOLAR) s->bipolar |= 1ull << src[n];
         /* the High range's per-sample path: its smoothing per sample (2026-10-29) */
         s->lfo_coef1[n] = sm > 0.0f ? 1.0f - expf(-6.2831853f * LFO_SMOOTH_HZ * powf(10.0f, -4.0f * sm) / SR) : 1.0f;
     }
@@ -2246,6 +2247,8 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
 static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);
     if (!strcmp(key, "phys_view")) return ph_view_text(s, buf, n);   /* the balls and particles (the window's view) */   /* the sequencer's readout (a "display": "string" param) */
+    if (!strcmp(key, "mod_bipolar")) return snprintf(buf, n, "%llx", (unsigned long long)s->bipolar);   /* (2026-10-30)
+                                                                * a test readout: which matrix sources are bipolar */
     if (!strcmp(key, "gen_src")) {   /* (2026-10-30) a test readout: the generators' eight matrix sources now */
         const float *m = s->ph.m_out;
         return snprintf(buf, n, "%.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7]);

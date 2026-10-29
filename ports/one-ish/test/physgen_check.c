@@ -446,6 +446,30 @@ static void physgen2_checks(void) {
                          !strcmp(PARAMS[i].opts[MS_EUCLID], "Euclid Gate");
         check(named == 2, "the eight generator sources end the matrix's source and via lists (Ball 1 Height .. Euclid "
               "Gate)");
+        /* every source's polarity (the 64-bit flags, 2026-10-30: past 32 sources): Keyboard, Random, Pitch Wheel always
+         * bipolar; each LFO by its POLARITY; the ribbon with its origin in the centre; Pad X / Y with PAD POLARITY
+         * bipolar; every other source (the generators' and any added after them) unipolar. Defaults, then all flipped */
+        for (int flip = 0; flip < 2; flip++) {
+            void *p = pg_patch();
+            if (flip) setkv(p, "lfo1_polarity=1,lfo2_polarity=1,lfo3_polarity=1,lfo4_polarity=1,ribbon_origin=1,"
+                               "pad_polarity=1");
+            static char t[64];
+            E->get_param(p, "mod_bipolar", t, sizeof t);
+            unsigned long long got = strtoull(t, NULL, 16), want = 1ull << MS_KEY | 1ull << MS_RAND | 1ull << MS_BEND;
+            static const int LFOS[] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
+            for (int n = 0; n < 4; n++) {
+                char k[24];
+                snprintf(k, sizeof k, "lfo%d_polarity", n + 1);
+                if (get(p, k) < 0.5) want |= 1ull << LFOS[n];
+            }
+            if (get(p, "ribbon_origin") < 0.5) want |= 1ull << MS_RIBBON;
+            if (get(p, "pad_polarity") > 0.5) want |= 1ull << MS_PAD_X | 1ull << MS_PAD_Y;
+            snprintf(what, sizeof what, "the matrix sources' polarity (%s): bipolar flags %llx, want %llx (%d sources, "
+                     "none past them)", flip ? "every LFO unipolar, ribbon from the left, pad bipolar" : "defaults", got,
+                     want, MS_COUNT);
+            check(t[0] && got == want && (MS_COUNT == 64 || got >> MS_COUNT == 0), what);
+            E->destroy(p);
+        }
         void *a = pg_patch();
         setkv(a, "phys_balls_on=1,phys_parts_on=1,phys_rate=70,gen_euclid_on=1,gen_tm_on=1,gen_tm_change=50");
         note(a, 1, 60, 100);
