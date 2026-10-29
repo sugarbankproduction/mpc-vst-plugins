@@ -51,6 +51,7 @@ static int engine_global(int k) {
                                          "fine_tune", "midi_ch", "learn_mode", "master_level", "seq_all"};
     const char *key = KEYS[k];
     if (!strncmp(key, "dly_", 4) || !strncmp(key, "rev_", 4)) return 1;   /* the master effect slots' controls */
+    if (!strncmp(key, "link_", 5)) return 1;   /* the window's LINKs across the Synths (2026-10-30) */
     for (unsigned i = 0; i < sizeof SHARED / sizeof SHARED[0]; i++)
         if (!strcmp(key, SHARED[i])) return 1;
     return 0;

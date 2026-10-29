@@ -647,6 +647,16 @@ phys_octave
 phys_range
 phys_max
 phys_dyn
+link_key
+link_scale
+link_arp
+link_seq
+link_lfo1
+link_lfo2
+link_lfo3
+link_lfo4
+link_phys
+link_send
 s2_o1_wave
 s2_amp_a
 s2_amp_d

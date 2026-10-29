@@ -242,6 +242,9 @@ enum {
     P_PH_BALLS, P_PH_NBALLS, P_PH_SPEED, P_PH_GRAVITY, P_PH_SIZE, P_PH_BOUNCE, P_PH_PARTS, P_PH_RATE, P_PH_SPREAD,
     P_PH_LIFE, P_PH_ATTRACT, P_PH_TRIGGER, P_PH_KEYS, P_PH_RESTART, P_PH_SYNC, P_PH_LEN, P_PH_OCT, P_PH_RANGE, P_PH_MAX,
     P_PH_DYN,
+    /* (2026-10-30) the window's LINKs (desktop/hub.c): shared, stored only; the engine does nothing with them */
+    P_LINK_KEY, P_LINK_SCALE, P_LINK_ARP, P_LINK_SEQ, P_LINK_LFO1, P_LINK_LFO2, P_LINK_LFO3, P_LINK_LFO4, P_LINK_PHYS,
+    P_LINK_SEND,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -377,6 +380,8 @@ static const char *const KEYS[P_COUNT] = {
     "phys_balls_on", "phys_balls", "phys_speed", "phys_gravity", "phys_size", "phys_bounce", "phys_parts_on", "phys_rate",
     "phys_spread", "phys_life", "phys_attract", "phys_trigger", "phys_keys", "phys_restart", "phys_sync", "phys_len",
     "phys_octave", "phys_range", "phys_max", "phys_dyn",
+    "link_key", "link_scale", "link_arp", "link_seq", "link_lfo1", "link_lfo2", "link_lfo3", "link_lfo4", "link_phys",
+    "link_send",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -2240,6 +2245,7 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
 /* a readout of this Synth (src/synths.h get_param: its key without the "s2_" prefix) */
 static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);
+    if (!strcmp(key, "bpm")) return snprintf(buf, n, "%g", s->bpm);   /* (a test readout: "s2_bpm", 2026-10-30) */
     if (!strcmp(key, "phys_view")) return ph_view_text(s, buf, n);   /* the balls and particles (the window's view) */   /* the sequencer's readout (a "display": "string" param) */
     if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
         int used = 0;
