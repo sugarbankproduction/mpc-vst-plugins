@@ -130,6 +130,8 @@
 
 static const mpc_engine_t *E;
 static int failures;
+/* a key of Synth 1 (or a shared one): not a Synth 2 or 3 copy (multitimbral, test/multi_check.c) */
+static int s1_key(const char *k) { return strncmp(k, "s2_", 3) && strncmp(k, "s3_", 3); }
 
 static void check(int ok, const char *what) {
     printf("%s %s\n", ok ? "ok  " : "FAIL", what);
@@ -3765,7 +3767,7 @@ static void matrix_wiring(void) {
         E->destroy(a); E->destroy(b);
     }
 
-    /* the worst state: every param off its default, the continuous ones at six significant digits. It must fit this
+    /* the worst state (Synth 1 and the shared params; test/multi_check.c: all three Synths): every param off its default, the continuous ones at six significant digits. It must fit this
      * build's chunk with 15% to spare (the editor's ui_patch tag included), and fit the MPC's 8 KB chunk; a buffer too
      * small gets no state at all, never a cut one */
     {
@@ -3774,16 +3776,19 @@ static void matrix_wiring(void) {
         int changed = 0;
         for (int i = 0; i < NPARAMS; i++) {
             const param_t *p = &PARAMS[i];
+            if (!s1_key(p->key)) continue;
             double def = p->nopts ? round(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
             double v = p->nopts ? fmod(def + 1, p->nopts) : p->min + (p->max - p->min) * 0.123457;
             if (!p->nopts && fabs(v - def) < 1e-3) v = p->min + (p->max - p->min) * 0.876543;
             set(a, p->key, v);
         }
         /* (not in a saved state on purpose: the sequencer's PLAY, REC and STEP MOD, and its step readout) */
-        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos"};
-        int kept = NPARAMS;
+        static const char *const TRANSIENT[] = {"seq_play", "seq_rec", "seq_step_mod", "seq_pos", "seq_all"};
+        int kept = 0;
+        for (int i = 0; i < NPARAMS; i++) kept += s1_key(PARAMS[i].key);
         for (int i = 0; i < NPARAMS; i++) {
             const param_t *p = &PARAMS[i];
+            if (!s1_key(p->key)) continue;
             int skip = 0;
             for (unsigned t = 0; t < sizeof TRANSIENT / sizeof TRANSIENT[0]; t++) skip |= !strcmp(p->key, TRANSIENT[t]);
             if (skip) { kept--; continue; }
@@ -4932,6 +4937,7 @@ static void arp_wav(const char *demo_path) {
 
 /* ---- the step sequencer (its own file: src/stepseq.h, src/stepseq_run.h) ---- */
 #include "stepseq_check.c"
+#include "multi_check.c"   /* multitimbral: three Synths */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5510,7 +5516,7 @@ static void effects_master(void) {
             for (int at = 0; at < SR * 2; at += 128) {
                 if (at == sw) fx2_lively(&p.mfx[slot], SW[k][2]);
                 fx_process(&fxs, &p, NULL, sine + at, sine + at, l + at, r + at, 128);
-                if (at >= sw && ran < 0 && fxs.m[slot].s.state == FS_RUN && fxs.m[slot].s.type == SW[k][2]) ran = at - sw;
+                if (at >= sw && ran < 0 && fxs.mst.m[slot].s.state == FS_RUN && fxs.mst.m[slot].s.type == SW[k][2]) ran = at - sw;
             }
             float before = 0, around = 0;   /* (before: the largest step of the old type and of the new one, settled) */
             for (int i = SR / 2; i < sw; i++) before = fmaxf(before, fabsf((l[i] - sine[i]) - (l[i - 1] - sine[i - 1])));
@@ -5533,7 +5539,7 @@ static void effects_master(void) {
         for (int i = SR / 2; i < sw; i++) before = fmaxf(before, fabsf(l[i] - l[i - 1]));
         for (int i = sw + SR / 5; i < SR * 2; i++) before = fmaxf(before, fabsf(l[i] - l[i - 1]));
         for (int i = sw; i < sw + SR / 10; i++) around = fmaxf(around, fabsf(l[i] - l[i - 1]));
-        ok &= around <= 1.2f * before + 1e-3f && fxs.ss.state == FS_RUN && fxs.ss.type == SFX_PHASER6;
+        ok &= around <= 1.2f * before + 1e-3f && fxs.syn.ss.state == FS_RUN && fxs.syn.ss.type == SFX_PHASER6;
         snprintf(what, sizeof what, "type switches without a click (largest step around / before, then when the new type "
                  "ran):%s; synth chorus>phaser %.3f/%.3f", line, around, before);
         check(ok, what);
@@ -5591,9 +5597,9 @@ static void effects_master(void) {
         for (int i = 0; i < NPARAMS; i++) {
             const char *k = PARAMS[i].key;
             size_t kl = strlen(k);
-            if (kl > 4 && !strcmp(k + kl - 4, "_dst") && strncmp(k, "modfx", 5)) {
+            if (kl > 4 && !strcmp(k + kl - 4, "_dst") && strncmp(k, "modfx", 5) && s1_key(k)) {
                 lists += PARAMS[i].nopts == MD_COUNT;
-                named += !strcmp(PARAMS[i].opts[MD_FX_FIRST + MDF_F2_GRAVITY], "FX2 Gravity")
+                named += PARAMS[i].nopts == MD_COUNT && !strcmp(PARAMS[i].opts[MD_FX_FIRST + MDF_F2_GRAVITY], "FX2 Gravity")
                          && !strcmp(PARAMS[i].opts[MD_MAC_HARM], "Macro Harmonics");
             }
         }
@@ -5692,7 +5698,12 @@ static void fx2_wavs(const char *demo_path) {
 
 int main(int argc, char **argv) {
     E = mpc_engine();
-    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); return 0; }
+    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); multi_bench(); return 0; }
+    if (argc > 2 && !strcmp(argv[1], "multi")) {   /* just the multitimbral checks: offline_check multi <dir>/demo.wav */
+        multitimbral();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "macro")) {   /* just the MACRO channel: offline_check macro <dir>/demo.wav */
         macro_osc();
         macro_nan();
@@ -5760,6 +5771,7 @@ int main(int argc, char **argv) {
     randomiser();
     arp_generative();
     step_sequencer();
+    multitimbral();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

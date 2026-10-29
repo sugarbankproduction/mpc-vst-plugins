@@ -65,12 +65,18 @@ static ed_t *ed_of(AEffect *fx) {
     return NULL;
 }
 
-/* the MIDI channel the window plays on (0-15): the one the instrument listens on (MIDI CHANNEL; Omni: channel 1) */
+/* the MIDI channel the window plays on (0-15): the one the instrument listens on (MIDI CHANNEL; Omni: channel 1; Per
+ * Synth: the focused Synth's own, so the keys play the Synth on the panel) */
 static int ui_channel(ed_t *e) {
-    static int k = -2;
+    static int k = -2, ks = -2;
     if (k == -2) k = rnd_key("midi_ch") < NPARAMS ? rnd_key("midi_ch") : -1;
+    if (ks == -2) ks = rnd_key("syn_ch") < NPARAMS ? rnd_key("syn_ch") : -1;
     if (k < 0) return 0;
     int o = (int)lroundf(e->fx->getParameter(e->fx, k) * (PARAMS[k].nopts - 1));
+    if (o == 17 && ks >= 0) {   /* Per Synth */
+        int s = synth_param(ks, e->focus), c = (int)lroundf(e->fx->getParameter(e->fx, s) * (PARAMS[s].nopts - 1));
+        return c >= 1 && c <= 16 ? c - 1 : 0;
+    }
     return o >= 1 && o <= 16 ? o - 1 : 0;
 }
 
@@ -169,6 +175,10 @@ static void layout(void) {
     L.tab_analog = zone(ZONE_TAB_ANALOG);
     L.tab_random = zone(ZONE_TAB_RANDOM);
     L.tab_seq = zone(ZONE_TAB_SEQ);
+    L.focus[0] = zone(ZONE_FOCUS1);
+    L.focus[1] = zone(ZONE_FOCUS2);
+    L.focus[2] = zone(ZONE_FOCUS3);
+    L.tab_setup = zone(ZONE_TAB_SETUP);
     L.seq_leds = zone(ZONE_SEQ_LEDS);
     L.encoder = zone(ZONE_ENCODER);
     L.bprev = zone(ZONE_PREV);
@@ -237,6 +247,7 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
         return 0;
     }
     if (e->screen == SCR_INDEX || e->screen == SCR_PATCHES) return 0;
+    if (e->screen == SCR_SETUP) return 1;   /* (every Synth's setup: any change may show) */
     if (e->screen < 0 || e->screen >= NPAGES) return 1;   /* RANDOM (it describes the sound), SEQ: all of it */
     for (int k = PAGES[e->screen].first; k < PAGES[e->screen].first + PAGES[e->screen].count; k++)
         if (ITEMS[k].param == i || ITEMS[k].cond == i) return 1;   /* (a condition changes which items show) */
@@ -287,6 +298,8 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_TAB_ANALOG: r = &L.tab_analog; break;
     case Z_TAB_RANDOM: r = &L.tab_random; break;
     case Z_TAB_SEQ: r = &L.tab_seq; break;
+    case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3: r = &L.focus[z - Z_FOCUS1]; break;
+    case Z_TAB_SETUP: r = &L.tab_setup; break;
     case Z_EUCLID: r = &L.euclid; break;
     }
     if (seq_zone(z)) r = &L.seq_leds;   /* the step editor (on the screen) or the SEQUENCER's page LEDs */
@@ -305,9 +318,104 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     invalidate(e, &L.screen);   /* everything else lives on the screen; the help line is there too */
 }
 
+/* ---- PANEL FOCUS (multitimbral): the panel's controls are Synth 1's params ("o1_wave"); the focused Synth's own copy
+ * ("s2_o1_wave") is read and written in their place. Shared params (the master effects, tuning, settings) have one
+ * value for all three. ---- */
+static short FMAP[NSYNTHS][NPARAMS], FBASE[NPARAMS];   /* panel index -> Synth c's index; any index -> the panel's */
+static signed char FSYN[NPARAMS];                      /* the Synth an index belongs to */
+static unsigned char FSHARED[NPARAMS];
+static int fmap_ready;
+static void fmap_init(void) {   /* UI thread; the same for every instance */
+    if (fmap_ready) return;
+    for (int i = 0; i < NPARAMS; i++) {
+        for (int c = 0; c < NSYNTHS; c++) FMAP[c][i] = (short)i;
+        FBASE[i] = (short)i;
+        FSYN[i] = 0;
+    }
+    for (int i = 0; i < NPARAMS; i++) {
+        const char *k = PARAMS[i].key;
+        if (k[0] != 's' || k[1] < '2' || k[1] > '0' + NSYNTHS || k[2] != '_') continue;
+        int c = k[1] - '1', b = rnd_key(k + 3);
+        if (b >= NPARAMS) continue;
+        FMAP[c][b] = (short)i;
+        FBASE[i] = (short)b;
+        FSYN[i] = (signed char)c;
+    }
+    for (int i = 0; i < NPARAMS; i++) FSHARED[i] = FSYN[i] == 0 && FMAP[1][i] == i;
+    fmap_ready = 1;
+}
+int fp(ed_t *e, int i) {
+    if (i < 0 || i >= NPARAMS || e->abs) return i;
+    fmap_init();
+    return FSYN[i] ? i : FMAP[e->focus][i];
+}
+int base_of(int i) { fmap_init(); return i >= 0 && i < NPARAMS ? FBASE[i] : i; }
+int synth_of(int i) { fmap_init(); return i >= 0 && i < NPARAMS ? FSYN[i] : 0; }
+int shared_param(int i) { fmap_init(); return i >= 0 && i < NPARAMS && FSHARED[i]; }
+int synth_param(int i, int c) { fmap_init(); return i >= 0 && i < NPARAMS && c >= 0 && c < NSYNTHS ? FMAP[c][i] : i; }
+float ed_get(ed_t *e, int i) { return e->fx->getParameter(e->fx, fp(e, i)); }
+
+/* the params an edit of panel index i goes to: the focused Synth's, and every other Synth in focus (one: shared) */
+static int edit_targets(ed_t *e, int i, int *t) {
+    int n = 0;
+    t[n++] = fp(e, i);
+    if (e->abs || shared_param(i) || synth_of(i) || i < 0 || i >= NPARAMS) return n;
+    for (int c = 0; c < NSYNTHS; c++)
+        if (c != e->focus && (e->focus_mask >> c & 1u)) t[n++] = FMAP[c][i];
+    return n;
+}
+
+/* the panel shows Synth c (add: Ctrl, several Synths edited together, the last one picked shown) */
+static void set_focus(ed_t *e, int c, int add) {
+    if (c < 0 || c >= NSYNTHS) return;
+    if (!add) {
+        e->focus_mask = 1u << c;
+    } else if ((e->focus_mask >> c & 1u) && e->focus_mask != 1u << c) {   /* out of the group */
+        e->focus_mask &= ~(1u << c);
+        if (e->focus == c)
+            for (int k = 0; k < NSYNTHS; k++)
+                if (e->focus_mask >> k & 1u) { c = k; break; }
+        if (e->focus != c) e->focus = c;
+        c = e->focus;
+    } else {
+        e->focus_mask |= 1u << c;
+    }
+    e->focus = c;
+    e->sq.dirty = 1;   /* the step editor shows this Synth's sequence */
+    seq_read(e);
+    if (e->wnd) InvalidateRect(e->wnd, NULL, FALSE);   /* every control shows this Synth's value */
+}
+
+/* ---- the SETUP page: the three Synths side by side (and the shared settings) ---- */
+static const char *const SETUP_KEY[] = {"syn_on", "syn_ch", "key_lo", "key_hi", "transpose", "octave_shift", "voices",
+                                        "volume", "pan", "mfx_send1", "mfx_send2", "modfx_on", "midi_ch", "master_level",
+                                        "seq_all", "learn_mode"};
+const char *const SETUP_LABEL[] = {"ON", "MIDI CHANNEL", "LOWEST KEY", "HIGHEST KEY", "TRANSPOSE", "OCTAVE", "VOICES",
+                                   "LEVEL", "PAN", "SEND 1", "SEND 2", "SYNTH EFFECT", "MIDI IN (ALL)", "MASTER LEVEL",
+                                   "PLAY ALL SEQS", "CHORD LEARN"};
+int setup_rows(int sub, int *keys) {
+    int n = 0;
+    for (int r = 0; r < ROWS; r++) {
+        unsigned k = (unsigned)(sub * ROWS + r);
+        keys[r] = k < sizeof SETUP_KEY / sizeof SETUP_KEY[0] && rnd_key(SETUP_KEY[k]) < NPARAMS ? rnd_key(SETUP_KEY[k]) : -1;
+        n += keys[r] >= 0;
+    }
+    return n;
+}
+RECT setup_cell(int row, int col) {
+    RECT r = L.row[row];
+    int lw = rw(&r) * 30 / 100, cw = (rw(&r) - lw) / NSYNTHS;
+    if (col < 0) r.right = r.left + lw;
+    else if (col < NSYNTHS) { r.left += lw + col * cw + sc(4); r.right = r.left + cw - sc(8); }
+    else { r.left += lw + sc(4); r.right -= sc(4); }
+    if (col >= 0) { r.top += sc(2); r.bottom -= sc(2); }
+    return r;
+}
+
 /* ---- values ---- */
 void param_text(ed_t *e, int i, char *out, int n) {
     char disp[64] = "", lab[32] = "";
+    i = fp(e, i);
     e->fx->dispatcher(e->fx, effGetParamDisplay, i, 0, disp, 0);
     e->fx->dispatcher(e->fx, effGetParamLabel, i, 0, lab, 0);
     const char *d = disp;
@@ -315,22 +423,30 @@ void param_text(ed_t *e, int i, char *out, int n) {
     snprintf(out, n, lab[0] && PARAMS[i].nopts == 0 ? "%s %s" : "%s", d, lab);
 }
 
-static void set_value(ed_t *e, int i, float v) {
+static void set_value(ed_t *e, int i, float v) {   /* i: a panel index (the focused Synths'), or with abs its own */
+    int t[NSYNTHS], n = edit_targets(e, i, t);
     v = v < 0 ? 0 : v > 1 ? 1 : v;
-    e->fx->setParameter(e->fx, i, v);
-    if (e->host) e->host(e->fx, audioMasterAutomate, i, 0, NULL, v);
-    invalidate_param(e, i);
+    for (int k = 0; k < n; k++) {
+        e->fx->setParameter(e->fx, t[k], v);
+        if (e->host) e->host(e->fx, audioMasterAutomate, t[k], 0, NULL, v);
+    }
+    invalidate_param(e, base_of(i));
+}
+
+static void begin_edit(ed_t *e, int i, int end) {   /* the host's undo / automation bracket, for every target */
+    int t[NSYNTHS], n = edit_targets(e, i, t);
+    for (int k = 0; k < n && e->host; k++) e->host(e->fx, end ? audioMasterEndEdit : audioMasterBeginEdit, t[k], 0, NULL, 0);
 }
 
 static void edit_value(ed_t *e, int i, float v) {   /* a one-shot change, bracketed for the host's undo/automation */
-    if (e->host) e->host(e->fx, audioMasterBeginEdit, i, 0, NULL, 0);
+    begin_edit(e, i, 0);
     set_value(e, i, v);
-    if (e->host) e->host(e->fx, audioMasterEndEdit, i, 0, NULL, 0);
+    begin_edit(e, i, 1);
 }
 
 /* ---- the randomiser: results go in param by param like knob moves; a history of sounds for UNDO / REDO ---- */
-static void rnd_snapshot(ed_t *e, float *v) {
-    for (int i = 0; i < NPARAMS; i++) v[i] = e->fx->getParameter(e->fx, i);
+static void rnd_snapshot(ed_t *e, float *v) {   /* the focused Synth's sound, in Synth 1's places */
+    for (int i = 0; i < NPARAMS; i++) v[i] = ed_get(e, i);
 }
 static int rnd_same(const float *a, const float *b) {
     for (int i = 0; i < NPARAMS; i++)
@@ -365,6 +481,7 @@ static void rnd_action(ed_t *e, int mutate) {   /* RANDOMISE (0) or MUTATE (1) *
     char name[40];
     if (!e->rnd_seed) e->rnd_seed = ((uint32_t)GetTickCount() * 2654435761u) ^ (uint32_t)(uintptr_t)e ^ 0x2545F491u;
     if (!e->rnd_seed) e->rnd_seed = 1;
+    if (e->hist_focus != e->focus) { e->hist_n = e->hist_pos = 0; e->hist_focus = e->focus; }   /* another Synth's */
     rnd_snapshot(e, cur);
     if (e->hist_n == 0 || !rnd_same(cur, e->hist[e->hist_pos])) {   /* the sound before, to come back to */
         char prog[32] = "";
@@ -381,6 +498,8 @@ static void rnd_action(ed_t *e, int mutate) {   /* RANDOMISE (0) or MUTATE (1) *
         int a = rnd_generate(cur, out, e->rnd_locks, &e->rnd_seed);
         snprintf(name, sizeof name, "Random %d: %s", ++e->rnd_count, RND_ARCH[a]);
     }
+    for (int i = 0; i < NPARAMS && e->focus; i++)   /* Synth 2 or 3: the shared master effects stay as they are */
+        if (shared_param(i)) out[i] = cur[i];
     rnd_apply(e, out);
     rnd_snapshot(e, cur);   /* as the plugin took it */
     rnd_push(e, cur, name);
@@ -388,7 +507,7 @@ static void rnd_action(ed_t *e, int mutate) {   /* RANDOMISE (0) or MUTATE (1) *
 }
 static void rnd_step(ed_t *e, int dir) {   /* UNDO (-1) / REDO (+1) through the history */
     float cur[NPARAMS];
-    if (!e->hist_n) return;
+    if (!e->hist_n || e->hist_focus != e->focus) return;   /* (the history is another Synth's) */
     rnd_snapshot(e, cur);
     if (!rnd_same(cur, e->hist[e->hist_pos])) rnd_push(e, cur, "Edited");   /* changed by hand since: keep that too */
     int to = e->hist_pos + dir;
@@ -405,10 +524,10 @@ static void rnd_set_amount(ed_t *e, int x) {   /* the amount bar: 0 .. 100% acro
 
 static float option_norm(int i, int opt) { return PARAMS[i].nopts > 1 ? (float)opt / (PARAMS[i].nopts - 1) : 0.0f; }
 int option_of(ed_t *e, int i) {
-    return PARAMS[i].nopts > 1 ? (int)lroundf(e->fx->getParameter(e->fx, i) * (PARAMS[i].nopts - 1)) : 0;
+    return PARAMS[i].nopts > 1 ? (int)lroundf(ed_get(e, i) * (PARAMS[i].nopts - 1)) : 0;
 }
 float real_of(ed_t *e, int i) {   /* the value in the param's own units */
-    return PARAMS[i].min + e->fx->getParameter(e->fx, i) * (PARAMS[i].max - PARAMS[i].min);
+    return PARAMS[i].min + ed_get(e, i) * (PARAMS[i].max - PARAMS[i].min);
 }
 
 /* ---- the screen's pages ---- */
@@ -425,6 +544,7 @@ int page_items(ed_t *e, int p, int *items) {
 
 int screen_subs(ed_t *e) {
     if (e->screen == SCR_PATCHES) return patches_subs(e);
+    if (e->screen == SCR_SETUP) return 2;
     int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
     int per = e->screen == SCR_MATRIX ? ROWS : SLOTS;
     return n > per ? (n + per - 1) / per : 1;
@@ -484,6 +604,20 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
         return patches_hit(e, pt);
     } else if (e->screen == SCR_SEQ) {
         return seq_hit(e, pt);
+    } else if (e->screen == SCR_SETUP) {   /* a cell: a param's own index (Synth 1, 2 or 3's, or a shared one) */
+        int keys[ROWS];
+        setup_rows(e->sub, keys);
+        for (int r = 0; r < ROWS; r++) {
+            if (keys[r] < 0) continue;
+            for (int c = 0; c < NSYNTHS; c++) {
+                RECT cell = setup_cell(r, shared_param(keys[r]) ? NSYNTHS : c);
+                if (!PtInRect(&cell, pt)) continue;
+                fmap_init();
+                e->hit_screen = 1;
+                e->hit_rect = cell;
+                return Z_ABS + (shared_param(keys[r]) ? keys[r] : FMAP[c][keys[r]]);
+            }
+        }
     } else if (e->screen == SCR_INDEX) {
         for (int p = e->sub * SLOTS; p < NPAGES && p < (e->sub + 1) * SLOTS; p++) {
             RECT nm, c;
@@ -517,6 +651,7 @@ static int hit(ed_t *e, int x, int y) {
         {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
+        {&L.focus[0], Z_FOCUS1}, {&L.focus[1], Z_FOCUS2}, {&L.focus[2], Z_FOCUS3}, {&L.tab_setup, Z_TAB_SETUP},
         {&L.euclid, Z_EUCLID}};   /* (an empty rect when there is no GENERATIVE section) */
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++)
         if (PtInRect(Z[k].r, pt)) return Z[k].z;
@@ -645,6 +780,10 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         show(e, PG_ANALOG, 0);
     } else if (z == Z_TAB_RANDOM) {
         show(e, SCR_RANDOM, 0);
+    } else if (z >= Z_FOCUS1 && z <= Z_FOCUS3) {   /* PANEL FOCUS (Ctrl: several Synths at once) */
+        set_focus(e, z - Z_FOCUS1, GetKeyState(VK_CONTROL) < 0);
+    } else if (z == Z_TAB_SETUP) {   /* the three Synths side by side; again: its next page */
+        show(e, SCR_SETUP, e->screen == SCR_SETUP ? (e->sub + 1) % subs : 0);
     } else if (z == Z_TAB_SEQ) {   /* the step editor; again: its other view (NOTES / MODS) */
         if (e->screen == SCR_SEQ) e->sq.view = !e->sq.view;
         seq_open(e, -1);
@@ -669,6 +808,11 @@ static void press(ed_t *e, int x, int y) {
     if (seq_zone(i)) {   /* the step editor and the page LEDs (seq_page.c); a drag on a note or a value follows */
         if (seq_press(e, i, x, y, GetKeyState(VK_SHIFT) < 0)) { e->mode = M_SEQ; SetCapture(e->wnd); }
         return;
+    }
+    int absolute = i >= Z_ABS && i < Z_ABS + NPARAMS;   /* a SETUP cell: its param's own index, not the focus's */
+    if (absolute) {
+        i -= Z_ABS;
+        e->abs = 1;
     }
     switch (i) {
     case -1: return;
@@ -707,9 +851,9 @@ static void press(ed_t *e, int x, int y) {
         e->drag_horiz = k == K_AMOUNT;
         e->drag_x = x;
         e->drag_y = y;
-        e->drag_from = e->fx->getParameter(e->fx, i);
+        e->drag_from = ed_get(e, i);
         SetCapture(e->wnd);
-        if (e->host) e->host(e->fx, audioMasterBeginEdit, i, 0, NULL, 0);
+        begin_edit(e, i, 0);
     } else if (k == K_TOGGLE || (k == K_MENU && n == 2)) {
         edit_value(e, i, option_of(e, i) ? 0.0f : 1.0f);
     } else if (k == K_LEDS || k == K_OCT) {   /* an LED (or footage) picks it; the button steps on */
@@ -721,6 +865,7 @@ static void press(ed_t *e, int x, int y) {
     } else {
         pick_option(e, i, r);
     }
+    if (absolute && e->mode != M_PARAM) e->abs = 0;   /* (a drag keeps it until the mouse lets go) */
 }
 
 static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
@@ -770,7 +915,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             invalidate(e, &r);
         }
         if (changed || moved > 16) InvalidateRect(w, NULL, FALSE);   /* a new sound: all of it */
-        else for (int k = 0; k < moved; k++) invalidate_param(e, which[k]);   /* a few knobs: just them */
+        else for (int k = 0; k < moved; k++) invalidate_param(e, base_of(which[k]));   /* a few knobs: just them */
         return 0;
     }
     case WM_MOUSEMOVE: {
@@ -795,7 +940,11 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         TrackMouseEvent(&tme);
         return 0;
     }
-    case WM_KEYDOWN:   /* the step editor: arrow keys move the selection, Delete deletes */
+    case WM_KEYDOWN:   /* Shift+F5/F6/F7: the Synth in focus (Ctrl too: added); the step editor: arrows, Delete */
+        if (e && wp >= VK_F5 && wp <= VK_F7 && GetKeyState(VK_SHIFT) < 0) {
+            set_focus(e, (int)wp - VK_F5, GetKeyState(VK_CONTROL) < 0);
+            return 0;
+        }
         if (e && e->screen == SCR_SEQ && seq_key(e, (int)wp, GetKeyState(VK_SHIFT) < 0)) return 0;
         break;
     case WM_MOUSELEAVE:
@@ -820,9 +969,10 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             seq_release(e);
             e->mode = M_NONE;
         } else if (e->mode == M_PARAM) {
-            if (e->host && e->drag >= 0) e->host(e->fx, audioMasterEndEdit, e->drag, 0, NULL, 0);
+            if (e->drag >= 0) begin_edit(e, e->drag, 1);
             e->drag = -1;
             e->mode = M_NONE;
+            e->abs = 0;   /* (a SETUP cell's drag is over) */
         } else if (e->mode != M_NONE) {
             controller_release(e);
         }
@@ -856,7 +1006,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             if (PtInRect(&L.screen, pt) && subs > 1) show(e, e->screen, (e->sub + subs - dir) % subs);
             return 0;
         }
-        float v = e->fx->getParameter(e->fx, i);
+        float v = ed_get(e, i);
         if (PARAMS[i].nopts > 1) {
             int o = option_of(e, i) + dir;
             if (o >= 0 && o < PARAMS[i].nopts) set_value(e, i, option_norm(i, o));
@@ -991,6 +1141,13 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             return (intptr_t)n;
         }
         if (idx == TEST_PATCH && e && ptr) return patches_test(e, v, ptr, opt);   /* load_test: user patches */
+        if (idx == TEST_FOCUS && e) {   /* load_test: the Panel Focus, as the SYNTH buttons (with Ctrl) set it */
+            if (v > 0) {
+                set_focus(e, (int)lroundf(opt), 0);
+                e->focus_mask = (unsigned)v | 1u << e->focus;
+            }
+            return e->focus + 4 * (intptr_t)e->focus_mask;
+        }
         if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
             hr_set_legacy(e->hr, (int)v);
@@ -1052,6 +1209,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->host = host;
         e->hover = e->drag = e->key = -1;
         e->shown_prog = -1;
+        e->focus_mask = 1u;   /* Synth 1 in focus */
         e->screen = SCR_MATRIX;
         e->bend = 0;
         e->pad_x = 0.5f;

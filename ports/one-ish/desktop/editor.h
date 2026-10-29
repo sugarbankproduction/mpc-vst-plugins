@@ -51,14 +51,19 @@ enum { SCR_MATRIX = -1, SCR_INDEX = -2, SCR_RANDOM = -3 };
 enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 keys, C2..C7 at octave 0 */
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
        Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
-       Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
-       Z_PAGE = 100100 };   /* Z_PAGE + p */
+       Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_FOCUS1, Z_FOCUS2, Z_FOCUS3,
+       Z_TAB_SETUP, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
+       Z_PAGE = 100100,     /* Z_PAGE + p */
+       Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
+enum { SCR_SETUP = -11, NSYNTHS = 3 };   /* the centre screen's SETUP page (the three Synths side by side) */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
 enum { VENDOR_SPECIFIC = 50 };                   /* effVendorSpecific */
 #define TEST_MIDI_LOG 0x4F314D4C   /* VENDOR_SPECIFIC index: copy the MIDI the window passed to the engine (tests) */
 #define TEST_CORNERS 0x4F31434E    /* VENDOR_SPECIFIC index: square_corners()'s result for this window (tests) */
+#define TEST_FOCUS 0x4F314643      /* VENDOR_SPECIFIC index: value = the Synths in focus (bits), opt = the one shown;
+                                    * value -1 only asks: returns focus + 4 * mask */
 extern const short MXC[MX_COLS + 2];   /* the matrix columns: #, then each MX_ column, in base units from the left */
 
 typedef struct {
@@ -71,6 +76,7 @@ typedef struct {
     RECT screen, name, prev, next, tabline, head, row[ROWS], help, sub_prev, sub_next;
     RECT tab_matrix, tab_more, tab_analog, tab_random, tab_seq, encoder, bprev, bnext, brand;
     RECT seq_leds;                            /* the SEQUENCER module's page LEDs (seq_page.c) */
+    RECT focus[NSYNTHS], tab_setup;           /* PANEL FOCUS: SYNTH 1-3, and the SETUP page's button */
     RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon, euclid;   /* euclid: GENERATIVE's ring */
     RECT more[NMORES + 1];                    /* the modules' MORE triangles (MORES) */
 } layout_t;
@@ -98,6 +104,11 @@ typedef struct {
     int oct, key, enc_y, enc_moved;            /* octave shift -2..2; the key held with the mouse (-1: none) */
     unsigned oct_t0;                           /* an OCTAVE button held since (GetTickCount) ... */
     int oct_stage;                             /* ... and what holding it has done: 1 the default octave, 2 panic */
+    /* PANEL FOCUS (multitimbral): the panel, the MORE pages, the matrix and the step editor show `focus` (0-2) and edit
+     * every Synth in focus_mask (bit per Synth; focus always in it). abs: the index in hand is a param's own (the SETUP
+     * page's cells), not a panel index to map to the focus. hist_focus: the Synth the randomiser's history is of. */
+    int focus, abs, hist_focus;
+    unsigned focus_mask;
     float bend, wheel, pad_x, pad_y, ribbon;   /* -1..1, 0..1, 0..1, 0..1, 0..1 */
     int pad_on, ribbon_on, ribbon_cc;          /* ribbon_cc: the position last sent (-1: none since the touch) */
     unsigned char mq[MQ][3];                   /* UI -> audio MIDI, single producer / single consumer */
@@ -123,6 +134,15 @@ enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AM
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
 
 /* editor.c */
+int fp(ed_t *e, int i);          /* panel index i (Synth 1's key) -> the focused Synth's own index (shared params: i) */
+int base_of(int i);              /* any index -> the panel's (Synth 1's key) */
+int synth_of(int i);             /* the Synth an index belongs to (0-2; a shared param 0) */
+int shared_param(int i);         /* one value for all three Synths (the master effects, tuning, settings) */
+int synth_param(int i, int c);   /* panel index i -> Synth c's own index (shared: i) */
+float ed_get(ed_t *e, int i);    /* the focused Synth's value of panel index i (normalized) */
+int setup_rows(int sub, int *keys);           /* the SETUP page's rows on sub-page sub: panel indexes (-1: none) */
+RECT setup_cell(int row, int col);           /* row 0..ROWS-1; col -1 the label, 0..2 a Synth, 3 a shared value */
+extern const char *const SETUP_LABEL[];
 void param_text(ed_t *e, int i, char *out, int n);
 int option_of(ed_t *e, int i);
 float real_of(ed_t *e, int i);
@@ -151,6 +171,8 @@ int patches_edited_now(ed_t *e);
 int patches_total(ed_t *e);
 int patches_pos(ed_t *e);
 int patches_load_pos(ed_t *e, int pos);
+int patches_into_pos(ed_t *e, int pos);              /* a preset or patch into the focused Synth only */
+int patches_save_synth(ed_t *e, const char *name, int overwrite);   /* the focused Synth alone as a patch */
 int patches_load_user(ed_t *e, const char *name);
 void patches_step(ed_t *e, int d);
 int patches_save(ed_t *e);

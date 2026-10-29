@@ -12,7 +12,11 @@
  * Sends at 0 (or master off) leave the signal exactly dry; a synth effect that is off or at mix 0 too.
  * The open-source types (Mutable Instruments Rings and Clouds, Airwindows ToTape6, Density, Console7; the Galactic
  * reverb as SPACE) run in the memory of the slot they take: no buffers of their own (third_party/THIRD_PARTY.md).
- * All buffers live inside fx_t (allocated with the instance, about 4.4 MB); fx_process() never allocates.
+ * Several Synths (multitimbral): each has its own synth effect (fx_syn_t) and its own two sends (fx_send_t); the master
+ * effects (fx_mst_t) run once, on the sum of every Synth's sends (fx_master_multi). fx_t is one Synth and the master,
+ * as fx_process() runs them (the single-Synth chain, and the tests').
+ * All buffers live inside these (allocated with the instance, about 4.4 MB for one Synth and the master, 1 MB more per
+ * Synth); nothing here allocates.
  * A slot's life: it starts in cleared memory; switched to another type (or off) it fades its output out over one block,
  * then its memory is cleared FX_CLEAR_CHUNK bytes a block while it is silent (no click, no long memset in one block),
  * and the new type starts there, its input fading in over the first block. A send turned to 0 lets its effect's tail ring out; the effect stops once
@@ -45,19 +49,18 @@ typedef struct {
     fxlife_t s;
 } mslot_t;
 
-typedef struct {
-    sfx_t sfx;
-    fxlife_t ss;
-    mslot_t m[2];
-    float send1, send2, series, width;   /* last block's values, ramped from */
-} fx_t;
+typedef struct { sfx_t sfx; fxlife_t ss; } fx_syn_t;                 /* a Synth's synth effect */
+typedef struct { float send1, send2; } fx_send_t;                      /* a Synth's sends, last block's values (ramped from) */
+typedef struct { mslot_t m[2]; float series, width; } fx_mst_t;        /* the master effects (series, width: ramped from) */
+typedef struct { fx_syn_t syn; fx_send_t snd; fx_mst_t mst; } fx_t;    /* one Synth and the master */
 
 /* at create(): write to every page of the (calloc'd, zeroed) buffers once. The OS maps such memory lazily, so the
  * first write to each page would otherwise fault inside the audio thread when an effect is first switched on. */
-static inline void fx_init(fx_t *f) {
-    volatile char *b = (volatile char *)f;
-    for (size_t i = 0; i < sizeof *f; i += 4096) b[i] = 0;
+static inline void fx_touch(void *mem, size_t size) {
+    volatile char *b = (volatile char *)mem;
+    for (size_t i = 0; i < size; i += 4096) b[i] = 0;
 }
+static inline void fx_init(fx_t *f) { fx_touch(f, sizeof *f); }
 
 static inline void fx_copy(float *dst, const float *src, int n) { if (dst != src) memmove(dst, src, sizeof(float) * n); }
 
@@ -85,7 +88,7 @@ static void fx_mix_tone(fxlife_t *s, const fxs_params_t *q, int type, float m, f
 
 /* the synth effect, as on the instrument: its input is the voices' mono sum (mono, or NULL: inL/inR as they are), its
  * wet signal sits at the synth pan, and the dry signal keeps each voice's place (inL, inR) */
-static void fx_synth(fx_t *f, const fx_params_t *p, const float *mono, const float *inL, const float *inR, float *outL,
+static void fx_synth(fx_syn_t *f, const fx_params_t *p, const float *mono, const float *inL, const float *inR, float *outL,
                      float *outR, int n) {
     const fxs_params_t *q = &p->sfx;
     fxlife_t *s = &f->ss;
@@ -190,41 +193,81 @@ static void mslot_idle(mslot_t *ms, const float *l, const float *r, int n, int s
     }
 }
 
-static void fx_master(fx_t *f, const fx_params_t *p, float *l, float *r, int n) {
+/* the master effects for this block. p: the master settings (on, buss, series, width, the two slots, ramp); ns Synths
+ * feed them, Synth k with its output sl[k], sr[k], its send settings ps[k] (send1, send2) and its sends' ramp state
+ * snd[k]. l, r: the mix of every Synth (it may be sl[0], sr[0] when there is one), the returns are added into it.
+ * With one Synth this is the very arithmetic of the single-Synth chain (the same samples). ns 0: the tails ring out. */
+static void fx_master_multi(fx_mst_t *f, const fx_params_t *p, int ns, fx_send_t *const *snd,
+                            const fx_params_t *const *ps, const float *const *sl, const float *const *sr, float *l,
+                            float *r, int n) {
+    enum { FX_MAX_SYN = 8 };
     mslot_t *m1 = &f->m[0], *m2 = &f->m[1];
     const int on = p->mfx_on, stereo = p->buss == MB_STEREO;
-    const float t1 = on ? p->send1 : 0.0f, t2 = on && !stereo ? p->send2 : 0.0f, tse = stereo ? 0.0f : p->series;
+    const float tse = stereo ? 0.0f : p->series;
+    float t1[FX_MAX_SYN], t2[FX_MAX_SYN];
+    int any1 = 0, any2 = 0;   /* a send is up, or still on its way down */
+    if (ns > FX_MAX_SYN) ns = FX_MAX_SYN;
+    for (int k = 0; k < ns; k++) {
+        t1[k] = on ? ps[k]->send1 : 0.0f;
+        t2[k] = on && !stereo ? ps[k]->send2 : 0.0f;
+        any1 |= t1[k] > 0.0f || snd[k]->send1 > 0.0f;
+        any2 |= t2[k] > 0.0f || snd[k]->send2 > 0.0f;
+    }
     int run1 = m1->s.state == FS_RUN, run2 = m2->s.state == FS_RUN;
-    int want1 = on && (t1 > 0.0f || f->send1 > 0.0f || run1);
-    int want2 = on && !stereo && (t2 > 0.0f || f->send2 > 0.0f || run2 || (want1 && tse > 0.0f));
+    int want1 = on && (any1 || run1);
+    int want2 = on && !stereo && (any2 || run2 || (want1 && tse > 0.0f));
     if (!want1 && !want2 && !run1 && !run2) {   /* nothing plays: the next part of a stopped slot's memory cleared */
         if (m1->s.state == FS_CLEAR) fx_clear_step(&m1->s, &m1->u, sizeof m1->u, 0);
         if (m2->s.state == FS_CLEAR) fx_clear_step(&m2->s, &m2->u, sizeof m2->u, 0);
-        f->send1 = f->send2 = 0.0f;
+        for (int k = 0; k < ns; k++) snd[k]->send1 = snd[k]->send2 = 0.0f;
         return;
     }
-    if (want1 && m1->s.state != FS_RUN) f->send1 = 0.0f;   /* starting: its send fades in */
+    if (want1 && m1->s.state != FS_RUN)   /* starting: its sends fade in */
+        for (int k = 0; k < ns; k++) snd[k]->send1 = 0.0f;
     if (!run1 && !run2) { f->series = tse; f->width = p->width; }
-    float dl[FX_BLOCK], dr[FX_BLOCK], rl[FX_BLOCK], rr[FX_BLOCK], d1, d2, ds, dw;
-    float s1 = fx_ramp(&f->send1, t1, n, p->ramp, &d1), s2 = fx_ramp(&f->send2, t2, n, p->ramp, &d2);
+    float dl[FX_BLOCK], dr[FX_BLOCK], rl[FX_BLOCK], rr[FX_BLOCK], ds, dw, s1[FX_MAX_SYN], s2[FX_MAX_SYN], d1[FX_MAX_SYN],
+          d2[FX_MAX_SYN];
+    int off1 = 1, off2 = 1;   /* every send at 0 (for the idle count) */
+    for (int k = 0; k < ns; k++) {
+        s1[k] = fx_ramp(&snd[k]->send1, t1[k], n, p->ramp, &d1[k]);
+        s2[k] = fx_ramp(&snd[k]->send2, t2[k], n, p->ramp, &d2[k]);
+        off1 &= t1[k] <= 0.0f && snd[k]->send1 <= 0.0f;
+        off2 &= t2[k] <= 0.0f && snd[k]->send2 <= 0.0f;
+    }
     float se = fx_ramp(&f->series, tse, n, p->ramp, &ds), wd = fx_ramp(&f->width, p->width, n, p->ramp, &dw);
     int any = 0;
     if (want1 || run1 || m1->s.state == FS_CLEAR) {
-        float a = s1;
-        for (int i = 0; i < n; i++, a += d1) { dl[i] = l[i] * a; dr[i] = r[i] * a; }
+        if (!ns) { memset(dl, 0, sizeof(float) * n); memset(dr, 0, sizeof(float) * n); }
+        for (int k = 0; k < ns; k++) {   /* send 1: every Synth's output at its own send level */
+            float a = s1[k];
+            const float *xl = sl[k], *xr = sr[k];
+            if (!k) for (int i = 0; i < n; i++, a += d1[k]) { dl[i] = xl[i] * a; dr[i] = xr[i] * a; }
+            else for (int i = 0; i < n; i++, a += d1[k]) { dl[i] += xl[i] * a; dr[i] += xr[i] * a; }
+        }
         if (mslot_run(m1, &p->mfx[0], want1, dl, dr, dl, dr, n, p->ramp)) {
             any = 1;
-            mslot_idle(m1, dl, dr, n, t1 <= 0.0f && f->send1 <= 0.0f);
+            mslot_idle(m1, dl, dr, n, off1);
         }
     } else {
         memset(dl, 0, sizeof(float) * n); memset(dr, 0, sizeof(float) * n);
     }
     if (want2 || run2 || m2->s.state == FS_CLEAR) {
-        float a = s2, b = se;
-        for (int i = 0; i < n; i++, a += d2, b += ds) { rl[i] = l[i] * a + dl[i] * b; rr[i] = r[i] * a + dr[i] * b; }
+        if (ns == 1) {   /* (the single-Synth chain's own expression) */
+            float a = s2[0], b = se;
+            const float *xl = sl[0], *xr = sr[0];
+            for (int i = 0; i < n; i++, a += d2[0], b += ds) { rl[i] = xl[i] * a + dl[i] * b; rr[i] = xr[i] * a + dr[i] * b; }
+        } else {
+            float b = se;
+            for (int i = 0; i < n; i++, b += ds) { rl[i] = dl[i] * b; rr[i] = dr[i] * b; }
+            for (int k = 0; k < ns; k++) {
+                float a = s2[k];
+                const float *xl = sl[k], *xr = sr[k];
+                for (int i = 0; i < n; i++, a += d2[k]) { rl[i] += xl[i] * a; rr[i] += xr[i] * a; }
+            }
+        }
         if (mslot_run(m2, &p->mfx[1], want2, rl, rr, rl, rr, n, p->ramp)) {
             any = 1;
-            mslot_idle(m2, rl, rr, n, t2 <= 0.0f && f->send2 <= 0.0f && m1->s.state != FS_RUN);
+            mslot_idle(m2, rl, rr, n, off2 && m1->s.state != FS_RUN);
         }
     } else {
         memset(rl, 0, sizeof(float) * n); memset(rr, 0, sizeof(float) * n);
@@ -242,11 +285,14 @@ static void fx_master(fx_t *f, const fx_params_t *p, float *l, float *r, int n) 
 /* in: the voices (stereo; pass the same buffer twice for a mono sum); out: stereo. In and out may be the same buffers.
  * Any n: worked through in blocks of up to 128. */
 /* mono: the voices' mono sum for the synth effect's input (NULL: inL/inR); inL, inR: the voices in stereo */
+__attribute__((unused))   /* (the tests' single-Synth chain; the engine runs the parts itself) */
 static void fx_process(fx_t *f, const fx_params_t *p, const float *mono, const float *inL, const float *inR, float *outL,
                        float *outR, int n) {
     for (int at = 0; at < n; at += FX_BLOCK) {
         int m = n - at < FX_BLOCK ? n - at : FX_BLOCK;
-        fx_synth(f, p, mono ? mono + at : NULL, inL + at, inR + at, outL + at, outR + at, m);
-        fx_master(f, p, outL + at, outR + at, m);
+        fx_synth(&f->syn, p, mono ? mono + at : NULL, inL + at, inR + at, outL + at, outR + at, m);
+        fx_send_t *snd = &f->snd;
+        const float *l = outL + at, *r = outR + at;
+        fx_master_multi(&f->mst, p, 1, &snd, &p, &l, &r, outL + at, outR + at, m);
     }
 }

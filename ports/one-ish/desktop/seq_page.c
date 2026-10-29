@@ -95,8 +95,11 @@ int seq_read(ed_t *e) {
     sq_seq_t q;
     sq_clear(&q);
     intptr_t len = wrapped_call(e->fx, effGetChunk, 0, 0, &chunk, 0);
-    const char *p = len > 0 && chunk ? strstr((const char *)chunk, ";seq=") : NULL;
-    if (p) sq_decode(p + 5, &q, ndest(), nsrc());
+    char key[16];   /* the focused Synth's sequence: ";seq=" (Synth 1), ";s2_seq=", ";s3_seq=" */
+    if (e->focus) snprintf(key, sizeof key, ";s%d_seq=", e->focus + 1);
+    else snprintf(key, sizeof key, ";seq=");
+    const char *p = len > 0 && chunk ? strstr((const char *)chunk, key) : NULL;
+    if (p) sq_decode(p + strlen(key), &q, ndest(), nsrc());
     else if (!strncmp(e->sq.readout, "Too long", 8)) q = e->sq.q;   /* not in the state (no room): keep what we know */
     int n = seq_len(e), changed = memcmp(&q, &e->sq.q, sizeof q) != 0 || n != e->sq.len;
     e->sq.q = q;
@@ -108,7 +111,8 @@ int seq_read(ed_t *e) {
 /* one or more commands (src/stepseq_run.h sq_command), then the result read back */
 static void seq_send(ed_t *e, const char *fmt, ...) {
     static char b[SQ_TEXT_MAX + 512];
-    int n = snprintf(b, sizeof b, "seqcmd\n");
+    int n = e->focus ? snprintf(b, sizeof b, "seqcmd%d\n", e->focus + 1)   /* to the focused Synth's sequencer */
+                     : snprintf(b, sizeof b, "seqcmd\n");
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(b + n, sizeof b - n, fmt, ap);
@@ -138,7 +142,7 @@ static void select_cell(ed_t *e, int step, int lane) {
 int seq_tick(ed_t *e, int params_changed) {
     char ro[64] = "";
     int redo = 0;
-    if (SEQ_P[4] >= 0) e->fx->dispatcher(e->fx, effGetParamDisplay, SEQ_P[4], 0, ro, 0);
+    if (SEQ_P[4] >= 0) e->fx->dispatcher(e->fx, effGetParamDisplay, fp(e, SEQ_P[4]), 0, ro, 0);
     if (strcmp(ro, e->sq.readout)) {
         snprintf(e->sq.readout, sizeof e->sq.readout, "%s", ro);
         int a = 0, b = 0;
@@ -354,6 +358,7 @@ static void set_option(ed_t *e, int i, int opt) {
     float v = PARAMS[i].nopts > 1 ? (float)opt / (PARAMS[i].nopts - 1)
                                   : (opt - PARAMS[i].min) / (PARAMS[i].max - PARAMS[i].min);
     v = v < 0 ? 0 : v > 1 ? 1 : v;
+    i = fp(e, i);   /* the focused Synth's */
     if (e->host) e->host(e->fx, audioMasterBeginEdit, i, 0, NULL, 0);
     e->fx->setParameter(e->fx, i, v);
     if (e->host) e->host(e->fx, audioMasterAutomate, i, 0, NULL, v);

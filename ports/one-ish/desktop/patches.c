@@ -287,10 +287,11 @@ static void parse(char *t, char *state, int n, parsed_t *r) {
         trim(key);
         trim(val);
         if (!strcmp(key, "name")) { snprintf(r->name, sizeof r->name, "%s", val); continue; }
-        if (!strcmp(key, "seq")) {   /* the step sequencer's steps (src/stepseq.h text): passed on as they are */
-            int len = snprintf(NULL, 0, ";seq=%s", val);
+        if (!strcmp(key, "seq") || !strcmp(key, "s2_seq") || !strcmp(key, "s3_seq")) {   /* a Synth's steps (src/stepseq.h
+                                                                                           * text): passed on as they are */
+            int len = snprintf(NULL, 0, ";%s=%s", key, val);
             if (used + len >= n) { r->bad++; continue; }
-            used += snprintf(state + used, n - used, ";seq=%s", val);
+            used += snprintf(state + used, n - used, ";%s=%s", key, val);
             r->values++;
             continue;
         }
@@ -462,6 +463,108 @@ int patches_load_user(ed_t *e, const char *name_in) {
         return PE_BADFILE;
     }
     e->pt.msg[0] = 0;
+    return PE_OK;
+}
+
+/* ---- multitimbral: one Synth at a time ----
+ * INTO SYNTH: a factory preset or a user patch loads into the focused Synth only (its sound: Synth 1's values of the
+ * patch; the Synth keeps its setup, the others and the shared settings stay), through the engine's "synthload" (the
+ * host told of every value that moved). SAVE SYNTH: the focused Synth's sound saved as a single-Synth patch. */
+static int setup_key(const char *k) {   /* a Synth's setup: not part of its sound */
+    return !strcmp(k, "syn_on") || !strcmp(k, "syn_ch") || !strcmp(k, "key_lo") || !strcmp(k, "key_hi");
+}
+int patches_into_pos(ed_t *e, int pos) {
+    static char state[PATCH_STATE_MAX], cmd[PATCH_STATE_MAX + 32];
+    int nf = e->fx->numPrograms;
+    if (pos < 0 || pos >= patches_total(e)) return PE_FAIL;
+    char what[64];
+    if (pos < nf) {
+#ifdef NPRESETS
+        int used = snprintf(state, sizeof state, "v=1");
+        for (int k = 0; k < PRESETS[pos].n && used < (int)sizeof state; k++) {
+            const char *key = PARAMS[PRESETS[pos].values[k].param].key;
+            if (synth_of(PRESETS[pos].values[k].param)) continue;   /* (its Synth 2 and 3: not this) */
+            used += snprintf(state + used, sizeof state - used, ";%s=%s", key, PRESETS[pos].values[k].value);
+        }
+        if (used >= (int)sizeof state) return PE_FAIL;
+#endif
+        wrapped_call(e->fx, effGetProgramNameIndexed_, pos, 0, what, 0);
+    } else {
+        char path[MAX_PATH];
+        snprintf(what, sizeof what, "%s", e->pt.list[pos - nf]);
+        if (!patch_path(what, path, sizeof path, 0)) return PE_FAIL;
+        char *t = read_text(path);
+        if (!t) { say(e, "Could not open '%s': %s.", what, why_io(GetLastError())); return PE_FAIL; }
+        parsed_t r;
+        parse(t, state, sizeof state, &r);
+        free(t);
+    }
+    snprintf(cmd, sizeof cmd, "synthload%d\n%s", e->focus + 1, state);
+    static float before[NPARAMS];
+    for (int i = 0; i < NPARAMS; i++) before[i] = e->fx->getParameter(e->fx, i);
+    wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(cmd) + 1, cmd, 0);
+    for (int i = 0; i < NPARAMS; i++) {
+        float v = e->fx->getParameter(e->fx, i);
+        if (v == before[i] || !e->host) continue;
+        e->host(e->fx, audioMasterBeginEdit, i, 0, NULL, 0);
+        e->host(e->fx, audioMasterAutomate, i, 0, NULL, v);
+        e->host(e->fx, audioMasterEndEdit, i, 0, NULL, 0);
+    }
+    e->pt.forced_edit = 1;   /* the performance is no longer the patch it was */
+    e->sq.dirty = 1;
+    say(e, "Loaded '%s' into Synth %d.", what, e->focus + 1);
+    return PE_OK;
+}
+/* the focused Synth's sound as a single-Synth state (Synth 1's keys), from the whole state */
+static int synth_sound(ed_t *e, char *out, int n) {
+    static char st[PATCH_STATE_MAX];
+    if (!current_state(e, st, sizeof st)) return 0;
+    char pre[8] = "";
+    if (e->focus) snprintf(pre, sizeof pre, "s%d_", e->focus + 1);
+    int used = snprintf(out, n, "v=1"), pl = (int)strlen(pre);
+    for (char *s = st; *s;) {
+        char *end = strchr(s, ';');
+        int len = end ? (int)(end - s) : (int)strlen(s);
+        static char kv[16384];   /* one key=value (a sequence at most about 5 KB) */
+        snprintf(kv, sizeof kv, "%.*s", len, s);
+        s += len + (end ? 1 : 0);
+        char *eq = strchr(kv, '=');
+        if (!eq) continue;
+        *eq = 0;
+        const char *key = kv;
+        if (pl ? strncmp(key, pre, pl) : (key[0] == 's' && key[1] >= '2' && key[1] <= '9' && key[2] == '_')) continue;
+        key += pl;
+        if (setup_key(key) || !strcmp(key, "v") || !strcmp(key, "ui_patch")) continue;
+        if (strcmp(key, "seq")) {
+            int i = param_of(key);
+            if (i < 0 || shared_param(i)) continue;   /* the shared settings are the performance's */
+        }
+        used += snprintf(out + used, used < n ? n - used : 0, ";%s=%s", key, eq + 1);
+    }
+    return used < n;
+}
+int patches_save_synth(ed_t *e, const char *name_in, int overwrite) {
+    char name[64], why[96], path[MAX_PATH];
+    snprintf(name, sizeof name, "%s", name_in);
+    trim(name);
+    if (!patch_name_ok(name, why, sizeof why)) { say(e, "Can't use that name: %s.", why); return PE_BADNAME; }
+    if (!patch_path(name, path, sizeof path, 1)) {
+        say(e, "Could not make the patch folder: %s.", why_io(GetLastError()));
+        return PE_FAIL;
+    }
+    if (is_file(path) && !overwrite) return PE_EXISTS;
+    static char state[PATCH_STATE_MAX];
+    if (!synth_sound(e, state, sizeof state)) { say(e, "Could not read the sound from the engine."); return PE_FAIL; }
+    char *text = build_text(name, "", state);
+    if (!text || !write_text(path, text)) {
+        DWORD err = text ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY;
+        free(text);
+        say(e, "Could not save '%s': %s.", name, why_io(err));
+        return PE_FAIL;
+    }
+    free(text);
+    patches_rescan(e);
+    say(e, "Saved Synth %d's sound as '%s'.", e->focus + 1, name);
     return PE_OK;
 }
 
@@ -833,6 +936,17 @@ static void ui_save_as(ed_t *e) {
     }
 }
 
+static void ui_save_synth(ed_t *e) {
+    char name[PATCH_NAME_MAX + 1], prompt[96], q[200];
+    snprintf(name, sizeof name, "Synth %d sound", e->focus + 1);
+    snprintf(prompt, sizeof prompt, "A name for Synth %d's sound (up to 32 characters):", e->focus + 1);
+    while (ask_name(e, "Save Synth", prompt, name)) {
+        if (patches_save_synth(e, name, 0) != PE_EXISTS) return;
+        snprintf(q, sizeof q, "A patch named '%s' already exists.\nReplace it with Synth %d's sound?", name, e->focus + 1);
+        if (confirm(e, q)) { patches_save_synth(e, name, 1); return; }
+    }
+}
+
 static void ui_rename(ed_t *e) {
     if (!need_user(e, "RENAME")) return;
     char name[PATCH_NAME_MAX + 1], prompt[96], q[200];
@@ -895,6 +1009,12 @@ static void patches_action(ed_t *e, int a) {
         break;
     case PA_IMPORT: ui_import(e); break;
     case PA_EXPORT: ui_export(e); break;
+    case PA_INTO:
+        e->pt.into = !e->pt.into;
+        if (e->pt.into) say(e, "INTO SYNTH %d: pick a preset or patch to load into Synth %d only (INTO again: off).",
+                            e->focus + 1, e->focus + 1);
+        break;
+    case PA_SAVE_SYNTH: ui_save_synth(e); break;
     }
     redraw(e);
 }
@@ -959,7 +1079,13 @@ int patches_hit(ed_t *e, POINT pt) {
 
 int patches_press(ed_t *e, int z) {   /* 1: z was the page's */
     if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { patches_action(e, z - Z_PATCH_ACT); return 1; }
-    if (z >= Z_PATCH_ITEM) { patches_rescan(e); patches_load_pos(e, z - Z_PATCH_ITEM); redraw(e); return 1; }
+    if (z >= Z_PATCH_ITEM) {
+        patches_rescan(e);
+        if (e->pt.into) patches_into_pos(e, z - Z_PATCH_ITEM);   /* into the focused Synth only */
+        else patches_load_pos(e, z - Z_PATCH_ITEM);
+        redraw(e);
+        return 1;
+    }
     return 0;
 }
 
@@ -989,15 +1115,18 @@ static void label(HDC dc, RECT r, const char *s, HFONT f, COLORREF c, UINT fmt) 
 }
 
 void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_draw.c draws */
-    static const char *const ACT[PA_COUNT] = {"SAVE", "SAVE AS", "RENAME", "DELETE", "IMPORT", "EXPORT"};
+    static const char *const ACT[PA_COUNT] = {"SAVE", "SAVE AS", "RENAME", "DELETE", "IMPORT", "EXPORT", "INTO S%d",
+                                              "SAVE S%d"};
     patches_t *p = &e->pt;
     for (int a = 0; a < PA_COUNT; a++) {
         RECT r = action_rect(a);
         int hot = e->hover == Z_PATCH_ACT + a, live = (a != PA_RENAME && a != PA_DELETE) || p->bank == BANK_USER;
-        int lit = a == PA_SAVE && p->edited;   /* SAVE glows while the sound has changes to keep */
+        int lit = (a == PA_SAVE && p->edited) || (a == PA_INTO && p->into);   /* SAVE glows with changes to keep */
+        char t[16];
+        snprintf(t, sizeof t, ACT[a], e->focus + 1);
         if (hot) fill(dc, r, P_FILL_HOT);
         frame(dc, r, hot || lit ? P_FRAME_HOT : P_FRAME);
-        label(dc, r, ACT[a], font_tiny, !live ? P_DIM : hot || lit ? P_HOT : P_LCD, DT_CENTER);
+        label(dc, r, t, font_tiny, !live ? P_DIM : hot || lit ? P_HOT : P_LCD, DT_CENTER);
     }
     int pos_now = patches_pos(e), nf = e->fx->numPrograms;
     for (int col = 0; col < 2; col++) {
@@ -1050,6 +1179,10 @@ const char *patches_zone_help(int z) {
     case PA_DELETE: return "DELETE: removes the current user patch's file (asks first). The sound stays loaded.";
     case PA_IMPORT: return "IMPORT: copies a .oneish patch file (from a friend, a backup) into your user patches.";
     case PA_EXPORT: return "EXPORT: writes the sound to a .oneish file wherever you like, to share or back up.";
+    case PA_INTO: return "INTO SYNTH: while lit, a preset or patch you pick loads into the focused Synth only (its "
+                         "setup, the other Synths and the shared effects stay). Pick SYNTH 1/2/3 first.";
+    case PA_SAVE_SYNTH: return "SAVE SYNTH: saves the focused Synth's sound alone as a user patch (SAVE and SAVE AS "
+                               "keep the whole performance: all three Synths).";
     }
     if (z >= Z_PATCH_ITEM) return "Click to load this patch. The sound you have now is replaced: SAVE it first to keep "
                                   "your changes.";
@@ -1070,6 +1203,8 @@ intptr_t patches_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case PT_LOAD_POS: patches_rescan(e); return patches_load_pos(e, (int)lroundf(opt));
     case PT_STEP: patches_step(e, (int)lroundf(opt)); return patches_pos(e);
     case PT_POS: patches_rescan(e); return patches_pos(e);
+    case PT_INTO_POS: patches_rescan(e); return patches_into_pos(e, (int)lroundf(opt));
+    case PT_SAVE_SYNTH: return patches_save_synth(e, buf, ow);
     case PT_TITLE: e->pt.edited = patches_edited_now(e); patches_title(e, buf, 1024); return 1;
     case PT_EDITED: return patches_edited_now(e);
     case PT_COUNT: patches_rescan(e); return e->pt.count;

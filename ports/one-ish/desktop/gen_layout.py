@@ -287,7 +287,14 @@ def build(lay):
     zones = {"SCREEN": (770, 22, 400, 362), "TAB_MATRIX": (769, 390, 48, 40), "TAB_MORE": (817, 390, 48, 40),
              "TAB_ANALOG": (865, 390, 48, 40), "TAB_RANDOM": (913, 390, 48, 40), "TAB_SEQ": (961, 390, 44, 40),
              "ENCODER": (1008, 384, 64, 92), "PREV": (1078, 390, 44, 40), "NEXT": (1124, 390, 44, 40),
-             "BRAND": (1076, 438, 94, 28)}
+             "BRAND": (1076, 438, 94, 28),
+             # PANEL FOCUS: which Synth the panel shows and edits (multitimbral), and the SETUP page of all three
+             "FOCUS1": (769, 432, 56, 42), "FOCUS2": (825, 432, 56, 42), "FOCUS3": (881, 432, 56, 42),
+             "TAB_SETUP": (945, 432, 58, 42)}
+    # Synth 2 and 3's copies are reached through the Panel Focus; the setup keys live on the SETUP page
+    L.placed.update(k for k in L.index if k.startswith(("s2_", "s3_")))
+    L.placed.update(k for k in ("syn_on", "syn_ch", "key_lo", "key_hi", "master_level", "seq_all", "midi_ch",
+                                "learn_mode") if k in L.index)
     # the step sequencer: ON, PLAY, REC, NOTE TRIG, TRANSPOSE, STEP MOD; the page LEDs (the step editor's pages, the
     # playing one lit); LENGTH and RATE. Its MORE triangle: the settings; the SEQ button: the step editor
     L.panel(764, 476, 412, 62, "SEQUENCER", more="SEQ", keys=["seq_on"])
@@ -361,15 +368,15 @@ def build(lay):
     L.panel(X + 1542, 334, 238, 102, "SYNTH EFFECT", more="SFX")
     L.cells([("modfx_on", "ON", 40, "toggle"), ("modfx_type", "TYPE", 66, "button"), ("modfx_ctrl1", "CTRL 1", 44),
              ("modfx_ctrl2", "CTRL 2", 44), ("modfx_mix", "MIX", 42)], X + 1544, 354, 64)
-    L.panel(X + 1784, 334, 236, 102, "MASTER EFFECTS", more="MFX")
+    L.panel(X + 1784, 334, 236, 102, "MASTER EFFECTS - SHARED", more="MFX")
     L.cells([("mfx_on", "ON", 40, "toggle"), ("mfx_send1", "SEND 1", 46), ("mfx_send2", "SEND 2", 46),
              ("mfx_series", "SERIES", 50), ("mfx_width", "WIDTH", 50)], X + 1786, 354, 64)
-    L.panel(X + 1542, 440, 162, 100, "DELAY", more="DELAY")
+    L.panel(X + 1542, 440, 162, 100, "DELAY - SHARED", more="DELAY")
     L.cells([("dly_time", "TIME", 52), ("dly_fb", "FDBK", 52), ("dly_sync", "SYNC", 54, "toggle")], X + 1544, 458, 72)
-    L.panel(X + 1708, 440, 162, 100, "REVERB", more="REVERB")
+    L.panel(X + 1708, 440, 162, 100, "REVERB - SHARED", more="REVERB")
     L.cells([("rev_type", "TYPE", 50, "leds"), ("rev_decay", "DECAY", 54), ("rev_size", "SIZE", 54)], X + 1710, 452,
             84)
-    L.panel(X + 1874, 440, 146, 100, "OUTPUT")
+    L.panel(X + 1874, 440, 146, 100, "SYNTH OUTPUT")
     L.ctl("volume", "knob", X + 1876, 456, 54, 78, "VOLUME", 34)
     L.cells([("pan", "PAN", 46), ("spread", "SPREAD", 44)], X + 1930, 456, 78)
     L.page("SFX", "SYNTH EFFECT", "The controls of the selected type (TYPE changes the list).", sfx_page(L))
