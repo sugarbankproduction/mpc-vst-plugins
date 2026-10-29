@@ -361,10 +361,137 @@ static void pic_phys(HDC dc, ed_t *e, RECT a) {
     txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
 }
 
-/* the rate timer (every RATE_TIMER_MS): the balls' box, every other tick (about 33 a second), only its own area */
+/* ---- (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS: each as the engine has it now ("life_view", "orbit_view",
+ * "pend_view", read without a lock: hostrate.c hr_peek_named), what just played lit; beside it what plays. Repainted
+ * by pics_tick while the page shows ---- */
+static RECT pic_note_rect(RECT a, float x_right) {
+    RECT lr = {(int)(x_right + sc(12.0f)), a.top + sc(2), a.right - sc(4), a.top + sc(16)};
+    return lr;
+}
+static void pic_lines(HDC dc, RECT lr, const char *l1, const char *l2, const char *l3) {
+    txt(dc, lr, l1, T_LCD, DT_LEFT | DT_VCENTER);
+    const char *more[2] = {l2, l3};
+    for (int k = 0; k < 2; k++) {
+        if (!more[k] || !more[k][0]) continue;
+        OffsetRect(&lr, 0, sc(15));
+        txt(dc, lr, more[k], T_LCD_DIM, DT_LEFT | DT_VCENTER);
+    }
+}
+static void pic_key_line(ed_t *e, const char *pre, char *t, int n) {
+    snprintf(t, n, "Key %s %s, %s", opt_name(e, ix("key_", "root")), opt_name(e, ix("key_", "scale")),
+             opt(e, ix(pre, "keys")) ? "from the held keys" : "free");
+}
+
+static void pic_life(HDC dc, ed_t *e, RECT a) {
+    char v[512] = "", t1[96], t2[96], t3[96];
+    int mode = 0, head = 0, pop = 0, used = 0;
+    unsigned rows[16] = {0};
+    if (e->hr && hr_peek_named(e->hr, e->focus, "life_view", v, sizeof v) > 0) {
+        sscanf(v, "%d %d %d;%n", &mode, &head, &pop, &used);
+        const char *p = v + used;
+        for (int k = 0; k < 16; k++) {
+            int u;
+            if (sscanf(p, "%x,%n", &rows[k], &u) != 1) break;
+            p += u;
+        }
+    }
+    int on = opt(e, ix("life_", "on"));
+    float hgt = (float)(a.bottom - a.top) - sc(6.0f), cell = hgt / 8.0f, x0 = a.left + sc(8.0f), y0 = a.top + sc(3.0f);
+    gfx_rect(x0, y0, 16 * cell, 8 * cell, C_DIM);
+    if (on && mode == 1) gfx_rect(x0 + head * cell, y0, cell, 8 * cell, C_GRID);        /* the playhead's column */
+    if (on && mode == 2) gfx_rect(x0, y0 + (7 - head) * cell, 16 * cell, cell, C_GRID); /* ... or row */
+    for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 16; x++) {
+            float cx = x0 + x * cell, cy = y0 + (7 - y) * cell;   /* row 0 at the bottom (the lowest note) */
+            if (rows[8 + y] >> x & 1) {
+                gfx_rect(cx - cell * 0.2f, cy - cell * 0.2f, cell * 1.4f, cell * 1.4f, C_GLOW);
+                gfx_rect(cx + 1.0f, cy + 1.0f, cell - 2.0f, cell - 2.0f, C_TRACE);
+            } else if (rows[y] >> x & 1) gfx_rect(cx + 1.0f, cy + 1.0f, cell - 2.0f, cell - 2.0f, C_LIT);
+        }
+    for (int x = 4; x < 16; x += 4) gfx_line(x0 + x * cell, y0, x0 + x * cell, y0 + 8 * cell, 1.0f, C_GRID);   /* beats */
+    gfx_frame(x0, y0, 16 * cell, 8 * cell, 1.0f, C_RULE);
+    static const char *const MODE[] = {"births play", "scanning the columns", "scanning the rows"};
+    if (!on) snprintf(t1, sizeof t1, "Off: switch LIFE on");
+    else snprintf(t1, sizeof t1, "LIFE (%s): %s", opt_name(e, ix("life_", "rule")), MODE[mode % 3]);
+    snprintf(t2, sizeof t2, "%d cells alive, %s", on ? pop : 0, opt(e, ix("life_", "rate")) == 6 ? "free rate" :
+             opt_name(e, ix("life_", "rate")));
+    pic_key_line(e, "life_", t3, sizeof t3);
+    pic_lines(dc, pic_note_rect(a, x0 + 16 * cell), t1, t2, t3);
+}
+
+static void pic_orbits(HDC dc, ed_t *e, RECT a) {
+    char v[512] = "", t1[96], t2[96], t3[96];
+    int np = 0, spokes = 0, lit = 0, used = 0;
+    if (e->hr && hr_peek_named(e->hr, e->focus, "orbit_view", v, sizeof v) > 0) sscanf(v, "%d %d %d;%n", &np, &spokes, &lit, &used);
+    int on = opt(e, ix("orb_", "on"));
+    float side = (float)(a.bottom - a.top) - sc(6.0f), x0 = a.left + sc(8.0f), y0 = a.top + sc(3.0f);
+    float cx = x0 + side / 2, cy = y0 + side / 2, rad = side * 0.48f;
+    gfx_rect(x0, y0, side, side, C_DIM);
+    for (float r = 0.25f; r < 1.01f; r += 0.25f) gfx_circle(cx, cy, r * rad, 1.0f, C_GRID);
+    int ns = spokes > 0 ? spokes : (int)val(e, ix("orb_", "spokes"), 4);
+    for (int k = 0; k < ns && k < 8; k++) {   /* the spokes: the first straight up, counter-clockwise */
+        float ang = 1.5707963f + k * 6.2831853f / ns;
+        gfx_line(cx, cy, cx + rad * cosf(ang), cy - rad * sinf(ang), lit >> k & 1 ? 2.5f * L.s : 1.0f,
+                 lit >> k & 1 ? C_TRACE : C_RULE);
+    }
+    gfx_disc(cx, cy, 4.0f * L.s, C_GLOW);
+    gfx_disc(cx, cy, 2.5f * L.s, C_TRACE);   /* the sun */
+    const char *p = v + used;
+    for (int i = 0; i < np; i++) {
+        int x, y, f, u;
+        if (sscanf(p, "%d,%d,%d;%n", &x, &y, &f, &u) != 3) break;
+        p += u;
+        float px = cx + x * 0.001f * rad, py = cy - y * 0.001f * rad, r = 2.6f * L.s;
+        if (f) gfx_disc(px, py, r * 2.2f, C_GLOW);
+        gfx_disc(px, py, r, f ? C_TRACE : C_LIT);
+    }
+    gfx_frame(x0, y0, side, side, 1.0f, C_RULE);
+    if (!on) snprintf(t1, sizeof t1, "Off: switch ORBITS on");
+    else snprintf(t1, sizeof t1, "%d planet%s, %d spoke%s", np, np == 1 ? "" : "s", ns, ns == 1 ? "" : "s");
+    snprintf(t2, sizeof t2, "planets as %s, sync %s", opt_name(e, ix("orb_", "planet_to")), opt_name(e, ix("orb_", "sync")));
+    pic_key_line(e, "orb_", t3, sizeof t3);
+    pic_lines(dc, pic_note_rect(a, x0 + side), t1, t2, t3);
+}
+
+static void pic_pend(HDC dc, ed_t *e, RECT a) {
+    char v[512] = "", t1[96], t2[96], t3[96];
+    int np = 0, used = 0;
+    if (e->hr && hr_peek_named(e->hr, e->focus, "pend_view", v, sizeof v) > 0) sscanf(v, "%d;%n", &np, &used);
+    int on = opt(e, ix("pend_", "on")), trig = opt(e, ix("pend_", "trigger"));
+    float hgt = (float)(a.bottom - a.top) - sc(6.0f), w = 2.0f * hgt, x0 = a.left + sc(8.0f), y0 = a.top + sc(3.0f);
+    float cx = x0 + w / 2, half = w * 0.45f;
+    gfx_rect(x0, y0, w, hgt, C_DIM);
+    for (float y = y0; y < y0 + hgt; y += 4.0f * L.s)   /* the centre (and the ends) where they play */
+        gfx_line(cx, y, cx, fminf(y + 1.5f * L.s, y0 + hgt), trig != 1 ? 1.5f : 1.0f, trig != 1 ? C_LIT : C_GRID);
+    gfx_line(cx - half, y0, cx - half, y0 + hgt, 1.0f, trig ? C_LIT : C_GRID);
+    gfx_line(cx + half, y0, cx + half, y0 + hgt, 1.0f, trig ? C_LIT : C_GRID);
+    const char *p = v + used;
+    float row = np > 0 ? hgt / np : hgt;
+    for (int i = 0; i < np; i++) {   /* seen from above: the first (slowest) at the top, each swinging across */
+        int x, f, u;
+        if (sscanf(p, "%d,%d;%n", &x, &f, &u) != 2) break;
+        p += u;
+        float py = y0 + (i + 0.5f) * row, px = cx + x * 0.001f * half, r = fminf(row * 0.38f, 3.5f * L.s);
+        gfx_line(cx, py, px, py, 1.0f, C_RULE);   /* the string's shadow, from the pivot over the centre */
+        if (f) gfx_disc(px, py, r * 2.0f, C_GLOW);
+        gfx_disc(px, py, r, f ? C_TRACE : C_LIT);
+    }
+    gfx_frame(x0, y0, w, hgt, 1.0f, C_RULE);
+    static const char *const AT[] = {"passing the centre", "at the ends", "at the centre and the ends"};
+    if (!on) snprintf(t1, sizeof t1, "Off: switch PENDULUMS on");
+    else snprintf(t1, sizeof t1, "%d pendulums, playing %s", np, AT[trig % 3]);
+    snprintf(t2, sizeof t2, "in step again every %s", opt_name(e, ix("pend_", "cycle")));
+    pic_key_line(e, "pend_", t3, sizeof t3);
+    pic_lines(dc, pic_note_rect(a, x0 + w), t1, t2, t3);
+}
+
+/* the rate timer (every RATE_TIMER_MS): the balls' box (and LIFE's, the orbits' and the pendulums' pictures), every
+ * other tick (about 33 a second), only its own area */
 void pics_tick(ed_t *e) {
     static unsigned n;
-    if (!e->wnd || e->screen < 0 || e->screen >= NPAGES || PAGES[e->screen].pic != PIC_PHYS || ++n % 2) return;
+    if (!e->wnd || e->screen < 0 || e->screen >= NPAGES) return;
+    int pic = PAGES[e->screen].pic;
+    if ((pic != PIC_PHYS && pic != PIC_LIFE && pic != PIC_ORBITS && pic != PIC_PEND) || ++n % 2) return;
     RECT a = {L.row[0].left, L.row[ROWS - PIC_ROWS].top, L.row[0].right, L.row[ROWS - 1].bottom};
     InvalidateRect(e->wnd, &a, FALSE);
 }
@@ -381,6 +508,9 @@ void pics_draw(HDC dc, ed_t *e, int page, RECT a) {
     case PIC_FILTER: pic_filters(dc, e, a); break;
     case PIC_MIXER: pic_mixer(dc, e, a); break;
     case PIC_PHYS: pic_phys(dc, e, a); break;
+    case PIC_LIFE: pic_life(dc, e, a); break;       /* (2026-10-30) */
+    case PIC_ORBITS: pic_orbits(dc, e, a); break;
+    case PIC_PEND: pic_pend(dc, e, a); break;
     }
     gfx_end();
     skin_bind(NULL);

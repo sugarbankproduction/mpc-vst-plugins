@@ -170,6 +170,7 @@ MFX_USES = [
 MFX_COMMON = [("mix", "Mix"), ("gain", "Gain")]
 # a MORE page's picture (more_pics.c), drawn over its last PIC_ROWS rows: an envelope, an LFO, the filters, the mixer
 PICS = {"ENV": 1, "LFO": 2, "FILTER": 3, "MIXER": 4, "PHYS": 5}   # PHYS: the box (2026-10-29)
+PICS.update({"LIFE": 10, "ORBITS": 11, "PEND": 12})   # (2026-10-30) the grid, the orbits, the pendulums (moving)
 PIC_ROWS = 3
 # the rate LEDs (rate_leds.c): what each flashes with
 RATE_KINDS = {"LFO": 0, "ARP": 1, "SEQ": 2, "TEMPO": 3}
@@ -412,6 +413,23 @@ def build(lay):
     L.page("PARTICLES", "PARTICLES", "Particles fall from the top: the LINE, a collision or their end plays a note.",
            [("phys_parts_on", "Particles On"), ("phys_rate", "Rate"), ("phys_spread", "Spread"), ("phys_life", "Life"),
             ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + world + shared, pic=("PHYS", "phys_"))
+    # (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS: a page each (the MORE index lists them), each picture moving
+    scale = [("key_root", "Key"), ("key_scale", "Scale")]
+    L.page("LIFE", "GAME OF LIFE", "Cells live and die by the RULE; births or a scanning playhead play notes in the KEY.",
+           [("life_on", "Life On"), ("life_mode", "Plays"), ("life_rate", "Rate"), ("life_speed", "Free Rate", "life_rate", [6]),
+            ("life_rule", "Rule"), ("life_density", "Density"), ("life_seed", "Seed (turn: reseed)"), ("life_wrap", "Wrap Edges"),
+            ("life_notes", "Notes per Step"), ("life_max", "Max Notes/s"), ("life_len", "Note Length"), ("life_keys", "Keys"),
+            ("life_octave", "Low Octave"), ("life_range", "Octaves")] + scale, pic=("LIFE", "life_"))
+    L.page("ORBITS", "GRAVITY ORBITS", "Planets circle a sun: crossing a spoke plays a note in the KEY.",
+           [("orb_on", "Orbits On"), ("orb_planets", "Planets"), ("orb_speed", "Speed"), ("orb_gravity", "Gravity"),
+            ("orb_ecc", "Eccentricity"), ("orb_spread", "Spread"), ("orb_spokes", "Spokes"), ("orb_planet_to", "Planets As"),
+            ("orb_sync", "Sync"), ("orb_max", "Max Notes/s"), ("orb_len", "Note Length"), ("orb_keys", "Keys"),
+            ("orb_octave", "Low Octave"), ("orb_range", "Octaves")] + scale, pic=("ORBITS", "orb_"))
+    L.page("PEND", "PENDULUMS", "Pendulums drift out of step and meet again each CYCLE; each plays its note as it swings.",
+           [("pend_on", "Pendulums On"), ("pend_count", "Pendulums"), ("pend_cycle", "Cycle"), ("pend_speed", "Swings"),
+            ("pend_spread", "Spread"), ("pend_damp", "Damping"), ("pend_trigger", "Plays At"), ("pend_restart", "Key Restarts"),
+            ("pend_max", "Max Notes/s"), ("pend_dyn", "Dynamics"), ("pend_len", "Note Length"), ("pend_keys", "Keys"),
+            ("pend_octave", "Low Octave")] + scale, pic=("PEND", "pend_"))
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
@@ -684,6 +702,8 @@ def emit(lay, zones, out):
     for pid in ("LFO1", "LFO2", "LFO3", "LFO4", "OSC1", "OSC2", "OSC3", "POLY", "ARP", "CHORD", "GEN", "SFX", "MFX",
                 "DELAY", "REVERB", "MACRO", "CTRL", "RIBBON", "ANALOG", "SEQ", "ENV1", "ENV2", "ENV3", "MIXER",
                 "FILTERS", "OTHER", "BALLS", "PARTICLES"):
+        lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
+    for pid in ("LIFE", "ORBITS", "PEND"):   # (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
     # the rate LEDs: what each flashes with (RL_*: an LFO's rate (n 0-3), the arpeggiator's, the sequencer's, the beat)
     lines.append("enum { %s };" % ", ".join("RL_%s = %d" % (k, v) for k, v in RATE_KINDS.items()))

@@ -60,6 +60,8 @@ long hr_input_dry(const hostrate_t *h);   /* engine frames that found no input i
 /* (2026-10-29) the balls and particles' view ("phys_view", "s2_phys_view" ...) straight from the engine, without the
  * wrapper's lock: only for readouts the engine makes safe from any thread (src/physgen_run.h's seqlock). UI thread */
 int hr_peek_view(hostrate_t *h, int synth, char *buf, int n);
+/* (2026-10-30) the same for another such readout by name ("life_view", "orbit_view", "pend_view": src/gens_a_run.h) */
+int hr_peek_named(hostrate_t *h, int synth, const char *name, char *buf, int n);
 /* load_test only (effVendorSpecific TEST_LEGACY): 1 = the old path (the wrapper's own int16 output at 44.1 kHz, MIDI
  * at the block start), to compare against; set before the first block */
 void hr_set_legacy(hostrate_t *h, int on);

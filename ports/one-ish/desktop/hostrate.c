@@ -124,6 +124,12 @@ int hr_peek_view(hostrate_t *h, int synth, char *buf, int n) {
     else snprintf(key, sizeof key, "phys_view");
     return h && h->eng ? h->api->get_param(h->eng, key, buf, n) : 0;
 }
+int hr_peek_named(hostrate_t *h, int synth, const char *name, char *buf, int n) {   /* (2026-10-30) */
+    char key[32];
+    if (synth) snprintf(key, sizeof key, "s%d_%s", synth + 1, name);
+    else snprintf(key, sizeof key, "%s", name);
+    return h && h->eng ? h->api->get_param(h->eng, key, buf, n) : 0;
+}
 int hr_latency(const hostrate_t *h) { return h->legacy ? 0 : rs_delay_for(__atomic_load_n(&h->pending_fs, __ATOMIC_RELAXED)); }
 
 int hr_set_rate(hostrate_t *h, float rate) {
