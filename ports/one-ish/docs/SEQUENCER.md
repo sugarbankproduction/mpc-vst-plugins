@@ -3,7 +3,8 @@
 Added 2026-10-27, tested offline (`test/stepseq_check.c` through `test/run.sh`; the window through `load_test.exe` on
 Windows), not yet on a device. After the Moog One manual's SEQUENCER chapter (p82-95). Code: `src/stepseq.h` (the
 sequence, its text form, the factory sequences), `src/stepseq_run.h` (playing, recording, editing; part of
-`src/engine.c`), `desktop/seq_page.c` (the step editor in the window).
+`src/engine.c`), `desktop/seq_page.c` (the step editor in the window), `src/seqgen.h` (the sequence generator, run by
+the window: 2026-10-29).
 
 ## Playing a sequence (desktop window)
 
@@ -31,6 +32,30 @@ sequence, its text form, the factory sequences), `src/stepseq_run.h` (playing, r
   controller at its minimum silences the lane) and an offset per step (drag across the row; right-click removes one).
   STEP MOD makes them from the knobs: with it lit, turning a knob records its move as that step's offset (the playing
   step, or the selected one when stopped) in a lane for that knob's destination; the knob itself stays where it was.
+- **GEN: the sequence generator (2026-10-29, offline and the desktop window; `src/seqgen.h`,
+  `test/seqgen_check.c`, load_test).** GEN on the step editor's title line (after NOTES and MODS; SEQ still switches
+  NOTES / MODS) writes a new sequence for the Synth in focus, in that Synth's KEY and SCALE (`key_root`, `key_scale`:
+  each Synth has its own, so the three can play in different keys or modes). Left, the options:
+  - STYLE: BASS (on the chord's root, fifths and octaves off the beat, passing notes), ARP (through the chord's notes:
+    up, down, up-and-down or broken), LEAD (a melody stepping through the scale, chord notes on the beat, a call and
+    answer inside the bar), STAB (chords voiced inside an octave, so they move by the nearest inversion; a root under
+    them and doubling over them as the range allows), RAND (anything in the scale).
+  - RHYTHM: STRAIGHT (the beats first), SYNCO (off-beats, a 3-3-2 feel), EUCLID (the notes spread as evenly as they go).
+  - DENSITY (the share of each bar's steps that play), RANGE (1-4 octaves above the style's lowest note: bass C2, stabs
+    and random C3, arp and lead C4, in the key), VARIATION (0%: every bar repeats the first exactly and stays on one
+    chord; more: later bars wander from it and a chord progression from the scale comes in; stabs and arps always
+    move through chords), ACCENT (velocity spread: the beats louder, off-beats softer), FILLS (ties and ratchets, more
+    of them in the last beat), MODS (modulation lanes: both filters' cutoff with one shape, then the ladder's resonance
+    on the accents, then a fourth lane: pan, drive or FM amount by style; 0% leaves the lanes empty).
+  Right, the focused Synth's pattern, small (every step, the key's root lines). The values row: KEY and SCALE (click for
+  the list, or scroll), LENGTH (the sequencer's own, which the pattern follows) and SEED (scroll: the next or last seed,
+  generated at once). GENERATE makes a pattern from the options and the seed shown (a new seed the first time);
+  RE-ROLL picks a new seed. Each is one undo step (Ctrl+Z takes it back); the other Synths' sequences are never
+  touched. The last phrase ends on the key's root. The result is an ordinary sequence: edit it in NOTES and MODS,
+  saved with the sound, in patches and .oneseq files. The options and seeds belong to the window (per Synth, not saved
+  with the sound). Changing an option doesn't change the sequence until GENERATE. The engine is unchanged: no CPU cost.
+  The same seed with the same options, key, scale and length always makes the same pattern (`seqgen_make()` is pure:
+  the randomiser can call it later).
 - **Three Synths** (`docs/MULTITIMBRAL.md`, 2026-10-28, offline): each Synth has its own sequencer, settings and steps;
   the SEQUENCER module and the step editor show the Synth in focus. PLAY ALL SEQS on the SETUP page (`seq_all`)
   starts or stops every Synth that is on with its sequencer ON on the same sample.
