@@ -1,4 +1,4 @@
-/* The engine-to-host rate converter (resample.h). */
+/* The engine-to-host rate converter, and the host-to-engine one for the audio input (resample.h). */
 #include <math.h>
 #include <pthread.h>
 #include <string.h>
@@ -40,30 +40,36 @@ void rs_init(void) { pthread_once(&once, build_table); }
 
 int rs_rate_ok(int fs) { return fs >= RS_MIN_RATE && fs <= RS_MAX_RATE; }
 
-static int half_for(int fs, double *scale) {
-    double s = fs >= RS_RATE ? 1.0 : (double)RS_RATE / fs;
+/* the kernel's half width in input frames, and its stretch: 1 when the output rate is the higher, else in / out */
+static int half_for(int in_fs, int fs, double *scale) {
+    double s = fs >= in_fs ? 1.0 : (double)in_fs / fs;
     if (scale) *scale = s;
     return s == 1.0 ? RS_TAPS / 2 : (int)ceil(s * RS_TAPS / 2.0) + 1;
 }
 
-int rs_delay_for(int fs) {
-    if (fs == RS_RATE || !rs_rate_ok(fs)) return 0;
-    return (int)ceil(half_for(fs, NULL) * (double)fs / RS_RATE - 1e-9);
+int rs_delay_io(int in_fs, int fs) {
+    if (fs == in_fs || !rs_rate_ok(fs) || !rs_rate_ok(in_fs)) return 0;
+    return (int)ceil(half_for(in_fs, fs, NULL) * (double)fs / in_fs - 1e-9);
 }
+int rs_delay_for(int fs) { return rs_delay_io(RS_RATE, fs); }
 
-void rs_reset(resampler_t *r, int fs) {
-    if (!rs_rate_ok(fs)) fs = RS_RATE;
+void rs_reset_io(resampler_t *r, int in_fs, int fs) {
+    if (!rs_rate_ok(in_fs)) in_fs = RS_RATE;
+    if (!rs_rate_ok(fs)) fs = in_fs;
+    r->in_fs = in_fs;
     r->fs = fs;
-    r->pass = fs == RS_RATE;
-    r->half = r->pass ? 0 : half_for(fs, &r->scale);
+    r->pass = fs == in_fs;
+    r->half = r->pass ? 0 : half_for(in_fs, fs, &r->scale);
     if (r->pass) r->scale = 1.0;
-    r->delay = rs_delay_for(fs);
-    int64_t num = -(int64_t)r->delay * RS_RATE;   /* output sample 0 sits at engine frame -delay * 44100 / fs */
+    r->delay = rs_delay_io(in_fs, fs);
+    int64_t num = -(int64_t)r->delay * in_fs;   /* output sample 0 sits at input frame -delay * in_fs / fs */
     r->pos = num >= 0 ? num / fs : -((-num + fs - 1) / fs);
     r->rem = num - r->pos * fs;
     r->frames = 0;
+    r->quiet = RS_RING;   /* (the silent history before frame 0) */
     memset(r->ring, 0, sizeof r->ring);   /* before frame 0: silence */
 }
+void rs_reset(resampler_t *r, int fs) { rs_reset_io(r, RS_RATE, rs_rate_ok(fs) ? fs : RS_RATE); }
 
 int64_t rs_need(const resampler_t *r) { return r->pos + r->half + 1; }
 
@@ -73,6 +79,7 @@ void rs_write(resampler_t *r, const float *lr, int frames) {
         float a = lr[2 * i], b = lr[2 * i + 1];
         if (fabsf(a) < TINY) a = 0.0f;
         if (fabsf(b) < TINY) b = 0.0f;
+        r->quiet = a == 0.0f && b == 0.0f ? r->quiet + 1 : 0;   /* (int64: never overflows) */
         r->ring[2 * s] = r->ring[2 * (s + RS_RING)] = a;
         r->ring[2 * s + 1] = r->ring[2 * (s + RS_RING) + 1] = b;
     }
@@ -115,7 +122,9 @@ int rs_out(resampler_t *r, float *l, float *rt, int n, int add) {
     int k = 0;
     for (; k < n && rs_need(r) <= r->frames; k++) {
         float yl, yr;
-        if (r->pass) {
+        if ((r->pass ? r->pos : r->pos - r->half + 1) >= r->frames - r->quiet) {   /* every frame it reads is 0 */
+            yl = yr = 0.0f;
+        } else if (r->pass) {
             const float *x = &r->ring[2 * (r->pos & MASK)];
             yl = x[0];
             yr = x[1];
@@ -124,7 +133,7 @@ int rs_out(resampler_t *r, float *l, float *rt, int n, int add) {
         }
         if (add) { l[k] += yl; rt[k] += yr; }
         else { l[k] = yl; rt[k] = yr; }
-        r->rem += RS_RATE;   /* the next position: 44100 / fs engine frames on */
+        r->rem += r->in_fs;   /* the next position: in_fs / fs input frames on */
         if (r->rem >= r->fs) {
             int64_t q = r->rem / r->fs;
             r->pos += q;

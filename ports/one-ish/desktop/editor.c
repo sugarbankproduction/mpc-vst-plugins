@@ -120,17 +120,18 @@ static void drain_ui_midi(ed_t *e, AEffect *fx) {   /* audio thread, before each
 }
 
 /* the host's rate and float output (hostrate.c): the wrapper renders whole engine blocks, converted to the host's
- * rate; the old path only for load_test's comparison (TEST_LEGACY) */
+ * rate, and the host's audio input converted to 44.1 kHz for the engine; the old path only for load_test's comparison
+ * (TEST_LEGACY: no input) */
 static void hooked_replacing(AEffect *fx, float **in, float **out, int32_t n) {
     ed_t *e = ed_of(fx);
     drain_ui_midi(e, fx);
-    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, out, n, 0);
+    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, in, out, n, 0);
     else wrapped_replacing(fx, in, out, n);
 }
 static void hooked_process(AEffect *fx, float **in, float **out, int32_t n) {
     ed_t *e = ed_of(fx);
     drain_ui_midi(e, fx);
-    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, out, n, 1);
+    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, in, out, n, 1);
     else wrapped_process(fx, in, out, n);
 }
 
@@ -1227,6 +1228,8 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             fx->initialDelay = hr_latency(e->hr);
             return 1;
         }
+        if (idx == TEST_INPUT && e && e->hr)   /* load_test: the audio input's delay (x 1000), or its dry frames */
+            return v ? (intptr_t)hr_input_dry(e->hr) : (intptr_t)llround(hr_input_delay(e->hr) * 1000.0);
         break;
     case effSetSampleRate:   /* the converter follows the host's rate; its latency goes to the host */
         if (e && e->hr) fx->initialDelay = hr_set_rate(e->hr, opt);
@@ -1308,6 +1311,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         fx->flags |= effFlagsHasEditor;
         lib_new(e);   /* (before patches_init: it records the saved version) */
         e->idle = make_idle(e);
+        if (hr) fx->numInputs = 2;   /* a stereo audio input (hostrate.c): the EXT channel and the vocoders */
         patches_init(e);
         seq_init(e);
         break;

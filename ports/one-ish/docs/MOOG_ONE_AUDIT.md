@@ -8,7 +8,8 @@ window (`desktop/editor.c`, `editor_draw.c`, `gen_layout.py`, `patches.c`), `pre
 `docs/PATCHES.md` and `PLAN.md`. Every row below was checked against that code, not against the row's earlier text.
 The 64-step sequencer (section 17) was built after cfb10b8 (2026-10-27, `docs/SEQUENCER.md`); its rows, and the ones
 it changed in sections 13, 14 and 22b, were updated against that code. Packages 8 (in part), 9 and 13 (MIDI channel,
-16 voices, three Synths; 2026-10-28, `docs/MULTITIMBRAL.md`) updated the rows they touched and the counts below.
+16 voices, three Synths; 2026-10-28, `docs/MULTITIMBRAL.md`) updated the rows they touched and the counts below, and
+so did package 11 (the desktop's audio input and the EXT channel, 2026-10-29).
 
 Manual wording is summarised, not quoted; only parameter names and ranges are copied.
 
@@ -62,7 +63,7 @@ user patch files (2026-10-27, offline).
 | Per-Synth Timbre: own sound, note range, voice count, MIDI channel, arp, sequencer [MULTI] | p9 | Have | Each Synth has every sound setting, `key_lo`/`key_hi`, `voices`, `syn_ch`, its own arp, chord memory, generative steps and sequencer (2026-10-28, offline and the desktop window) | - | none |
 | Hardware voices shared between Synths at will [MULTI] | p9 | Have | One pool of 16: each Synth within its POLY COUNT, voices of any Synth stolen when the pool is full (released first, then by the new note's Synth's stealing mode; No Stealing drops the note) (2026-10-28, offline and the desktop window) | - | none |
 | One Synth Effect per Synth plus two Master Effects on sends | p9, p96-101 | Have | A synth effect per Synth (`modfx_*`, its own on, type, controls, mix; its own matrix moves it) and two master effects of any type on the Synths' sends (`mfx_send1/2` per Synth); five at once (2026-10-28, offline and the desktop window) | - | none/voice; shared medium |
-| Voice: 3 VCOs, ring mod, noise, external input, mixer to SVF pair and ladder, VCA | p9-10 | Partial | 3 oscillators, ring mod, noise (and MACRO) into the SVF pair and the ladder, then the VCA; no external input | M (audio input) | none |
+| Voice: 3 VCOs, ring mod, noise, external input, mixer to SVF pair and ladder, VCA | p9-10 | Have | 3 oscillators, ring mod, noise (and MACRO) and the EXT channel (the desktop plugin's stereo audio input, 2026-10-29) into the SVF pair and the ladder, then the VCA (on the MPC the input is silent: the wrapper's instrument mode has none) | - | none |
 | Each Synth: 4 LFOs and 3 EGs per voice (manual wording p10) | p10 | Have | 3 EGs and 4 LFOs per voice: an LFO runs per voice when it restarts per note or the matrix moves it per voice, else every voice follows one free-running LFO (2026-10-27, offline) | - | - |
 | Modulation: hard-wired, Quick Assign (DEST buttons), Mod Matrix with controllers and transforms | p10, p67 | Partial | Hard-wired amounts, a 16-slot matrix with controllers and the four transforms; no DEST / Expression Assign quick assign (only the ribbon's own quick assignment) | M | low |
 | Programmable: every knob and hidden parameter stored in Presets | p8 | Have | Full state per instance (`get_state`/`set_state`, non-default values only, within the chunk: 8 KB on the MPC, 256 KB on the desktop (`VST2_CHUNK_MAX`, 2026-10-27)), 35 factory programs, user patch files (`patches.c`) | - | none |
@@ -155,12 +156,12 @@ user patch files (2026-10-27, offline).
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| Six input channels: OSC 1-3, RING MOD, NOISE, EXT | p31 | Partial | Oscillators 1-3, ring mod, noise (plus MACRO, beyond the Moog One); no EXT | M (with an audio input) | low |
+| Six input channels: OSC 1-3, RING MOD, NOISE, EXT | p31 | Have | Oscillators 1-3, ring mod, noise, EXT (plus MACRO, beyond the Moog One): EXT is the desktop plugin's audio input, its mono sum, into every sounding voice's filters and VCA (2026-10-29, offline and the desktop DLL) | - | low |
 | Level knob per channel (oscillators, noise) | 0 to max (p31-32) | Have | `o1_level`..`o3_level`, `noise_level` | - | - |
 | RING MOD level | p31 | Have | `ring_level`; matrix "Ring Level" | - | - |
 | SVF and LADDER bus buttons per channel (either, both, neither) | p31-32 | Have | `oN_svf`/`oN_lad`, `noise_*`, `ring_*`: two buttons per channel | - | - |
-| EXT INPUT LEVEL | 0% to 100% (p32) | Missing | The desktop plugin declares no audio input yet (the shared wrapper's instrument mode has none); a VST2 instrument can take one | M (with the input) | low |
-| EXT INPUT ROUTE | None, SVF, Ladder, Both (p32) | Missing | - | (with the input) | low |
+| EXT INPUT LEVEL | 0% to 100% (p32) | Have | `ext_level` (default 0: off). The desktop DLL declares two inputs (`desktop/editor.c`, not the shared wrapper) and converts the host's rate to 44.1 kHz (`desktop/hostrate.c`); the input arrives a fixed 128 samples late at 44.1 kHz (about 223 at 48 kHz), outside the reported latency, so notes play as before. Level 0, or no input connected, gives exactly the old samples (2026-10-29, offline and the desktop DLL) | - | low (about 1 us a voice per block on the PC while heard; none at level 0 or with no input) |
+| EXT INPUT ROUTE | None, SVF, Ladder, Both (p32) | Have | `ext_route` (default Ladder), on the mixer's MORE page (2026-10-29) | - | low |
 | EXT INPUT SOURCE [HW] | None, Mic/Line, Line, Mic/Line+Line (p32) | Missing | A choice of physical jacks; on the desktop the host picks the input | - | none |
 | MORE page bar-graph of levels and buses [UI] | p32 | Have | The mixer's MORE page (its triangle): every level and bus, and a bar per source as tall as its level, its SVF and LADDER halves lit by its buttons (`desktop/more_pics.c`, 2026-10-29, desktop) | - | none |
 | Mixer levels as matrix destinations | p76 | Have | "Osc n Level", "Noise Level", "Ring Level" | - | - |
@@ -397,7 +398,7 @@ user patch files (2026-10-27, offline).
 | Mixer: OSC 1, 2, 3 LEVEL | Have | "Osc n Level" | - | - |
 | Mixer: RMOD LEVEL | Have | "Ring Level" | - | - |
 | Mixer: NOISE LEVEL | Have | "Noise Level" | - | - |
-| Mixer: EXT LEVEL | Missing | Needs the audio input (6) | S (with it) | none |
+| Mixer: EXT LEVEL | Have | "Ext Level" (+-100% of the knob; per voice; STEP MOD reaches it too) (2026-10-29, offline) | - | none |
 | VCA: LEVEL | Have | "Amp Level" (x0..x2) | - | - |
 | VCA: PAN | Have | "Pan" (+-100% = the centre to a side) | - | - |
 | Filters: SVF/LADDER MIX | Have | "Filter Mix" | - | - |
@@ -514,8 +515,8 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 
 ### 18b. Effect types (Synth Effects and Master Effects share the list, p103-109)
 
-ONE-ish's synth effect offers every type below except the vocoders (Stereo Delay and Ping Pong since 2026-10-27), and
-either master effect any of them; master effect 1 is a Stereo Delay by default. Shared knobs: `modfx_mix`, `modfx_fb` (and `_r`), `modfx_time` (and `_r`, chorus/flanger ms, range per
+ONE-ish's synth effect offers every type below (Stereo Delay and Ping Pong since 2026-10-27, the vocoders since
+2026-10-29), and either master effect any of them; master effect 1 is a Stereo Delay by default. Shared knobs: `modfx_mix`, `modfx_fb` (and `_r`), `modfx_time` (and `_r`, chorus/flanger ms, range per
 type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20 Hz), `modfx_depth`, `modfx_tone`,
 `modfx_spread`, `modfx_gain` (silent to +6 dB, 50% unity), `modfx_noise`, `modfx_sync`.
 
@@ -625,8 +626,8 @@ type), `modfx_dtime` (delay types, 0.1-2000 ms), `modfx_rate` (and `_r`, 0.01-20
 | TIME PHASER (four-stage phaser into a delay, p108): MIX (CTRL 1), PHASER FEEDBACK (CTRL 2), SWEEP, RATE, DEPTH, TONE, NOISE, DELAY FEEDBACK, TIME, GAIN, SYNC | 0-100%; rate 0.01-20 Hz; time 0.1-2000 ms | Have | Synth type Time Phaser: `modfx_dtime`, `modfx_dfb` for the delay | - | none/voice; shared low (4.4 us) |
 | BIT CRUSHER (crossover filter, dual crushing, p108): MIX (CTRL 1), DEPTH (CTRL 2), RATE, GAIN | depth 2-24 bit; rate 128 Hz-48 kHz | Have | Synth type Bit Crusher: `modfx_bits` 2-24, `modfx_srate` 128 Hz-44.1 kHz; `modfx_xover` (Off, 50 Hz-5 kHz): two crushers on a second-order split, the lows losing only bits, the highs bits and sample rate | - | none/voice; shared low (1.5 us) |
 | RESONATOR (three-filter bank, p108): MIX (CTRL 1), RESONANCE (CTRL 2), CUTOFF LOW/MID/HIGH, LEVEL LOW/MID/HIGH, FILTER TYPE, MOD RATE, MOD DEPTH, GAIN | cutoffs 10 Hz-22 kHz (defaults 500 Hz, 1 kHz, 5 kHz); type LP/BP/HP; mod rate 0.01-10 Hz | Have | Synth type Resonator: three state-variable filters, `modfx_cut1-3`, `modfx_lvl1-3`, `modfx_ftype`, `modfx_reso`, `modfx_rate`/`modfx_depth` sweep | - | none/voice; shared low (2.4 us) |
-| 10 BAND VOCODER (p109): MIX (CTRL 1), SIBILANCE (CTRL 2), SENSITIVITY (mic gate), TONE, NOISE | 0-100% | Missing | Needs an audio input (the modulator); on the desktop the host can supply one | L (with the input) | none/voice; shared medium |
-| 16 BAND VOCODER (p109): same parameters | 0-100% | Missing | - | (with the 10-band) | none/voice; shared medium-high |
+| 10 BAND VOCODER (p109): MIX (CTRL 1), SIBILANCE (CTRL 2), SENSITIVITY (mic gate), TONE, NOISE | 0-100% | Have | Synth type and master type 10 Band Vocoder (`src/fx/vocoder.h`, an original filter bank): the audio input (EXT's signal) is the modulator, the voices (or the send) the carrier; 10 bands 160 Hz-6.4 kHz, each a 4th-order band-pass with an envelope follower; MIX `modfx_mix`, SIBILANCE `modfx_sibil` (the modulator above 6 kHz, straight through), SENSITIVITY `modfx_sens` (a gate on the modulator, -20 to -80 dBFS), TONE `modfx_tone` (the bands above 200 Hz x 100^TONE fall away), NOISE `modfx_noise` (noise into the carrier); master slots `dly_*` / `rev_*` the same (2026-10-29, offline and the desktop DLL) | - | none/voice; shared medium (about 12 us a block on the PC) |
+| 16 BAND VOCODER (p109): same parameters | 0-100% | Have | Type 16 Band Vocoder: 16 bands 110 Hz-7.5 kHz, the same controls (2026-10-29) | - | none/voice; shared medium (about 18-19 us a block on the PC) |
 
 Beyond the Moog One (2026-10-27, offline): open-source synth effect types, MIT-licensed
 (`third_party/THIRD_PARTY.md`). **Modal Resonator**: Mutable Instruments Rings excited by the voices (its six models,
@@ -835,13 +836,13 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 
 | Module | Have | Partial | Missing | Missing [HW] | Missing [UI] |
 |---|---|---|---|---|---|
-| 0. Architecture and overview (p8-10) | 7 | 3 | 0 | 0 | 0 |
+| 0. Architecture and overview (p8-10) | 8 | 2 | 0 | 0 | 0 |
 | 1. Front panel, centre console, keyboard (p10-18) | 7 | 5 | 4 | 1 | 2 |
 | 2. Rear panel (p19-21) | 0 | 3 | 3 | 3 | 0 |
 | 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
 | 5. Noise (p29-30) | 8 | 1 | 0 | 0 | 0 |
-| 6. Mixer (p31-32) | 5 | 1 | 3 | 1 | 0 |
+| 6. Mixer (p31-32) | 8 | 0 | 1 | 1 | 0 |
 | 7. Filters (p33-39) | 23 | 1 | 0 | 0 | 0 |
 | 8. Envelopes (p40-45) | 18 | 2 | 1 | 0 | 1 |
 | 9. LFOs (p46-49) | 18 | 4 | 1 | 0 | 0 |
@@ -850,16 +851,16 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 12. Performance Sets and text entry (p57-60) | 5 | 0 | 0 | 0 | 0 |
 | 13. Master Clock (p60-62) | 4 | 1 | 3 | 3 | 0 |
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
-| 15. Modulation (p67-77) | 74 | 3 | 11 | 2 | 3 |
+| 15. Modulation (p67-77) | 75 | 3 | 10 | 2 | 3 |
 | 16. Arpeggiator (p78-81) | 16 | 1 | 0 | 0 | 0 |
 | 17. Sequencer (p82-95) | 28 | 4 | 1 | 0 | 0 |
-| 18. Effects (p96-111) | 85 | 0 | 3 | 0 | 1 |
+| 18. Effects (p96-111) | 87 | 0 | 1 | 0 | 1 |
 | 19. Left Hand Controller (p17-18, p112-117) | 15 | 1 | 3 | 1 | 0 |
 | 20. Browser, presets and timbres (p118-121) | 6 | 1 | 0 | 0 | 0 |
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
 | 22. Settings (p124-139) | 7 | 5 | 19 | 11 | 6 |
 | 24. Appendices A and B (p143-158) | 1 | 2 | 3 | 1 | 0 |
-| **Total** | **374** | **40** | **61** | **27** | **13** |
+| **Total** | **381** | **38** | **56** | **27** | **13** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -897,7 +898,7 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 Everything above that is Missing or Partial and not hardware-only: 67 Missing rows (2 of them the sequencer's [MULTI]
 rows) and 57 Partial rows (2 of those are [HW] and 3 are [ANALOG] approximations), plus the desktop expectations in
 "Beyond the manual" (2026-10-28, after packages 2, 8 in part, 9, 10 and 13: 47 Missing rows that are not [HW] and
-42 Partial; 2026-10-29, after package 7: 42 and 43). Grouped below into work packages that can be built and tested one at a time (desktop first, as
+42 Partial; 2026-10-29, after packages 7 and 11: 42 and 41). Grouped below into work packages that can be built and tested one at a time (desktop first, as
 CLAUDE.md describes: engine change, `test/run.sh`, `desktop/build.sh`, `load_test.exe`, `host_test.exe`, install, play
 in Carla). Each package gives its effort (S/M/L as defined at the top), its CPU cost, what must come first, and the
 files it touches, so packages with no shared files can run in parallel. The rows of the sections each package names
@@ -1035,6 +1036,20 @@ voice for the EXT channel; shared medium (10-band) to medium-high (16-band) for 
 - Depends on: package 1 first is easier (the wrapper's input path is 16-bit today); 10a if the vocoders should also
   sit on the master bus.
 - Files: `wrapper/vst2_wrap.c` (desktop switch), `src/engine.c` (a seventh mixer channel), `src/fx/synth_fx.h`.
+- Done, the input (2026-10-29, offline and the desktop DLL): the wrapper is untouched. The desktop layer declares two
+  inputs (`desktop/editor.c`) and `desktop/hostrate.c` converts them to 44.1 kHz (the converter run the other way,
+  `resample.c` `rs_reset_io`) into a FIFO a block ahead of the engine, handing each engine block its input
+  (`one_ish_set_input`, `src/synths.h`). The EXT channel (`ext_level`, `ext_route`; the MIXER's MORE page) is a seventh
+  mixer channel; the matrix destination "Ext Level". The input is heard 128 samples late at 44.1 kHz (222.9 at 48 kHz),
+  not reported as latency (notes play as before). CPU: the EXT channel about 1 us a voice per block on the PC while heard (8 voices 49.1 to 56.9 us), none at level 0 or silent; the input converter about 108 us per 512-frame host
+  block at 48 or 96 kHz (1-2% of the block), nothing while the input is silent. Tests: `test/ext_check.c` (offline),
+  `desktop/rate_test.c` (the DLL at 44.1, 48 and 96 kHz, 64 to 1000-frame blocks and in place), `resample_test.c`.
+- Done, the vocoders (2026-10-29, offline and the desktop DLL): 10 and 16 Band Vocoder as synth effect types and in
+  either master slot (`src/fx/vocoder.h`, an original channel vocoder), the input as the modulator; MIX, SIBILANCE,
+  SENSITIVITY, TONE, NOISE (`modfx_sibil`, `modfx_sens`, `dly_sibil` / `dly_sens`, `rev_sibil` / `rev_sens`; CTRL 2's
+  Auto target is SIBILANCE). CPU per 128-frame block: about 12 us (10 bands), 18-19 us (16 bands), none while no input
+  plays. Left: SIBILANCE and SENSITIVITY as matrix destinations (only CTRL 1/2 move them), the master slots' window
+  pages (OTHER for now), effect presets.
 
 **12. Library and browser** (sections 1, 12, 13, 15a, 18a, 20, 22). Effort L in all, in four parts.
 - 12a Tags (TYPE, CATEGORY, MOOD, GROUP) set on save and used as browser filters, editable tag lists; notes per patch

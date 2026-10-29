@@ -591,6 +591,14 @@ key_lo
 key_hi
 master_level
 seq_all
+ext_level
+ext_route
+modfx_sibil
+modfx_sens
+dly_sibil
+dly_sens
+rev_sibil
+rev_sens
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1527,3 +1535,11 @@ s3_syn_on
 s3_syn_ch
 s3_key_lo
 s3_key_hi
+s2_ext_level
+s2_ext_route
+s3_ext_level
+s3_ext_route
+s2_modfx_sibil
+s2_modfx_sens
+s3_modfx_sibil
+s3_modfx_sens

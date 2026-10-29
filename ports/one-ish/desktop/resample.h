@@ -12,7 +12,10 @@
  * (h - delay) * 44100 / fs, kept as a whole frame plus a remainder in 1/fs steps, so the pitch never drifts. `delay`
  * (host samples, reported to the host as latency) is the kernel's half width, so the output never needs engine frames
  * from after its own moment: engine frame e is heard at host sample e * fs / 44100 + delay.
- * Everything is in the struct (no allocation); rs_reset() and rs_out() never lock or allocate. */
+ * Everything is in the struct (no allocation); rs_reset() and rs_out() never lock or allocate.
+ * The same converter runs the other way for the desktop's audio input (hostrate.c, 2026-10-29): rs_reset_io() takes
+ * any input rate, so the host's input becomes 44.1 kHz for the engine; "engine frame" above then reads "input frame"
+ * and "host sample" "output sample" (from 44.1 kHz up the output is the plain rs_reset() path, unchanged). */
 #pragma once
 #include <stdint.h>
 
@@ -31,14 +34,17 @@
 #define RS_MAX_RATE 768000
 
 typedef struct {
-    int fs;              /* host rate, Hz */
-    int pass;            /* fs == 44100: a copy, no filter, no delay */
+    int fs;              /* host rate, Hz (the output's) */
+    int in_fs;           /* the input's rate: 44100 (the engine) unless rs_reset_io() set another */
+    int pass;            /* fs == in_fs: a copy, no filter, no delay */
     int half;            /* engine frames used either side of the position */
     int delay;           /* latency in host samples */
     double scale;        /* kernel stretch, in engine samples: 1 from 44.1 kHz up, 44100 / fs below */
     int64_t pos;         /* the next output sample's position: engine frame pos ... */
     int64_t rem;         /* ... plus rem / fs (0 <= rem < fs) */
     int64_t frames;      /* engine frames written since the reset (the next one written is frame `frames`) */
+    int64_t quiet;       /* how many of the last frames written are 0 (silence): an output reading only those is 0,
+                          * worked out without the filter (the same samples, no work while nothing plays) */
     float ring[4 * RS_RING];   /* L R interleaved, written twice (slot and slot + RS_RING) so a read never wraps */
 } resampler_t;
 
@@ -46,6 +52,10 @@ void rs_init(void);                         /* the kernel table, once (call befo
 int rs_rate_ok(int fs);                     /* a host rate the converter takes */
 int rs_delay_for(int fs);                   /* the latency rs_reset(fs) will have, in host samples */
 void rs_reset(resampler_t *r, int fs);      /* a new rate, or a restart: history silent, counters at 0 */
+/* the same from any input rate in_fs to fs (the audio input: the host's rate to 44100); rs_reset(r, fs) is
+ * rs_reset_io(r, 44100, fs). Its latency, in output samples: rs_delay_io(in_fs, fs) */
+void rs_reset_io(resampler_t *r, int in_fs, int fs);
+int rs_delay_io(int in_fs, int fs);
 int64_t rs_need(const resampler_t *r);      /* engine frames that must be written before the next output sample */
 void rs_write(resampler_t *r, const float *lr, int frames);   /* append engine frames (interleaved L R) */
 /* up to n output samples into l / rt (added to what is there when add is set); stops early when it needs more engine

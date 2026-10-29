@@ -16,7 +16,19 @@
  * width; none at 44.1 kHz) is reported to the host as initialDelay, so after the host's delay compensation engine
  * frame e sits on the timeline at e * fs / 44100: the song position each engine block is given matches it.
  * At 44.1 kHz no filter runs: the output is the engine's float samples, which give exactly the int16 samples of the
- * old path when quantised the engine's way. Nothing on the audio thread allocates or locks beyond the wrapper's own lock. */
+ * old path when quantised the engine's way. Nothing on the audio thread allocates or locks beyond the wrapper's own lock.
+ *
+ * Audio input (2026-10-29, desktop only: the MPC build has no input): the plugin declares two inputs (editor.c). Each
+ * host block's input is converted the other way, host rate to 44.1 kHz (resample.c's rs_reset_io; a copy at 44.1 kHz),
+ * into a FIFO indexed by engine frame, all of it before any output is written. Each engine block takes its 128 frames
+ * from there and hands them to the engine (one_ish_set_input, under the wrapper's lock, just before its render; a
+ * silent block is not sent). The FIFO starts a lead of silence ahead: an engine block is rendered as soon as the
+ * output needs its first frame, so it can want input up to 127 frames past what the host has given, and the lead
+ * (128 frames, 130 at other rates for the converters' rounding) means it never waits. So the input is heard
+ * lead + the input converter's delay (in engine frames) later, plus the output converter's latency:
+ * hr_input_delay() = (lead + rs_delay_io(fs, 44100)) * fs / 44100 + rs_delay_for(fs) host samples (128 at 44.1 kHz,
+ * about 222.9 at 48 kHz). The reported latency stays the output's alone, so notes play as before; the input arrives
+ * that fixed, exactly known amount later than its place on the timeline (about 3 ms at 44.1 kHz, 4.6 ms at 48 kHz). */
 #pragma once
 #include <stdint.h>
 #include "engine.h"
@@ -38,10 +50,16 @@ void hr_restart(hostrate_t *h);      /* effMainsChanged on: start clean before t
 int hr_latency(const hostrate_t *h);
 /* effProcessEvents (audio thread): MIDI queued for its engine block; 1 = taken (0: pass to the wrapper as before) */
 int hr_events(hostrate_t *h, struct AEffect *fx, const void *vst_events);
-/* one host block of n frames into out[0], out[1] (added to them when add is set); `render` is the wrapper's own
- * processReplacing */
-void hr_process(hostrate_t *h, struct AEffect *fx, hr_render_t render, float **out, int32_t n, int add);
+/* one host block of n frames into out[0], out[1] (added to them when add is set), the host's audio input in in[0],
+ * in[1] (NULL: silence; it may be the same buffers as out); `render` is the wrapper's own processReplacing */
+void hr_process(hostrate_t *h, struct AEffect *fx, hr_render_t render, float **in, float **out, int32_t n, int add);
+/* the audio input's delay to the output, in host samples (input sample h is heard, through a voice with no delay of
+ * its own, at h + this); not part of the reported latency (see the top of this file). -1 on the old path. */
+double hr_input_delay(const hostrate_t *h);
+long hr_input_dry(const hostrate_t *h);   /* engine frames that found no input in time since the instance began (0) */
 /* load_test only (effVendorSpecific TEST_LEGACY): 1 = the old path (the wrapper's own int16 output at 44.1 kHz, MIDI
  * at the block start), to compare against; set before the first block */
 void hr_set_legacy(hostrate_t *h, int on);
 #define TEST_LEGACY 0x4F31534C
+/* load_test only (effVendorSpecific TEST_INPUT): returns hr_input_delay() x 1000 (v = 0) or hr_input_dry() (v = 1) */
+#define TEST_INPUT 0x4F31494E

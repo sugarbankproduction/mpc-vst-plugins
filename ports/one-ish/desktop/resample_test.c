@@ -1,6 +1,7 @@
 /* The rate converter on its own (desktop/resample.c), at many host rates: passband gain, distortion and noise
  * (a sine fitted to the output, the rest is error), images above the band, the reported delay against where an
- * impulse lands, and CPU per 512-sample block. Built for Windows by desktop/build.sh (resample_test.exe); plain C, so
+ * impulse lands, and CPU per 512-sample block. The same the other way for the audio input (host rate to 44.1 kHz,
+ * rs_reset_io): passband, aliasing from above the engine's band, delay, CPU. Built for Windows by desktop/build.sh (resample_test.exe); plain C, so
  * it also builds and runs anywhere: cc -O2 resample_test.c resample.c -lm -lpthread */
 #include <math.h>
 #include <stdint.h>
@@ -49,6 +50,23 @@ static int convert(int fs, resampler_t *rs) {
         }
     }
     return made;
+}
+
+/* the other way (the audio input): `len` host samples of host_lr at fs through rs_reset_io(fs, 44100), written in
+ * pieces of 256 as hostrate.c writes them, into out_l / out_r at 44.1 kHz */
+static float host_lr[2 * 4 * IN_LEN];
+static int convert_in(int fs, resampler_t *rs, int len) {
+    rs_reset_io(rs, fs, RS_RATE);
+    int made = 0;
+    for (int fed = 0; fed < len; fed += 256) {
+        int n = len - fed < 256 ? len - fed : 256;
+        rs_write(rs, host_lr + 2 * fed, n);
+        for (int m; (m = rs_out(rs, out_l + made, out_r + made, MAX_OUT - made, 0)) > 0;) made += m;
+    }
+    return made;
+}
+static void host_sine(int fs, int len, double f, double amp) {
+    for (int i = 0; i < len; i++) host_lr[2 * i] = host_lr[2 * i + 1] = (float)(amp * sin(2 * M_PI * f * i / fs));
 }
 
 /* least squares a*cos + b*sin at frequency f (Hz at rate fs) over y[from..to): amplitude, and the rest's rms */
@@ -140,6 +158,49 @@ int main(void) {
         fit(out_l, 2 * rs.delay + 64, n, 100, fs, &amp, &res, &late);
         snprintf(what, sizeof what, "%6d Hz: output delayed by %.4f host samples (reported latency %d)", fs, late, rs.delay);
         check(fabs(late - rs.delay) < 0.01, what);
+    }
+    /* the audio input: the host's rate to 44.1 kHz (rs_reset_io): passband, aliasing, delay, CPU */
+    static const int in_rates[] = {44100, 48000, 88200, 96000, 192000, 32000, 22050};
+    for (unsigned k = 0; k < sizeof in_rates / sizeof in_rates[0]; k++) {
+        int fs = in_rates[k], len = (int)((double)fs * IN_LEN / RS_RATE);
+        if (len > 4 * IN_LEN) len = 4 * IN_LEN;
+        double worst_gain = 0, worst_snr = 1e9, top = fs >= RS_RATE ? 20000 : 0.4 * fs;
+        int d = rs_delay_io(fs, RS_RATE);
+        for (unsigned j = 0; j < sizeof freqs / sizeof freqs[0]; j++) {
+            if (freqs[j] > top) continue;
+            host_sine(fs, len, freqs[j], 0.5);
+            int n = convert_in(fs, &rs, len);
+            double amp, res;
+            fit(out_l, 2 * d + 64, n - 64, freqs[j], RS_RATE, &amp, &res, NULL);
+            double gain = 20 * log10(amp / 0.5), snr = 20 * log10(amp / sqrt(2) / (res > 1e-15 ? res : 1e-15));
+            if (fabs(gain) > fabs(worst_gain)) worst_gain = gain;
+            if (snr < worst_snr) worst_snr = snr;
+        }
+        host_sine(fs, len, 100, 0.5);
+        int n = convert_in(fs, &rs, len);
+        double amp, res, late;
+        fit(out_l, 2 * d + 64, n - 64, 100, RS_RATE, &amp, &res, &late);
+        snprintf(what, sizeof what, "input %6d Hz to 44.1 kHz: delay %3d engine frames (measured %.4f), passband to "
+                 "%5.0f Hz: gain within %.4f dB, signal to error %.1f dB", fs, d, late, top, worst_gain, worst_snr);
+        check(fabs(worst_gain) < 0.001 && worst_snr > 95 && fabs(late - d) < 0.01, what);
+        if (fs >= 88200) {   /* a 30 kHz input (above the engine's band) must not fold back to 14.1 kHz */
+            host_sine(fs, len, 30000, 0.5);
+            n = convert_in(fs, &rs, len);
+            double a2, r2;
+            fit(out_l, 2 * d + 64, n - 64, RS_RATE - 30000, RS_RATE, &a2, &r2, NULL);
+            double alias = 20 * log10(a2 / 0.5 + 1e-20);
+            snprintf(what, sizeof what, "input %6d Hz: a 30 kHz tone folded to 14.1 kHz at %.1f dB", fs, alias);
+            check(alias < -95, what);
+        }
+    }
+    for (int k = 0; k < 2; k++) {
+        int fs = k ? 96000 : 48000, len = 4 * IN_LEN, reps = 4;
+        host_sine(fs, len, 1000, 0.5);
+        double t0 = now_s();
+        for (int r = 0; r < reps; r++) convert_in(fs, &rs, len);
+        double us = (now_s() - t0) / (reps * (double)len / 512) * 1e6, block_us = 512.0 / fs * 1e6;
+        printf("     CPU input %6d Hz to 44.1 kHz: %.2f us per 512-sample block (%.2f%% of the block's %.0f us)\n", fs,
+               us, 100 * us / block_us, block_us);
     }
     /* CPU: one 512-sample host block, stereo, at 48 and 96 kHz */
     static const int bench[] = {48000, 96000};

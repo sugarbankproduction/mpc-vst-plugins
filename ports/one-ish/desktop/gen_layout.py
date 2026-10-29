@@ -43,6 +43,7 @@ DELAYS = ["Delay", "BBD Delay", "Tape Delay", "Echo"]
 LINES = ["Flanger", "Stereo Flanger", "Chorus", "Dual Chorus", "Ensemble", "Stereo Chorus"]
 PHASERS = ["6-Stage Phaser", "12-Stage Phaser", "Time Phaser"]
 TWO_TAP = ["Stereo Delay", "Ping Pong"]
+VOCODERS = ["10 Band Vocoder", "16 Band Vocoder"]
 SFX_COMMON = [("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
               ("modfx_c2_dst", "CTRL 2 Target"), ("modfx_on", "On"), ("modfx_mix", "Mix"), ("modfx_ctrl1", "CTRL 1"),
               ("modfx_ctrl2", "CTRL 2")]
@@ -78,11 +79,13 @@ SFX_USES = [   # key, label, the types that use it
     ("modfx_fbl", "Feedback Left", ["Stereo Delay"]),
     ("modfx_fbr", "Feedback Right", ["Stereo Delay"]),
     ("modfx_dfb", "Delay Feedback", ["Time Phaser"]),
-    ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS, RINGS, AW_TAPE, *TWO_TAP]),
+    ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS, RINGS, AW_TAPE, *TWO_TAP, *VOCODERS]),
     ("modfx_spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS, CLOUDS]),
     ("modfx_vrate", "Vibrato Rate", ["Dual Chorus", "Ensemble"]),
     ("modfx_vdepth", "Vibrato Depth", ["Dual Chorus", "Ensemble"]),
-    ("modfx_noise", "Noise", ["BBD Delay", *LINES, *PHASERS]),
+    ("modfx_noise", "Noise", ["BBD Delay", *LINES, *PHASERS, *VOCODERS]),
+    ("modfx_sibil", "Sibilance", VOCODERS),
+    ("modfx_sens", "Sensitivity", VOCODERS),
     ("modfx_wow", "Wow", ["Tape Delay"]),
     ("modfx_flutter", "Flutter", ["Tape Delay", AW_TAPE]),
     ("modfx_bias", "Tape Bias", ["Tape Delay"]),
@@ -122,7 +125,7 @@ MFX_USES = [
     ("depth", "Depth", ["BBD Delay", "Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay"]),
     ("depth_r", "Depth R", ["Stereo Delay"]),
     ("offset", "Offset", ["Ping Pong"]),
-    ("tone", "Tone", [*REVERBS, *DELAYS, *LINES, *PHASERS, *TWO_TAP]),
+    ("tone", "Tone", [*REVERBS, *DELAYS, *LINES, *PHASERS, *TWO_TAP, *VOCODERS]),
     ("damp", "High Damp", CLASSIC),
     ("lowdamp", "Low Damp", CLASSIC),
     ("diff", "Diffusion", CLASSIC),
@@ -144,7 +147,9 @@ MFX_USES = [
     ("spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS]),
     ("vrate", "Vibrato Rate", ["Dual Chorus", "Ensemble"]),
     ("vdepth", "Vibrato Depth", ["Dual Chorus", "Ensemble"]),
-    ("noise", "Noise", ["BBD Delay", *LINES, *PHASERS]),
+    ("noise", "Noise", ["BBD Delay", *LINES, *PHASERS, *VOCODERS]),
+    ("sibil", "Sibilance", VOCODERS),
+    ("sens", "Sensitivity", VOCODERS),
     ("wow", "Wow", ["Tape Delay"]),
     ("flutter", "Flutter", ["Tape Delay"]),
     ("bias", "Tape Bias", ["Tape Delay"]),
@@ -445,6 +450,8 @@ def build(lay):
     # ---- mixer ----
     X = DX
     L.panel(X + 1086, 18, 138, 522, "MIXER", more="MIXER")
+    L.page("MIXER", "MIXER: EXTERNAL INPUT", "The plugin's audio input (connect it in the host) into every "
+           "sounding voice's filters.", [("ext_level", "Ext In Level"), ("ext_route", "Ext In Route")])
     chans = [("o1", "OSC 1"), ("o2", "OSC 2"), ("o3", "OSC 3"), ("mac", "MACRO"), ("ring", "RING MOD"), ("noise", "NOISE")]
     L.planned += [c + s for c, _ in chans if c + "_level" not in L.index for s in ("_level", "_svf", "_lad")]
     chans = [c for c in chans if c[0] + "_level" in L.index]
