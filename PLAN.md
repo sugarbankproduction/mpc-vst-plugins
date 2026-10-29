@@ -100,7 +100,7 @@ Read CLAUDE.md, PLAN.md and docs/PORTING.md. Then do Phase 1 of PLAN.md: build p
 
 ## Where we are (resume here)
 
-Updated 2026-10-28. Owner's instruction: build ONE-ish as a **local desktop VST2 first** and test it; port and adjust
+Updated 2026-10-29. Owner's instruction: build ONE-ish as a **local desktop VST2 first** and test it; port and adjust
 for MPC afterwards. Work through the steps without stopping for approval at each one.
 
 - **Done and pushed (branch `one-ish` on the owner's fork):** Phases 1-8 offline; fixes from the phase 6-8 code
@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-28: 359 have,
-  42 partial, 74 missing, 27 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 364 have,
+  40 partial, 71 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -217,6 +217,18 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      alone, 134 us shared 6/5/5 by three Synths with a chorus each (+8%: two more synth effects).
      Left: per-Synth outputs, solo, sequencer OUTPUT to another Synth, the sustain pedal's target, a range set by
      pressing a key, the SETTINGS page, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
+  13. Audio input and the EXT channel (audit package 11, first half). Done 2026-10-29 (offline and the desktop DLL): the
+     desktop plugin has a stereo audio input (two VST2 inputs, declared by the desktop layer: the shared wrapper and the
+     MPC build are unchanged). The host's rate is converted to 44.1 kHz (`desktop/hostrate.c`, the rate converter run
+     the other way) and each engine block gets its input; the input is heard a fixed 128 samples late at 44.1 kHz (about
+     223 at 48 kHz), not reported as latency, so notes play exactly as before. The mixer's EXT channel per Synth:
+     `ext_level` (0 by default) and `ext_route` (None, SVF, Ladder, Both) into every sounding voice's filters, on the
+     MIXER's MORE page; the matrix destination "Ext Level". Level 0 or no input connected gives exactly the old samples
+     (golden check). CPU (PC): the EXT channel about 1 us a voice per block while heard (8 voices 49.1 against 56.9 us), none at level 0 or silent; the input converter at 48 or 96 kHz about 108 us per 512-frame host block, nothing
+     while the input is silent. In Carla (Continuous Rack: the rack's plugins run in series, the first one fed by
+     Carla's input): either add Carla's internal "Audio File" plugin above ONE-ish in the rack and load a WAV, or connect
+     a capture device to `Carla:AudioIn1/2` in the external patchbay; then raise EXT IN LEVEL (the MIXER's MORE page)
+     and hold a key.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

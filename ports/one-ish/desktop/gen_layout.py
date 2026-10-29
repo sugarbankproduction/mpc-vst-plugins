@@ -317,7 +317,9 @@ def build(lay):
 
     # ---- mixer ----
     X = DX
-    L.panel(X + 1086, 18, 138, 522, "MIXER")
+    L.panel(X + 1086, 18, 138, 522, "MIXER", more="MIXER" if "ext_level" in L.index else None)
+    L.page("MIXER", "MIXER: EXTERNAL INPUT", "The plugin's audio input (connect it in the host) into every sounding "
+           "voice's filters.", [("ext_level", "Ext In Level"), ("ext_route", "Ext In Route")])
     chans = [("o1", "OSC 1"), ("o2", "OSC 2"), ("o3", "OSC 3"), ("mac", "MACRO"), ("ring", "RING MOD"), ("noise", "NOISE")]
     L.planned += [c + s for c, _ in chans if c + "_level" not in L.index for s in ("_level", "_svf", "_lad")]
     chans = [c for c in chans if c[0] + "_level" in L.index]

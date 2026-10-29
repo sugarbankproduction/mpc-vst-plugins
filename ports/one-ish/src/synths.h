@@ -38,6 +38,8 @@ typedef struct inst {
     pkey_t keys[NPARAMS + P_COUNT];   /* every key the host or a state can name, sorted, and how many */
     int nkeys;
     char state_buf[STATE_MAX];   /* set_state's working copy (allocated with the instance, not per call) */
+    float ext[128];          /* the next render's audio input, mono (one_ish_set_input); ext_n frames of it, 0: silence */
+    int ext_n;
 } inst_t;
 
 /* the shared params: one copy, in Synth 1's values (presets/make_synths.py GLOBAL keeps the same list) */
@@ -553,6 +555,8 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         fx_params(s0, &s0->fxp);
     }
     float level = s0->val[P_MASTER_LEVEL] * 0.01f;
+    const float *ext = in->ext_n == frames ? in->ext : NULL;   /* the audio input for this render, if it was given */
+    in->ext_n = 0;
     int done = 0;
     while (done < frames) {
         if (in->heal) heal(in);
@@ -560,6 +564,7 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         if (n > frames - done) n = frames - done;
         for (int j = 0; j < nl; j++) synth_due(live[j], &n);   /* steps and note ends at this sample, first */
         if (n > 128) n = 128;
+        for (int j = 0; j < nl; j++) live[j]->ext = ext ? ext + done : NULL;
         for (int j = 0; j < nl; j++) synth_piece(live[j], n, sl[j], sr[j]);
         float *L = ml, *R = mr;   /* the mix of the Synths (one: its own buffers, as they are) */
         if (nl == 1) {
@@ -594,6 +599,23 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
 }
 
 static void render(void *inst, int16_t *out, int frames) { render_to(inst, out, NULL, frames); }
+
+/* Not in the engine contract either: the desktop build's audio input (desktop/hostrate.c), interleaved L R in -1..1, for
+ * the next render() of the same number of frames (up to 128; a render without one hears silence). Kept as its mono
+ * sum, the EXT channel's signal (and the vocoders' modulator); an input of zeros is silence (the EXT channel then does
+ * nothing at all). Called under the wrapper's engine lock, just before that render; the MPC build never calls it. */
+void one_ish_set_input(void *inst, const float *in_lr, int frames) {
+    inst_t *in = inst;
+    int live = 0;
+    if (frames < 1 || frames > 128) frames = 0;
+    for (int i = 0; i < frames; i++) {
+        float m = 0.5f * (in_lr[2 * i] + in_lr[2 * i + 1]);
+        if (!isfinite(m)) m = 0.0f;
+        in->ext[i] = m;
+        live |= m != 0.0f;
+    }
+    in->ext_n = live ? frames : 0;
+}
 
 /* Not in the engine contract (wrapper/engine.h): the desktop build's float output (desktop/hostrate.c). The same as
  * render() before its int16 step: interleaved L R in -1..1, where render() writes (int16_t)(x * 32767). Called under

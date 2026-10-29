@@ -78,7 +78,7 @@
 #define MAX_VOICES 16       /* the instrument's 16-voice model (the "voices" list: Mono, 2 .. 16) */
 #define NOSC 3
 #define CARD_SET 8         /* voice cards are made in sets of eight (create()) */
-#define NSRC 6             /* the mixer's channels: oscillators 1-3, noise, ring mod, MACRO (Plaits: src/macro.h) */
+#define NSRC 7             /* the mixer's channels: oscillators 1-3, noise, ring mod, MACRO (Plaits: src/macro.h), EXT */
 #define NLFO 4
 #define HEADROOM 0.5f      /* one full-scale saw at full velocity and volume peaks at -6 dBFS */
 #ifndef VST2_CHUNK_MAX
@@ -224,6 +224,8 @@ enum {
     P_MIDI_CH, P_LEARN_MODE,
     /* multitimbral (src/synths.h): each Synth's setup (ON, MIDI channel, key range); master level and PLAY ALL (shared) */
     P_SYN_ON, P_SYN_CH, P_KEY_LO, P_KEY_HI, P_MASTER_LEVEL, P_SEQ_ALL,
+    /* the mixer's EXT channel: the audio input (the desktop plugin's; see one_ish_set_input) into every voice's filters */
+    P_EXT_LEVEL, P_EXT_ROUTE,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -239,13 +241,17 @@ static const int NOISE_PAIR[3][2] = {{NC_RED, NC_WHITE}, {NC_RED, NC_PURPLE}, {N
 enum { AC_LAD_CUT, AC_SVF_CUT, AC_LAD_RES, AC_SVF_RES, AC_ENV, AC_LVL = AC_ENV + 3, AC_TUNE, AC_COUNT = AC_TUNE + NOSC };
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
-/* each mixer channel's level and filter buttons, in channel order (osc 1-3, noise, ring mod, MACRO), and its level's
- * matrix destination (MACRO's came later, after the effects) */
-static const int LEVEL_SLOT[NSRC] = {P_O1_LEVEL, P_O2_LEVEL, P_O3_LEVEL, P_NOISE_LEVEL, P_RING_LEVEL, P_MAC_LEVEL};
-static const int SVF_SLOT[NSRC] = {P_O1_SVF, P_O2_SVF, P_O3_SVF, P_NOISE_SVF, P_RING_SVF, P_MAC_SVF};
-static const int LAD_SLOT[NSRC] = {P_O1_LAD, P_O2_LAD, P_O3_LAD, P_NOISE_LAD, P_RING_LAD, P_MAC_LAD};
-static const int LEVEL_MD[NSRC] = {MD_O1_LEVEL, MD_O2_LEVEL, MD_O3_LEVEL, MD_NOISE_LEVEL, MD_RING_LEVEL, MD_MAC_LEVEL};
-enum { NOISE = 3, RING = 4, MACRO = 5 };        /* the noise, ring modulator and MACRO channels */
+/* each mixer channel's level and filter buttons, in channel order (osc 1-3, noise, ring mod, MACRO, EXT), and its
+ * level's matrix destination (MACRO's and EXT's came later, after the effects). EXT has a ROUTE list instead of the two
+ * buttons (-1: see set_targets). */
+static const int LEVEL_SLOT[NSRC] = {P_O1_LEVEL, P_O2_LEVEL, P_O3_LEVEL, P_NOISE_LEVEL, P_RING_LEVEL, P_MAC_LEVEL,
+                                     P_EXT_LEVEL};
+static const int SVF_SLOT[NSRC] = {P_O1_SVF, P_O2_SVF, P_O3_SVF, P_NOISE_SVF, P_RING_SVF, P_MAC_SVF, -1};
+static const int LAD_SLOT[NSRC] = {P_O1_LAD, P_O2_LAD, P_O3_LAD, P_NOISE_LAD, P_RING_LAD, P_MAC_LAD, -1};
+static const int LEVEL_MD[NSRC] = {MD_O1_LEVEL, MD_O2_LEVEL, MD_O3_LEVEL, MD_NOISE_LEVEL, MD_RING_LEVEL, MD_MAC_LEVEL,
+                                   MD_EXT_LEVEL};
+enum { NOISE = 3, RING = 4, MACRO = 5, EXT = 6 };   /* the noise, ring modulator, MACRO and EXT channels */
+enum { EXT_NONE, EXT_SVF, EXT_LADDER, EXT_BOTH };    /* "ext_route" options */
 enum { RING_1X2, RING_2X3 };                    /* "ring_src" options */
 enum { FM_1TO2, FM_1TO3, FM_3TO1 };             /* "fm_route" options */
 enum { ENV_FILTER, ENV_AMP, ENV_MOD, NENV, ENV_STRIDE = P_AMP_A - P_ENV_A };
@@ -346,6 +352,7 @@ static const char *const KEYS[P_COUNT] = {
     "seq_transpose", "seq_tr_mode", "seq_one_shot", "seq_rec_mode", "seq_pattern",
     "midi_ch", "learn_mode",
     "syn_on", "syn_ch", "key_lo", "key_hi", "master_level", "seq_all",
+    "ext_level", "ext_route",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -589,6 +596,7 @@ typedef struct {
     /* THE SYNTHS (src/synths.h): this Synth in its instance */
     struct inst *in;         /* the instance, and this Synth's place in it (0: Synth 1) */
     int idx;
+    const float *ext;        /* this piece's audio input (mono, the EXT channel's signal), NULL while it is silent */
     const short *pidx;       /* each slot's params.json entry for this Synth (its own copies; the shared ones Synth 1's) */
     int on;                  /* ON, as last applied */
     uint8_t kin[128];        /* the keys it took (each key's release goes where the key went) */
@@ -878,6 +886,12 @@ static void set_targets(const one_t *s, voice_t *v, const float *dm, float lfo3)
     float pw_lfo = lfo3 * clampf(p[P_PW_LFO3] * 0.01f + dm[MD_PW_LFO3], -1.0f, 1.0f) * LFO_HW_PW;
     for (int k = 0; k < NSRC; k++) {
         float l = clampf(p[LEVEL_SLOT[k]] * 0.01f + dm[LEVEL_MD[k]], 0.0f, 1.0f);
+        if (k == EXT) {   /* ROUTE: None, SVF, Ladder, Both */
+            int r = (int)p[P_EXT_ROUTE];
+            v->tgt_lad[k] = r == EXT_LADDER || r == EXT_BOTH ? l : 0.0f;
+            v->tgt_svf[k] = r == EXT_SVF || r == EXT_BOTH ? l : 0.0f;
+            continue;
+        }
         v->tgt_lad[k] = p[LAD_SLOT[k]] > 0.5f ? l : 0.0f;
         v->tgt_svf[k] = p[SVF_SLOT[k]] > 0.5f ? l : 0.0f;
     }
@@ -2386,8 +2400,10 @@ __attribute__((noinline)) static void mac_channel(const one_t *s, voice_t *v, fl
 /* render n (<= CR) samples of one voice, adding into acc (the mono sum: the mod effect's input, and the dry path of
  * every centred voice) and, for a voice off the centre, its difference from the centre into xl, xr (so the dry path
  * is acc + xl, acc + xr, and centred voices cost nothing extra); returns whether it did. Levels, wave shapes, FM
- * depth, the filter mix, the noise colours and the pan gains ramp from the last control step's values to this one's. */
-static int render_voice(one_t *s, voice_t *v, float *acc, float *xl, float *xr, int n, int first) {
+ * depth, the filter mix, the noise colours and the pan gains ramp from the last control step's values to this one's.
+ * ext: the audio input for these n samples (the EXT channel), or NULL while it is silent: then EXT is not heard and
+ * nothing it routes to runs on its account (no input connected changes nothing). */
+static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, float *xl, float *xr, int n, int first) {
     const float *p = s->val;
     float inv = 1.0f / (float)n, out[CR], wn[CR], cn[CR];   /* the voice's output; white noise; the noise channel */
     const float *ncp = noise_channel(s, v, first, inv, n, wn, cn);
@@ -2401,11 +2417,13 @@ static int render_voice(one_t *s, voice_t *v, float *acc, float *xl, float *xr, 
         lad[k] = ramp_from(v->to_lad[k], v->tgt_lad[k], first, inv, &dlad[k]);
         svf[k] = ramp_from(v->to_svf[k], v->tgt_svf[k], first, inv, &dsvf[k]);
         heard[k] = lad[k] != 0.0f || svf[k] != 0.0f || v->tgt_lad[k] != 0.0f || v->tgt_svf[k] != 0.0f;
-        any_svf |= svf[k] != 0.0f || v->tgt_svf[k] != 0.0f;
+        if (k == EXT && !ext) heard[k] = 0;   /* (silent: as if at level 0) */
+        any_svf |= heard[k] && (svf[k] != 0.0f || v->tgt_svf[k] != 0.0f);
         fading |= dlad[k] != 0.0f || dsvf[k] != 0.0f;
         v->to_lad[k] = v->tgt_lad[k];
         v->to_svf[k] = v->tgt_svf[k];
     }
+    int ext_on = heard[EXT];
     float mb[CR];   /* the MACRO channel: not run, and not mixed in, while it isn't heard (its levels are then 0) */
     int mac_on = heard[MACRO];
     if (mac_on) mac_channel(s, v, mb, n);
@@ -2474,10 +2492,12 @@ static int render_voice(one_t *s, voice_t *v, float *acc, float *xl, float *xr, 
         float nz = wn[i], nc = ncp[i], mc = mac_on ? mb[i] : 0.0f;
         float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nc * lad[NOISE] + rm * lad[RING];
         if (mac_on) lad_in += mc * lad[MACRO];
+        if (ext_on) lad_in += ext[i] * lad[EXT];
         float svf_out = 0.0f, lad_out = 0.0f;
         if (any_svf) {
             float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
             if (mac_on) in += mc * svf[MACRO];
+            if (ext_on) in += ext[i] * svf[EXT];
             svf_out = svf_fm > 0.0f ? svf2_next_fm(&v->svf, in, exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)))
                                     : svf2_next(&v->svf, in);
             if (series) lad_in += svf_out;
@@ -2859,7 +2879,7 @@ static void synth_piece(one_t *s, int n, float *l, float *r) {
         if (v->env[ENV_AMP].stage == ENV_IDLE) continue;
         sounding = 1;
         if (first) control_voice(s, v);
-        side |= render_voice(s, v, acc, xl, xr, n, first);
+        side |= render_voice(s, v, s->ext, acc, xl, xr, n, first);
     }
     if (side)   /* the dry path in stereo: every voice at its place */
         for (int i = 0; i < n; i++) { xl[i] += acc[i]; xr[i] += acc[i]; }

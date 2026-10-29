@@ -85,20 +85,24 @@ static void multitimbral(void) {
     {
         void *e = E->create(NULL);
         int wrong = 0, n = 0;
-        char k1[64], k3[64];
+        char k1[64], k3[64], first[80] = "";
         for (int i = 0; i < NPARAMS; i++) {
             const char *k = PARAMS[i].key;
             if (strncmp(k, "s2_", 3) || PARAMS[i].string_display || !strcmp(k, "s2_seq_pattern")) continue;
             snprintf(k1, sizeof k1, "%s", k + 3);
             snprintf(k3, sizeof k3, "s3_%s", k + 3);
-            double a1 = get(e, k1), a3 = get(e, k3), v = off_default(i);
+            double a1 = get(e, k1), a3 = get(e, k3), a2 = get(e, k), v = off_default(i);
             set(e, k, v);
             n++;
-            wrong += fabs(get(e, k) - v) > 1e-3 && !is_transient(k);
-            wrong += get(e, k1) != a1 || get(e, k3) != a3;
+            int w = (fabs(get(e, k) - v) > 1e-3 && !is_transient(k)) + (get(e, k1) != a1 || get(e, k3) != a3);
+            if (w && !wrong) snprintf(first, sizeof first, " %s", k);
+            wrong += w;
+            /* a switch that changes how later params are set (STEP MOD records knob moves instead of setting them)
+             * goes back: each param after it is tested as it is by itself */
+            if (is_transient(k)) set(e, k, a2);
         }
-        snprintf(what, sizeof what, "independent: %d Synth 2 params each set without moving Synth 1 or 3 (%d wrong)", n,
-                 wrong);
+        snprintf(what, sizeof what, "independent: %d Synth 2 params each set without moving Synth 1 or 3 (%d wrong%s)", n,
+                 wrong, first);
         check(n > 400 && !wrong, what);
         E->destroy(e);
         e = E->create(NULL);   /* (fresh: the loop above switched STEP MOD on, which takes knob moves) */

@@ -8,8 +8,11 @@
 
 #define BLOCK 128   /* the wrapper's DSP_BLOCK: it renders the engine in blocks of this, and so do we */
 #define EVQ 512     /* host MIDI events waiting for their engine block */
+#define IN_FIFO 16384   /* the audio input at 44.1 kHz, waiting for its engine block (a power of two, frames) */
+#define IN_CHUNK 256    /* host input written into the converter at a time (its ring holds 1024 frames) */
 
-void one_ish_render_float(void *inst, float *out_lr, int frames);   /* src/engine.c */
+void one_ish_render_float(void *inst, float *out_lr, int frames);     /* src/engine.c */
+void one_ish_set_input(void *inst, const float *in_lr, int frames);   /* src/engine.c */
 
 struct hostrate {
     const mpc_engine_t *api;   /* the engine's own table (src/engine.c) */
@@ -24,6 +27,14 @@ struct hostrate {
     int nev;
     float out[2][BLOCK];       /* the wrapper's own (int16-resolution) output, not used unless the tap is missing */
     resampler_t rs;
+    /* the audio input (hostrate.h): the host's rate to 44.1 kHz, then a FIFO indexed by engine frame */
+    resampler_t in_rs;
+    float in_fifo[2 * IN_FIFO];   /* engine frame e at (e & (IN_FIFO - 1)); the first in_lead frames are silence */
+    int64_t in_w, in_r;           /* the next engine frame converted (written), the next one an engine block reads */
+    int in_lead;                  /* the frames of silence the input starts behind (in_lead_for): it never runs dry */
+    float in_blk[2 * BLOCK];      /* the next engine block's input, for shim_render() */
+    int in_ready, in_live;        /* in_blk is this block's; it holds a sample other than 0 */
+    long in_dry;                  /* engine frames that found no input yet (never expected; load_test reads it) */
 };
 
 /* ---- the engine table the wrapper drives: everything forwarded, render() also keeps the float samples ---- */
@@ -37,6 +48,9 @@ static void *shim_create(const char *data_dir) {
     if (!h->eng) { free(h); return NULL; }
     rs_init();
     rs_reset(&h->rs, RS_RATE);
+    rs_reset_io(&h->in_rs, RS_RATE, RS_RATE);
+    memset(h->in_fifo, 0, sizeof h->in_fifo);   /* (calloc'd: written once, so the audio thread never maps its pages) */
+    h->in_lead = h->in_w = BLOCK;
     h->pending_fs = RS_RATE;
     last_created = h;
     return h;
@@ -55,6 +69,10 @@ static int shim_get_param(void *inst, const char *k, char *buf, int n) {
 static void shim_render(void *inst, int16_t *out, int frames) {
     hostrate_t *h = inst;
     if (frames > BLOCK) frames = BLOCK;   /* (the wrapper never asks for more) */
+    if (h->in_ready) {   /* this engine block's audio input (a silent one is not sent: the engine then hears silence) */
+        if (h->in_live) one_ish_set_input(h->eng, h->in_blk, frames);
+        h->in_ready = 0;
+    }
     one_ish_render_float(h->eng, h->tap, frames);
     for (int i = 0; i < 2 * frames; i++) out[i] = (int16_t)(h->tap[i] * 32767.0f);   /* exactly the engine's render() */
     h->tap_n = frames;
@@ -85,8 +103,20 @@ hostrate_t *hr_last_created(void) {
     return h;
 }
 
+/* the input's lead over the engine, in engine frames: a whole engine block (an engine block is rendered as soon as the
+ * output needs its first frame, so it may want input up to 127 frames past the host block's end), and at other rates
+ * two more for the converters' rounding (hostrate.h) */
+static int in_lead_for(int fs) { return fs == RS_RATE || !rs_rate_ok(fs) ? BLOCK : BLOCK + 2; }
+
 /* ---- control (any thread) ---- */
 int hr_on(const hostrate_t *h) { return !h->legacy; }
+double hr_input_delay(const hostrate_t *h) {
+    if (h->legacy) return -1.0;
+    int fs = __atomic_load_n(&h->pending_fs, __ATOMIC_RELAXED);
+    if (!rs_rate_ok(fs)) fs = RS_RATE;
+    return (in_lead_for(fs) + rs_delay_io(fs, RS_RATE)) * (double)fs / RS_RATE + rs_delay_for(fs);
+}
+long hr_input_dry(const hostrate_t *h) { return h->in_dry; }
 int hr_latency(const hostrate_t *h) { return h->legacy ? 0 : rs_delay_for(__atomic_load_n(&h->pending_fs, __ATOMIC_RELAXED)); }
 
 int hr_set_rate(hostrate_t *h, float rate) {
@@ -155,7 +185,59 @@ int hr_events(hostrate_t *h, AEffect *fx, const void *vst_events) {
 static void restart(hostrate_t *h, AEffect *fx) {
     send_due(h, fx, INT64_MAX);   /* nothing held across a reset (a note-off must not be lost) */
     rs_reset(&h->rs, __atomic_load_n(&h->pending_fs, __ATOMIC_RELAXED));
+    rs_reset_io(&h->in_rs, h->rs.fs, RS_RATE);
+    h->in_lead = in_lead_for(h->rs.fs);
+    memset(h->in_fifo, 0, sizeof(float) * 2 * h->in_lead);   /* the lead: silence */
+    h->in_w = h->in_lead;
+    h->in_r = 0;
+    h->in_ready = 0;
     h->host_pos = 0;
+}
+
+/* ---- the audio input: the host block's input converted to 44.1 kHz into the FIFO, all of it before any output is
+ * written (so a host that processes in place, in == out, still works); missing channels, NaN and inf are silence ---- */
+static void input_block(hostrate_t *h, float **in, int32_t n) {
+    const int have = in && in[0] && in[1];
+    float buf[2 * IN_CHUNK], l[64], r[64];
+    for (int32_t at = 0; at < n;) {
+        int k = n - at < IN_CHUNK ? (int)(n - at) : IN_CHUNK;
+        for (int i = 0; i < k; i++) {
+            float a = have ? in[0][at + i] : 0.0f, b = have ? in[1][at + i] : 0.0f;
+            buf[2 * i] = isfinite(a) ? a : 0.0f;
+            buf[2 * i + 1] = isfinite(b) ? b : 0.0f;
+        }
+        rs_write(&h->in_rs, buf, k);
+        at += k;
+        for (int m; (m = rs_out(&h->in_rs, l, r, 64, 0)) > 0;)
+            for (int i = 0; i < m; i++, h->in_w++) {
+                if (h->in_w < h->in_r || h->in_w - h->in_r >= IN_FIFO) continue;   /* (too late, or no room: dropped) */
+                float *f = &h->in_fifo[2 * (h->in_w & (IN_FIFO - 1))];
+                f[0] = l[i];
+                f[1] = r[i];
+            }
+    }
+}
+
+/* the next engine block's 128 frames of input from the FIFO, into in_blk for shim_render() */
+static void input_take(hostrate_t *h) {
+    int live = 0;
+    for (int i = 0; i < BLOCK; i++) {
+        int64_t e = h->in_r + i;
+        float a = 0.0f, b = 0.0f;
+        if (e < h->in_w) {
+            const float *f = &h->in_fifo[2 * (e & (IN_FIFO - 1))];
+            a = f[0];
+            b = f[1];
+        } else {
+            h->in_dry++;
+        }
+        h->in_blk[2 * i] = a;
+        h->in_blk[2 * i + 1] = b;
+        live |= a != 0.0f || b != 0.0f;
+    }
+    h->in_r += BLOCK;
+    h->in_live = live;
+    h->in_ready = 1;
 }
 
 /* one engine block through the wrapper (its housekeeping, MIDI, song position, engine lock), into the converter */
@@ -165,6 +247,7 @@ static void engine_block(hostrate_t *h, AEffect *fx, hr_render_t render) {
     h->sp_num = f * h->rs.fs - h->host_pos * RS_RATE;   /* this block's start minus the host block's, in seconds ... */
     h->sp_den = (int64_t)RS_RATE * h->rs.fs;             /* ... times 44100 * fs */
     h->tap_n = 0;
+    input_take(h);
     float *o[2] = {h->out[0], h->out[1]};
     render(fx, NULL, o, BLOCK);   /* the wrapper's FIFO is empty at every call (whole blocks only): one render() */
     if (h->tap_n != BLOCK)        /* never expected; the wrapper's own samples rather than a gap */
@@ -172,8 +255,9 @@ static void engine_block(hostrate_t *h, AEffect *fx, hr_render_t render) {
     rs_write(&h->rs, h->tap, BLOCK);
 }
 
-void hr_process(hostrate_t *h, AEffect *fx, hr_render_t render, float **out, int32_t n, int add) {
+void hr_process(hostrate_t *h, AEffect *fx, hr_render_t render, float **in, float **out, int32_t n, int add) {
     if (__atomic_exchange_n(&h->pending, 0, __ATOMIC_ACQUIRE)) restart(h, fx);
+    input_block(h, in, n);
     int done = 0;
     while (done < n) {
         done += rs_out(&h->rs, out[0] + done, out[1] + done, n - done, add);

@@ -84,6 +84,8 @@ enum {
     /* the MACRO channel (Plaits), per voice like the ones before the effects: harmonics, timbre, morph and level
      * +-100% of their range */
     MD_MAC_HARM, MD_MAC_TIMBRE, MD_MAC_MORPH, MD_MAC_LEVEL,
+    /* the mixer's EXT channel (the audio input), per voice: level +-100% of its range */
+    MD_EXT_LEVEL,
     MD_COUNT
 };
 enum { MDE_DELAY, MDE_ATTACK, MDE_HOLD, MDE_DECAY, MDE_SUSTAIN, MDE_RELEASE, MDE_SCALE, MDE_COUNT };

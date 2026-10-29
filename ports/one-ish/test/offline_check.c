@@ -97,6 +97,8 @@
  *   state     save/restore round trip; damaged or oversized states don't break the instance
  *   wav       writes test/out/demo.wav to listen to (and fx_*.wav, analog_pad.wav, analog_ladder.wav, random_demo.wav,
  *             arp_demo.wav, seq_demo.wav, macro_demo.wav)
+ *   ext       the audio input (test/ext_check.c): the EXT channel's routes into the filters, level 0 and no input
+ *             change nothing, the EXT LEVEL destination (offline_check ext <dir>/demo.wav: these alone)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
  *             MACRO channel at each model; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
@@ -4938,6 +4940,7 @@ static void arp_wav(const char *demo_path) {
 /* ---- the step sequencer (its own file: src/stepseq.h, src/stepseq_run.h) ---- */
 #include "stepseq_check.c"
 #include "multi_check.c"   /* multitimbral: three Synths */
+#include "ext_check.c"     /* the audio input: the EXT channel (and the vocoders) */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5698,7 +5701,13 @@ static void fx2_wavs(const char *demo_path) {
 
 int main(int argc, char **argv) {
     E = mpc_engine();
-    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); multi_bench(); return 0; }
+    if (argc > 1 && !strcmp(argv[1], "bench")) { bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); return 0; }
+    if (argc > 1 && !strcmp(argv[1], "extbench")) { ext_bench(); return 0; }   /* just the audio input's bench lines */
+    if (argc > 2 && !strcmp(argv[1], "ext")) {   /* just the audio input: offline_check ext <dir>/demo.wav */
+        ext_input();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 2 && !strcmp(argv[1], "multi")) {   /* just the multitimbral checks: offline_check multi <dir>/demo.wav */
         multitimbral();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
@@ -5772,6 +5781,7 @@ int main(int argc, char **argv) {
     arp_generative();
     step_sequencer();
     multitimbral();
+    ext_input();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

@@ -591,6 +591,8 @@ key_lo
 key_hi
 master_level
 seq_all
+ext_level
+ext_route
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1527,3 +1529,7 @@ s3_syn_on
 s3_syn_ch
 s3_key_lo
 s3_key_hi
+s2_ext_level
+s2_ext_route
+s3_ext_level
+s3_ext_route
