@@ -27,6 +27,7 @@
  * locks or touches a file. */
 
 #define GA_BURST 2.0f      /* MAX NOTES/S: up to two notes at once, then that many a second */
+#define GA_CHG_RESEED (CHORD_MAX + 3)   /* RESEED's bit in s->changed (engine.c's CHANGED_SLOT) */
 static const float GA_SYNC_BEATS[] = {0.0f, 1.0f, 0.5f, 0.25f, 0.125f, 1.0f / 3, 1.0f / 6};   /* "orb_quant" */
 static const float LF_RATE_BEATS[] = {1.0f, 0.5f, 0.25f, 0.125f, 1.0f / 3, 1.0f / 6};       /* "life_rate" (then Free) */
 #define LF_FREE 6
@@ -102,7 +103,8 @@ static int ga_accent(int col) { return col % 4 == 0 ? 110 : col % 2 == 0 ? 90 : 
 static void ga_life_seed(one_t *s) {
     ga_run_t *r = &s->ga;
     r->lseed = (int)s->val[P_LIFE_SEED];
-    lf_seed(&r->lf, ga_seed(s, 0x4c494645u, r->lseed), clampf(s->val[P_LIFE_DENSITY] * 0.01f, 0.05f, 0.8f));
+    lf_seed(&r->lf, ga_seed(s, 0x4c494645u + 0x01000193u * (uint32_t)r->lpress, r->lseed),
+            clampf(s->val[P_LIFE_DENSITY] * 0.01f, 0.05f, 0.8f));
     memcpy(r->lf.born, r->lf.c, sizeof r->lf.c);   /* (the new grid sounds as if just born) */
     r->lhead = 0;
     r->lpop = lf_pop(&r->lf) / (float)(LF_ROWS * LF_COLS);
@@ -120,8 +122,15 @@ static void ga_apply(one_t *s) {
     int fresh = on & ~r->on;
     r->held = on & ((p[P_LIFE_KEYS] > 0.5f) * GA_LIFE | (p[P_ORB_KEYS] > 0.5f) * GA_ORB | (p[P_PEND_KEYS] > 0.5f) * GA_PEND);
     if (on && !r->on) { r->t_next = s->now; r->ticks = 0; }
-    /* LIFE: seeded when switched on and when SEED turns */
-    if ((fresh & GA_LIFE) || ((on & GA_LIFE) && (int)p[P_LIFE_SEED] != r->lseed)) {
+    /* LIFE: seeded when switched on, when SEED turns and at RESEED (a new grid each press; the button goes back off) */
+    int press = p[P_LIFE_RESEED] > 0.5f;
+    if (press) {
+        s->val[P_LIFE_RESEED] = 0.0f;
+        s->changed |= 1u << GA_CHG_RESEED;
+        if (on & GA_LIFE) r->lpress++;
+    }
+    if (fresh & GA_LIFE) r->lpress = 0;   /* (switched on: the SEED's own grid) */
+    if ((fresh & GA_LIFE) || ((on & GA_LIFE) && ((int)p[P_LIFE_SEED] != r->lseed || press))) {
         ga_life_seed(s);
         r->lgrid = INT64_MIN;
         r->lacc = 0.0f;

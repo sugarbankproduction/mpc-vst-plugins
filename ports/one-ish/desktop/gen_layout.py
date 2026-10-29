@@ -417,7 +417,8 @@ def build(lay):
     scale = [("key_root", "Key"), ("key_scale", "Scale")]
     L.page("LIFE", "GAME OF LIFE", "Cells live and die by the RULE; births or a scanning playhead play notes in the KEY.",
            [("life_on", "Life On"), ("life_mode", "Plays"), ("life_rate", "Rate"), ("life_speed", "Free Rate", "life_rate", [6]),
-            ("life_rule", "Rule"), ("life_density", "Density"), ("life_seed", "Seed (turn: reseed)"), ("life_wrap", "Wrap Edges"),
+            ("life_reseed", "Reseed"), ("life_rule", "Rule"), ("life_density", "Density"), ("life_seed", "Seed"),
+            ("life_wrap", "Wrap Edges"),
             ("life_notes", "Notes per Step"), ("life_max", "Max Notes/s"), ("life_len", "Note Length"), ("life_keys", "Keys"),
             ("life_octave", "Low Octave"), ("life_range", "Octaves")] + scale, pic=("LIFE", "life_"))
     L.page("ORBITS", "GRAVITY ORBITS", "Planets circle a sun: crossing a spoke plays a note in the KEY.",

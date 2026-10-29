@@ -655,6 +655,7 @@ life_mode
 life_rule
 life_density
 life_seed
+life_reseed
 life_wrap
 life_notes
 life_len
@@ -1810,3 +1811,5 @@ s3_pend_len
 s3_pend_octave
 s3_pend_max
 s3_pend_dyn
+s2_life_reseed
+s3_life_reseed

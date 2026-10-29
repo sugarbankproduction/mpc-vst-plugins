@@ -32,6 +32,7 @@ enum {
     MS_LIFE_POP, MS_ORB1_X, MS_ORB1_Y, MS_PEND1, MS_PEND_SYNC,
     MS_COUNT
 };
+_Static_assert(MS_COUNT <= 64, "the bipolar flags (mod_eval_list's bipolar, engine.c's s->bipolar) are 64 bits");
 
 enum { MX_NONE, MX_LIMIT_LOW, MX_LIMIT_HIGH, MX_SQUARED, MX_CUBED, MX_COUNT };   /* transforms, params.json order */
 
@@ -137,7 +138,7 @@ static inline int mod_active(const float *slots, const float *extra, const float
  * unused; bipolar: bit s set when source s is bipolar. dst[MD_COUNT] gets each destination's summed modulation, -1..1
  * per full-amount slot; only dst[0 .. nd - 1] are cleared first (the listed slots reach no destination past them). */
 static inline void mod_eval_list(const float *slots, const float *extra, const uint8_t *list, int nlist, const float *src,
-                                 uint32_t bipolar, float *dst, int nd) {
+                                 uint64_t bipolar, float *dst, int nd) {
     for (int d = 0; d < nd; d++) dst[d] = 0.0f;
     for (int k = 0; k < nlist; k++) {
         int i = list[k];
@@ -154,12 +155,12 @@ static inline void mod_eval_list(const float *slots, const float *extra, const u
             x = src[via];
             amt = c;
         }
-        dst[d] += mod_transform(x, (int)ex[1], ex[2] * 0.01f, s < 32 && (bipolar >> s & 1u)) * amt;   /* (32 on: 0 .. 1) */
+        dst[d] += mod_transform(x, (int)ex[1], ex[2] * 0.01f, (int)(bipolar >> s & 1u)) * amt;
     }
 }
 
 /* every slot, for callers without a list */
-static inline void mod_eval(const float *slots, const float *extra, const float *src, uint32_t bipolar, float *dst) {
+static inline void mod_eval(const float *slots, const float *extra, const float *src, uint64_t bipolar, float *dst) {
     uint8_t list[MOD_SLOTS];
     mod_eval_list(slots, extra, list, mod_active(slots, extra, NULL, list), src, bipolar, dst, MD_COUNT);
 }

@@ -211,6 +211,41 @@ static void gens_a_checks(void) {
             E->destroy(a);
         }
     }
+    /* RESEED (a plain button): a new grid each press, the button back off at once and the host told; the same presses
+     * give the same grids */
+    {
+        void *a = pg_patch(), *b = pg_patch(), *c = pg_patch();
+        setkv(a, "life_on=1"); setkv(b, "life_on=1"); setkv(c, "life_on=1");
+        int na = 0, nb = 0;
+        pg_run(a, 1.0, "gen_log", pg_a, &na);
+        pg_run(b, 1.0, "gen_log", pg_b, &nb);
+        set(b, "life_reseed", 1);
+        set(c, "life_reseed", 1);   /* (c: pressed at the start, then a second time like b) */
+        double back = get(b, "life_reseed");
+        char key[64] = "";
+        int told = 0;
+        while (mpc_engine_changed(b, key, sizeof key)) told |= !strcmp(key, "life_reseed");
+        static char v1[256], v2[256];
+        for (int k = 0; k < 4; k++) { E->render(a, ba, 128); E->render(b, bb, 128); }   /* (the views written again) */
+        E->get_param(a, "life_view", v1, sizeof v1);
+        E->get_param(b, "life_view", v2, sizeof v2);
+        int differs = strcmp(strchr(v1, ';'), strchr(v2, ';')) != 0;   /* (the grids, past the playhead) */
+        na = nb = 0;
+        pg_run(a, 6.0, "gen_log", pg_a, &na);
+        pg_run(b, 6.0, "gen_log", pg_b, &nb);
+        int moved = !pg_same(pg_a, na, pg_b, nb, 0);
+        void *d = pg_patch();
+        setkv(d, "life_on=1");
+        set(d, "life_reseed", 1);
+        int n1 = 0, n2 = 0;
+        pg_run(c, 3.0, "gen_log", pg_a, &n1);
+        pg_run(d, 3.0, "gen_log", pg_b, &n2);
+        snprintf(what, sizeof what, "LIFE RESEED: back off at once (%g), the host told (%d), a new grid (%d) that plays "
+                 "other notes (%d), the same press the same grid (%d)", back, told, differs, moved,
+                 pg_same(pg_a, n1, pg_b, n2, 0));
+        check(back == 0.0 && told && differs && moved && n1 > 3 && pg_same(pg_a, n1, pg_b, n2, 0), what);
+        E->destroy(a); E->destroy(b); E->destroy(c); E->destroy(d);
+    }
     /* the views: in range; a saved sound keeps the settings, not the positions */
     {
         void *a = pg_patch(), *b = pg_patch(), *c = pg_patch();

@@ -1191,7 +1191,7 @@ static void phys_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
 static void gens_a_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     char what[200];
     static const struct { int page, pic; const char *on, *param, *suffix; } P[] = {
-        {PG_LIFE, PIC_LIFE, "life_on", "life_rule", "_more_life"},
+        {PG_LIFE, PIC_LIFE, "life_on", "life_reseed", "_more_life"},
         {PG_ORBITS, PIC_ORBITS, "orb_on", "orb_spokes", "_more_orbits"},
         {PG_PEND, PIC_PEND, "pend_on", "pend_cycle", "_more_pend"}};
     int x0 = (int)((ZONE_SCREEN[0] + 8) * s), x1 = (int)((ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8) * s);
@@ -1219,6 +1219,29 @@ static void gens_a_test(AEffect *fx, HWND child, float s, const char *bmp, int w
                  "moves (%d pixels changed 0.7 s later)", P[k].suffix + 6, opened, moved);
         check(opened > 500 && moved > 20, what);
         if (bmp) shot(child, w, h, bmp, P[k].suffix);
+        if (k == 0) {   /* RESEED, a plain click on its item: a new grid at once, and the button back off */
+            set_option(fx, "life_rate", "Free");   /* (slow: 0.5 steps a second, so the grid stands still) */
+            fx->setParameter(fx, rnd_key("life_speed"), 0.0f);
+            play(fx, 10, 512);
+            phys_grab(child, w, h, phys_px[0]);
+            play(fx, 10, 512);
+            phys_grab(child, w, h, phys_px[1]);
+            int still = 0, fresh = 0;
+            for (int y = y0; st && y < y1 && y < h; y++)
+                for (int x = x0; x < x1 && x < w; x++) still += memcmp(&phys_px[0][y * st + 3 * x], &phys_px[1][y * st + 3 * x], 3) != 0;
+            int pr = PT_ROWS - PIC_ROWS, j = 4, r = j % pr, col = j / pr;   /* on, plays, rate, free rate, RESEED (editor.h page_slot) */
+            float sx0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
+            click(child, s, sx0 + col * (half + 8.0f) + half * 0.75f, ZONE_SCREEN[1] + 80.0f + 22.0f * r + 11.0f);
+            play(fx, 10, 512);
+            phys_grab(child, w, h, phys_px[0]);
+            for (int y = y0; st && y < y1 && y < h; y++)
+                for (int x = x0; x < x1 && x < w; x++) fresh += memcmp(&phys_px[0][y * st + 3 * x], &phys_px[1][y * st + 3 * x], 3) != 0;
+            float back = fx->getParameter(fx, rnd_key("life_reseed"));
+            snprintf(what, sizeof what, "LIFE RESEED by a plain click on its item: a new grid (%d pixels changed, %d while "
+                     "untouched), the button back off (%.0f)", fresh, still, back);
+            check(fresh > 200 && fresh > 4 * still && back < 0.5f, what);
+            set_option(fx, "life_rate", "1/32");
+        }
         set_option(fx, P[k].on, "Off");
     }
     set_option(fx, "life_rate", "1/8");

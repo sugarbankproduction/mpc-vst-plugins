@@ -171,6 +171,7 @@ static const char *help_for(int i) {
         {"life_rule", "Rule: Life (born with 3 neighbours, lives on with 2 or 3), HighLife (also born with 6), Seeds (born with 2, never lives on: wild)."},
         {"life_density", "Density: how full a new random grid starts."},
         {"life_seed", "Seed: turn it to start a new random grid at once (the same seed, the same grid). A grid that dies or loops starts again by itself."},
+        {"life_reseed", "Reseed: click for a new random grid now (each click a new one; it lights only for a moment)."},
         {"life_wrap", "Wrap edges: on, the grid's edges join round (top to bottom, left to right); off, outside is empty."},
         {"life_notes", "Notes per step: at most this many notes each step (spread over the grid, not only the lowest)."},
         {"life_len", "Note length: how long each LIFE note lasts."},

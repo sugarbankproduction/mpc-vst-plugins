@@ -238,7 +238,7 @@ typedef struct {
     /* GAME OF LIFE */
     lf_world_t lf;
     ga_out_t lo;
-    int lhead, lseed;        /* the scan's place; the SEED it was seeded from */
+    int lhead, lseed, lpress;   /* the scan's place; the SEED it was seeded from; RESEED presses since it went on */
     int64_t lgrid;           /* the last tempo grid line it stepped on */
     float lacc, lpop;        /* FREE: steps owed; the population 0 .. 1 (a modulation source) */
     uint16_t llit[LF_ROWS];  /* the cells that played at the last step ... */

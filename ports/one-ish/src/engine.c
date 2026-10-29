@@ -250,6 +250,7 @@ enum {
     P_ORB_PLANET_TO, P_ORB_QUANT, P_ORB_LEN, P_ORB_OCT, P_ORB_RANGE, P_ORB_MAX,
     P_PEND_ON, P_PEND_KEYS, P_PEND_COUNT, P_PEND_CYCLE, P_PEND_SPEED, P_PEND_SPREAD, P_PEND_DAMP, P_PEND_TRIGGER,
     P_PEND_RESTART, P_PEND_LEN, P_PEND_OCT, P_PEND_MAX, P_PEND_DYN,
+    P_LIFE_RESEED,   /* (2026-10-30) LIFE's RESEED button (the engine sets it back to Off) */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -392,6 +393,7 @@ static const char *const KEYS[P_COUNT] = {
     "orb_planet_to", "orb_quant", "orb_len", "orb_octave", "orb_range", "orb_max",
     "pend_on", "pend_keys", "pend_count", "pend_cycle", "pend_speed", "pend_spread", "pend_damp", "pend_trigger",
     "pend_restart", "pend_len", "pend_octave", "pend_max", "pend_dyn",
+    "life_reseed",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -576,7 +578,7 @@ typedef struct {
     float lfo_coef[NLFO];    /* each LFO's smoothing coefficient per control step (1: none) */
     float lfo_fade[NLFO][3]; /* each LFO's delay, fade in and fade out, samples (0: off) */
     float lfo_coef1[NLFO];   /* each LFO's smoothing coefficient per sample (the High range's path; 1: none) */
-    uint32_t bipolar;        /* bit s: matrix source s is bipolar (for the limit transforms) */
+    uint64_t bipolar;        /* bit s: matrix source s is bipolar (for the limit transforms; 64 bits, 2026-10-30) */
     uint8_t mod_list[MOD_SLOTS];   /* the matrix slots in use, and how many */
     int mod_n;
     int mod_env, mod_lfo;    /* a slot in use goes to an envelope's / an LFO's settings */
@@ -831,9 +833,9 @@ static void positions_load(one_t *s) {
 
 /* the LFOs' settings that don't change per voice */
 static void apply_lfos(one_t *s) {
-    s->bipolar = 1u << MS_KEY | 1u << MS_RAND | 1u << MS_BEND
-                 | (uint32_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON
-                 | (uint32_t)pad_bipolar(s) * (1u << MS_PAD_X | 1u << MS_PAD_Y);
+    s->bipolar = 1ull << MS_KEY | 1ull << MS_RAND | 1ull << MS_BEND
+                 | (uint64_t)((int)s->val[P_RIBBON_ORIGIN] == RIB_CENTRE) << MS_RIBBON
+                 | (uint64_t)pad_bipolar(s) * (1ull << MS_PAD_X | 1ull << MS_PAD_Y);
     static const int src[NLFO] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4};
     for (int n = 0; n < NLFO; n++) {
         const float *x = lfo_x(s, n);
@@ -843,7 +845,7 @@ static void apply_lfos(one_t *s) {
         s->lfo_fade[n][1] = lfo_samples(x[L_FADE_IN]);
         s->lfo_fade[n][2] = lfo_samples(x[L_FADE_OUT]);
         s->lfo_hz[n] = lfo_hz(s, n);
-        if ((int)x[L_POLARITY] == POL_BIPOLAR) s->bipolar |= 1u << src[n];
+        if ((int)x[L_POLARITY] == POL_BIPOLAR) s->bipolar |= 1ull << src[n];
         /* the High range's per-sample path: its smoothing per sample (2026-10-29) */
         s->lfo_coef1[n] = sm > 0.0f ? 1.0f - expf(-6.2831853f * LFO_SMOOTH_HZ * powf(10.0f, -4.0f * sm) / SR) : 1.0f;
     }
@@ -1662,9 +1664,10 @@ enum { RND_NONREPEAT, RND_REPEAT };                          /* "arp_rnd_mode" *
 #define GLOG_MAX ((int)(sizeof ((one_t *)0)->glog / sizeof ((one_t *)0)->glog[0]))
 /* the params the engine sets itself (CHORD LEARN; the sequencer's PLAY at a one shot's end or NOTE TRIG's exclusion,
  * its NOTE TRIG, its LENGTH after DUPLICATE or a factory sequence), as mpc_engine_changed() reports them */
-static const int CHANGED_SLOT[CHORD_MAX + 3] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CHORD_IV1 + 1, P_CHORD_IV1 + 2,
+static const int CHANGED_SLOT[CHORD_MAX + 4] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CHORD_IV1 + 1, P_CHORD_IV1 + 2,
                                                 P_CHORD_IV1 + 3, P_CHORD_IV1 + 4, P_SEQ_PLAY, P_SEQ_NOTE_TRIG,
-                                                P_SEQ_LENGTH};
+                                                P_SEQ_LENGTH,
+                                                P_LIFE_RESEED};   /* (2026-10-30) LIFE's RESEED, back off (GA_CHG_RESEED) */
 
 static int route_of(const one_t *s) {
     if (s->val[P_CHORD_LEARN] > 0.5f) return ROUTE_LEARN;
