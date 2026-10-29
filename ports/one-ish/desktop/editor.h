@@ -54,6 +54,7 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
        Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_FOCUS1, Z_FOCUS2, Z_FOCUS3,
        Z_TAB_SETUP, Z_TAB_SETTINGS, Z_RND_ALL, Z_MUTE1, Z_MUTE2, Z_MUTE3, Z_SOLO1, Z_SOLO2, Z_SOLO3,
+       Z_RND_WILD, Z_RND_ALSO,   /* Z_RND_ALSO + 0..2: the ARPEGGIATOR, GENERATIVE and SEQUENCER tick buttons */
        Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
@@ -146,6 +147,8 @@ typedef struct {
     uint32_t rnd_seed;
     int rnd_count, mut_count, hist_n, hist_pos;
     int rnd_all;             /* ALL 3 SYNTHS: RANDOMISE and MUTATE change every Synth (Shift+R: once) */
+    float rnd_wild;          /* WILD 0..1: how strange RANDOMISE and MUTATE get (0: the tame randomiser) */
+    unsigned rnd_also;       /* the tick buttons: bit RS_ARP / RS_GEN / RS_SEQ, that section randomised too */
     float hist[RND_HIST][NPARAMS];
     char hist_name[RND_HIST][40];
     patches_t pt;                              /* user patches and the browser (patches.c) */
@@ -157,7 +160,7 @@ typedef struct {
     HWND idle;                                 /* a hidden window whose timer loads MIDI program changes */
     settings_ui_t st;                          /* the SETTINGS page (settings.c) */
 } ed_t;
-enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB };
+enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD };
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -180,6 +183,7 @@ int screen_subs(ed_t *e);                     /* how many sub-pages the screen h
 void slot_rects(int slot, RECT *name, RECT *ctl);   /* a page's slot 0..SLOTS-1: its name and its control */
 RECT matrix_cell(int r, int col);             /* the matrix on the screen: row r, column 0 (#) .. MX_COLS */
 RECT rnd_rect(int z);                         /* the randomiser page: where control z (Z_RND_*) sits */
+RECT rnd_col(int col);                        /* the randomiser page: its three columns of buttons (0-2) */
 RECT focus_part(int c, int part);             /* SYNTH c's button: its cap (0), M (1) and S (2) halves */
 int synth_muted(ed_t *e, int c);              /* SYNTH c off (its ON) / soloed (never saved) */
 int synth_soloed(ed_t *e, int c);
@@ -274,6 +278,7 @@ void seq_draw(HDC dc, ed_t *e);
 void seq_panel_draw(HDC dc, ed_t *e);
 const char *seq_zone_help(ed_t *e, int z);
 void seq_help(ed_t *e, char *out, int n);
+void seq_load(ed_t *e, const sq_seq_t *q);   /* a whole sequence into the focused Synth's sequencer (the randomiser's lanes) */
 const char *seq_message(ed_t *e);
 RECT seq_help_rect(void);
 intptr_t seq_test(ed_t *e, intptr_t op, char *buf);

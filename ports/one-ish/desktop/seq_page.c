@@ -145,6 +145,12 @@ static void seq_send(ed_t *e, const char *fmt, ...) {
     seq_read(e);
     redraw(e);
 }
+/* a whole sequence (the randomiser's modulation lanes), as a .oneseq file's load does */
+void seq_load(ed_t *e, const sq_seq_t *q) {
+    static char enc[SQ_TEXT_MAX];
+    sq_encode(q, enc, sizeof enc);
+    seq_send(e, "load %s", enc);
+}
 static void send_note(ed_t *e, int s, int l) {
     const sq_note_t *n = &e->sq.q.n[s][l];
     if (!sq_has(n)) seq_send(e, "note %d %d -1 0 0 0 0", s, l);

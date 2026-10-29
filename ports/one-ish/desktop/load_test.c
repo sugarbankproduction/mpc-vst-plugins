@@ -230,17 +230,20 @@ static void ribbon_test(AEffect *fx, HWND child, float s) {
 
 /* ---- the randomiser page ---- */
 /* where its controls sit, in base units: mirrors editor.c's layout() (the screen's rows) and rnd_rect() */
-enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK };
-static void rnd_point(int what, int k, float *x, float *y) {
+enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK, RP_ALSO, RP_WILD };
+static void rnd_point(int what, int k, float *x, float *y) {   /* k: a lock's section, a tick (0-2), WILD in % */
     float x0 = ZONE_SCREEN[0] + 8.0f, x1 = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f, top = ZONE_SCREEN[1] + 6.0f + 36 + 20 + 18;
-    float half = (x1 - x0 - 8) / 2, xr = x0 + half + 8, q = (half - 8) / 2;
+    float half = (x1 - x0 - 8) / 2, xr = x0 + half + 8, cw = (x1 - x0 - 16) / 3, q = (cw - 6) / 2;
+    float col1 = x0 + cw + 8, col2 = x0 + 2 * (cw + 8);
     switch (what) {
     case RP_GO: *x = x0 + half / 2; *y = top + 22; break;
     case RP_MUTATE: *x = xr + half / 2; *y = top + 22; break;
-    case RP_UNDO: *x = x0 + q / 2; *y = top + 22 * 7 + 11; break;
-    case RP_REDO: *x = x0 + q + 8 + q / 2; *y = top + 22 * 7 + 11; break;
-    case RP_ALL: *x = xr + half / 2; *y = top + 22 * 7 + 11; break;
-    default: *x = (k < 4 ? x0 : xr) + half / 2; *y = top + 22 * (3 + k % 4) + 11; break;
+    case RP_UNDO: *x = col1 + q / 2; *y = top + 22 * 7 + 11; break;
+    case RP_REDO: *x = col1 + q + 6 + q / 2; *y = top + 22 * 7 + 11; break;
+    case RP_ALL: *x = col2 + cw / 2; *y = top + 22 * 7 + 11; break;
+    case RP_ALSO: *x = col2 + cw / 2; *y = top + 22 * (4 + k) + 11; break;
+    case RP_WILD: *x = x0 + 54 + (half - 94) * k / 100.0f; *y = top + 22 * 2 + 11; break;
+    default: *x = (k < 4 ? x0 : col1) + cw / 2; *y = top + 22 * (4 + k % 4) + 11; break;
     }
 }
 static void rnd_click(HWND child, float s, int what, int k) {
@@ -332,6 +335,42 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     rnd_click(child, s, RP_LOCK, RS_FILTER);
     rnd_click(child, s, RP_LOCK, RS_ENV);
 
+    /* (2026-10-29) WILD at 100% and the ARPEGGIATOR and GENERATIVE ticks: more matrix rows, those sections set; then
+     * WILD back to 0 and the ticks off: those sections kept again */
+    {
+        int also_before = 0, rows = 0, also = 0;
+        for (int i = 0; i < NPARAMS; i++) {
+            int sec = rnd_section_of(i);
+            also_before += (sec == RS_ARP || sec == RS_GEN || sec == RS_SEQ) && after[i] != before[i];
+        }
+        rnd_click(child, s, RP_WILD, 100);
+        rnd_click(child, s, RP_ALSO, 0);
+        rnd_click(child, s, RP_ALSO, 1);
+        snapshot(fx, before);
+        rnd_click(child, s, RP_GO, 0);
+        snapshot(fx, after);
+        for (int i = 0; i < NPARAMS; i++) {
+            int sec = rnd_section_of(i);
+            also += (sec == RS_ARP || sec == RS_GEN) && after[i] != before[i];
+        }
+        for (int k = 1; k <= 16; k++) {
+            char kd[16];
+            snprintf(kd, sizeof kd, "mod%d_dst", k);
+            for (int i = 0; i < NPARAMS; i++)
+                if (!strcmp(PARAMS[i].key, kd)) rows += after[i] > 0.0f;
+        }
+        send_midi(fx, 0x90, 60, 100);
+        double wrms = play(fx, 60, 512);
+        send_midi(fx, 0xB0, 123, 0);
+        play(fx, 200, 512);
+        snprintf(what, sizeof what, "WILD 100%% with ARPEGGIATOR and GENERATIVE lit: %d matrix rows with a destination, %d arp / "
+                 "GENERATIVE params set (%d before, ticks off), the sound plays (rms %.3f)", rows, also, also_before, wrms);
+        check(also_before == 0 && also > 0 && rows >= 4 && wrms > 0.001, what);
+        rnd_click(child, s, RP_WILD, 0);
+        rnd_click(child, s, RP_ALSO, 0);
+        rnd_click(child, s, RP_ALSO, 1);
+    }
+
     /* the keys R and M, and ALL 3 SYNTHS: params changed per Synth (by the key's "s2_" / "s3_" prefix) */
     {
         int per[3];
@@ -398,11 +437,15 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     if (bmp) {   /* a picture of the page after one more RANDOMISE, with the mouse over the button */
         rnd_click(child, s, RP_GO, 0);
         rnd_click(child, s, RP_LOCK, RS_FX);
+        rnd_click(child, s, RP_ALSO, 0);   /* (a tick lit and WILD at 40% in the picture) */
+        rnd_click(child, s, RP_WILD, 40);
         float x, y;
         rnd_point(RP_GO, 0, &x, &y);
         SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
         shot(child, w, h, bmp, "_random");
         rnd_click(child, s, RP_LOCK, RS_FX);
+        rnd_click(child, s, RP_ALSO, 0);
+        rnd_click(child, s, RP_WILD, 0);
         SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));
     }
 }
