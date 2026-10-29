@@ -229,6 +229,8 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_RND_AMOUNT: return "AMOUNT: how far MUTATE moves the sound (drag or scroll). Default 20%.";
     case Z_RND_UNDO: return "UNDO: back to the sound before (the last 32 are kept, your own edits in between too).";
     case Z_RND_REDO: return "REDO: forward again after UNDO.";
+    case Z_RND_ALL: return "ALL 3 SYNTHS: lit, RANDOMISE and MUTATE give all three Synths a new sound (each its own; ON, "
+                           "channels and key ranges stay). Keys: R randomise, M mutate, Shift+R / Shift+M all three.";
     case Z_SUB_PREV: case Z_SUB_NEXT: return "The previous / next part of this page.";
     case Z_EUCLID: return "The Euclidean pattern (STEPS, HITS, ROTATE): one dot per step, step 1 at the top, lit = the step "
                           "plays. The middle shows hits / steps. Click for the GENERATIVE page.";
@@ -761,6 +763,7 @@ static void draw_random(HDC dc, ed_t *e) {
                       font_cell);
     screen_button(dc, rnd_rect(Z_RND_UNDO), "UNDO", 0, e->hover == Z_RND_UNDO && e->hist_pos > 0, font_cell);
     screen_button(dc, rnd_rect(Z_RND_REDO), "REDO", 0, e->hover == Z_RND_REDO && e->hist_pos < e->hist_n - 1, font_cell);
+    if (NSYNTHS > 1) screen_button(dc, rnd_rect(Z_RND_ALL), "ALL 3 SYNTHS", e->rnd_all, e->hover == Z_RND_ALL, font_cell);
 }
 
 /* the screen's glass, bezel, stripes and rules: static */
@@ -832,7 +835,7 @@ static void draw_screen(HDC dc, ed_t *e) {
     } else if (lib_notes_help(e, help, sizeof help)) {   /* SHOW NOTES: the patch's notes */
     } else if (e->screen == SCR_RANDOM) {
         snprintf(help, sizeof help, "RANDOMISE makes a new sound; MUTATE a variation of this one (AMOUNT: how far). "
-                                    "Light a section to keep it. UNDO / REDO step through the last sounds. Like it? "
+                                    "Light a section to keep it. UNDO / REDO step through the last sounds. Keys: R, M; Shift: all 3 Synths. Like it? "
                                     "Save it in your host (a preset or the project).");
     } else if (lib_screen(e->screen)) {
         lib_help(e, help, sizeof help);

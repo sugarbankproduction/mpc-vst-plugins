@@ -230,7 +230,7 @@ static void ribbon_test(AEffect *fx, HWND child, float s) {
 
 /* ---- the randomiser page ---- */
 /* where its controls sit, in base units: mirrors editor.c's layout() (the screen's rows) and rnd_rect() */
-enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_LOCK };
+enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK };
 static void rnd_point(int what, int k, float *x, float *y) {
     float x0 = ZONE_SCREEN[0] + 8.0f, x1 = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f, top = ZONE_SCREEN[1] + 6.0f + 36 + 20 + 18;
     float half = (x1 - x0 - 8) / 2, xr = x0 + half + 8, q = (half - 8) / 2;
@@ -239,6 +239,7 @@ static void rnd_point(int what, int k, float *x, float *y) {
     case RP_MUTATE: *x = xr + half / 2; *y = top + 22; break;
     case RP_UNDO: *x = x0 + q / 2; *y = top + 22 * 7 + 11; break;
     case RP_REDO: *x = x0 + q + 8 + q / 2; *y = top + 22 * 7 + 11; break;
+    case RP_ALL: *x = xr + half / 2; *y = top + 22 * 7 + 11; break;
     default: *x = (k < 4 ? x0 : xr) + half / 2; *y = top + 22 * (3 + k % 4) + 11; break;
     }
 }
@@ -330,6 +331,43 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     check(locked_moved == 0 && others > 20, what);
     rnd_click(child, s, RP_LOCK, RS_FILTER);
     rnd_click(child, s, RP_LOCK, RS_ENV);
+
+    /* the keys R and M, and ALL 3 SYNTHS: params changed per Synth (by the key's "s2_" / "s3_" prefix) */
+    {
+        int per[3];
+        static float a[NPARAMS], b[NPARAMS];
+#define PER_SYNTH(x, y) do { per[0] = per[1] = per[2] = 0;             for (int i = 0; i < NPARAMS; i++) if (x[i] != y[i]) {                 const char *k = PARAMS[i].key;                 per[k[0] == 's' && (k[1] == '2' || k[1] == '3') && k[2] == '_' ? k[1] - '1' : 0]++; } } while (0)
+        snapshot(fx, a);
+        SendMessageA(child, WM_KEYDOWN, 'R', 1);
+        snapshot(fx, b);
+        PER_SYNTH(a, b);
+        snprintf(what, sizeof what, "the R key randomises the Synth in focus (%d / %d / %d params changed in Synths 1-3)",
+                 per[0], per[1], per[2]);
+        check(per[0] > 40 && per[1] == 0 && per[2] == 0, what);
+        SendMessageA(child, WM_KEYDOWN, 'M', 1);
+        snapshot(fx, a);
+        PER_SYNTH(b, a);
+        snprintf(what, sizeof what, "the M key mutates it (%d / %d / %d)", per[0], per[1], per[2]);
+        check(per[0] > 0 && per[1] == 0 && per[2] == 0, what);
+        rnd_click(child, s, RP_ALL, 0);   /* ALL 3 SYNTHS on, then RANDOMISE */
+        rnd_click(child, s, RP_GO, 0);
+        snapshot(fx, b);
+        PER_SYNTH(a, b);
+        snprintf(what, sizeof what, "with ALL 3 SYNTHS lit, RANDOMISE changes all three (%d / %d / %d)",
+                 per[0], per[1], per[2]);
+        check(per[0] > 40 && per[1] > 40 && per[2] > 40, what);
+        int setup_moved = 0;
+        static const char *const SETUP[] = {"syn_on", "s2_syn_on", "s3_syn_on", "syn_ch", "s2_syn_ch", "s3_syn_ch",
+                                            "key_lo", "s2_key_lo", "s3_key_hi", "s2_volume", "s3_volume"};
+        for (unsigned k = 0; k < sizeof SETUP / sizeof SETUP[0]; k++)
+            for (int i = 0; i < NPARAMS; i++)
+                if (!strcmp(PARAMS[i].key, SETUP[k])) setup_moved += a[i] != b[i];
+        snprintf(what, sizeof what, "... and leaves each Synth's ON, channel, key range and level alone (%d moved)",
+                 setup_moved);
+        check(setup_moved == 0, what);
+        rnd_click(child, s, RP_ALL, 0);   /* (off again) */
+#undef PER_SYNTH
+    }
 
     /* clicks while another thread renders, as in a host: no crash, nothing but finite audio within full scale */
     send_midi(fx, 0x90, 48, 100);

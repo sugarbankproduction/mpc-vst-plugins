@@ -53,7 +53,7 @@ enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 key
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
        Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
        Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_EUCLID, Z_TAB_SEQ, Z_FOCUS1, Z_FOCUS2, Z_FOCUS3,
-       Z_TAB_SETUP, Z_TAB_SETTINGS, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
+       Z_TAB_SETUP, Z_TAB_SETTINGS, Z_RND_ALL, Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
 enum { SCR_SETUP = -11, NSYNTHS = 3 };   /* the centre screen's SETUP page (the three Synths side by side) */
@@ -144,6 +144,7 @@ typedef struct {
     unsigned rnd_locks;
     uint32_t rnd_seed;
     int rnd_count, mut_count, hist_n, hist_pos;
+    int rnd_all;             /* ALL 3 SYNTHS: RANDOMISE and MUTATE change every Synth (Shift+R: once) */
     float hist[RND_HIST][NPARAMS];
     char hist_name[RND_HIST][40];
     patches_t pt;                              /* user patches and the browser (patches.c) */

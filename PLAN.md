@@ -173,7 +173,9 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      Done 2026-10-27 (offline and the desktop window): `src/randomize.h` (rules per param key, six archetypes, a
      safety pass) and a RANDOM page on the centre screen (RANDOMISE, MUTATE with an amount, 7 section locks, UNDO /
      REDO over 32 sounds). Offline: 300 random sounds all heard and within the limiter's range; volume, tuning, bend,
-     keyboard settings, ribbon and link cutoff never touched. Left: per part (needs multitimbral), an MPC control.
+     keyboard settings, ribbon and link cutoff never touched. Left: an MPC control. Per part done 2026-10-29 (the
+     desktop window, load_test): it works on the Synth in focus; ALL 3 SYNTHS (lit) gives every Synth its own new sound
+     (ON, channels, key ranges and levels stay); keys R randomise, M mutate, Shift+R / Shift+M all three.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27

@@ -10,7 +10,8 @@
  *
  * RANDOM (the console button next to ANALOG) shows the patch randomiser on the screen (src/randomize.h): RANDOMISE makes
  * a new sound, MUTATE a variation of this one by AMOUNT, the lock buttons keep sections as they are, UNDO / REDO step
- * through the last RND_HIST sounds. Each result is set param by param through the same path as a knob (setParameter,
+ * through the last RND_HIST sounds (the focused Synth's; ALL 3 SYNTHS or Shift+R / Shift+M change all three, R and M
+ * are RANDOMISE and MUTATE). Each result is set param by param through the same path as a knob (setParameter,
  * audioMasterAutomate between begin/end edit), so the host and the window follow it.
  *
  * MORE pages, as on the instrument: a module with a small triangle in its top-right corner has second-layer controls;
@@ -244,6 +245,8 @@ RECT rnd_rect(int z) {
     } else if (z == Z_RND_UNDO || z == Z_RND_REDO) {
         int q = (half - sc(8)) / 2, x = xl + (z == Z_RND_REDO ? q + sc(8) : 0);
         SetRect(&r, x, L.row[7].top + sc(2), x + q, L.row[7].bottom - sc(2));
+    } else if (z == Z_RND_ALL) {
+        SetRect(&r, xr, L.row[7].top + sc(2), xr + half, L.row[7].bottom - sc(2));
     }
     return r;
 }
@@ -496,7 +499,17 @@ static void rnd_apply(ed_t *e, const float *target) {
         if (i != link && fabsf(target[i] - cur[i]) > 1e-7f) edit_value(e, i, target[i]);
     if (link >= 0 && target[link] > 0.5f) edit_value(e, link, target[link]);
 }
-static void rnd_action(ed_t *e, int mutate) {   /* RANDOMISE (0) or MUTATE (1) */
+/* a new sound for the focused Synth: RANDOMISE (0) or MUTATE (1) of cur; returns the archetype (RANDOMISE) */
+static int rnd_make(ed_t *e, const float *cur, float *out, int mutate) {
+    int a = mutate ? (rnd_mutate(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed), 0)
+                   : rnd_generate(cur, out, e->rnd_locks, &e->rnd_seed);
+    for (int i = 0; i < NPARAMS && e->focus; i++)   /* Synth 2 or 3: the shared master effects stay as they are */
+        if (shared_param(i)) out[i] = cur[i];
+    return a;
+}
+/* all: the other Synths get a sound of their own too (ON, channels and key ranges stay: the randomiser never
+ * touches them); the randomiser's UNDO / REDO follow the Synth in focus, Ctrl+Z takes back all three at once */
+static void rnd_action(ed_t *e, int mutate, int all) {   /* RANDOMISE (0) or MUTATE (1) */
     float cur[NPARAMS], out[NPARAMS];
     char name[40];
     if (!e->rnd_seed) e->rnd_seed = ((uint32_t)GetTickCount() * 2654435761u) ^ (uint32_t)(uintptr_t)e ^ 0x2545F491u;
@@ -513,16 +526,26 @@ static void rnd_action(ed_t *e, int mutate) {   /* RANDOMISE (0) or MUTATE (1) *
         else snprintf(name, sizeof name, "Start: %s", prog);
         rnd_push(e, cur, name);
     }
-    if (mutate) {
-        rnd_mutate(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed);
-        snprintf(name, sizeof name, "Mutation %d (%.0f%%)", ++e->mut_count, e->rnd_amount * 100.0f);
-    } else {
-        int a = rnd_generate(cur, out, e->rnd_locks, &e->rnd_seed);
-        snprintf(name, sizeof name, "Random %d: %s", ++e->rnd_count, RND_ARCH[a]);
-    }
-    for (int i = 0; i < NPARAMS && e->focus; i++)   /* Synth 2 or 3: the shared master effects stay as they are */
-        if (shared_param(i)) out[i] = cur[i];
+    int a = rnd_make(e, cur, out, mutate);
+    if (mutate) snprintf(name, sizeof name, "Mutation %d (%.0f%%)", ++e->mut_count, e->rnd_amount * 100.0f);
+    else snprintf(name, sizeof name, "Random %d: %s", ++e->rnd_count, RND_ARCH[a]);
     rnd_apply(e, out);
+    if (all && NSYNTHS > 1) {
+        int focus = e->focus;
+        unsigned mask = e->focus_mask;
+        for (int c = 0; c < NSYNTHS; c++) {
+            if (c == focus) continue;
+            float v[NPARAMS], o[NPARAMS];
+            e->focus = c;
+            e->focus_mask = 1u << c;   /* (each Synth on its own, even when several are edited together) */
+            rnd_snapshot(e, v);
+            rnd_make(e, v, o, mutate);
+            rnd_apply(e, o);
+        }
+        e->focus = focus;
+        e->focus_mask = mask;
+        snprintf(name + strlen(name), sizeof name - strlen(name), " (all 3)");
+    }
     rnd_snapshot(e, cur);   /* as the plugin took it */
     rnd_push(e, cur, name);
     lib_hold(e, -1);
@@ -611,7 +634,7 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (PtInRect(&L.sub_next, pt) && screen_subs(e) > 1) return Z_SUB_NEXT;
     if (lib_screen(e->screen)) return lib_hit(e, pt);   /* the patch list and the library's pages (library.c) */
     if (e->screen == SCR_RANDOM) {
-        static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO};
+        static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO, Z_RND_ALL};
         for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
             RECT r = rnd_rect(Z[k]);
             if (Z[k] == Z_RND_AMOUNT) InflateRect(&r, sc(4), sc(4));   /* easier to catch */
@@ -853,7 +876,10 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
     } else if (z == Z_EUCLID && PG_GEN >= 0) {   /* the ring of dots: the GENERATIVE section's page */
         show(e, PG_GEN, 0);
     } else if (z == Z_RND_GO || z == Z_RND_MUTATE) {
-        rnd_action(e, z == Z_RND_MUTATE);
+        rnd_action(e, z == Z_RND_MUTATE, e->rnd_all);
+    } else if (z == Z_RND_ALL) {
+        e->rnd_all = !e->rnd_all;
+        InvalidateRect(e->wnd, NULL, FALSE);
     } else if (z == Z_RND_UNDO || z == Z_RND_REDO) {
         rnd_step(e, z == Z_RND_UNDO ? -1 : 1);
     } else if (z >= Z_RND_LOCK && z < Z_RND_LOCK + RS_COUNT) {
@@ -1026,6 +1052,13 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         if (e && e->screen == SCR_SEQ) {
             lib_touch(e, NULL);   /* (committed after a pause) */
             if (seq_key(e, (int)wp, GetKeyState(VK_SHIFT) < 0)) return 0;
+        }
+        if (e && (wp == 'R' || wp == 'M') && GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 &&
+            e->mode == M_NONE && !(lp & 0x40000000)) {   /* (a held key doesn't repeat it) */
+            int shift = GetKeyState(VK_SHIFT) < 0;
+            if (wp == 'M') rnd_action(e, 1, e->rnd_all || shift);   /* M: mutate (Shift+M: all three) */
+            else rnd_action(e, 0, e->rnd_all || shift);              /* R: randomise (Shift+R: all three) */
+            return 0;
         }
         break;
     case WM_MOUSELEAVE:
