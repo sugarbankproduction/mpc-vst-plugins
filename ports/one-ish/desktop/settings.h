@@ -5,7 +5,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
-enum { SCR_SETTINGS = -12 };          /* the centre screen showing the SETTINGS page (see SCR_MATRIX) */
+enum { SCR_SETTINGS = -20 };          /* the centre screen showing the SETTINGS page (see SCR_MATRIX; the library has -12 .. -16) */
 #define Z_SET_BASE 650000             /* its hit codes: Z_SET_BASE and up (settings.c) */
 #define Z_SET_END 651000
 enum { ST_GLOBAL, ST_MIDI, ST_LIBRARY, ST_TUNING, ST_TABS };   /* its tabs */
