@@ -4117,8 +4117,6 @@ static void randomiser_wild(void) {
                 rnd_describe(out, d, sizeof d);
                 printf("     wild %.0f%% sound %d fails: rms %.4f peak %.3f note peak %.3f zero run %d: %s\n", 100 * WILD[k], s,
                        st.rms, st.peak, st.note_peak, st.zero_run, d);
-                for (int i = 0; i < NPARAMS; i++)   /* DEBUG */
-                    if (out[i] != def[i] && rnd_section_of(i) != RS_NEVER) printf("        %s = %g\n", PARAMS[i].key, rnd_real(i, out[i]));
             }
             safe += ok;
             if (st.peak > max_peak) max_peak = st.peak;
@@ -4166,8 +4164,6 @@ static void randomiser_wild(void) {
             char d[256];
             rnd_describe(out, d, sizeof d);
             printf("     wild mutation %d fails: rms %.4f peak %.3f zero run %d: %s\n", s, st.rms, st.peak, st.zero_run, d);
-            for (int i = 0; i < NPARAMS; i++)   /* DEBUG */
-                if (out[i] != def[i] && rnd_section_of(i) != RS_NEVER) printf("        %s = %g\n", PARAMS[i].key, rnd_real(i, out[i]));
         }
         m_safe += ok;
     }

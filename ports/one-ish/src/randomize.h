@@ -1135,6 +1135,8 @@ static inline void rnd_safety_wild(rnd_ctx_t *c) {
         if (rnd_is_vocoder(c, T[k])) { int i = rnd_key(T[k]); rnd_seti(c, i, rnd_real(i, PARAMS[i].def)); }
     if (rnd_get(c, "pitch_lfo") > 0.0f) rnd_max(c, "lfo1_range", 1.0f);
     for (int k = 0; k < 4; k++) { rnd_max(c, FB[k], 50.0f); rnd_min(c, FB[k], -50.0f); }
+    rnd_max(c, "amp_a", rnd_ms(800.0f));   /* (odd envelopes, but a note still speaks within a second) */
+    rnd_max(c, "amp_scale", 55.0f);
 }
 /* the tick buttons' sections: Euclid always has a hit, probability not near silence, gates not vanishing, the keys
  * only trigger or transpose a sequence that has notes, and a slow attack does not swallow every arpeggiated note */
@@ -1150,7 +1152,8 @@ static inline void rnd_safety_also(rnd_ctx_t *c) {
     if (rnd_open(c, RS_SEQ) && !c->seq_notes) { rnd_seto(c, "seq_note_trig", "Off"); rnd_seto(c, "seq_transpose", "Off"); }
     if ((rnd_open(c, RS_ARP) || rnd_open(c, RS_GEN)) &&
         (rnd_on(c, "arp_on") || rnd_on(c, "gen_euclid_on") || rnd_on(c, "gen_tm_on"))) {
-        rnd_max(c, "amp_a", rnd_ms(80.0f + 120.0f * c->wild));
+        rnd_max(c, "amp_a", rnd_ms(60.0f));   /* (a step's note can be 50 ms long) */
+        rnd_max(c, "amp_acurve", 30.0f);
         rnd_max(c, "amp_delay", rnd_ms(30.0f));
     }
 }
