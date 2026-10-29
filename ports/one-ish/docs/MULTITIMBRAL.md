@@ -12,8 +12,12 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   (`SYNTH 2 | ...`) show it. Every knob, button, LED, option list, the MORE pages, the matrix, the step editor and the
   randomiser show and change that Synth. Ctrl-click (or Ctrl+F5-F7) adds a Synth: a knob then moves the same control
   on every Synth picked (the last picked is the one drawn).
+- **TOGETHER** (2026-10-30, the desktop window; the console's third row, under SYNTH 1): the plain-click way to edit
+  several Synths at once. Lit, a click on a SYNTH button adds that Synth to the ones edited together, or takes it out
+  (the panel stays on the Synth it shows unless that one goes); off again, back to just the Synth shown. Ctrl-click,
+  Shift+1-3 and Ctrl+Shift+F5-F7 light it too. The window's own state, never saved. (load_test: `together_test`.)
 - **M | S** beside each SYNTH button (2026-10-29): M switches the Synth off and on (its ON; red while off; saved with the
-  sound). S solos it (a double-click or Shift-click on the SYNTH button too; 2026-10-30: the double-click solos): while any
+  sound). S solos it (shortcuts: a double-click or Shift-click on the SYNTH button; 2026-10-30): while any
   Synth is soloed only the soloed ones are heard, the others keep playing silently; never saved (`syn_solo`, kept out
   of states, patches and the randomiser; a 10 ms glide so it never clicks).
 - **Shared** sections stay the same whichever Synth is in focus, and say so on the panel: MASTER EFFECTS, DELAY and

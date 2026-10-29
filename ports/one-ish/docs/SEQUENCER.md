@@ -23,6 +23,12 @@ the window: 2026-10-29).
   under the grid: NOTE, VEL, GATE, RATCH of the selection (drag or scroll). Buttons: REST, TIE, DELETE, CLEAR (asks),
   DUP (copies steps after the end: SHIFT + click a step number to pick them), SAVE, LOAD. Right-click a step number: rest.
   Arrow keys move the selection, Delete deletes.
+- **(2026-10-30, the desktop window) Every edit with plain clicks** (the gestures above stay as shortcuts): a second
+  click on the selected empty cell puts a note there (as a double-click); DELETE removes the selected note or offset (as
+  a right-click); REST rests the selected step (as a right-click on its number); ALL then DEL STEP empties a step (as
+  SHIFT + Delete); RANGE (the title line's left end in NOTES and MODS) then a click on a step number marks the end of the
+  steps DUP copies (as SHIFT + click; the selected step is the first), lit with a range marked a click clears it; the
+  NOTE field moves a note (as the wheel). (load_test: `seq_plain_test`.)
 - **(2026-10-29, offline and the desktop window)** ALL (in the buttons' row): the values row then acts on every note of
   the selected step: NOTE moves them all together (kept inside 0-127 as a chord), VEL, GATE and RATCH give them all one
   value; DELETE becomes DEL STEP (empties the step: its notes, rest and offsets; SHIFT + Delete does it too). On the
