@@ -26,6 +26,7 @@
 #pragma GCC diagnostic ignored "-Wunused-function"
 #pragma GCC diagnostic ignored "-Wunused-variable"
 #include "../src/physgen.h"
+#include "../src/gens_b.h"   /* (2026-10-30: only its sizes) */
 #pragma GCC diagnostic pop
 
 #define T_LCD RGB(150, 215, 232)       /* as editor_draw.c */
@@ -361,10 +362,130 @@ static void pic_phys(HDC dc, ed_t *e, RECT a) {
     txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
 }
 
-/* the rate timer (every RATE_TIMER_MS): the balls' box, every other tick (about 33 a second), only its own area */
+/* ---- (2026-10-30) RAIN AND RIPPLES: the pond as the engine has it now ("rain_view", read without a lock:
+ * hostrate.c hr_peek_named): the stones, each ring fading as it spreads (lit when it just echoed), each drop falling
+ * (a shrinking shadow that becomes its ring); beside it what plays. Repainted by pics_tick while the page shows ---- */
+int WINAPI GdipSetClipRect(void *g, float x, float y, float w, float h, int mode);   /* (gdiplus: only these two) */
+int WINAPI GdipResetClip(void *g);
+static DWORD with_alpha(DWORD c, int a) { return (DWORD)(a < 0 ? 0 : a > 255 ? 255 : a) << 24 | (c & 0xFFFFFFu); }
+static void pic_rain(HDC dc, ed_t *e, RECT a) {
+    static char v[4096];
+    v[0] = 0;
+    int nd = 0, nr = 0, ns = 0, used = 0;
+    if (e->hr && hr_peek_named(e->hr, e->focus, "rain_view", v, sizeof v) > 0) sscanf(v, "%d %d %d;%n", &nd, &nr, &ns, &used);
+    int on = opt(e, ix("rain_", "on"));
+    float side = (float)(a.bottom - a.top) - sc(6.0f), x0 = a.left + sc(8.0f), y0 = a.top + sc(3.0f);
+    gfx_rect(x0, y0, side, side, 0xFF14232C);   /* the water */
+    for (float g = 0.25f; g < 1.0f; g += 0.25f) gfx_line(x0, y0 + g * side, x0 + side, y0 + g * side, 1.0f, C_GRID);
+    GdipSetClipRect(gfx_g, x0, y0, side, side, 0);   /* the rings stay in the pond */
+    const char *p = v + used;
+    float dx[RN_DROPS], dy[RN_DROPS], df[RN_DROPS];
+    int k = 0;
+    for (int i = 0; i < nd; i++) {   /* (drawn last, over the rings) */
+        int x, y, f, u;
+        if (sscanf(p, "%d,%d,%d;%n", &x, &y, &f, &u) != 3) break;
+        p += u;
+        if (k < RN_DROPS) { dx[k] = x * 0.001f; dy[k] = y * 0.001f; df[k++] = f * 0.001f; }
+    }
+    for (int i = 0; i < nr; i++) {
+        int x, y, r, en, lit, u;
+        if (sscanf(p, "%d,%d,%d,%d,%d;%n", &x, &y, &r, &en, &lit, &u) != 5) break;
+        p += u;
+        float cx = x0 + x * 0.001f * side, cy = y0 + (1.0f - y * 0.001f) * side, rr = r * 0.001f * side;
+        if (rr < 0.5f) continue;
+        gfx_circle(cx, cy, rr, (lit ? 2.2f : 1.2f) * L.s, with_alpha(lit ? C_TRACE : C_LIT, 40 + en * 215 / 1000));
+        if (rr > 4.0f * L.s) gfx_circle(cx, cy, rr * 0.82f, 1.0f, with_alpha(C_LIT, en * 90 / 1000));   /* a second ring */
+    }
+    for (int i = 0; i < ns; i++) {
+        int x, y, lit, u;
+        if (sscanf(p, "%d,%d,%d;%n", &x, &y, &lit, &u) != 3) break;
+        p += u;
+        float cx = x0 + x * 0.001f * side, cy = y0 + (1.0f - y * 0.001f) * side;
+        if (lit) gfx_disc(cx, cy, 5.0f * L.s, C_GLOW);
+        gfx_disc(cx, cy, 2.6f * L.s, lit ? C_TRACE : 0xFF5A7F8E);
+    }
+    for (int i = 0; i < k; i++) {   /* a drop falling: its shadow shrinks to where it lands, the drop above it */
+        float cx = x0 + dx[i] * side, cy = y0 + (1.0f - dy[i]) * side, f = df[i];
+        gfx_disc(cx, cy, (1.0f + 3.0f * (1.0f - f)) * L.s, with_alpha(C_LIT, 40 + (int)(100 * f)));
+        gfx_line(cx, cy - (1.0f - f) * 0.35f * side - 4.0f * L.s, cx, cy - (1.0f - f) * 0.35f * side, 1.6f * L.s, C_TRACE);
+    }
+    GdipResetClip(gfx_g);
+    gfx_frame(x0, y0, side, side, 1.0f, C_RULE);
+    char t[96];
+    RECT lr = {(int)(x0 + side + sc(12.0f)), a.top + sc(2), a.right - sc(4), a.top + sc(16)};
+    if (!on) snprintf(t, sizeof t, "Off: switch RAIN ON");
+    else snprintf(t, sizeof t, "RAIN: %.1f drops a second%s", 0.2 * pow(50.0, val(e, ix("rain_", "rate"), 40.0f) / 100.0),
+                  opt(e, ix("rain_", "sync")) ? ", synced" : "");   /* (src/gens_b_run.h rn_rate) */
+    txt(dc, lr, t, T_LCD, DT_LEFT | DT_VCENTER);
+    OffsetRect(&lr, 0, sc(15));
+    if (on) {
+        snprintf(t, sizeof t, "%d ring%s, %d stone%s, echo %.0f%%", nr, nr == 1 ? "" : "s", ns, ns == 1 ? "" : "s",
+                 val(e, ix("rain_", "echo"), 0.0f));
+        txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
+        OffsetRect(&lr, 0, sc(15));
+    }
+    snprintf(t, sizeof t, "Key %s %s, %s", opt_name(e, ix("key_", "root")), opt_name(e, ix("key_", "scale")),
+             opt(e, ix("rain_", "keys")) ? "from the held keys" : "free");
+    txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
+}
+
+/* ---- (2026-10-30) MARKOV MELODY: its last notes scrolling left (height in its range; the newest brightest), the
+ * shares of its last choice (one bar per step from 7 degrees down to 7 up, the one it took lit), and what it learned
+ * ("markov_view", read without a lock). Repainted by pics_tick while the page shows ---- */
+static void pic_markov(HDC dc, ed_t *e, RECT a) {
+    static char v[2048];
+    v[0] = 0;
+    int nm = 0, learned = 0, span = 0, order = 1, choice = MK_SPAN, used = 0;
+    if (e->hr && hr_peek_named(e->hr, e->focus, "markov_view", v, sizeof v) > 0)
+        sscanf(v, "%d %d %d %d %d;%n", &nm, &learned, &span, &order, &choice, &used);
+    int on = opt(e, ix("mkv_", "on"));
+    float h = (float)(a.bottom - a.top) - sc(6.0f), x0 = a.left + sc(8.0f), y0 = a.top + sc(3.0f), w = 1.7f * h;
+    gfx_rect(x0, y0, w, h, C_DIM);
+    for (float g = 0.25f; g < 1.0f; g += 0.25f) gfx_line(x0 + g * w, y0, x0 + g * w, y0 + h, 1.0f, C_GRID);
+    const char *p = v + used;
+    const float secs = 4.0f;   /* the roll shows the last four seconds */
+    for (int i = 0; i < nm; i++) {
+        int d, age, u;
+        if (sscanf(p, "%d,%d;%n", &d, &age, &u) != 2) break;
+        p += u;
+        float x = x0 + w * (1.0f - age * 0.001f / secs), y = y0 + h - (span > 0 ? (float)d / span : 0.5f) * (h - 4.0f * L.s) - 2.0f * L.s;
+        if (x < x0) continue;
+        float bw = fminf(7.0f * L.s, x0 + w - x);
+        gfx_rect(x, y - 1.5f * L.s, bw, 3.0f * L.s, i == 0 ? C_TRACE : with_alpha(C_LIT, 230 - 160 * i / MK_HIST));
+        if (i == 0) gfx_disc(x + 1.5f * L.s, y, 4.0f * L.s, C_GLOW);
+    }
+    gfx_frame(x0, y0, w, h, 1.0f, C_RULE);
+    float bx = x0 + w + sc(8.0f), bw = (0.9f * h) / MK_IV;   /* the bars */
+    for (int i = 0; i < MK_IV; i++) {
+        int b, u;
+        if (sscanf(p, "%d,%n", &b, &u) != 1) b = 0, u = 0;
+        p += u;
+        float bh = (h - 2.0f) * (on ? b : 0) / 1000.0f;
+        gfx_rect(bx + i * bw, y0, bw - 1.0f, h, i == MK_SPAN ? 0xFF223A46 : C_DIM);
+        if (bh > 0.0f) gfx_rect(bx + i * bw, y0 + h - bh, bw - 1.0f, bh, on && i == choice ? C_TRACE : 0xFF4F7F90);
+    }
+    char t[96];
+    RECT lr = {(int)(bx + MK_IV * bw + sc(8.0f)), a.top + sc(2), a.right - sc(4), a.top + sc(16)};
+    if (!on) snprintf(t, sizeof t, "Off: switch MARKOV ON");
+    else snprintf(t, sizeof t, "MARKOV: order %d, creativity %.0f%%", order, val(e, ix("mkv_", "creat"), 0.0f));
+    txt(dc, lr, t, T_LCD, DT_LEFT | DT_VCENTER);
+    OffsetRect(&lr, 0, sc(15));
+    if (opt(e, ix("mkv_", "learn"))) snprintf(t, sizeof t, learned ? "learned %d notes; listening" : "listening (the built-in table)", learned);
+    else snprintf(t, sizeof t, learned ? "learned %d notes; frozen" : "frozen (the built-in table)", learned);
+    txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
+    OffsetRect(&lr, 0, sc(15));
+    snprintf(t, sizeof t, "%s %s, %s", opt(e, ix("mkv_", "quant")) ? opt_name(e, ix("key_", "root")) : "Chromatic",
+             opt(e, ix("mkv_", "quant")) ? opt_name(e, ix("key_", "scale")) : "", opt(e, ix("mkv_", "keys")) ? "from the held keys" : "free");
+    txt(dc, lr, t, T_LCD_DIM, DT_LEFT | DT_VCENTER);
+}
+
+/* the rate timer (every RATE_TIMER_MS): the moving pictures (the balls' box, the pond, the Markov roll), every other
+ * tick (about 33 a second), only their own area */
 void pics_tick(ed_t *e) {
     static unsigned n;
-    if (!e->wnd || e->screen < 0 || e->screen >= NPAGES || PAGES[e->screen].pic != PIC_PHYS || ++n % 2) return;
+    if (!e->wnd || e->screen < 0 || e->screen >= NPAGES || ++n % 2) return;
+    int pic = PAGES[e->screen].pic;
+    if (pic != PIC_PHYS && pic != PIC_RAIN && pic != PIC_MARKOV) return;
     RECT a = {L.row[0].left, L.row[ROWS - PIC_ROWS].top, L.row[0].right, L.row[ROWS - 1].bottom};
     InvalidateRect(e->wnd, &a, FALSE);
 }
@@ -381,6 +502,8 @@ void pics_draw(HDC dc, ed_t *e, int page, RECT a) {
     case PIC_FILTER: pic_filters(dc, e, a); break;
     case PIC_MIXER: pic_mixer(dc, e, a); break;
     case PIC_PHYS: pic_phys(dc, e, a); break;
+    case PIC_RAIN: pic_rain(dc, e, a); break;       /* (2026-10-30) */
+    case PIC_MARKOV: pic_markov(dc, e, a); break;   /* (2026-10-30) */
     }
     gfx_end();
     skin_bind(NULL);
