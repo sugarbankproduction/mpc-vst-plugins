@@ -439,6 +439,22 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         snprintf(what, sizeof what, "the keys 1 / 2 / 3 pick Synth 1 / 2 / 3 (focus + 4 x mask: %d %d %d)", got[0], got[1], got[2]);
         check(got[0] == 0 + 4 * 1 && got[1] == 1 + 4 * 2 && got[2] == 2 + 4 * 4, what);
         SendMessageA(child, WM_KEYDOWN, '1', 1);   /* (back to Synth 1) */
+        /* the computer keyboard as a music keyboard: A plays C4, its release ends it, Z an octave down */
+        play(fx, 200, 512);
+        double quiet = play(fx, 20, 512);
+        SendMessageA(child, WM_KEYDOWN, 'A', 1);
+        SendMessageA(child, WM_KEYDOWN, 'A', 1 | 0x40000000);   /* (a repeat: no second note) */
+        double held = play(fx, 40, 512);
+        SendMessageA(child, WM_KEYUP, 'A', 0xC0000001);
+        play(fx, 400, 512);
+        double after = play(fx, 20, 512);
+        snprintf(what, sizeof what, "the computer keyboard: A plays a note (rms %.4f, before %.4f) and letting go ends it "
+                 "(%.5f)", held, quiet, after);
+        check(held > 0.002 && held > 10 * quiet && after < held / 20, what);
+        SendMessageA(child, WM_KEYDOWN, 'Z', 1);   /* octave down, then back up */
+        SendMessageA(child, WM_KEYUP, 'Z', 0xC0000001);
+        SendMessageA(child, WM_KEYDOWN, 'X', 1);
+        SendMessageA(child, WM_KEYUP, 'X', 0xC0000001);
 #undef PER_SYNTH
     }
 

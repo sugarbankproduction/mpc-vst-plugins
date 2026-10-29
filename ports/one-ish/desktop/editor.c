@@ -806,6 +806,51 @@ static void key_off(ed_t *e) {
     e->key = -1;
 }
 
+/* ---- the computer keyboard as a music keyboard (2026-10-29): A S D F G H J K L ; ' the white keys from C, W E T Y U
+ * O P the black ones; Z / X the octave (the panel's octave buttons'). A = C4 at octave 0. Each key's note is kept, so
+ * a key let go after an octave change still ends its own note; the window losing focus ends them all. ---- */
+static int qk_semitone(WPARAM vk) {
+    static const struct { unsigned char vk; signed char st; } MAP[] = {
+        {'A', 0}, {'W', 1}, {'S', 2}, {'E', 3}, {'D', 4}, {'F', 5}, {'T', 6}, {'G', 7}, {'Y', 8}, {'H', 9}, {'U', 10},
+        {'J', 11}, {'K', 12}, {'O', 13}, {'L', 14}, {'P', 15}, {VK_OEM_1, 16}, {VK_OEM_7, 17}};
+    for (unsigned i = 0; i < sizeof MAP / sizeof MAP[0]; i++)
+        if (MAP[i].vk == vk) return MAP[i].st;
+    return -1;
+}
+static void qk_all_off(ed_t *e) {
+    for (int k = 0; k < 256; k++)
+        if (e->qk_note[k]) { ui_midi(e, 0x80, e->qk_note[k], 0); e->qk_note[k] = 0; }
+    memset(e->qk_down, 0, sizeof e->qk_down);
+    invalidate(e, &L.keys);
+}
+static int qk_key(ed_t *e, WPARAM vk, int down, LPARAM lp) {   /* 1: the key was a music key (taken) */
+    if (vk == 'Z' || vk == 'X') {
+        if (down && !(lp & 0x40000000)) {
+            int o = e->oct + (vk == 'X' ? 1 : -1);
+            e->oct = o < -2 ? -2 : o > 2 ? 2 : o;
+            InvalidateRect(e->wnd, NULL, FALSE);   /* (the keyboard's labels and the octave LEDs) */
+        }
+        return 1;
+    }
+    int st = qk_semitone(vk);
+    if (st < 0 || vk > 255) return 0;
+    if (down) {
+        if (lp & 0x40000000 || e->qk_note[vk]) return 1;   /* (held: the key repeats; no new note) */
+        int n = KEY_BASE + 24 + 12 * e->oct + st;
+        if (n < 1 || n > 127) return 1;
+        e->qk_note[vk] = (unsigned char)n;
+        e->qk_down[n]++;
+        ui_midi(e, 0x90, n, 100);
+    } else if (e->qk_note[vk]) {
+        int n = e->qk_note[vk];
+        e->qk_note[vk] = 0;
+        if (e->qk_down[n]) e->qk_down[n]--;
+        ui_midi(e, 0x80, n, 0);
+    }
+    invalidate(e, &L.keys);
+    return 1;
+}
+
 static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a wheel, the pad or the ribbon */
     if (e->mode == M_KEY) {
         int vel, n = key_at(e, x, y, &vel);
@@ -1143,6 +1188,9 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             lib_touch(e, NULL);   /* (committed after a pause) */
             if (seq_key(e, (int)wp, GetKeyState(VK_SHIFT) < 0)) return 0;
         }
+        if (e && GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 && GetKeyState(VK_SHIFT) >= 0 &&
+            qk_key(e, wp, 1, lp))
+            return 0;   /* a music key (Shift with a letter stays the window's: Shift+R, Shift+M) */
         if (e && (wp == 'R' || wp == 'M') && GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 &&
             e->mode == M_NONE && !(lp & 0x40000000)) {   /* (a held key doesn't repeat it) */
             int shift = GetKeyState(VK_SHIFT) < 0;
@@ -1150,6 +1198,12 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             else rnd_action(e, 0, e->rnd_all || shift);              /* R: randomise (Shift+R: all three) */
             return 0;
         }
+        break;
+    case WM_KEYUP:   /* a music key let go (whatever Shift or Ctrl do meanwhile) */
+        if (e && qk_key(e, wp, 0, lp)) return 0;
+        break;
+    case WM_KILLFOCUS:   /* the window lost the keyboard: no note left hanging */
+        if (e) qk_all_off(e);
         break;
     case WM_MOUSELEAVE:
         if (e && e->mode == M_NONE) { e->hover = -1; InvalidateRect(w, NULL, FALSE); }

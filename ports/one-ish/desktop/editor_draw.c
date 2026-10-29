@@ -214,7 +214,8 @@ static const char *zone_help(ed_t *e, int z) {
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) return "MORE: shows this module's other controls on the screen (click again for its next page, if any).";
     switch (z) {
     case Z_KEYS: return "Keyboard: click a key to play it (lower on the key = louder), drag across to slide between notes. "
-                        "The octave buttons shift it.";
+                        "The octave buttons shift it. The computer keyboard plays it too: A S D F G H J K L the white keys from C, "
+                        "W E T Y U O P the black ones, Z / X the octave.";
     case Z_RIBBON: return "Ribbon: touch and slide along it. It sends MIDI CC 16 (position, left to right) and CC 17 (touched). "
                           "Its settings: the triangle at its right end.";
     case Z_PITCH: return "Pitch wheel: drag up or down to bend; it springs back to the centre. BEND + and BEND - set the range.";
@@ -1094,12 +1095,15 @@ static void keys_static(void) {
         skin_black_key(x0, x1, top, bh, 0);
     }
 }
+static int key_held(ed_t *e, int n) {   /* by the mouse, or the computer keyboard */
+    return n == e->key || (n >= 0 && n < 128 && e->qk_down[n]);
+}
 static void draw_keys(HDC dc, ed_t *e) {
     RECT *k = &L.keys;
     float kw = key_w();
     int top = k->top, h = rh(k), bh = (int)lroundf(h * 0.62f), base = KEY_BASE + 12 * e->oct;
     for (int j = 0; j < KEYS_WHITE; j++) {   /* a held white key: down, with the black keys beside it on top again */
-        if (note_of_white(j, base) != e->key) continue;
+        if (!key_held(e, note_of_white(j, base))) continue;
         RECT kr = {(int)floorf(k->left + j * kw), top, (int)ceilf(k->left + (j + 1) * kw), top + h};
         skin_clip_push(&kr);
         skin_white_key(k->left + j * kw, k->left + (j + 1) * kw, top, h, 1);
@@ -1113,7 +1117,7 @@ static void draw_keys(HDC dc, ed_t *e) {
         skin_clip_pop();
     }
     for (int j = 0; j < KEYS_WHITE - 1; j++) {   /* a held black key */
-        if (!HAS_BLACK[j % 7] || note_of_white(j, base) + 1 != e->key) continue;
+        if (!HAS_BLACK[j % 7] || !key_held(e, note_of_white(j, base) + 1)) continue;
         float x0, x1;
         black_x(j, &x0, &x1);
         skin_black_key(x0, x1, top, bh, 1);

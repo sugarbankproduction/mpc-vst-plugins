@@ -127,6 +127,7 @@ typedef struct {
     float shown[NPARAMS];
     int shown_prog;
     int oct, key, enc_y, enc_moved;            /* octave shift -2..2; the key held with the mouse (-1: none) */
+    unsigned char qk_note[256], qk_down[128];  /* the computer keyboard: the note each key plays (0: none), held count */
     unsigned oct_t0;                           /* an OCTAVE button held since (GetTickCount) ... */
     int oct_stage;                             /* ... and what holding it has done: 1 the default octave, 2 panic */
     /* PANEL FOCUS (multitimbral): the panel, the MORE pages, the matrix and the step editor show `focus` (0-2) and edit
