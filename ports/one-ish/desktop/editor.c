@@ -28,8 +28,12 @@
  * pages next to PATCHES; MIDI program and bank change from the host load user patches and set slots (noted on the
  * host's thread, loaded on the window's: a hidden window's timer does it while the editor is closed).
  *
- * QUICK ASSIGN (quickmod.c): a DEST button (LFOs, envelopes, NOISE) or Alt-click / right-click on a source, then a
- * click on a knob connects them in the matrix and its drag sets the amount; rings show what is modulated.
+ * QUICK ASSIGN (quickmod.c): a DEST button (LFOs, envelopes, NOISE, GENERATIVE, the controller panel) or Alt-click /
+ * right-click on a source, then a click on a knob connects them in the matrix and its drag sets the amount; the screen
+ * lists the source's connections meanwhile (- / +, REMOVE, MATRIX); rings show what is modulated.
+ *
+ * (2026-10-30) Every feature works with a plain click on something visible; Shift-, Ctrl-, Alt-, double- and
+ * right-clicks and the keys are shortcuts on top (PLAN.md item 26 lists each with its visible way).
  *
  * It sits in front of the shared wrapper: wrapper/vst2_wrap.c is compiled with -DVSTPluginMain=one_ish_wrapped_main,
  * and this file's VSTPluginMain adds the editor opcodes and passes everything else on. Where each control sits comes
@@ -220,6 +224,12 @@ static void layout(void) {
     L.tempo_host = zone(ZONE_TEMPO_HOST);
     L.tempo_own = zone(ZONE_TEMPO_OWN);
     L.vol_master = zone(ZONE_VOL_MASTER);
+    L.together = zone(ZONE_TOGETHER);   /* (2026-10-30) TOGETHER, UNDO, REDO (hub.c); the controller's DEST */
+    L.undo = zone(ZONE_UNDO);
+    L.redo = zone(ZONE_REDO);
+    L.qm_hands = zone(ZONE_QM_HANDS);
+    L.kb_hint = zone(ZONE_KB_HINT);
+    L.panic = zone(ZONE_PANIC);
     for (int k = 0; k < NMORES; k++) {
         const short z[4] = {MORES[k].x, MORES[k].y, MORES[k].w, MORES[k].h};
         L.more[k] = zone(z);
@@ -364,6 +374,8 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_MODW: r = &L.modw; break;
     case Z_PAD: r = &L.pad; break;
     case Z_OCT_DOWN: r = &L.oct_down; break;
+    case Z_OCT_PICK: r = &L.oct_leds; break;
+    case Z_PANIC: r = &L.panic; break;
     case Z_OCT_UP: r = &L.oct_up; break;
     case Z_PREV: case Z_NEXT: invalidate(e, &L.bprev); r = &L.bnext; break;
     case Z_ENCODER: r = &L.encoder; break;
@@ -383,6 +395,9 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_TAB_GEN: r = &L.tab_gen; break;   /* (the console's third row, hub.c) */
     case Z_GEN_OFF: r = &L.gen_off; break;
     case Z_VOL_MASTER: invalidate(e, &L.vol_master); r = &L.ctl[rnd_key("volume") < NPARAMS ? rnd_key("volume") : 0]; break;
+    case Z_TOGETHER: for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]); r = &L.together; break;
+    case Z_UNDO: r = &L.undo; break;
+    case Z_REDO: r = &L.redo; break;
     case Z_TEMPO: case Z_TEMPO_HOST: case Z_TEMPO_OWN: case Z_TEMPO_DOWN: case Z_TEMPO_UP:
         invalidate(e, &L.tempo_host); invalidate(e, &L.tempo_own);
         r = &L.tempo; break;
@@ -452,18 +467,21 @@ static int edit_targets(ed_t *e, int i, int *t) {
     return n;
 }
 
-/* the panel shows Synth c (add: Ctrl, several Synths edited together, the last one picked shown) */
+/* the panel shows Synth c (add: TOGETHER lit or Ctrl, several Synths edited together, the last one picked shown; an
+ * add lights TOGETHER, so the console shows that the SYNTH buttons now add and remove) */
 static void set_focus(ed_t *e, int c, int add) {
     if (c < 0 || c >= NSYNTHS) return;
+    if (add) e->together = 1;
     if (!add) {
         e->focus_mask = 1u << c;
     } else if ((e->focus_mask >> c & 1u) && e->focus_mask != 1u << c) {   /* out of the group */
         e->focus_mask &= ~(1u << c);
-        if (e->focus == c)
+        if (e->focus == c) {   /* the one shown went: the first left shows */
             for (int k = 0; k < NSYNTHS; k++)
                 if (e->focus_mask >> k & 1u) { c = k; break; }
-        if (e->focus != c) e->focus = c;
-        c = e->focus;
+        } else {
+            c = e->focus;   /* (another went: the panel stays on the one it shows) */
+        }
     } else {
         e->focus_mask |= 1u << c;
     }
@@ -547,6 +565,7 @@ void ed_edit(ed_t *e, int i, float v) { edit_value(e, i, v); }       /* (for hub
 void ed_edit_abs(ed_t *e, int i, float v) { edit_abs(e, i, v); }
 static void show(ed_t *e, int screen, int sub);
 void ed_show(ed_t *e, int screen, int sub) { show(e, screen, sub); }
+void ed_focus(ed_t *e, int c, int add) { set_focus(e, c, add); }
 
 /* ---- the randomiser: results go in param by param like knob moves; a history of sounds for UNDO / REDO ---- */
 static void rnd_snapshot(ed_t *e, float *v) {   /* the focused Synth's sound, in Synth 1's places */
@@ -693,6 +712,7 @@ int screen_subs(ed_t *e) {
     if (lib_screen(e->screen)) return lib_subs(e);   /* (the patch list and the library's pages) */
     if (e->screen == SCR_SETUP) return 2;
     if (e->screen == SCR_SETTINGS) return settings_subs(e);
+    if (e->screen == SCR_QMOD) return qm_subs(e);   /* (quickmod.c: MOD FROM, the picked source's connections) */
     int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
     int per = e->screen == SCR_MATRIX ? ROWS : e->screen == SCR_INDEX ? SLOTS : page_slots(e->screen);
     return n > per ? (n + per - 1) / per : 1;
@@ -818,7 +838,8 @@ static int hit(ed_t *e, int x, int y) {
     }
     static const struct { RECT *r; int z; } Z[] = {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
-        {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
+        {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.oct_leds, Z_OCT_PICK}, {&L.panic, Z_PANIC},
+        {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
         {&L.focus[0], Z_FOCUS1}, {&L.focus[1], Z_FOCUS2}, {&L.focus[2], Z_FOCUS3}, {&L.tab_setup, Z_TAB_SETUP},
@@ -1043,9 +1064,9 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         synth_toggle(e, z - Z_MUTE1, 0);
     } else if (z >= Z_SOLO1 && z <= Z_SOLO3) {
         synth_toggle(e, z - Z_SOLO1, 1);
-    } else if (z >= Z_FOCUS1 && z <= Z_FOCUS3) {   /* PANEL FOCUS (Ctrl: several Synths at once) */
+    } else if (z >= Z_FOCUS1 && z <= Z_FOCUS3) {   /* PANEL FOCUS (TOGETHER lit, or Ctrl: several Synths at once) */
         if (GetKeyState(VK_SHIFT) < 0 && NSYNTHS > 1) synth_toggle(e, z - Z_FOCUS1, 1);   /* SHIFT + SYNTH: solo */
-        else set_focus(e, z - Z_FOCUS1, GetKeyState(VK_CONTROL) < 0);
+        else set_focus(e, z - Z_FOCUS1, e->together || GetKeyState(VK_CONTROL) < 0);
     } else if (z == Z_TAB_SETUP) {   /* the three Synths side by side; again: its next page */
         show(e, SCR_SETUP, e->screen == SCR_SETUP ? (e->sub + 1) % subs : 0);
     } else if (z == Z_TAB_SEQ) {   /* the step editor; again: its other view (NOTES / MODS) */
@@ -1098,6 +1119,16 @@ static void press(ed_t *e, int x, int y) {
         e->oct_t0 = GetTickCount();
         e->oct_stage = 0;
         SetCapture(e->wnd);
+        return;
+    case Z_OCT_PICK: {   /* an octave LED: that octave (the middle one: the default) */
+        int k = rw(&L.oct_leds) > 0 ? (x - L.oct_leds.left) * 5 / rw(&L.oct_leds) : 2;
+        set_octave(e, (k < 0 ? 0 : k > 4 ? 4 : k) - 2);
+        return;
+    }
+    case Z_PANIC:   /* the computer keyboard's notes too; the held keys drawn up again */
+        qk_all_off(e);
+        panic(e);
+        InvalidateRect(e->wnd, NULL, FALSE);
         return;
     case Z_KEYS: e->mode = M_KEY; break;
     case Z_PITCH: e->mode = M_PITCH; break;
@@ -1527,7 +1558,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         if (idx == TEST_QM && e && ptr) return qm_test(e, v, ptr, opt);   /* load_test: quick assign */
         if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
         if (idx == TEST_SETTINGS && e && ptr) return settings_test(e, v, ptr, opt);   /* load_test: the settings */
-        if (idx == TEST_HUB && e) return hub_test(e, v, opt);   /* load_test: TEMPO, GEN OFF, LINK (hub.c) */
+        if (idx == TEST_HUB && e) return hub_test(e, v, ptr, opt);   /* load_test: TEMPO, GEN OFF, LINK (hub.c) */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
             hr_set_legacy(e->hr, (int)v);
             fx->initialDelay = hr_latency(e->hr);

@@ -425,6 +425,37 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      pendulums); the engine with 4 held voices 24.9 us, plus LIFE 22.8 (within the noise), ORBITS 27.5, PENDULUMS 27.0,
      all three at once 43.1 us (most of it the extra notes, each generator up to 8 a second into the voices).
      Left: an MPC page; a panel button for the pages (the GENERATIVE hub page, another helper's).
+  26. (2026-10-30) Plain clicks for everything (owner's rule: no one should have to hold Shift or know a hidden click).
+     Done 2026-10-30 (the desktop window only; `desktop/hub.c`, `quickmod.c`, `seq_page.c`, `editor.c`, load_test
+     `plain_test`). Every gesture that needed a modifier key, a double-click, a right-click, a hold or a computer key now
+     has a visible button or a plain click; the old gestures stay as shortcuts and the help line names the button first.
+     - Editing several Synths together (Ctrl-click SYNTH, Shift+1-3, Ctrl+Shift+F5-F7): TOGETHER on the console's third
+       row; lit, SYNTH buttons add and remove; off, back to one. (Removing a Synth that isn't shown no longer jumps the
+       panel to it.)
+     - Undo / redo (Ctrl+Z / Ctrl+Y; the SNAPSHOTS page's buttons): UNDO and REDO at the third row's right end; hovering
+       one names the step, the help line says what was undone. To make room the row is spaced for its labels:
+       TOGETHER, GENERATIVE, GEN OFF, TEMPO (a little narrower) with HOST / OWN, the beat LED, UNDO, REDO.
+     - Quick assign: Alt-click / right-click on the wheels, the X/Y pad, the ribbon and the keyboard: a DEST button at the
+       controller panel's top left (a list of all the hands' sources); the generators' sources (Rain Drop .. Pendulum
+       Sync), which the panel could not reach at all (it looked for them past MS_COUNT): a DEST in GENERATIVE's title
+       strip. Ctrl-drag for an amount, right-click for REMOVE / OPEN IN MATRIX, Esc: while a source is picked the screen
+       shows MOD FROM <source> (SCR_QMOD), its connections in the Synth in focus, each with - / + (5%), REMOVE and
+       MATRIX, then CHANGE SOURCE (a list of every source), ALL IN MATRIX and DONE (back to the page shown before).
+       Dragging a knob the source already moves changes that connection's amount. A ringed knob's help says how.
+     - The step editor: SHIFT + click on a step number for DUP's range: RANGE on the title line (NOTES, MODS); a
+       double-click for a new note: a second click on the selected empty cell; right-click delete / rest and SHIFT +
+       Delete were already DELETE, REST and ALL + DEL STEP (the help now says so).
+     - The keyboard's octave held 1 s (the default) and 2 s (MIDI panic): a click on an octave LED picks that octave,
+       PANIC (under glide's ON) stops every note.
+     - Option lists open with a plain click everywhere (two options toggle, LEDs pick, a red button steps or opens its
+       list); right-click lists stay. Shift for fine moves and double-click for a default stay as shortcuts, named in
+       the help line.
+     - The computer keyboard needs the window's keyboard focus (any click on the panel gives it): the front rail under
+       the keys says so and lists the keys.
+     - The layout warning "syn_solo has no place..." is gone (the SYNTH buttons' S; never saved, no MORE row): the OTHER
+       page is no longer made.
+     load_test reads the help line now (`help_line()`, HT_HELP) and checks every console button and controller part has
+     help of its own. No engine change, no new params, nothing in the audio path. Left: the MPC page has none of this.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

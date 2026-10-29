@@ -11,6 +11,10 @@
  *   MODS: click or drag across a row to set offsets; right-click removes one; DEST, CTRL and AMT set the lane.
  *   Step numbers: click selects the step, SHIFT + click marks the end of the range DUPLICATE copies, right-click toggles
  *   its rest. Arrow keys move the selection, Delete deletes (SHIFT + Delete: the whole step).
+ *   (2026-10-30, plain clicks for all of it) RANGE (the title line's left end, NOTES and MODS): lit, the next step number
+ *   clicked marks the range's end (as SHIFT + click); lit with a range marked, a click clears it. A click on the selected
+ *   empty note cell puts a note there (as a double-click). REST, DELETE and ALL (DEL STEP) are the right-click's and
+ *   SHIFT + Delete's buttons.
  *   (2026-10-29) GEN (the third view): the sequence generator (src/seqgen.h) for the Synth in focus: STYLE, RHYTHM,
  *   DENSITY, RANGE, VARIATION, ACCENT, FILLS and MODS on the left, its pattern on the right, KEY / SCALE / LENGTH / SEED
  *   in the values row, GENERATE and RE-ROLL; each is one undo step.
@@ -57,6 +61,7 @@ enum { NFIELD = 4, NBTN = 8, LABEL_W = 24 };
 /* MODS: B_REST is DEL LANE, B_TIE and B_ALL are unused; with ALL lit, B_DELETE is DEL STEP */
 enum { B_REST, B_TIE, B_ALL, B_DELETE, B_CLEAR, B_DUP, B_SAVE, B_LOAD };
 enum { Z_RTZ = Z_SEQ_BASE + 234, Z_AUTO = Z_SEQ_BASE + 235 };   /* the title line's RTZ and AUTO (2026-10-29) */
+enum { Z_RANGE = Z_SEQ_BASE + 236 };   /* (2026-10-30) RANGE: the next step number ends DUP's range */
 /* the GEN view (2026-10-29): its option rows, its values row (KEY, SCALE, LENGTH, SEED), GENERATE and RE-ROLL */
 enum { Z_GEN_ROW = Z_SEQ_BASE + 320, Z_GEN_FIELD = Z_SEQ_BASE + 340, Z_GEN_GO = Z_SEQ_BASE + 350,
        Z_GEN_REROLL = Z_SEQ_BASE + 351 };
@@ -229,6 +234,11 @@ static RECT view_rect(int v) {   /* NOTES, MODS, GEN */
     RECT r = {x, L.tabline.top, x + sc(44), L.tabline.bottom};
     return r;
 }
+static RECT range_rect(void) {   /* RANGE, where the title line says STEP EDIT in the GEN view */
+    RECT r = {L.tabline.left, L.tabline.top, L.tabline.left + sc(52), L.tabline.bottom};
+    return r;
+}
+static int range_lit(ed_t *e) { return e->sq.range_arm || e->sq.range_to >= 0; }
 static RECT title_btn_rect(int z) {   /* RTZ and AUTO, after the views */
     int x = L.tabline.left + sc(202) + (z == Z_AUTO ? sc(32) : 0);
     RECT r = {x, L.tabline.top, x + (z == Z_AUTO ? sc(36) : sc(28)), L.tabline.bottom};
@@ -263,6 +273,7 @@ int seq_hit(ed_t *e, POINT pt) {
     for (int p = 0; p < SQ_STEPS / SQ_PAGE; p++) { RECT r = pagebtn_rect(p); if (PtInRect(&r, pt)) return Z_PAGEBTN + p; }
     for (int v = 0; v < NVIEWS; v++) { RECT r = view_rect(v); if (PtInRect(&r, pt)) return Z_VIEW + v; }
     for (int z = Z_RTZ; z <= Z_AUTO; z++) { RECT r = title_btn_rect(z); if (PtInRect(&r, pt)) return z; }
+    if (e->sq.view != V_GEN) { RECT r = range_rect(); if (PtInRect(&r, pt)) return Z_RANGE; }
     if (e->sq.view == V_GEN) {   /* the generator's rows, values, GENERATE / RE-ROLL, and CLEAR .. LOAD */
         for (int row = 0; row < GEN_ROWS; row++) { RECT r = gen_row_rect(row); if (PtInRect(&r, pt)) return Z_GEN_ROW + row; }
         for (int f = 0; f < NFIELD; f++) { RECT r = field_rect(e, f); if (PtInRect(&r, pt)) return Z_GEN_FIELD + f; }
@@ -596,6 +607,7 @@ static void press_button(ed_t *e, int b) {
         seq_send(e, "dup %d %d", x, y);
         say(e, "Steps %d-%d copied after step %d.", x + 1, y + 1, len);
         e->sq.range_to = -1;
+        e->sq.range_arm = 0;
         return;
     }
     case B_SAVE: {
@@ -699,7 +711,7 @@ static void gen_run(ed_t *e, int reroll) {
     lib_touch(e, reroll ? "Re-roll" : "Generate");
     seq_send(e, "load %s", t);
     lib_hold(e, -1);
-    say(e, "Synth %d: a %s pattern in %s %s, %d of %d steps playing (seed %u). RE-ROLL for another; Ctrl+Z undoes it.",
+    say(e, "Synth %d: a %s pattern in %s %s, %d of %d steps playing (seed %u). RE-ROLL for another; UNDO undoes it.",
         e->focus + 1, GEN_STYLES[o.style], gen_key_name(e), gen_scale_name(e), played, o.len, (unsigned)*seed);
 }
 /* the randomiser's SEQUENCER tick (2026-10-29): RANDOMISE writes a new pattern into q (random generator options, wider
@@ -800,11 +812,23 @@ int seq_press(ed_t *e, int z, int x, int y, int shift) {
         return 0;
     }
     if (z == Z_AUTO) { e->sq.autoscroll = !e->sq.autoscroll; redraw(e); return 0; }
+    if (z == Z_RANGE) {   /* lit: clear the range; off: the next step number clicked ends it */
+        if (range_lit(e)) { e->sq.range_arm = 0; e->sq.range_to = -1; say(e, "No range: DUP copies the whole length."); }
+        else { e->sq.range_arm = 1; say(e, "RANGE: now click the number of the last step to copy (step %d is the first).",
+                                       e->sq.step + 1); }
+        return 0;
+    }
     if (z >= Z_BTN && z < Z_BTN + NBTN) { press_button(e, z - Z_BTN); return 0; }
     if (z >= Z_LANE && z < Z_LANE + ROWS) { select_cell(e, e->sq.step, z - Z_LANE); return 0; }
     if (z >= Z_STEPNUM && z < Z_STEPNUM + SQ_PAGE) {
         int step = e->sq.page * SQ_PAGE + z - Z_STEPNUM;
-        if (shift) { e->sq.range_to = step; redraw(e); return 0; }
+        if (shift || e->sq.range_arm) {   /* (RANGE lit, or SHIFT + click: the range's end) */
+            e->sq.range_to = step;
+            e->sq.range_arm = 0;
+            int a = e->sq.step < step ? e->sq.step : step, b = e->sq.step < step ? step : e->sq.step;
+            say(e, "Steps %d-%d marked: DUP copies them after the sequence's end.", a + 1, b + 1);
+            return 0;
+        }
         e->sq.range_to = -1;
         select_cell(e, step, e->sq.view ? e->sq.mlane : e->sq.lane);
         return 0;
@@ -837,8 +861,12 @@ int seq_press(ed_t *e, int z, int x, int y, int shift) {
             e->sq.drag = z;
             return 1;
         }
+        int again = step == e->sq.step && row == e->sq.lane;   /* (the cell selected already) */
         select_cell(e, step, row);
-        if (!sq_has(sel_note(e))) return 0;
+        if (!sq_has(sel_note(e))) {   /* empty: a second click puts a note there (as a double-click) */
+            if (again) new_note(e, step, row, e->sq.last_note);
+            return 0;
+        }
         e->sq.drag = z;
         e->sq.drag_x = x;
         e->sq.drag_y = y;
@@ -1099,7 +1127,8 @@ void seq_draw(HDC dc, ed_t *e) {
     int len = e->sq.len < 1 ? 1 : e->sq.len, view = e->sq.view, page = e->sq.page;
     /* the title line: SEQUENCER, the views, the pages (lit: shown; a dot: playing; dim: past the length) */
     RECT t = {L.tabline.left, L.tabline.top, L.tabline.left + sc(94), L.tabline.bottom};
-    txt(dc, t, "STEP EDIT", font_tiny, T_DIM, DT_LEFT | DT_VCENTER);
+    if (view == V_GEN) txt(dc, t, "STEP EDIT", font_tiny, T_DIM, DT_LEFT | DT_VCENTER);
+    else button(dc, range_rect(), "RANGE", range_lit(e), e->hover == Z_RANGE);   /* (2026-10-30) DUP's steps */
     static const char *const VIEWS[NVIEWS] = {"NOTES", "MODS", "GEN"};
     for (int v = 0; v < NVIEWS; v++) button(dc, view_rect(v), VIEWS[v], view == v, e->hover == Z_VIEW + v);
     for (int p = 0; p < SQ_STEPS / SQ_PAGE; p++) {
@@ -1236,6 +1265,11 @@ const char *seq_zone_help(ed_t *e, int z) {
     if (z == Z_RTZ) return "RTZ (return to zero): the sequence goes on from step 1 at its next step (stopped: it starts there).";
     if (z == Z_AUTO) return "AUTO (step edit auto-scroll): lit, the page shown follows the step playing. Off, the page stays "
                             "where you put it.";
+    if (z == Z_RANGE) return range_lit(e)
+        ? "RANGE (lit): click a step number to end the range at it, or RANGE again to clear the range (DUP then copies "
+          "the whole length)."
+        : "RANGE: choose the steps DUP copies. Select the first step (click its number), light RANGE, then click the "
+          "last step's number. (Shortcut: SHIFT + click the last step's number.)";
     if (z == Z_VIEW) return "NOTES: the note lanes (a box per note: height = velocity, width = gate; ticks = ratchets, an arrow "
                             "= a tie).";
     if (z == Z_VIEW + 1) return "MODS: the modulation lanes: each a destination with a bipolar offset per step (drag across "
@@ -1269,20 +1303,24 @@ const char *seq_zone_help(ed_t *e, int z) {
         return GF[z - Z_GEN_FIELD];
     }
     if (z == Z_GEN_GO) return "GENERATE: replaces the sequence of the Synth in focus with a new one from these options and "
-                              "the seed shown (the first time: a new seed). Ctrl+Z takes it back.";
-    if (z == Z_GEN_REROLL) return "RE-ROLL: the same options with a new seed: another pattern. Ctrl+Z takes it back.";
-    if (z >= Z_STEPNUM && z < Z_STEPNUM + SQ_PAGE) return "Step number: click to select it, SHIFT + click to mark the end of "
-                                                         "the range DUP copies, right-click to make it a rest (or not).";
+                              "the seed shown (the first time: a new seed). The console's UNDO takes it back.";
+    if (z == Z_GEN_REROLL) return "RE-ROLL: the same options with a new seed: another pattern. UNDO takes it back.";
+    if (z >= Z_STEPNUM && z < Z_STEPNUM + SQ_PAGE) return e->sq.range_arm
+        ? "Step number: click to end DUP's range here (RANGE is waiting for it)."
+        : "Step number: click to select the step. RANGE (top left) then a click marks the end of the steps DUP copies; "
+          "REST makes the selected step a rest. (Shortcuts: SHIFT + click, right-click.)";
     if (z >= Z_LANE && z < Z_LANE + ROWS) return "A lane: click to select it. Each note lane holds one note per step; a chord "
                                                  "takes several lanes.";
     if (z >= Z_CELL && z < Z_CELL + SQ_PAGE * ROWS) return e->sq.view
-        ? "Click or drag up/down across the row to set each step's offset (middle = 0). Right-click removes one. Pick the "
+        ? "Click or drag up/down across the row to set each step's offset (middle = 0); DELETE removes the selected one "
+          "(shortcut: right-click). Pick the "
           "lane's DEST first."
-        : "Click to select; drag a note up/down for velocity, sideways for gate; the wheel moves it a semitone (SHIFT: an "
-          "octave). Double-click an empty cell for a new note, right-click to delete. With REC lit, play the keys.";
+        : "Click to select, click an empty cell again for a new note; drag a note up/down for velocity, sideways for gate; "
+          "the NOTE field (or the wheel) changes its note; DELETE removes it. With REC lit, play the keys. (Shortcuts: "
+          "double-click, right-click.)";
     if (z >= Z_FIELD && z < Z_FIELD + NFIELD) {
         static const char *const NF[NFIELD] = {
-            "NOTE of the selected step and lane: drag up/down or scroll (SHIFT: octaves); right-click deletes it. On an empty "
+            "NOTE of the selected step and lane: drag up/down or scroll (SHIFT: octaves); DELETE removes it. On an empty "
             "cell this makes a new note.",
             "VELOCITY of the selected note (1-127): drag or scroll.",
             "GATE: how long the note sounds, as a part of its step (1-100%). The next new note gets the last one set.",
@@ -1305,10 +1343,10 @@ const char *seq_zone_help(ed_t *e, int z) {
     case B_DELETE: return e->sq.all ? "DEL STEP: empties the selected step (its notes, its rest and its offsets). SHIFT + "
                                       "Delete does too."
                                     : "DELETE: removes the selected note (MODS: the selected step's offset). The Delete key "
-                                      "does too; SHIFT + Delete empties the whole step.";
+                                      "does too. To empty the whole step: light ALL, then DEL STEP.";
     case B_CLEAR: return "CLEAR: removes every note and modulation lane (asks first).";
     case B_DUP: return "DUPLICATE: copies the steps shown after the end of the sequence and makes it that much longer (up to "
-                       "64). SHIFT + click a step number to choose the steps.";
+                       "64). To choose the steps: select the first, light RANGE (top left), click the last step's number.";
     case B_SAVE: return "SAVE: writes the sequence (its steps, length and rate) to a .oneseq file in Documents\\ONE-ish\\Sequences, "
                         "with performance notes if you write some (LOAD shows them).";
     case B_LOAD: return "LOAD: reads a .oneseq file into the sequencer (the sound stays as it is).";

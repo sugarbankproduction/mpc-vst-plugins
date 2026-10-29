@@ -40,7 +40,9 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
 
 ## Undo, COMPARE, snapshots (2026-10-29, offline)
 
-- **UNDO / REDO** (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z in the window; the UNDO and REDO buttons on the SNAPSHOTS page): every
+- **UNDO / REDO** (the console's UNDO and REDO, 2026-10-30, at the right of its third row: hovering one names the step
+  it would take back or do again; Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z in the window; the UNDO and REDO buttons on the
+  SNAPSHOTS page): every
   edit made in the window is a step: a knob, a button, an option list, the matrix, the SETUP page, the step editor, the
   randomiser, and loading a preset or patch (undoing a load brings back the sound and its name). A knob drag is one
   step, so is a burst of mouse-wheel clicks (a step once the wheel rests 0.4 s) and a RANDOMISE or MUTATE. The last 100

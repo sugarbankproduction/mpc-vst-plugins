@@ -6,7 +6,8 @@
  *   UNDO / REDO   every edit from the window (knobs, buttons, lists, the matrix, the SETUP page, the step editor,
  *                 the randomiser, loads) is a step; a knob drag, a burst of mouse-wheel clicks or a randomise is one.
  *                 A step is the engine's whole state (all three Synths, the sequences) and which patch it was, so
- *                 undoing a load brings back the sound and its name. UNDO_MAX steps; Ctrl+Z / Ctrl+Y in the window,
+ *                 undoing a load brings back the sound and its name. UNDO_MAX steps; the console's UNDO / REDO (hub.c),
+ *                 Ctrl+Z / Ctrl+Y in the window,
  *                 UNDO / REDO on the SNAPSHOTS page. The host's own automation is not a step.
  *   COMPARE       plays the saved version of the patch; again: the edit. Loading another sound ends it (the edit is
  *                 autosaved), editing while comparing edits the saved version (the hidden edit becomes a snapshot).
@@ -450,7 +451,8 @@ static int undo_redo(ed_t *e, int redo) {
     }
     to[(*nto)++] = cur;
     take_apply(e, &t);
-    say(e, "%s %s.  (%d to undo, %d to redo; Ctrl+Z / Ctrl+Y)", redo ? "Redid" : "Undid", t.what, L->nundo, L->nredo);
+    say(e, "%s %s.  (%d to undo, %d to redo: UNDO / REDO on the console, or Ctrl+Z / Ctrl+Y)", redo ? "Redid" : "Undid",
+        t.what, L->nundo, L->nredo);
     take_free(&t);
     return 1;
 }
@@ -1104,7 +1106,7 @@ static int slot_load(ed_t *e, int k) {
     L->bank = k / 8;
     redraw(e);
     if (!s->kind) {
-        say(e, "%c%d is empty: hold it down (or ASSIGN) to put the current patch there.", 'A' + k / 8, k % 8 + 1);
+        say(e, "%c%d is empty: ASSIGN (or hold it down) puts the current patch there.", 'A' + k / 8, k % 8 + 1);
         return PE_FAIL;
     }
     if (s->kind == 'F') {
@@ -1128,7 +1130,7 @@ static int slot_assign(ed_t *e, int k) {
     sets_ensure(e);
     if (!L->nsets || k < 0 || k >= SET_SLOTS) return PE_FAIL;
     if (e->pt.bank == BANK_NONE) {
-        say(e, "A set holds saved patches: SAVE AS this sound first, then hold %c%d again.", 'A' + k / 8, k % 8 + 1);
+        say(e, "A set holds saved patches: SAVE AS this sound first, then ASSIGN %c%d again.", 'A' + k / 8, k % 8 + 1);
         return PE_NOT_USER;
     }
     slot_t *s = &L->sets[L->cur_set].slot[k];
@@ -1973,7 +1975,7 @@ void lib_help(ed_t *e, char *out, int n) {
                      s->when, s->note[0] ? s->note : "(no note)");
         } else {
             snprintf(out, n, "%d snapshots. TAKE keeps the sound now with a note; loading another sound autosaves "
-                             "unsaved edits (AUTO, the newest %d kept). Undo: %d steps, redo: %d (Ctrl+Z / Ctrl+Y).",
+                             "unsaved edits (AUTO, the newest %d kept). Undo: %d steps, redo: %d (also the console's UNDO / REDO).",
                      L_->nsnaps, AUTOSAVE_KEEP, L_->nundo, L_->nredo);
         }
         break;
@@ -1987,7 +1989,7 @@ const char *lib_zone_help(int z) {
     if (z == Z_COMPARE) return "COMPARE: hear the saved version of this patch; again: back to your edit. Loading another "
                                "sound ends it (your edit is autosaved as a snapshot).";
     if (z == Z_SNAPSHOT) return "SNAPSHOT: the snapshots page: timestamped saves of the sound with notes, the autosaves, "
-                                "and UNDO / REDO of any edit (Ctrl+Z / Ctrl+Y in the window).";
+                                "and UNDO / REDO of any edit (also on the console, beside TEMPO).";
     if (z >= Z_LIB_TAB && z < Z_LIB_TAB + NTABS) {
         static const char *const H[NTABS] = {"PATCHES: factory presets and your own patches.",
                                              "SET: the current performance set: banks A-H, numbers 1-8.",
@@ -2004,7 +2006,8 @@ const char *lib_zone_help(int z) {
             "NOTES: change the selected snapshot's note.", "DELETE: removes the selected snapshot (asks first).",
             "SAVE OVER: loads the selected snapshot and saves it over the patch it was taken of.",
             "SAVE NEW: loads the selected snapshot and saves it as a new patch (asks for a name).",
-            "UNDO: the last edit undone (Ctrl+Z).", "REDO: the last undo done again (Ctrl+Y)."};
+            "UNDO: the last edit undone (as the console's UNDO, or Ctrl+Z).",
+            "REDO: the last undo done again (as the console's REDO, or Ctrl+Y)."};
         return H[z - Z_SNAP_ACT];
     }
     if (z >= Z_TAG_ACT && z < Z_TAG_ACT + NTAG_ACT) {

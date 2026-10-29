@@ -24,6 +24,7 @@ typedef struct {
     int page;                   /* the page of 16 steps shown (0-3) */
     int step, lane, mlane;      /* the selected step, note lane and modulation lane */
     int range_to;               /* SHIFT + click on a step number: DUPLICATE copies step .. range_to (-1: the whole length) */
+    int range_arm;              /* (2026-10-30) RANGE lit and waiting: the next step number clicked is range_to */
     int play;                   /* the step playing (-1: stopped), from the readout */
     char readout[32];           /* the engine's "seq_pos" text as last read */
     int dirty;                  /* read the sequence again at the next timer tick */

@@ -1922,8 +1922,8 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
 
 /* ---- QUICK ASSIGN (desktop/quickmod.c): a source picked on the panel, a knob clicked and dragged for the amount ---- */
 #define TEST_QM 0x4F31514D   /* as editor.h */
-enum { QMT_SOURCE = 1, QMT_ANSWER, QMT_DRAWN, QMT_DEST_XY, QMT_HELP, QMT_DST_OF };
-enum { QA_LFO1 = 0, QA_LFO2 = 1, QA_PAD = 10 };   /* quickmod.c's parts of the panel */
+enum { QMT_SOURCE = 1, QMT_ANSWER, QMT_DRAWN, QMT_DEST_XY, QMT_HELP, QMT_DST_OF, QMT_PAGE_XY, QMT_LINKS };
+enum { QA_LFO1 = 0, QA_LFO2 = 1, QA_PAD = 10, QA_GEN = 13, QA_HANDS = 14 };   /* quickmod.c's parts of the panel */
 static char qbuf[1024];
 static intptr_t qmt(AEffect *fx, int op, float opt) { qbuf[0] = 0; return fx->dispatcher(fx, 50, TEST_QM, op, qbuf, opt); }
 static int qm_steps(AEffect *fx) { static char b[1024]; return (int)fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, b, 0) % 1000; }
@@ -2417,12 +2417,290 @@ static void triangle_sub_test(AEffect *fx, HWND child, float s, const char *bmp,
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
+static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
     link_test(fx, child, s, bmp, w, h);
     master_test(fx, child, s, bmp, w, h);
     triangle_sub_test(fx, child, s, bmp, w, h);
+    plain_test(fx, child, s, bmp, w, h);   /* (2026-10-30) every hidden gesture's visible way */
+}
+
+/* ---- (2026-10-30) the plain-click pass: what a modifier key, a double-click, a right-click or a keyboard key did,
+ * a plain click on something visible does too ---- */
+enum { HT_TOGETHER = 8, HT_HELP };   /* (after HT_SUB, as editor.h) */
+static char hbuf[1024];
+static const char *help_now(AEffect *fx) { hbuf[0] = 0; fx->dispatcher(fx, 50, TEST_HUB, HT_HELP, hbuf, 0); return hbuf; }
+/* the help of what is under the mouse (the last actions' messages, which show first for a few seconds, cleared) */
+static const char *help_fresh(AEffect *fx) { hbuf[0] = 0; fx->dispatcher(fx, 50, TEST_HUB, HT_HELP, hbuf, 1); return hbuf; }
+static void hover_at(HWND child, float s, float x, float y) {   /* base units */
+    SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
+}
+static void hover_zone(HWND child, float s, const short z[4]) { hover_at(child, s, z[0] + z[2] / 2.0f, z[1] + z[3] / 2.0f); }
+static int focus_now(AEffect *fx) { return (int)fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0); }   /* focus + 4 * mask */
+
+static void together_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);   /* Synth 1 alone */
+    if (ht(fx, HT_TOGETHER, 0)) click_zone(child, s, ZONE_TOGETHER);
+    check(ht(fx, HT_TOGETHER, 0) == 0, "TOGETHER: off to start");
+    click_zone(child, s, ZONE_TOGETHER);
+    int lit = (int)ht(fx, HT_TOGETHER, 0);
+    click_zone(child, s, ZONE_FOCUS2);
+    int f12 = focus_now(fx);
+    click_zone(child, s, ZONE_FOCUS3);
+    int f123 = focus_now(fx);
+    if (bmp) shot(child, w, h, bmp, "_together");
+    click_zone(child, s, ZONE_FOCUS2);   /* again: out of the group; Synth 3 stays shown */
+    int f13 = focus_now(fx);
+    snprintf(what, sizeof what, "TOGETHER lit (%d): plain clicks on SYNTH 2, SYNTH 3 add them (focus %d mask %d; focus %d "
+             "mask %d), SYNTH 2 again takes it out (focus %d mask %d), as Ctrl-click did", lit, f12 % 4, f12 / 4, f123 % 4,
+             f123 / 4, f13 % 4, f13 / 4);
+    check(lit == 1 && f12 == 1 + 4 * 3 && f123 == 2 + 4 * 7 && f13 == 2 + 4 * 5, what);
+    float r1 = getkey(fx, "flt_res"), r2 = getkey(fx, "s2_flt_res"), r3 = getkey(fx, "s3_flt_res");
+    RECT r = ctl_px("flt_res", s);
+    POINT at = {(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(at.x, at.y));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(at.x, at.y - 30));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(at.x, at.y - 30));
+    snprintf(what, sizeof what, "TOGETHER: a knob turned moves Synths 1 and 3 (%.2f -> %.2f, %.2f -> %.2f), not 2 (%.2f)",
+             r1, getkey(fx, "flt_res"), r3, getkey(fx, "s3_flt_res"), getkey(fx, "s2_flt_res"));
+    check(getkey(fx, "flt_res") != r1 && fabsf(getkey(fx, "flt_res") - getkey(fx, "s3_flt_res")) < 1e-6f &&
+          getkey(fx, "s2_flt_res") == r2, what);
+    setkey(fx, "flt_res", r1); setkey(fx, "s3_flt_res", r3);
+    hover_zone(child, s, ZONE_TOGETHER);
+    snprintf(what, sizeof what, "TOGETHER: its help says what it does (\"%.90s\")", help_fresh(fx));
+    check(strstr(hbuf, "TOGETHER") && strstr(hbuf, "SYNTH") != NULL, what);
+    click_zone(child, s, ZONE_TOGETHER);   /* off: back to the one shown */
+    int f3 = focus_now(fx);
+    click_zone(child, s, ZONE_FOCUS1);
+    int f1 = focus_now(fx);
+    snprintf(what, sizeof what, "TOGETHER off: back to Synth 3 alone (focus %d mask %d); a click on SYNTH 1 picks it alone "
+             "(focus %d mask %d)", f3 % 4, f3 / 4, f1 % 4, f1 / 4);
+    check(ht(fx, HT_TOGETHER, 0) == 0 && f3 == 2 + 4 * 4 && f1 == 0 + 4 * 1, what);
+    with_keys(1, 0);   /* Ctrl-click (the shortcut) lights it too */
+    click_zone(child, s, ZONE_FOCUS2);
+    with_keys(0, 0);
+    snprintf(what, sizeof what, "Ctrl-click on SYNTH 2 adds it (mask %d) and lights TOGETHER (%d)", focus_now(fx) / 4,
+             (int)ht(fx, HT_TOGETHER, 0));
+    check(focus_now(fx) / 4 == 3 && ht(fx, HT_TOGETHER, 0) == 1, what);
+    click_zone(child, s, ZONE_TOGETHER);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
+}
+
+static void undo_buttons_test(AEffect *fx, HWND child, float s) {
+    char what[400], lb[1024];
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, lb, 0);
+    hover_zone(child, s, ZONE_UNDO);
+    snprintf(what, sizeof what, "UNDO with nothing to undo says so (\"%.80s\")", help_fresh(fx));
+    check(strstr(hbuf, "nothing to undo") != NULL, what);
+    float r0 = getkey(fx, "flt_res");
+    RECT r = ctl_px("flt_res", s);
+    POINT at = {(r.left + r.right) / 2, (r.top + r.bottom) / 2};
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(at.x, at.y));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(at.x, at.y - 40));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(at.x, at.y - 40));
+    float r1 = getkey(fx, "flt_res");
+    fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0);   /* (the drag's step, committed) */
+    hover_zone(child, s, ZONE_UNDO);
+    snprintf(what, sizeof what, "UNDO's help names the step it takes back (\"%.80s\")", help_fresh(fx));
+    check(strstr(hbuf, "UNDO: take back") && strstr(hbuf, "1 step") != NULL, what);
+    click_zone(child, s, ZONE_UNDO);
+    float u = getkey(fx, "flt_res");
+    snprintf(what, sizeof what, "after UNDO the help line says what it undid (\"%.80s\")", help_now(fx));
+    check(strstr(hbuf, "Undid") && strstr(hbuf, "UNDO / REDO on the console") != NULL, what);
+    click_zone(child, s, ZONE_REDO);
+    float re = getkey(fx, "flt_res");
+    snprintf(what, sizeof what, "the console's UNDO takes a knob drag back (%.3f -> %.3f -> %.3f) and REDO does it again "
+             "(%.3f), as Ctrl+Z / Ctrl+Y", r0, r1, u, re);
+    check(r1 != r0 && u == r0 && re == r1, what);
+    click_zone(child, s, ZONE_UNDO);
+    hover_at(child, s, 0, 0);
+}
+
+/* quick assign without Alt, right-click, Ctrl-drag or Esc: the controller's and GENERATIVE's DEST, the MOD FROM page */
+enum { T_SCR_QMOD = -31, QP_ROW = 100, QP_PICK = 200, QP_ALL, QP_DONE };   /* as editor.h, quickmod.c */
+static void qm_plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    static float saved[NPARAMS];
+    snapshot(fx, saved);
+    int svf = rnd_key("svf_cut"), d_svf = (int)qmt(fx, QMT_DST_OF, (float)svf);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, qbuf, 0);
+    mclear(fx);
+    click_zone(child, s, ZONE_TAB_MORE);
+    /* the controller panel's DEST: a list of what the hands play (answered: Mod Wheel, 7) */
+    qmt(fx, QMT_ANSWER, 7);
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_HANDS));
+    int armed = (int)qmt(fx, QMT_SOURCE, 0), scr = screen_now(fx);
+    snprintf(what, sizeof what, "the controller panel's DEST picks the mod wheel from its list (source %d \"%s\") and the "
+             "screen shows MOD FROM (screen %d)", armed, qbuf, scr);
+    check(armed == 7 && strstr(qbuf, "Wheel") && scr == T_SCR_QMOD, what);
+    qm_drag(child, "svf_cut", s, 30);
+    int links = (int)qmt(fx, QMT_LINKS, 0), st0 = qm_steps(fx);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 1));   /* + */
+    float up = mamt(fx, 0, 0);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 0));   /* - twice */
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 0));
+    snprintf(what, sizeof what, "MOD FROM lists the new connection (%d); its + and - buttons set the amount 30 -> %.0f -> "
+             "%.0f%%, each one undo step (%d -> %d)", links, up, mamt(fx, 0, 0), st0, qm_steps(fx));
+    check(links == 1 && fabsf(up - 35.0f) < 0.01f && fabsf(mamt(fx, 0, 0) - 25.0f) < 0.01f && qm_steps(fx) == st0 + 3, what);
+    intptr_t rm = qmt(fx, QMT_PAGE_XY, QP_ROW + 2);
+    hover_at(child, 1.0f, (float)(rm & 0xFFFF), (float)(rm >> 16));
+    snprintf(what, sizeof what, "hovering REMOVE explains it (\"%.70s\")", help_fresh(fx));
+    check(strstr(hbuf, "REMOVE:") != NULL, what);
+    if (bmp) shot(child, w, h, bmp, "_qm_page");
+    /* GENERATIVE's DEST: the generators' sources (answered: Rain Drop, 26) */
+    qmt(fx, QMT_ANSWER, 26);
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_GEN));
+    armed = (int)qmt(fx, QMT_SOURCE, 0);
+    char gname[64];
+    snprintf(gname, sizeof gname, "%s", qbuf);
+    int glinks = (int)qmt(fx, QMT_LINKS, 0);
+    snprintf(what, sizeof what, "GENERATIVE's DEST picks a generator's source (%d \"%s\"); its list is empty (%d)", armed,
+             gname, glinks);
+    check(armed == 26 && strstr(gname, "Rain") && glinks == 0, what);
+    /* CHANGE SOURCE: any source (answered: the mod wheel again), then REMOVE its connection */
+    qmt(fx, QMT_ANSWER, 7);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_PICK));
+    armed = (int)qmt(fx, QMT_SOURCE, 0);
+    int st1 = qm_steps(fx);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 2));   /* REMOVE */
+    snprintf(what, sizeof what, "CHANGE SOURCE picks any source (%d); REMOVE takes its connection away (dst %d, listed %d), "
+             "one undo step (%d -> %d)", armed, mopt(fx, 0, 0, "dst"), (int)qmt(fx, QMT_LINKS, 0), st1, qm_steps(fx));
+    check(armed == 7 && mopt(fx, 0, 0, "dst") == 0 && qmt(fx, QMT_LINKS, 0) == 0 && qm_steps(fx) == st1 + 1, what);
+    /* MATRIX on a line: that row on the MATRIX page; DONE: back to the page before */
+    qm_drag(child, "svf_cut", s, 20);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_ROW + 3));
+    scr = screen_now(fx);
+    snprintf(what, sizeof what, "MATRIX on a line shows the MATRIX page (screen %d) and ends quick assign (source %d); the "
+             "row is there (dst %d = %d)", scr, (int)qmt(fx, QMT_SOURCE, 0), mopt(fx, 0, 0, "dst"), d_svf);
+    check(scr == T_SCR_MATRIX && qmt(fx, QMT_SOURCE, 0) == 0 && mopt(fx, 0, 0, "dst") == d_svf, what);
+    click_zone(child, s, ZONE_TAB_SETUP);
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_LFO1));
+    int during = screen_now(fx);
+    qm_click_xy(child, qmt(fx, QMT_PAGE_XY, QP_DONE));
+    snprintf(what, sizeof what, "DONE ends quick assign (source %d) and the screen goes back from MOD FROM (%d) to SETUP (%d)",
+             (int)qmt(fx, QMT_SOURCE, 0), during, screen_now(fx));
+    check(qmt(fx, QMT_SOURCE, 0) == 0 && during == T_SCR_QMOD && screen_now(fx) == T_SCR_SETUP, what);
+    hover_at(child, s, 0, 0);
+    for (int i = 0; i < NPARAMS; i++)
+        if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    SendMessageA(child, WM_TIMER, 1, 0);
+}
+
+/* the step editor without SHIFT or a double-click: RANGE then a step number marks DUP's range; a second click on an
+ * empty cell puts a note there */
+static void seq_plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300], buf[SQT_BUF];
+    sq_seq_t q;
+    float x, y, x0 = ZONE_SCREEN[0] + 8, ty = ZONE_SCREEN[1] + 6 + 36 + 9, by = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 176 + 8 + 24 + 9;
+    float bw = (ZONE_SCREEN[2] - 16 - 4 * 7) / 8.0f, numy = ZONE_SCREEN[1] + 6 + 36 + 20 + 9;
+    static float saved[NPARAMS];
+    snapshot(fx, saved);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    click_zone(child, s, ZONE_TAB_SEQ);
+    click(child, s, x0 + 56 + 22, ty);   /* NOTES */
+    static const answer_t yes = {"ONE-ish", NULL, IDYES};
+    click_answered(child, s, x0 + 4 * (bw + 4) + bw / 2, by, &yes);   /* CLEAR */
+    click(child, s, x0 + 384 - 100 + 11, ty);   /* page 1 */
+    cell_xy(3, 2, &x, &y);
+    click(child, s, x, y);   /* (another cell selected first) */
+    cell_xy(0, 0, &x, &y);
+    click(child, s, x, y);   /* step 1 selected (empty) ... */
+    seq_now(fx, &q);
+    int one = sq_has(&q.n[0][0]);
+    click(child, s, x, y);   /* ... clicked again: a note */
+    cell_xy(1, 0, &x, &y);
+    click(child, s, x, y);
+    click(child, s, x, y);
+    seq_now(fx, &q);
+    snprintf(what, sizeof what, "SEQ page: one click on an empty cell selects it (note %d), a second puts a note there "
+             "(steps 1 and 2: %d %d)", one, sq_has(&q.n[0][0]), sq_has(&q.n[1][0]));
+    check(!one && sq_has(&q.n[0][0]) && sq_has(&q.n[1][0]) && !sq_has(&q.n[2][0]), what);
+    float cw = (ZONE_SCREEN[2] - 16 - 24) / 16.0f, nx = ZONE_SCREEN[0] + 8 + 24;
+    click(child, s, nx + 0.5f * cw, numy);   /* step 1's number: the first step */
+    click(child, s, x0 + 26, ty);           /* RANGE */
+    click(child, s, nx + 1.5f * cw, numy);   /* step 2's number: the last */
+    fx->dispatcher(fx, 50, TEST_SEQ, SQT_MESSAGE, buf, 0);
+    char msg[128];
+    snprintf(msg, sizeof msg, "%s", buf);
+    if (bmp) shot(child, w, h, bmp, "_seq_range");
+    int len0 = (int)lroundf(PARAMS[rnd_key("seq_length")].min + getkey(fx, "seq_length") *
+                            (PARAMS[rnd_key("seq_length")].max - PARAMS[rnd_key("seq_length")].min));
+    click(child, s, x0 + 5 * (bw + 4) + bw / 2, by);   /* DUP */
+    seq_now(fx, &q);
+    snprintf(what, sizeof what, "SEQ page: RANGE, then step 2's number marks steps 1-2 (\"%s\"); DUP copies just them after "
+             "step %d (steps %d, %d have notes, %d not)", msg, len0, len0 + 1, len0 + 2, len0 + 3);
+    check(strstr(msg, "Steps 1-2 marked") && sq_has(&q.n[len0][0]) && sq_has(&q.n[len0 + 1][0]) && !sq_has(&q.n[len0 + 2][0]),
+          what);
+    snprintf(buf, sizeof buf, "Walking Test");   /* as it was */
+    fx->dispatcher(fx, 50, TEST_SEQ, SQT_LOAD, buf, 0);
+    for (int i = 0; i < NPARAMS; i++)
+        if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+/* the octave LEDs pick an octave with a click; PANIC (no 2-second hold) sends every note off */
+static void oct_panic_test(AEffect *fx, HWND child, float s) {
+    char what[300];
+    unsigned char log[64][3];
+    play(fx, 2, 512);
+    fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0);
+    click(child, s, ZONE_OCT_LEDS[0] + ZONE_OCT_LEDS[2] * 0.7f, ZONE_OCT_LEDS[1] + 6);   /* the "+1" LED */
+    click_white(fx, child, s, 0);   /* the lowest C */
+    int n = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0), note = -1;
+    for (int k = 0; k < n; k++)
+        if ((log[k][0] & 0xF0) == 0x90 && log[k][2]) note = log[k][1];
+    snprintf(what, sizeof what, "a click on the octave LED +1 shifts the keyboard: its lowest C plays note %d (C3, 48)", note);
+    check(note == 48, what);
+    click(child, s, ZONE_OCT_LEDS[0] + ZONE_OCT_LEDS[2] * 0.5f, ZONE_OCT_LEDS[1] + 6);   /* "0": back */
+    click_zone(child, s, ZONE_PANIC);
+    play(fx, 2, 512);
+    n = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0);
+    int off = 0;
+    for (int k = 0; k < n; k++) off += (log[k][0] & 0xF0) == 0xB0 && log[k][1] == 123;
+    snprintf(what, sizeof what, "PANIC: a plain click sends All Notes Off on every channel (%d of 16)", off);
+    check(off == 16, what);
+}
+
+/* every console button and part of the controller explains itself on the help line (not the page's general text) */
+static void zone_help_test(AEffect *fx, HWND child, float s) {
+    static const struct { const short *z; const char *name; } Z[] = {
+        {ZONE_TAB_MATRIX, "MATRIX"}, {ZONE_TAB_MORE, "MORE"}, {ZONE_TAB_ANALOG, "ANALOG"}, {ZONE_TAB_RANDOM, "RANDOM"},
+        {ZONE_TAB_SEQ, "SEQ"}, {ZONE_TAB_SETUP, "SETUP"}, {ZONE_TAB_SETTINGS, "SETTINGS"}, {ZONE_PREV, "PREV"},
+        {ZONE_NEXT, "NEXT"}, {ZONE_ENCODER, "PRESET"}, {ZONE_TAB_GEN, "GENERATIVE"}, {ZONE_GEN_OFF, "GEN OFF"},
+        {ZONE_TEMPO, "TEMPO"}, {ZONE_TEMPO_HOST, "HOST"}, {ZONE_TEMPO_OWN, "OWN"}, {ZONE_TOGETHER, "TOGETHER"},
+        {ZONE_UNDO, "UNDO"}, {ZONE_REDO, "REDO"}, {ZONE_OCT_DOWN, "OCTAVE"}, {ZONE_OCT_LEDS, "octave LEDs"},
+        {ZONE_PANIC, "PANIC"}, {ZONE_PITCH, "PITCH"}, {ZONE_MODW, "MOD"}, {ZONE_PAD, "X/Y PAD"}, {ZONE_KEYS, "keyboard"},
+        {ZONE_RIBBON, "RIBBON"}, {ZONE_QM_HANDS, "the controller's DEST"}};
+    char what[300], bad[600] = "";
+    int n = 0;
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
+        if (Z[k].z[2] <= 0) continue;
+        hover_zone(child, s, Z[k].z);
+        help_fresh(fx);
+        if (!hbuf[0] || !strncmp(hbuf, "Each row: SOURCE", 16)) {   /* (the MATRIX page's general text: none of its own) */
+            n++;
+            snprintf(bad + strlen(bad), sizeof bad - strlen(bad), "%s%s", n > 1 ? ", " : "", Z[k].name);
+        }
+    }
+    hover_at(child, s, 0, 0);
+    snprintf(what, sizeof what, "every console button and controller part has help of its own (%d without: %s)", n,
+             n ? bad : "none");
+    check(n == 0, what);
+}
+
+static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    zone_help_test(fx, child, s);
+    oct_panic_test(fx, child, s);
+    together_test(fx, child, s, bmp, w, h);
+    undo_buttons_test(fx, child, s);
+    qm_plain_test(fx, child, s, bmp, w, h);
+    seq_plain_test(fx, child, s, bmp, w, h);
 }
 
 static void reload_test(const char *path, HMODULE old) {

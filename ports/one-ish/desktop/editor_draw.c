@@ -24,7 +24,7 @@ static const char *help_for(int i) {
         {"_via_amt", "Via amount: how much the via source scales this row (100% = fully; minus turns it upside down)."},
         {"_xf_amt", "Transform amount: how strongly the transform reshapes the source (0% = not at all)."},
         {"_xf", "Transform: reshapes the source before it moves the destination. Limit Low/High clip one side; Squared and Cubed bend it into a curve."},
-        {"_amt", "Mod amount: how far and which way (drag left/right; minus turns the source upside down). Double-click resets to 0."},
+        {"_amt", "Mod amount: how far and which way (drag left/right; minus turns the source upside down). The middle is 0 (shortcut: double-click)."},
         {"_via", "Mod via: scales this row by a second source. LFO 1 -> Pitch via Mod Wheel = vibrato that the wheel brings in."},
         {"_svf", "Sends this mixer channel to the state-variable filter. With the Ladder button too it feeds both; with neither it is silent."},
         {"_lad", "Sends this mixer channel to the ladder filter. With the SVF button too it feeds both; with neither it is silent."},
@@ -300,20 +300,26 @@ static const char *zone_help(ed_t *e, int z) {
     switch (z) {
     case Z_KEYS: return "Keyboard: click a key to play it (lower on the key = louder), drag across to slide between notes. "
                         "The octave buttons shift it. The computer keyboard plays it too: A S D F G H J K L the white keys from C, "
-                        "W E T Y U O P the black ones, Z / X the octave. Right-click: modulate from velocity, "
-                        "aftertouch, the key, the pedals.";
+                        "W E T Y U O P the black ones, Z / X the octave (click the panel first). To modulate from "
+                        "velocity, aftertouch, the key or the pedals: the DEST button at the top left of the controller panel.";
     case Z_RIBBON: return "Ribbon: touch and slide along it. It sends MIDI CC 16 (position, left to right) and CC 17 (touched). "
-                          "Its settings: the triangle at its right end. Right-click (or Alt-click): modulate from it.";
+                          "Its settings: the triangle at its right end. To modulate from it: the controller panel's DEST "
+                          "button (top left).";
     case Z_PITCH: return "Pitch wheel: drag up or down to bend; it springs back to the centre. BEND + and BEND - set the range. "
-                         "Right-click (or Alt-click): modulate from it.";
+                         "To modulate from it: the DEST button at the top left of this panel.";
     case Z_MODW: return "Mod wheel (MIDI CC 1): drag up to bring in the mod matrix's Mod Wheel rows (vibrato in most presets). "
-                        "Right-click (or Alt-click): modulate from it.";
+                        "To modulate from it: the DEST button at the top left of this panel.";
     case Z_PAD: return "X/Y pad: drag inside it. Left/right is the matrix source Pad X (MIDI CC 2), up/down Pad Y (CC 3); "
                        "both stay where you let go. Pad Gate (CC 18) is on while you touch it. Up/down also sends "
-                       "aftertouch (the source Aftertouch, back to 0 when you let go). Right-click: modulate from X, Y or its gate.";
+                       "aftertouch (the source Aftertouch, back to 0 when you let go). To modulate from X, Y or its gate: "
+                       "the DEST button at the top left of this panel.";
     case Z_OCT_DOWN: case Z_OCT_UP:
-        return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Hold one: 1 s back to the "
-               "default octave, 2 s a MIDI panic (all notes off).";
+        return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Click an LED above for that "
+               "octave at once (0: the default); PANIC (under glide's ON) stops every note. Shortcut: hold one, 1 s the "
+               "default octave, 2 s PANIC.";
+    case Z_OCT_PICK: return "Octave LEDs: the keyboard's octave (lit). Click one to go straight to it; 0 is the default.";
+    case Z_PANIC: return "PANIC: stops every note at once (all notes and sounds off on every MIDI channel, the pedals up). "
+                         "Use it when a note hangs. Shortcut: hold an OCTAVE button for 2 s.";
     case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the factory presets, then your own "
                            "patches; click it for the patch list.";
     case Z_PREV: case Z_NEXT: return "Previous / next patch: the factory presets (F), then your own (U).";
@@ -325,15 +331,18 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_TAB_ANALOG: return "ANALOG: the analog character page (drift and per-voice differences).";
     case Z_TAB_RANDOM: return "RANDOM: the patch randomiser. New sounds to play with, variations of this one, locks, undo.";
     case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3:
-        return "SYNTH 1 / 2 / 3 (Panel Focus): the panel, the MORE pages, the matrix and the step editor show and edit this "
-               "Synth. Ctrl-click to edit several together (keys 1 / 2 / 3 pick one, Shift+1 / 2 / 3 add one; Shift+F5/F6/F7 too). "
-               "Double-click (or Shift-click) solos it. Sections marked SHARED are the same for all three.";
+        return e->together
+            ? "SYNTH 1 / 2 / 3, TOGETHER lit: a click adds this Synth to the ones edited together (lit) or takes it out; "
+              "the panel shows the last one clicked. TOGETHER again: back to one Synth. S solos, M mutes."
+            : "SYNTH 1 / 2 / 3 (Panel Focus): the panel, the MORE pages, the matrix and the step editor show and edit this "
+              "Synth. To edit several at once, light TOGETHER (below) and click them. S beside it solos, M mutes. Sections "
+              "marked SHARED are the same for all three. Shortcuts: keys 1 / 2 / 3, Ctrl-click adds.";
     case Z_MUTE1: case Z_MUTE2: case Z_MUTE3:
         return "M (MUTE): red, this Synth is off (its ON on the SETUP page): it stops and plays nothing. Saved with the "
                "sound.";
     case Z_SOLO1: case Z_SOLO2: case Z_SOLO3:
         return "S (SOLO): lit, you hear only the soloed Synths (several can be); the others keep playing silently. Not "
-               "saved with the sound: a listening aid. A double-click or Shift-click on the SYNTH button does the same.";
+               "saved with the sound: a listening aid. (Shortcut: double-click the SYNTH button.)";
     case Z_TAB_SETUP: return "SETUP: the three Synths side by side: on, MIDI channel, key range (splits and layers), "
                              "transpose, octave, voices, level, pan, sends; then MIDI, master level, PLAY ALL.";
     case Z_TAB_SEQ: return "SEQ: the step sequencer's step editor (64 steps in four pages, note lanes and modulation lanes). "
@@ -353,7 +362,7 @@ static const char *zone_help(ed_t *e, int z) {
                                 "(steps, hits, rotation), probability, the Turing melody, KEY and SCALE. Off: they stay.";
     case Z_RND_ALSO + 2: return "SEQUENCER (lit): RANDOMISE and MUTATE also set the sequencer's settings (on, division, length, "
                                 "swing, trigger and transpose by the keys if it has notes) and its modulation lanes. The "
-                                "steps' notes stay. Ctrl+Z takes the lanes back too; the randomiser's UNDO only the settings.";
+                                "steps' notes stay. The console's UNDO takes the lanes back too; the randomiser's UNDO only the settings.";
     case Z_RND_UNDO: return "UNDO: back to the sound before (the last 32 are kept, your own edits in between too).";
     case Z_RND_REDO: return "REDO: forward again after UNDO.";
     case Z_RND_ALL: return "ALL 3 SYNTHS: lit, RANDOMISE and MUTATE give all three Synths a new sound (each its own; ON, "
@@ -970,46 +979,8 @@ static void screen_static(void) {
     gfx_frame((float)L.name.left, (float)L.name.top, (float)rw(&L.name), (float)rh(&L.name), 1.2f, 0xFFDCE6EE);
 }
 
-static void draw_screen(HDC dc, ed_t *e) {
-    char title[96];
-    patches_title(e, title, sizeof title);   /* "F 001  Init", "U  Bright Pad *" (patches.c) */
-    char home[160];
-    RECT nr = L.name;
-    if (lib_home_line(e, home, sizeof home)) {   /* the home line: the patch's tags and the tempo (library.c) */
-        RECT hr = {L.name.left + sc(6), L.name.bottom - sc(13), L.name.right - sc(6), L.name.bottom - sc(1)};
-        nr.bottom -= sc(10);
-        text(dc, &hr, home, font_tiny, T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    }
-    text(dc, &nr, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    text(dc, &L.prev, "<", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    text(dc, &L.next, ">", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
-    int subs = screen_subs(e);
-    if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
-    int striped = e->screen >= 0 && e->screen < NPAGES ? page_rows(e->screen) : ROWS;   /* (not under a picture) */
-    for (int r = 0; r < striped && e->screen != SCR_SEQ; r++)   /* (the step editor has its own rows) */
-        if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0x109CC8E6);
-    if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
-    else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
-    else if (e->screen == SCR_RANDOM) draw_random(dc, e);
-    else if (e->screen == SCR_SEQ) {   /* (its own surface: seq_page.c) */
-        gfx_end();
-        skin_bind(NULL);
-        seq_draw(dc, e);
-        gfx_begin(dc);
-        skin_bind(gfx_g);
-    }
-    else if (lib_screen(e->screen)) lib_draw(dc, e);   /* PATCHES and the library's pages, with their tabs */
-    else if (e->screen == SCR_SETUP) draw_setup(dc, e, subs);
-    else if (e->screen == SCR_GEN) draw_hub(dc, e);   /* (hub.c) */
-    else if (e->screen == SCR_SETTINGS) {   /* (settings.c) */
-        char t[64];
-        settings_title(e, t, sizeof t);
-        title_line(dc, e, t, subs);
-        settings_draw(dc, e);
-    }
-    else draw_page(dc, e, subs);
-    /* help: what the control under the mouse does */
+/* the help line: what the control under the mouse does, or what the last action did (also for load_test: HT_HELP) */
+void help_line(ed_t *e, char *out, int n) {
     char help[480];
     const char *zh = zone_help(e, e->hover), *pm = patches_message(e), *sm = settings_message(e);
     if (sm && (!pm || e->screen == SCR_SETTINGS)) pm = sm;   /* (the SETTINGS page's own first, on that page) */
@@ -1056,12 +1027,66 @@ static void draw_screen(HDC dc, ed_t *e) {
                                     "(V.AMT: how much); XFORM reshapes the source (X.AMT: how strongly). Click a value "
                                     "for its list, drag an amount sideways. MATRIX again: rows 9-16.");
     } else {
-        snprintf(help, sizeof help, "Drag a knob up/down (Shift: fine), scroll to nudge, double-click to reset. Click a "
-                                    "red button to step, an LED to pick, right-click for a list. A module's corner "
-                                    "triangle shows its MORE page here. DEST (or Alt-click a source) then a knob: modulation.");
+        snprintf(help, sizeof help, "Drag a knob up/down or scroll to nudge (Shift: fine; double-click: back to its default). "
+                                    "Click a red button to step, an LED to pick. A corner triangle shows the module's MORE "
+                                    "page here. Modulation: a DEST button, then a knob. UNDO / REDO: on the console.");
     }
-    RECT hr = e->screen == SCR_SEQ ? seq_help_rect() : L.help;   /* (the step editor uses the top of it) */
     if (e->screen == SCR_SEQ && seq_message(e) && !pm) snprintf(help, sizeof help, "%s", seq_message(e));
+    snprintf(out, n, "%s", help);
+}
+
+static void draw_screen(HDC dc, ed_t *e) {
+    char title[96];
+    patches_title(e, title, sizeof title);   /* "F 001  Init", "U  Bright Pad *" (patches.c) */
+    char home[160];
+    RECT nr = L.name;
+    if (lib_home_line(e, home, sizeof home)) {   /* the home line: the patch's tags and the tempo (library.c) */
+        RECT hr = {L.name.left + sc(6), L.name.bottom - sc(13), L.name.right - sc(6), L.name.bottom - sc(1)};
+        nr.bottom -= sc(10);
+        text(dc, &hr, home, font_tiny, T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
+    text(dc, &nr, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    text(dc, &L.prev, "<", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    text(dc, &L.next, ">", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
+    int subs = screen_subs(e);
+    if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
+    int striped = e->screen >= 0 && e->screen < NPAGES ? page_rows(e->screen) : ROWS;   /* (not under a picture) */
+    for (int r = 0; r < striped && e->screen != SCR_SEQ; r++)   /* (the step editor has its own rows) */
+        if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0x109CC8E6);
+    if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
+    else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
+    else if (e->screen == SCR_RANDOM) draw_random(dc, e);
+    else if (e->screen == SCR_SEQ) {   /* (its own surface: seq_page.c) */
+        gfx_end();
+        skin_bind(NULL);
+        seq_draw(dc, e);
+        gfx_begin(dc);
+        skin_bind(gfx_g);
+    }
+    else if (lib_screen(e->screen)) lib_draw(dc, e);   /* PATCHES and the library's pages, with their tabs */
+    else if (e->screen == SCR_SETUP) draw_setup(dc, e, subs);
+    else if (e->screen == SCR_GEN) draw_hub(dc, e);   /* (hub.c) */
+    else if (e->screen == SCR_QMOD) {   /* MOD FROM <source> while one is picked (quickmod.c: its own surface) */
+        char t[96];
+        qm_page_title(e, t, sizeof t);
+        title_line(dc, e, t, subs);
+        gfx_end();
+        skin_bind(NULL);
+        qm_page_draw(dc, e);
+        gfx_begin(dc);
+        skin_bind(gfx_g);
+    }
+    else if (e->screen == SCR_SETTINGS) {   /* (settings.c) */
+        char t[64];
+        settings_title(e, t, sizeof t);
+        title_line(dc, e, t, subs);
+        settings_draw(dc, e);
+    }
+    else draw_page(dc, e, subs);
+    char help[480];   /* help: what the control under the mouse does */
+    help_line(e, help, sizeof help);
+    RECT hr = e->screen == SCR_SEQ ? seq_help_rect() : L.help;   /* (the step editor uses the top of it) */
     gfx_line((float)hr.left, hr.top - 4.0f, (float)hr.right, hr.top - 4.0f, 1.0f, 0xFF27404E);
     text(dc, &hr, help, e->screen == SCR_SEQ ? font_cell : font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
     skin_glare(L.screen.left, L.screen.top, rw(&L.screen), rh(&L.screen));
@@ -1128,6 +1153,9 @@ static void draw_console(HDC dc, ed_t *e) {
     /* the third row (hub.c): GENERATIVE, GEN OFF (GEN BACK while it can bring them back), TEMPO with HOST / OWN */
     panel_button(dc, &L.tab_gen, "GENERATIVE", e->screen == SCR_GEN, e->hover == Z_TAB_GEN);
     panel_button(dc, &L.gen_off, hub_restore_n(e) ? "GEN BACK" : "GEN OFF", 0, e->hover == Z_GEN_OFF);
+    if (NSYNTHS > 1) panel_button(dc, &L.together, "TOGETHER", e->together, e->hover == Z_TOGETHER);   /* (hub.c) */
+    panel_button(dc, &L.undo, "UNDO", 0, e->hover == Z_UNDO);
+    panel_button(dc, &L.redo, "REDO", 0, e->hover == Z_REDO);
     if (vis(&L.tempo, sc(16)) || vis(&L.tempo_host, sc(4)) || vis(&L.tempo_own, sc(4))) {
         char t[16];
         int own = settings_tempo(NULL), hot = e->hover == Z_TEMPO;
@@ -1184,6 +1212,13 @@ static void draw_controller(HDC dc, ed_t *e) {
         }
     if (vis(&L.oct_down, sc(6))) red_button(&L.oct_down, e->hover == Z_OCT_DOWN);
     if (vis(&L.oct_up, sc(6))) red_button(&L.oct_up, e->hover == Z_OCT_UP);
+    if (vis(&L.panic, sc(4)) && !IsRectEmpty(&L.panic)) {   /* (2026-10-30) PANIC: a small black cap, its name beside */
+        const RECT *r = &L.panic;
+        int bh = sc(10), bw = sc(18), hot = e->hover == Z_PANIC;
+        skin_button((float)r->left + 1, (r->top + r->bottom - bh) / 2.0f, (float)bw, (float)bh, SK_BLACK, hot ? SK_HOT : SK_UP);
+        RECT tr = {r->left + bw + sc(5), r->top, r->right + sc(6), r->bottom};
+        text(dc, &tr, "PANIC", font_label, hot ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
     wheel(dc, &L.pitch, e->bend, "PITCH", e->hover == Z_PITCH);
     wheel(dc, &L.modw, e->wheel * 2 - 1, "MOD", e->hover == Z_MODW);
     RECT *p = &L.pad;
@@ -1375,6 +1410,14 @@ static void bake(HDC dc) {
     rate_leds_static(dc);   /* (skin_text only: no GDI+ of its own) */
     ribbon_static();
     keys_static();
+    if (!IsRectEmpty(&L.kb_hint)) {   /* (2026-10-30) the computer keyboard's hint, burnt into the rail like the name */
+        static const char T[] = "COMPUTER KEYBOARD: CLICK THE PANEL OR A KEY FIRST, THEN PLAY  A S D F G H J K L  (WHITE "
+                                "KEYS)  W E T Y U O P  (BLACK KEYS)   Z / X  OCTAVE";
+        RECT r = L.kb_hint, r1 = r;
+        OffsetRect(&r1, 0, 1);
+        text(dc, &r1, T, font_tiny, RGB(232, 190, 130), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &r, T, font_tiny, RGB(74, 40, 18), DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
     {   /* our name, burnt into the front rail under the keys */
         RECT r = {L.keys.right - sc(150), L.keys.bottom + sc(1), L.keys.right - sc(10), L.h - sc(1)};
         RECT r1 = r;

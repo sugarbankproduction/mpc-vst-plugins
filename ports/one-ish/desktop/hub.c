@@ -22,7 +22,13 @@
  * rate, each LFO's rate, the master effect sends, the balls and particles, and ALL 3 over LINK CUTOFF: the two
  * cutoffs, the one relative LINK, the other Synths moving by as much as the knob did). While it is lit, an edit of one of them from the window goes to all
  * three Synths at once (editor.c edit_targets): the same host automation and the same undo step as the edit itself.
- * Being params, the LINKs are kept with the sound (projects, patches, presets, undo). */
+ * Being params, the LINKs are kept with the sound (projects, patches, presets, undo).
+ *
+ * (2026-10-30) TOGETHER (the third row, under SYNTH 1): lit, a click on a SYNTH button adds that Synth to the ones
+ * edited together, or takes it out (what Ctrl-click does); off again, the panel goes back to just the Synth it shows.
+ * Ctrl-click, Shift+1-3 and Ctrl+Shift+F5-F7 light it too. UNDO / REDO (the third row's right end): the library's undo
+ * of any edit from the window (Ctrl+Z / Ctrl+Y); hovering one names the step it would take back or do again. Both are
+ * the window's own state, never saved. */
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,8 +114,11 @@ RECT hub_rect(int z) {
     else if (z == Z_TEMPO_HOST) r = L.tempo_host;
     else if (z == Z_TEMPO_OWN) r = L.tempo_own;
     else if (z == Z_VOL_MASTER) r = L.vol_master;
-    else if (z == Z_TEMPO_DOWN) { r = L.tempo; r.right = r.left + sc(16); }
-    else if (z == Z_TEMPO_UP) { r = L.tempo; r.left = r.right - sc(16); }
+    else if (z == Z_TOGETHER) r = L.together;
+    else if (z == Z_UNDO) r = L.undo;
+    else if (z == Z_REDO) r = L.redo;
+    else if (z == Z_TEMPO_DOWN) { r = L.tempo; r.right = r.left + sc(14); }
+    else if (z == Z_TEMPO_UP) { r = L.tempo; r.left = r.right - sc(14); }
     return r;
 }
 
@@ -137,7 +146,7 @@ int hub_hit(ed_t *e, POINT pt) {   /* the hub page (the screen shows it) */
 }
 int hub_hit_console(POINT pt) {
     static const int Z[] = {Z_TAB_GEN, Z_GEN_OFF, Z_TEMPO_DOWN, Z_TEMPO_UP, Z_TEMPO, Z_TEMPO_HOST, Z_TEMPO_OWN,
-                            Z_VOL_MASTER};
+                            Z_VOL_MASTER, Z_TOGETHER, Z_UNDO, Z_REDO};
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
         RECT r = hub_rect(Z[k]);
         if (PtInRect(&r, pt)) return Z[k];
@@ -238,6 +247,12 @@ int hub_press(ed_t *e, int z) {
     } else if (z == Z_TEMPO_DOWN || z == Z_TEMPO_UP) {   /* the readout's < >: a plain click steps it (and OWN) */
         settings_tempo_set(e, 1, clamp_bpm(roundf((tempo_now(e) + (z == Z_TEMPO_UP ? 1 : -1) *
                                                    (GetKeyState(VK_SHIFT) < 0 ? 0.1f : 1.0f)) * 10.0f) / 10.0f), 1);
+    } else if (z == Z_TOGETHER) {   /* lit: SYNTH buttons add / remove; off: just the Synth shown again */
+        if (e->together) { e->together = 0; ed_focus(e, e->focus, 0); }
+        else e->together = 1;
+    } else if (z == Z_UNDO || z == Z_REDO) {   /* (its message says what it did, on the help line) */
+        if (z == Z_UNDO) lib_undo(e);
+        else lib_redo(e);
     } else if (z == Z_VOL_MASTER) {   /* (a view: nothing changes in the sound) */
         e->vol_master = !e->vol_master && master_param() >= 0;
     } else if (z == Z_TEMPO_HOST || z == Z_TEMPO_OWN) {
@@ -255,10 +270,24 @@ int hub_press(ed_t *e, int z) {
 
 /* ---- help ---- */
 const char *hub_zone_help(ed_t *e, int z) {
-    (void)e;
+    static char t[200];
+    lib_t *lb = e->lib;
+    if (z == Z_TOGETHER)
+        return e->together ? "TOGETHER (lit): click SYNTH 1 / 2 / 3 to add a Synth to the ones edited together, or to take "
+                             "it out again; every knob then moves all of them. Click TOGETHER to go back to one Synth."
+                           : "TOGETHER: light it, then click SYNTH buttons to edit several Synths at once (a knob moves "
+                             "all of them; the panel shows the last one clicked). Shortcut: Ctrl-click a SYNTH button.";
+    if (z == Z_UNDO || z == Z_REDO) {
+        int redo = z == Z_REDO, n = lb ? (redo ? lb->nredo : lb->nundo) : 0;
+        const char *what = n ? (redo ? lb->redo[n - 1].what : lb->undo[n - 1].what) : "";
+        if (!n) snprintf(t, sizeof t, redo ? "REDO: nothing to redo (it does again what UNDO took back)."
+                                           : "UNDO: nothing to undo yet (it takes back your last edit in this window).");
+        else snprintf(t, sizeof t, "%s: %s %s (%d step%s). Keys: %s.", redo ? "REDO" : "UNDO", redo ? "do again" : "take back",
+                      what[0] ? what : "the last edit", n, n == 1 ? "" : "s", redo ? "Ctrl+Y" : "Ctrl+Z");
+        return t;
+    }
     if (z == Z_TAB_GEN) return "GENERATIVE: the generators on one page: each one's ON (in the Synth in focus) and which Synths "
-                               "it is on in; click a name for its page. KEY, SCALE and their LINKs; ALL OFF. Shift-click: "
-                               "GEN OFF.";
+                               "it is on in; click a name for its page. KEY, SCALE and their LINKs; ALL OFF.";
     if (z == Z_GEN_OFF || z == Z_HUB_ALLOFF)
         return "GEN OFF / ALL OFF: switches every generator (Euclid, Turing, balls, particles and the rest) off in all "
                "three Synths: one undo step. Press again while they are still off to bring back the ones it switched "
@@ -274,8 +303,8 @@ const char *hub_zone_help(ed_t *e, int z) {
     if (z == Z_VOL_MASTER) return "MASTER: lit, this section's knob is MASTER, the level of the whole instrument (all "
                                   "three Synths, saved with the sound). Off: VOLUME, the Synth in focus's own level. "
                                   "(Only what the knob shows: the button itself is not saved.)";
-    if (z >= Z_HUB_ON && z < Z_HUB_ON + NHUB) return "ON: this generator in the Synth in focus (LINKed or Ctrl-picked "
-                                                     "Synths follow). The digits show which Synths have it on.";
+    if (z >= Z_HUB_ON && z < Z_HUB_ON + NHUB) return "ON: this generator in the Synth in focus (LINKed Synths, and those "
+                                                     "edited TOGETHER, follow). The digits show which Synths have it on.";
     if (z >= Z_HUB_OPEN && z < Z_HUB_OPEN + NHUB) return "Opens this generator's page.";
     return NULL;
 }
@@ -287,7 +316,7 @@ void hub_help(ed_t *e, char *out, int n) {
 }
 
 /* ---- load_test (effVendorSpecific TEST_HUB) ---- */
-intptr_t hub_test(ed_t *e, intptr_t op, float opt) {
+intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt) {
     char b[64] = "";
     float bpm;
     switch (op) {
@@ -298,6 +327,12 @@ intptr_t hub_test(ed_t *e, intptr_t op, float opt) {
     case HT_LINKED: return link_lit(e, (int)lroundf(opt));
     case HT_VOL_MASTER: return e->vol_master;
     case HT_SUB: return e->sub;
+    case HT_TOGETHER: return e->together;
+    case HT_HELP:   /* (opt 1: the last actions' messages go first, so the help of what is under the mouse shows) */
+        if (!buf) return -1;
+        if (opt > 0.5f) e->pt.msg[0] = e->st.msg[0] = e->qm.msg[0] = e->sq.msg[0] = 0;
+        help_line(e, buf, 1024);
+        return (intptr_t)strlen(buf);
     }
     return 0;
 }
