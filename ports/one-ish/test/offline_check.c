@@ -87,7 +87,9 @@
  *             on hold, HOLD; one shot; follow swing, divisions, timing, the free rate; the host's song position and a
  *             loop back; modulation lanes (and their controller); step, overdub, replace and real-time recording; STEP
  *             MOD; factory sequences, duplicate, damaged text; a full 64-step state round trip and the chunk's worst
- *             case; ON off is a fresh instance's samples; seq_demo.wav
+ *             case; ON off is a fresh instance's samples; seq_demo.wav; the sequence generator (test/seqgen_check.c,
+ *             src/seqgen.h): every note in the key and scale, same seed same pattern, density, range, motifs,
+ *             modulation lanes, a pattern in Synth 2's state round trip (offline_check seq <dir>/demo.wav: these alone)
  *   macro     the MACRO channel (Plaits, src/macro.h): every model finite and bounded at low to high notes and every
  *             corner of harmonics / timbre / morph; VA, wavetable and additive in tune (note, octave, frequency, bend,
  *             master tune) at 44.1 kHz; level 0 is exactly the sound without it; the drums, string and modal models
@@ -4964,6 +4966,7 @@ static void arp_wav(const char *demo_path) {
 #include "modx_check.c"    /* modulation extras: the step-mod destinations, slot ENABLE, the pad (2026-10-29) */
 #include "lfoenv_check.c"  /* LFO and envelope fidelity: the High range, pulse width, transport start, MIN, 13 syncs */
 #include "seqx_check.c"    /* the sequencer leftovers: RTZ, a step's notes together, follow swing, host start/stop */
+#include "seqgen_check.c"  /* the sequence generator: patterns in the Synth's key and scale (2026-10-29) */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5776,6 +5779,7 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "seqbench")) { seq_bench(); return 0; }   /* just the sequencer's bench lines */
     if (argc > 2 && !strcmp(argv[1], "seq")) {   /* just the step sequencer: offline_check seq <dir>/demo.wav */
         step_sequencer();
+        seqgen_checks();
         seq_wav(argv[2]);
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
@@ -5832,6 +5836,7 @@ int main(int argc, char **argv) {
     mod_extras();
     lfo_env_fidelity();
     seq_extras();
+    seqgen_checks();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

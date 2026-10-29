@@ -11,6 +11,9 @@
  *   MODS: click or drag across a row to set offsets; right-click removes one; DEST, CTRL and AMT set the lane.
  *   Step numbers: click selects the step, SHIFT + click marks the end of the range DUPLICATE copies, right-click toggles
  *   its rest. Arrow keys move the selection, Delete deletes (SHIFT + Delete: the whole step).
+ *   (2026-10-29) GEN (the third view): the sequence generator (src/seqgen.h) for the Synth in focus: STYLE, RHYTHM,
+ *   DENSITY, RANGE, VARIATION, ACCENT, FILLS and MODS on the left, its pattern on the right, KEY / SCALE / LENGTH / SEED
+ *   in the values row, GENERATE and RE-ROLL; each is one undo step.
  *   (2026-10-29) ALL: the values row moves every note of the step together (NOTE) or gives them one VEL, GATE or RATCH,
  *   and DELETE becomes DEL STEP. The title line's RTZ returns to step 1; AUTO (step edit auto-scroll, on by default)
  *   makes the page shown follow the step playing. SAVE asks for performance notes, saved in the file and shown on LOAD.
@@ -34,6 +37,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include "editor.h"
+void lib_touch(ed_t *e, const char *label);   /* (library.h: GENERATE is one undo step) */
+void lib_commit(ed_t *e);
+void lib_hold(ed_t *e, int d);
 #include <commdlg.h>
 #include <shlobj.h>
 #pragma GCC diagnostic push   /* (only some of its drawing functions are used here) */
@@ -51,6 +57,13 @@ enum { NFIELD = 4, NBTN = 8, LABEL_W = 24 };
 /* MODS: B_REST is DEL LANE, B_TIE and B_ALL are unused; with ALL lit, B_DELETE is DEL STEP */
 enum { B_REST, B_TIE, B_ALL, B_DELETE, B_CLEAR, B_DUP, B_SAVE, B_LOAD };
 enum { Z_RTZ = Z_SEQ_BASE + 234, Z_AUTO = Z_SEQ_BASE + 235 };   /* the title line's RTZ and AUTO (2026-10-29) */
+/* the GEN view (2026-10-29): its option rows, its values row (KEY, SCALE, LENGTH, SEED), GENERATE and RE-ROLL */
+enum { Z_GEN_ROW = Z_SEQ_BASE + 320, Z_GEN_FIELD = Z_SEQ_BASE + 340, Z_GEN_GO = Z_SEQ_BASE + 350,
+       Z_GEN_REROLL = Z_SEQ_BASE + 351 };
+enum { V_NOTES, V_MODS, V_GEN, NVIEWS };
+enum { GEN_ROWS = 8, GEN_LABEL_W = 58, GEN_CTL_R = 240, GEN_PREV_L = 248 };   /* its rows; x of its parts */
+static RECT gen_row_rect(int row);
+static RECT gen_btn_rect(int which);
 #define C_LCD 0xFF96D7E8
 #define C_DIM 0xFF5A8291
 #define T_LCD RGB(150, 215, 232)
@@ -59,6 +72,7 @@ enum { Z_RTZ = Z_SEQ_BASE + 234, Z_AUTO = Z_SEQ_BASE + 235 };   /* the title lin
 #define T_DARK RGB(11, 22, 33)
 
 static int P_DST = -1, P_SRC = -1;   /* the matrix's destination and source lists (mod1_dst / mod1_src): names, counts */
+static int P_KEY = -1, P_SCALE = -1; /* the Synth's KEY and SCALE (key_root / key_scale; the focus's own through fp) */
 static int param_index(const char *key) {
     for (int i = 0; i < NPARAMS; i++)
         if (!strcmp(PARAMS[i].key, key)) return i;
@@ -82,6 +96,8 @@ const char *seq_message(ed_t *e) { return e->sq.msg[0] && GetTickCount() - e->sq
 
 void seq_init(ed_t *e) {
     if (P_DST < 0) { P_DST = param_index("mod1_dst"); P_SRC = param_index("mod1_src"); }
+    if (P_KEY < 0) { P_KEY = param_index("key_root"); P_SCALE = param_index("key_scale"); }
+    for (int c = 0; c < SQ_GEN_SYNTHS; c++) { seqgen_defaults(&e->sq.gen[c]); e->sq.gen_seed[c] = 0; }
     sq_clear(&e->sq.q);
     e->sq.len = 16;
     e->sq.range_to = e->sq.play = -1;
@@ -202,19 +218,20 @@ static RECT pagebtn_rect(int p) {
     RECT r = {x, L.tabline.top, x + w, L.tabline.bottom};
     return r;
 }
-static RECT view_rect(int v) {
-    int x = L.tabline.left + sc(96) + v * sc(52);
-    RECT r = {x, L.tabline.top, x + sc(48), L.tabline.bottom};
+static RECT view_rect(int v) {   /* NOTES, MODS, GEN */
+    int x = L.tabline.left + sc(56) + v * sc(48);
+    RECT r = {x, L.tabline.top, x + sc(44), L.tabline.bottom};
     return r;
 }
 static RECT title_btn_rect(int z) {   /* RTZ and AUTO, after the views */
-    int x = view_rect(1).right + sc(6) + (z == Z_AUTO ? sc(32) : 0);
+    int x = L.tabline.left + sc(202) + (z == Z_AUTO ? sc(32) : 0);
     RECT r = {x, L.tabline.top, x + (z == Z_AUTO ? sc(36) : sc(28)), L.tabline.bottom};
     return r;
 }
 static RECT field_rect(ed_t *e, int f) {   /* the values row: a label then four fields */
-    static const short NOTE_X[NFIELD + 1] = {70, 150, 222, 300, 384}, MOD_X[NFIELD + 1] = {50, 158, 258, 312, 384};
-    const short *x = e->sq.view ? MOD_X : NOTE_X;
+    static const short NOTE_X[NFIELD + 1] = {70, 150, 222, 300, 384}, MOD_X[NFIELD + 1] = {50, 158, 258, 312, 384},
+                       GEN_X[NFIELD + 1] = {50, 112, 236, 306, 384};   /* GEN: KEY, SCALE, LENGTH, SEED */
+    const short *x = e->sq.view == V_GEN ? GEN_X : e->sq.view ? MOD_X : NOTE_X;
     RECT r = {L.help.left + sc(x[f]), L.help.top, L.help.left + sc(x[f + 1]) - sc(4), L.help.top + sc(20)};
     return r;
 }
@@ -238,8 +255,15 @@ static RECT pled_rect(int p) {   /* the SEQUENCER module's page LEDs: four in a 
 /* ---- hits ---- */
 int seq_hit(ed_t *e, POINT pt) {
     for (int p = 0; p < SQ_STEPS / SQ_PAGE; p++) { RECT r = pagebtn_rect(p); if (PtInRect(&r, pt)) return Z_PAGEBTN + p; }
-    for (int v = 0; v < 2; v++) { RECT r = view_rect(v); if (PtInRect(&r, pt)) return Z_VIEW + v; }
+    for (int v = 0; v < NVIEWS; v++) { RECT r = view_rect(v); if (PtInRect(&r, pt)) return Z_VIEW + v; }
     for (int z = Z_RTZ; z <= Z_AUTO; z++) { RECT r = title_btn_rect(z); if (PtInRect(&r, pt)) return z; }
+    if (e->sq.view == V_GEN) {   /* the generator's rows, values, GENERATE / RE-ROLL, and CLEAR .. LOAD */
+        for (int row = 0; row < GEN_ROWS; row++) { RECT r = gen_row_rect(row); if (PtInRect(&r, pt)) return Z_GEN_ROW + row; }
+        for (int f = 0; f < NFIELD; f++) { RECT r = field_rect(e, f); if (PtInRect(&r, pt)) return Z_GEN_FIELD + f; }
+        for (int k = 0; k < 2; k++) { RECT r = gen_btn_rect(k); if (PtInRect(&r, pt)) return k ? Z_GEN_REROLL : Z_GEN_GO; }
+        for (int b = B_CLEAR; b < NBTN; b++) { RECT r = btn_rect(b); if (PtInRect(&r, pt)) return Z_BTN + b; }
+        return -1;
+    }
     for (int c = 0; c < SQ_PAGE; c++) {
         RECT r = stepnum_rect(c);
         if (PtInRect(&r, pt)) return Z_STEPNUM + c;
@@ -316,7 +340,7 @@ static int pick_list(ed_t *e, RECT r, int param, int cur) {   /* a popup of a pa
     HMENU m = CreatePopupMenu();
     for (int k = 0; k < PARAMS[param].nopts; k++)
         AppendMenuA(m, MF_STRING | (k == cur ? MF_CHECKED : 0) | (k && k % 30 == 0 ? MF_MENUBARBREAK : 0), (UINT_PTR)(k + 1),
-                    k == 0 && param == P_SRC ? "None" : k == 0 ? "Off (no lane)" : PARAMS[param].opts[k]);
+                    k == 0 && param == P_SRC ? "None" : k == 0 && param == P_DST ? "Off (no lane)" : PARAMS[param].opts[k]);
     POINT pt = {r.left, r.bottom};
     ClientToScreen(e->wnd, &pt);
     int c = TrackPopupMenu(m, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0, e->wnd, NULL);
@@ -587,6 +611,105 @@ static void press_button(ed_t *e, int b) {
     }
 }
 
+/* ---- the GEN view (2026-10-29): the sequence generator (src/seqgen.h) for the Synth in focus. Eight option rows on
+ * the left (STYLE, RHYTHM and RANGE are one-click choices, the rest 0-100% bars), the focused Synth's pattern on the
+ * right; KEY, SCALE (the Synth's own key_root / key_scale), LENGTH (seq_length) and SEED in the values row; GENERATE
+ * (the options with the seed shown) and RE-ROLL (a new seed) in the buttons' row. One click = one undo step. ---- */
+static const char *const GEN_LABELS[GEN_ROWS] = {"STYLE", "RHYTHM", "DENSITY", "RANGE", "VARIATION", "ACCENT", "FILLS",
+                                                 "MODS"};
+static const char *const GEN_STYLES[SG_STYLES] = {"BASS", "ARP", "LEAD", "STAB", "RAND"};   /* (melody, chords, random) */
+static const char *const GEN_RHYTHMS[SG_RHYTHMS] = {"STRAIGHT", "SYNCO", "EUCLID"};
+static const char *const GEN_RANGES[4] = {"1 OCT", "2 OCT", "3 OCT", "4 OCT"};
+static int gen_synth(ed_t *e) { return e->focus >= 0 && e->focus < SQ_GEN_SYNTHS ? e->focus : 0; }
+static seqgen_opts_t *gen_opts(ed_t *e) { return &e->sq.gen[gen_synth(e)]; }
+static int gen_count(int row) { return row == 0 ? SG_STYLES : row == 1 ? SG_RHYTHMS : row == 3 ? 4 : 0; }   /* 0: a bar */
+static int *gen_val(seqgen_opts_t *o, int row) {
+    switch (row) {
+    case 0: return &o->style;
+    case 1: return &o->rhythm;
+    case 2: return &o->density;
+    case 3: return &o->range;
+    case 4: return &o->variation;
+    case 5: return &o->accent;
+    case 6: return &o->fills;
+    default: return &o->mods;
+    }
+}
+static int gen_get(ed_t *e, int row) { return *gen_val(gen_opts(e), row) - (row == 3); }   /* (RANGE: 1-4 shown 0-3) */
+static void gen_set(ed_t *e, int row, int v) {
+    int n = gen_count(row);
+    v = n ? clampi(v, 0, n - 1) : clampi(v, row == 2 ? 1 : 0, 100);
+    *gen_val(gen_opts(e), row) = v + (row == 3);
+    redraw(e);
+}
+static int gen_key(ed_t *e) { return P_KEY >= 0 ? option_of(e, P_KEY) : 0; }
+static int gen_scale(ed_t *e) { return P_SCALE >= 0 ? option_of(e, P_SCALE) : KS_MINOR; }
+static const char *gen_key_name(ed_t *e) { return P_KEY >= 0 ? PARAMS[P_KEY].opts[gen_key(e)] : "C"; }
+static const char *gen_scale_name(ed_t *e) { return P_SCALE >= 0 ? PARAMS[P_SCALE].opts[gen_scale(e)] : "Minor"; }
+static RECT gen_row_rect(int row) {   /* a row's label and its control */
+    RECT r = {L.row[row].left, L.row[row].top, L.row[row].left + sc(GEN_CTL_R), L.row[row].bottom};
+    return r;
+}
+static RECT gen_ctl_rect(int row) {
+    RECT r = {L.row[row].left + sc(GEN_LABEL_W), L.row[row].top + sc(3), L.row[row].left + sc(GEN_CTL_R),
+              L.row[row].bottom - sc(3)};
+    return r;
+}
+static RECT gen_preview_rect(void) {
+    RECT r = {L.row[0].left + sc(GEN_PREV_L), L.row[0].top + sc(3), L.row[0].right, L.row[ROWS - 1].bottom - sc(3)};
+    return r;
+}
+static RECT gen_btn_rect(int which) {   /* GENERATE: the first two buttons' room; RE-ROLL: the next two */
+    RECT a = btn_rect(2 * which), b = btn_rect(2 * which + 1);
+    a.right = b.right;
+    return a;
+}
+static int gen_at(int row, int x) {   /* the value a click at x picks on a row */
+    RECT r = gen_ctl_rect(row);
+    float t = (x - r.left) / (float)(rw(&r) > 0 ? rw(&r) : 1);
+    int n = gen_count(row);
+    return n ? clampi((int)(t * n), 0, n - 1) : clampi((int)lroundf(t * 100), 0, 100);
+}
+
+/* GENERATE (reroll 0: the seed shown, or a first one) or RE-ROLL (1: a new seed): a pattern from the options in the
+ * focused Synth's KEY and SCALE, as long as its sequence, sent to its sequencer as one "load" (one undo step) */
+static void gen_run(ed_t *e, int reroll) {
+    uint32_t *seed = &e->sq.gen_seed[gen_synth(e)];
+    if (reroll || !*seed) {
+        uint32_t x = (*seed + 0x9E3779B9u) ^ (uint32_t)GetTickCount() * 2654435761u ^ (uint32_t)(uintptr_t)e;
+        do { x ^= x << 13; x ^= x >> 17; x ^= x << 5; } while (!x);
+        uint32_t n = x % 99999u + 1;   /* (a number short enough to note down) */
+        *seed = n == *seed ? n % 99999u + 1 : n;
+    }
+    seqgen_opts_t o = *gen_opts(e);
+    o.len = seq_len(e);
+    uint32_t sd = *seed;
+    sq_seq_t q;
+    int played = seqgen_make(&o, gen_key(e), gen_scale(e), &sd, &q);
+    static char t[SQ_TEXT_MAX];
+    sq_encode(&q, t, sizeof t);
+    lib_commit(e);   /* (an edit still open, a KEY change say, stays its own step) */
+    lib_hold(e, 1);
+    lib_touch(e, reroll ? "Re-roll" : "Generate");
+    seq_send(e, "load %s", t);
+    lib_hold(e, -1);
+    say(e, "Synth %d: a %s pattern in %s %s, %d of %d steps playing (seed %u). RE-ROLL for another; Ctrl+Z undoes it.",
+        e->focus + 1, GEN_STYLES[o.style], gen_key_name(e), gen_scale_name(e), played, o.len, (unsigned)*seed);
+}
+/* the values row: KEY and SCALE (the focused Synth's params), LENGTH, SEED (a new one generates at once) */
+static void gen_field_step(ed_t *e, int f, int d) {
+    if (f == 0 && P_KEY >= 0) set_option(e, P_KEY, ((gen_key(e) + d) % 12 + 12) % 12);
+    if (f == 1 && P_SCALE >= 0) set_option(e, P_SCALE, clampi(gen_scale(e) + d, 0, KS_COUNT - 1));
+    if (f == 2 && SEQ_P[3] >= 0) set_option(e, SEQ_P[3], clampi(seq_len(e) + d, 1, SQ_STEPS));
+    if (f == 3) {
+        uint32_t *seed = &e->sq.gen_seed[gen_synth(e)];
+        int v = (int)*seed + d;
+        *seed = (uint32_t)(v < 1 ? 1 : v > 99999 ? 99999 : v);
+        gen_run(e, 0);
+    }
+    redraw(e);
+}
+
 /* ---- the mouse and the keys ---- */
 static void mod_paint(ed_t *e, int col, int row, int y) {   /* MODS: an offset from the height in the row */
     RECT r = cell_rect(col, row);
@@ -603,7 +726,30 @@ int seq_press(ed_t *e, int z, int x, int y, int shift) {
     e->sq.drag = -1;
     if (z >= Z_PLED && z < Z_PLED + 4) { seq_open(e, z - Z_PLED); return 0; }
     if (z >= Z_PAGEBTN && z < Z_PAGEBTN + 4) { e->sq.page = z - Z_PAGEBTN; redraw(e); return 0; }
-    if (z == Z_VIEW || z == Z_VIEW + 1) { e->sq.view = z - Z_VIEW; redraw(e); return 0; }
+    if (z >= Z_VIEW && z < Z_VIEW + NVIEWS) { e->sq.view = z - Z_VIEW; redraw(e); return 0; }
+    if (z == Z_GEN_GO || z == Z_GEN_REROLL) { gen_run(e, z == Z_GEN_REROLL); return 0; }
+    if (z >= Z_GEN_ROW && z < Z_GEN_ROW + GEN_ROWS) {   /* a choice, or a bar (a drag follows) */
+        int row = z - Z_GEN_ROW;
+        if (x < gen_ctl_rect(row).left) return 0;
+        gen_set(e, row, gen_at(row, x));
+        if (gen_count(row)) return 0;
+        e->sq.drag = z;
+        return 1;
+    }
+    if (z >= Z_GEN_FIELD && z < Z_GEN_FIELD + NFIELD) {   /* KEY, SCALE: a list; LENGTH: a drag; SEED: the wheel */
+        int f = z - Z_GEN_FIELD;
+        if (f < 2) {
+            int param = f ? P_SCALE : P_KEY, c = pick_list(e, field_rect(e, f), param, f ? gen_scale(e) : gen_key(e));
+            if (c >= 0) set_option(e, param, c);
+            redraw(e);
+            return 0;
+        }
+        if (f == 3) return 0;
+        e->sq.drag = z;
+        e->sq.drag_y = y;
+        e->sq.drag_v0 = 0;
+        return 1;
+    }
     if (z == Z_RTZ) {   /* RETURN TO ZERO: step 1 next (and the selection there) */
         seq_send(e, "rtz");
         e->sq.step = e->sq.page = 0;
@@ -663,6 +809,12 @@ int seq_press(ed_t *e, int z, int x, int y, int shift) {
 void seq_drag(ed_t *e, int x, int y, int shift) {
     int z = e->sq.drag;
     if (z < 0) return;
+    if (z >= Z_GEN_ROW && z < Z_GEN_ROW + GEN_ROWS) { gen_set(e, z - Z_GEN_ROW, gen_at(z - Z_GEN_ROW, x)); return; }
+    if (z >= Z_GEN_FIELD && z < Z_GEN_FIELD + NFIELD) {   /* LENGTH: 6 pixels a step */
+        int d = (e->sq.drag_y - y) / sc(6);
+        if (d != e->sq.drag_v0) { gen_field_step(e, z - Z_GEN_FIELD, d - e->sq.drag_v0); e->sq.drag_v0 = d; }
+        return;
+    }
     if (z >= Z_FIELD && z < Z_FIELD + NFIELD) {   /* a value: 6 pixels a step (SHIFT: finer for velocity/gate) */
         int d = (e->sq.drag_y - y) / (shift ? sc(12) : sc(6));
         if (d != e->sq.drag_v0) { field_step(e, z - Z_FIELD, d - e->sq.drag_v0); e->sq.drag_v0 = d; }
@@ -709,6 +861,12 @@ void seq_double(ed_t *e, int z) {   /* double-click an empty note cell: a new no
     new_note(e, step, row, e->sq.last_note);
 }
 int seq_wheel(ed_t *e, int z, int dir, int shift) {   /* 1: taken */
+    if (z >= Z_GEN_ROW && z < Z_GEN_ROW + GEN_ROWS) {   /* a choice: the next; a bar: 5% (SHIFT: 1%) */
+        int row = z - Z_GEN_ROW;
+        gen_set(e, row, gen_get(e, row) + dir * (gen_count(row) || shift ? 1 : 5));
+        return 1;
+    }
+    if (z >= Z_GEN_FIELD && z < Z_GEN_FIELD + NFIELD) { gen_field_step(e, z - Z_GEN_FIELD, dir); return 1; }
     if (z >= Z_FIELD && z < Z_FIELD + NFIELD) { field_step(e, z - Z_FIELD, dir * (shift && z == Z_FIELD ? 12 : 1)); return 1; }
     if (z >= Z_CELL && z < Z_CELL + SQ_PAGE * ROWS) {
         int col = (z - Z_CELL) / ROWS, row = (z - Z_CELL) % ROWS, step = e->sq.page * SQ_PAGE + col;
@@ -731,6 +889,7 @@ int seq_wheel(ed_t *e, int z, int dir, int shift) {   /* 1: taken */
     return 0;
 }
 int seq_key(ed_t *e, int vk, int shift) {   /* the arrow keys move the selection; Delete deletes. 1: taken */
+    if (e->sq.view == V_GEN) return vk == VK_DELETE || vk == VK_BACK;   /* (GEN: nothing to delete) */
     int lanes = e->sq.view ? SQ_ML : SQ_NL, lane = e->sq.view ? e->sq.mlane : e->sq.lane;
     switch (vk) {
     case VK_LEFT: select_cell(e, (e->sq.step + SQ_STEPS - 1) % SQ_STEPS, lane); return 1;
@@ -760,7 +919,7 @@ static void button(HDC dc, RECT r, const char *label, int lit, int hot) {
 }
 static void field(HDC dc, ed_t *e, int f, const char *label, const char *value, int active) {
     RECT r = field_rect(e, f);
-    int hot = e->hover == Z_FIELD + f;
+    int hot = e->hover == (e->sq.view == V_GEN ? Z_GEN_FIELD : Z_FIELD) + f;
     gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f, hot ? 0xFFFFFFFF : 0xFF27404E);
     RECT lr = {r.left + sc(4), r.top, r.right, r.bottom}, vr = {r.left, r.top, r.right - sc(4), r.bottom};
     txt(dc, lr, label, font_tiny, T_DIM, DT_LEFT | DT_VCENTER);
@@ -802,14 +961,104 @@ static void draw_mod(ed_t *e, const sq_mlane_t *m, int step, RECT c, int sel) {
     (void)e;
 }
 
+/* the GEN view's pattern, small: the focused Synth's every step across, its notes' span (at least an octave) up; the
+ * key's root lines faint, beats and bars, the playing step */
+static void gen_preview(HDC dc, ed_t *e) {
+    RECT p = gen_preview_rect();
+    gfx_rect((float)p.left, (float)p.top, (float)rw(&p), (float)rh(&p), 0xFF0A1822);
+    gfx_frame((float)p.left, (float)p.top, (float)rw(&p), (float)rh(&p), 1.0f, 0xFF27404E);
+    int len = e->sq.len < 1 ? 1 : e->sq.len, lo = 127, hi = 0, key = gen_key(e);
+    for (int s = 0; s < len; s++)
+        for (int l = 0; l < SQ_NL; l++)
+            if (sq_has(&e->sq.q.n[s][l])) {
+                int n = e->sq.q.n[s][l].note;
+                if (n < lo) lo = n;
+                if (n > hi) hi = n;
+            }
+    if (lo > hi) {
+        txt(dc, p, "Empty: GENERATE fills it", font_tiny, T_DIM, DT_CENTER | DT_VCENTER);
+        return;
+    }
+    if (hi - lo < 12) { lo -= (12 - (hi - lo)) / 2; hi = lo + 12; }
+    float x0 = p.left + 3.0f, w = rw(&p) - 6.0f, y0 = p.top + 3.0f, h = rh(&p) - 6.0f, cw = w / len, nh = h / (hi - lo + 1);
+    for (int n = lo; n <= hi; n++)
+        if (((n - key) % 12 + 12) % 12 == 0)
+            gfx_line(x0, y0 + (hi - n + 0.5f) * nh, x0 + w, y0 + (hi - n + 0.5f) * nh, 0.8f, 0xFF1E3E4C);
+    for (int s = 4; s < len; s += 4)
+        gfx_line(x0 + s * cw, y0, x0 + s * cw, y0 + h, s % 16 ? 0.5f : 1.0f, s % 16 ? 0xFF142834 : 0xFF27404E);
+    if (e->sq.play >= 0 && e->sq.play < len) gfx_rect(x0 + e->sq.play * cw, y0, cw, h, 0x34FF6A50);
+    for (int s = 0; s < len; s++)
+        for (int l = 0; l < SQ_NL; l++) {
+            const sq_note_t *n = &e->sq.q.n[s][l];
+            if (!sq_has(n)) continue;
+            float bw = (n->flags & SQ_TIE) ? cw : cw * n->gate / 100.0f, bh = nh < 2.0f ? 2.0f : nh;
+            if (bw < 1.5f) bw = 1.5f;
+            int rest = (int)(e->sq.q.rest >> s & 1);
+            gfx_rect(x0 + s * cw, y0 + (hi - n->note) * nh, bw, bh, rest ? 0xFF2A4250 : n->vel > 104 ? 0xFF9EE2F2 : 0xFF4F9CB2);
+            if (sq_ratchet(n) > 1) gfx_rect(x0 + s * cw, y0 + (hi - n->note) * nh + bh, bw, 1.2f, 0xFFF4F4E8);
+        }
+}
+
+/* the GEN view under the title line: the options, the pattern, the values row and the buttons */
+static void gen_draw(HDC dc, ed_t *e) {
+    char b[96];
+    RECT h1 = {L.head.left, L.head.top, L.head.left + sc(GEN_CTL_R), L.head.bottom};
+    snprintf(b, sizeof b, "SEQUENCE GENERATOR: SYNTH %d", e->focus + 1);
+    txt(dc, h1, b, font_tiny, T_DIM, DT_LEFT | DT_VCENTER);
+    RECT h2 = {L.head.left + sc(GEN_PREV_L), L.head.top, L.head.right, L.head.bottom};
+    snprintf(b, sizeof b, "%s %s, %d STEPS", gen_key_name(e), gen_scale_name(e), e->sq.len);
+    txt(dc, h2, b, font_tiny, T_LCD, DT_LEFT | DT_VCENTER | DT_END_ELLIPSIS);
+    for (int row = 0; row < GEN_ROWS; row++) {
+        int hot = e->hover == Z_GEN_ROW + row, n = gen_count(row), v = gen_get(e, row);
+        RECT lr = {L.row[row].left, L.row[row].top, L.row[row].left + sc(GEN_LABEL_W - 4), L.row[row].bottom};
+        txt(dc, lr, GEN_LABELS[row], font_tiny, hot ? T_HOT : T_DIM, DT_LEFT | DT_VCENTER);
+        RECT c = gen_ctl_rect(row);
+        if (n) {   /* one button per choice, the one picked lit */
+            const char *const *names = row == 0 ? GEN_STYLES : row == 1 ? GEN_RHYTHMS : GEN_RANGES;
+            float sw = (rw(&c) - (n - 1) * sc(2)) / (float)n;
+            for (int k = 0; k < n; k++) {
+                RECT sr = {c.left + (int)(k * (sw + sc(2))), c.top, c.left + (int)(k * (sw + sc(2)) + sw), c.bottom};
+                button(dc, sr, names[k], k == v, 0);
+            }
+        } else {   /* a bar, 0-100% */
+            gfx_rect((float)c.left, (float)c.top, (float)rw(&c), (float)rh(&c), 0xFF0F2230);
+            gfx_rect((float)c.left, (float)c.top, rw(&c) * v / 100.0f, (float)rh(&c), 0xFF2F6F82);
+            gfx_frame((float)c.left, (float)c.top, (float)rw(&c), (float)rh(&c), 1.0f, hot ? 0xFFFFFFFF : 0xFF3E6273);
+            char pc[8];
+            snprintf(pc, sizeof pc, "%d%%", v);
+            RECT vr = {c.left, c.top, c.right - sc(4), c.bottom};
+            txt(dc, vr, pc, font_cell, hot ? T_HOT : T_LCD, DT_RIGHT | DT_VCENTER);
+        }
+    }
+    gen_preview(dc, e);
+    RECT lr = {L.help.left, L.help.top, field_rect(e, 0).left - sc(4), L.help.top + sc(20)};
+    snprintf(b, sizeof b, "SYNTH %d", e->focus + 1);
+    txt(dc, lr, b, font_tiny, T_LCD, DT_LEFT | DT_VCENTER);
+    char len[8], seed[12];
+    uint32_t sd = e->sq.gen_seed[gen_synth(e)];
+    snprintf(len, sizeof len, "%d", e->sq.len);
+    if (sd) snprintf(seed, sizeof seed, "%u", (unsigned)sd);
+    else snprintf(seed, sizeof seed, "--");
+    field(dc, e, 0, "KEY", gen_key_name(e), 1);
+    field(dc, e, 1, "SCALE", gen_scale_name(e), 1);
+    field(dc, e, 2, "LENGTH", len, 1);
+    field(dc, e, 3, "SEED", seed, sd != 0);
+    button(dc, gen_btn_rect(0), "GENERATE", 1, e->hover == Z_GEN_GO);
+    button(dc, gen_btn_rect(1), "RE-ROLL", 0, e->hover == Z_GEN_REROLL);
+    char dup[24];
+    snprintf(dup, sizeof dup, "DUP 1-%d", e->sq.len);
+    const char *const GB[4] = {"CLEAR", dup, "SAVE", "LOAD"};
+    for (int k = 0; k < 4; k++) button(dc, btn_rect(B_CLEAR + k), GB[k], 0, e->hover == Z_BTN + B_CLEAR + k);
+}
+
 void seq_draw(HDC dc, ed_t *e) {
     gfx_begin(dc);
     int len = e->sq.len < 1 ? 1 : e->sq.len, view = e->sq.view, page = e->sq.page;
     /* the title line: SEQUENCER, the views, the pages (lit: shown; a dot: playing; dim: past the length) */
     RECT t = {L.tabline.left, L.tabline.top, L.tabline.left + sc(94), L.tabline.bottom};
     txt(dc, t, "STEP EDIT", font_tiny, T_DIM, DT_LEFT | DT_VCENTER);
-    static const char *const VIEWS[2] = {"NOTES", "MODS"};
-    for (int v = 0; v < 2; v++) button(dc, view_rect(v), VIEWS[v], view == v, e->hover == Z_VIEW + v);
+    static const char *const VIEWS[NVIEWS] = {"NOTES", "MODS", "GEN"};
+    for (int v = 0; v < NVIEWS; v++) button(dc, view_rect(v), VIEWS[v], view == v, e->hover == Z_VIEW + v);
     for (int p = 0; p < SQ_STEPS / SQ_PAGE; p++) {
         RECT r = pagebtn_rect(p);
         char n[4];
@@ -824,6 +1073,7 @@ void seq_draw(HDC dc, ed_t *e) {
     char info[64];
     snprintf(info, sizeof info, "%s", e->sq.readout[0] ? e->sq.readout : "");
     txt(dc, pr, info, font_tiny, !strncmp(e->sq.readout, "Too", 3) ? RGB(255, 140, 110) : T_LCD, DT_RIGHT | DT_VCENTER | DT_END_ELLIPSIS);
+    if (view == V_GEN) { gen_draw(dc, e); gfx_end(); return; }   /* the sequence generator */
     /* the columns: playing, selected, rests, past the length */
     for (int c = 0; c < SQ_PAGE; c++) {
         int step = page * SQ_PAGE + c, rest = (int)(e->sq.q.rest >> step & 1);
@@ -947,6 +1197,37 @@ const char *seq_zone_help(ed_t *e, int z) {
                             "= a tie).";
     if (z == Z_VIEW + 1) return "MODS: the modulation lanes: each a destination with a bipolar offset per step (drag across "
                                 "a row to draw them). STEP MOD records them from the knobs.";
+    if (z == Z_VIEW + V_GEN) return "GEN: the sequence generator. Pick a style and options, then GENERATE: a new sequence in "
+                                    "the KEY and SCALE of the Synth in focus (each Synth has its own).";
+    if (z >= Z_GEN_ROW && z < Z_GEN_ROW + GEN_ROWS) {
+        static const char *const GH[GEN_ROWS] = {
+            "STYLE: BASS (on the chord's root, fifths and octaves), ARP (through the chord's notes), LEAD (a melody: steps "
+            "through the scale, chord notes on the beat), STAB (chords), RAND (anything in the scale).",
+            "RHYTHM: STRAIGHT (the beats first), SYNCO (off-beat, a 3-3-2 feel) or EUCLID (the notes spread as evenly as "
+            "they go).",
+            "DENSITY: how many of the steps play (click or drag the bar; the wheel: 5%, SHIFT: 1%).",
+            "RANGE: how many octaves the notes spread over.",
+            "VARIATION: 0% repeats the first bar exactly; more lets later bars wander away from it (and brings in chord "
+            "changes).",
+            "ACCENT: 0% gives every note one velocity; more makes the beats louder and the off-beats softer.",
+            "FILLS: ties (a note held into the next step) and ratchets (a note repeated inside its step), more of them "
+            "at the end.",
+            "MODS: modulation lanes: both filters' cutoff, then resonance, then one more (the MODS view shows them). 0%: "
+            "none."};
+        return GH[z - Z_GEN_ROW];
+    }
+    if (z >= Z_GEN_FIELD && z < Z_GEN_FIELD + NFIELD) {
+        static const char *const GF[NFIELD] = {
+            "KEY of the Synth in focus (its own: each Synth can play in another key). Click for the list, or scroll.",
+            "SCALE (or mode) of the Synth in focus. Click for the list, or scroll.",
+            "LENGTH: the sequence's steps (1-64), the same as the SEQUENCER module's. Drag or scroll.",
+            "SEED: the number behind the pattern. The same seed and options give the same pattern again; scroll to step "
+            "through seeds (each makes its pattern at once)."};
+        return GF[z - Z_GEN_FIELD];
+    }
+    if (z == Z_GEN_GO) return "GENERATE: replaces the sequence of the Synth in focus with a new one from these options and "
+                              "the seed shown (the first time: a new seed). Ctrl+Z takes it back.";
+    if (z == Z_GEN_REROLL) return "RE-ROLL: the same options with a new seed: another pattern. Ctrl+Z takes it back.";
     if (z >= Z_STEPNUM && z < Z_STEPNUM + SQ_PAGE) return "Step number: click to select it, SHIFT + click to mark the end of "
                                                          "the range DUP copies, right-click to make it a rest (or not).";
     if (z >= Z_LANE && z < Z_LANE + ROWS) return "A lane: click to select it. Each note lane holds one note per step; a chord "
@@ -994,6 +1275,11 @@ const char *seq_zone_help(ed_t *e, int z) {
 void seq_help(ed_t *e, char *out, int n) {
     const char *m = seq_message(e);
     if (m) { snprintf(out, n, "%s", m); return; }
+    if (e->sq.view == V_GEN) {
+        snprintf(out, n, "Pick a STYLE and the options, then GENERATE: a pattern in Synth %d's key and scale. RE-ROLL for "
+                 "another; NOTES to edit it; ON and PLAY (SEQUENCER, below) to hear it.", e->focus + 1);
+        return;
+    }
     if (e->sq.notes[0]) { snprintf(out, n, "Notes: %s", e->sq.notes); return; }   /* the sequence's performance notes */
     snprintf(out, n, "Select a step, light REC (SEQUENCER, below) and play keys: notes go in and the selection moves on. "
              "PLAY runs it (ON lets it play the synth); TRIG plays it while a key is held, TRANSP moves it with the keys. "

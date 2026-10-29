@@ -248,6 +248,20 @@ static int file_has(const char *name, const char *what) {   /* a file in the pat
     return f && strstr(buf, what) != NULL;
 }
 
+/* each Synth's sequence text in the plugin's state (";seq=", ";s2_seq=", ";s3_seq="; "" when none) */
+static void seq_texts(char t[3][SQT_BUF]) {
+    void *chunk = NULL;
+    intptr_t n = fx->dispatcher(fx, 23, 0, 0, &chunk, 0);   /* effGetChunk */
+    for (int c = 0; c < 3; c++) {
+        char k[16];
+        snprintf(k, sizeof k, c ? ";s%d_seq=" : ";seq=", c + 1);
+        const char *p = n > 0 && chunk ? strstr((const char *)chunk, k) : NULL;
+        int m = 0;
+        if (p) for (p += strlen(k); p[m] && p[m] != ';' && m < SQT_BUF - 1; m++) t[c][m] = p[m];
+        t[c][m] = 0;
+    }
+}
+
 /* ---- undo / redo ---- */
 static void undo_tests(void) {
     char what[300], buf[1024];
@@ -331,6 +345,65 @@ static void undo_tests(void) {
         snprintf(what, sizeof what, "UNDO: a note made on the SEQ page is one step (%d -> %d) and Ctrl+Z takes it away",
                  s0, s1);
         check(strcmp(seq0, seq1) && s1 == s0 + 1 && !strcmp(b, seq0), what);
+    }
+
+    /* (2026-10-29) the SEQ page's GEN view, Synth 2 in focus: its KEY changed there (Synth 1's stays), GENERATE fills
+     * Synth 2's sequence only, in its key and scale, as one undo step; Ctrl+Z takes it back; RE-ROLL makes another */
+    {
+        char t1[3][SQT_BUF], t2[3][SQT_BUF], t3[3][SQT_BUF], t4[3][SQT_BUF];
+        float x0 = ZONE_SCREEN[0] + 8, ty = ZONE_SCREEN[1] + 6 + 36 + 9, help = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 176 + 8;
+        float bw = (ZONE_SCREEN[2] - 16 - 4 * 7) / 8.0f;
+        int kr = key("key_root"), kr2 = key("s2_key_root"), ks2 = key("s2_key_scale");
+        float k1 = fx->getParameter(fx, kr), k2 = fx->getParameter(fx, kr2);
+        fx->dispatcher(fx, 50, TEST_FOCUS, 2, NULL, 1.0f);   /* Synth 2 */
+        tick();
+        click_base(x0 + 152 + 22, ty);   /* the step editor's GEN view */
+        POINT sp = {(LONG)lroundf((x0 + 80) * S), (LONG)lroundf((help + 10) * S)};   /* KEY, in the values row */
+        ClientToScreen(child, &sp);
+        SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(0, 120), MAKELPARAM(sp.x, sp.y));
+        SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(0, 120), MAKELPARAM(sp.x, sp.y));
+        int key2 = (int)lroundf(fx->getParameter(fx, kr2) * 11), scale2 = (int)lroundf(fx->getParameter(fx, ks2) * (KS_COUNT - 1));
+        snprintf(what, sizeof what, "GEN: two wheel clicks on KEY move Synth 2's key up a tone (%d -> %d), Synth 1's stays",
+                 (int)lroundf(k2 * 11), key2);
+        check(key2 == ((int)lroundf(k2 * 11) + 2) % 12 && fx->getParameter(fx, kr) == k1, what);
+        click_base(x0 + 58 + 182 / 5.0f * 2.5f, ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 11);   /* STYLE: LEAD (a melody) */
+        seq_texts(t1);
+        s0 = steps();
+        click_base(x0 + bw + 2, help + 24 + 9);   /* GENERATE */
+        seq_texts(t2);
+        int s1 = steps(), in_key = 1, notes = 0;
+        sq_seq_t q;
+        sq_clear(&q);
+        static char b[SQT_BUF];
+        fx->dispatcher(fx, 50, TEST_SEQ, SQT_TEXT, b, 0);   /* (the focused Synth's) */
+        int dec = sq_decode(b, &q, 4096, 4096);
+        for (int s = 0; s < SQ_STEPS; s++)
+            for (int l = 0; l < SQ_NL; l++)
+                if (sq_has(&q.n[s][l])) {
+                    int pc = ((q.n[s][l].note - key2) % 12 + 12) % 12, in = 0;
+                    for (int i = 0; i < KS_SIZE[scale2]; i++) in |= KS_STEPS[scale2][i] == pc;
+                    in_key &= in;
+                    notes++;
+                }
+        snprintf(what, sizeof what, "GEN: GENERATE fills Synth 2's sequence (%d notes, all in its key and scale: %d) and only "
+                 "Synth 2's (Synth 1 %s, Synth 3 %s), one undo step (%d -> %d)", notes, in_key,
+                 strcmp(t1[0], t2[0]) ? "changed" : "kept", strcmp(t1[2], t2[2]) ? "changed" : "kept", s0, s1);
+        check(dec && notes > 0 && in_key && strcmp(t1[1], t2[1]) && !strcmp(t1[0], t2[0]) && !strcmp(t1[2], t2[2]) &&
+              s1 == s0 + 1, what);
+        if (pics) shot("_seq_gen");
+        ctrl_key('Z', 0);
+        tick();
+        seq_texts(t3);
+        snprintf(what, sizeof what, "GEN: Ctrl+Z takes the generated sequence back in one step (%d), the key change stays (%d)",
+                 !strcmp(t3[1], t1[1]), (int)lroundf(fx->getParameter(fx, kr2) * 11) == key2);
+        check(!strcmp(t3[1], t1[1]) && (int)lroundf(fx->getParameter(fx, kr2) * 11) == key2, what);
+        click_base(x0 + 3 * bw + 6, help + 24 + 9);   /* RE-ROLL */
+        click_base(x0 + 3 * bw + 6, help + 24 + 9);   /* (twice: a new seed each time) */
+        seq_texts(t4);
+        check(strcmp(t4[1], t1[1]) && strcmp(t4[1], t2[1]) && !strcmp(t4[0], t1[0]),
+              "GEN: RE-ROLL makes another pattern for Synth 2 (and leaves Synth 1's alone)");
+        click_base(x0 + 56 + 22, ty);   /* NOTES again */
+        fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
     }
 
     /* a load is a step: undo brings back the patch and its name (and whether it was edited) */

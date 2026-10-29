@@ -286,6 +286,14 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      step's notes together) and DEL STEP; performance notes saved with a .oneseq sequence; the arp following the master
      swing (`arp_follow_swing`); the host transport's start and stop starting and stopping the sequence
      (`seq_host_ss`, RECEIVE START/STOP). No CPU cost. Left: OUTPUT to another Synth [MULTI], the MPC page.
+  20. The sequence generator (owner's request). Done 2026-10-29 (offline and the desktop window; `src/seqgen.h`,
+     `test/seqgen_check.c`, load_test; `ports/one-ish/docs/SEQUENCER.md`): GEN on the step editor writes a sequence for
+     the Synth in focus in its own KEY and SCALE (each Synth its own key or mode): STYLE (bass, arp, lead, stabs,
+     random), RHYTHM (straight, syncopated, euclidean), DENSITY, RANGE, VARIATION (a first-bar motif that repeats and
+     wanders, chord progressions from the scale, phrases ending on the root), ACCENT, FILLS (ties, ratchets) and MODS
+     (cutoff, resonance and a fourth lane); KEY, SCALE, LENGTH and SEED there; GENERATE and RE-ROLL, one undo step each.
+     The generator is pure (a seed in, a pattern out) for the randomiser to call later. The window runs it; the engine
+     is unchanged (no CPU cost, no new params).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

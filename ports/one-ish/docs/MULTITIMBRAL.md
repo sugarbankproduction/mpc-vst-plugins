@@ -27,6 +27,9 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
 - **PATCHES page:** INTO S1/2/3 loads the picked preset or patch into the Synth in focus only (that Synth keeps its
   ON, channel and key range; the other Synths and the master effects stay). SAVE S1/2/3 saves the Synth in focus as
   its own user patch. SAVE and SAVE AS keep the whole instance (all three Synths: a performance).
+- **KEY and SCALE per Synth** (2026-10-29): the step editor's GEN view (`docs/SEQUENCER.md`) generates a sequence for
+  the Synth in focus in its own key and scale, so the Synths can play in different keys or modes; the other Synths'
+  sequences stay as they are.
 - **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample.
 - **UNDO / REDO, COMPARE, snapshots and autosaves** (2026-10-29, offline; `docs/PATCHES.md`) work on the whole
   performance: all three Synths, the shared settings and every sequence, whichever Synth is in focus.

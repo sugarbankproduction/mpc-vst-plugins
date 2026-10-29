@@ -15,10 +15,12 @@ enum { SQT_SET_NOTES = 20, SQT_NOTES, SQT_PAGE };
 
 #ifdef NPARAMS   /* the editor (params.h); load_test only needs the numbers above */
 #include "../src/stepseq.h"
+#include "../src/seqgen.h"   /* the GEN view's generator (2026-10-29) */
+#define SQ_GEN_SYNTHS 3         /* each Synth keeps its own generator options and seed */
 typedef struct {
     sq_seq_t q;                 /* the engine's sequence as last read (a copy: the engine's own is changed by commands) */
     int len;                    /* seq_length then */
-    int view;                   /* 0: NOTES, 1: MODS */
+    int view;                   /* 0: NOTES, 1: MODS, 2: GEN (the sequence generator, 2026-10-29) */
     int page;                   /* the page of 16 steps shown (0-3) */
     int step, lane, mlane;      /* the selected step, note lane and modulation lane */
     int range_to;               /* SHIFT + click on a step number: DUPLICATE copies step .. range_to (-1: the whole length) */
@@ -34,5 +36,9 @@ typedef struct {
     int all;                    /* ALL: the values row (and DELETE) act on every note of the selected step */
     int autoscroll;             /* AUTO: the page shown follows the playing step (STEP EDIT AUTO-SCROLL) */
     char notes[SQ_NOTES_MAX + 1];   /* the performance notes of the sequence last saved or loaded */
+    /* (2026-10-29) the GEN view (view 2): the sequence generator's options and seed, per Synth (window only: not saved;
+     * what it makes is, as any sequence) */
+    seqgen_opts_t gen[SQ_GEN_SYNTHS];
+    uint32_t gen_seed[SQ_GEN_SYNTHS];   /* 0: none yet (GENERATE picks one) */
 } seq_ui_t;
 #endif
