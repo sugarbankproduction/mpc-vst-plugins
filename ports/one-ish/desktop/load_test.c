@@ -2591,10 +2591,63 @@ static void qm_plain_test(AEffect *fx, HWND child, float s, const char *bmp, int
     SendMessageA(child, WM_TIMER, 1, 0);
 }
 
+/* the step editor without SHIFT or a double-click: RANGE then a step number marks DUP's range; a second click on an
+ * empty cell puts a note there */
+static void seq_plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300], buf[SQT_BUF];
+    sq_seq_t q;
+    float x, y, x0 = ZONE_SCREEN[0] + 8, ty = ZONE_SCREEN[1] + 6 + 36 + 9, by = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 176 + 8 + 24 + 9;
+    float bw = (ZONE_SCREEN[2] - 16 - 4 * 7) / 8.0f, numy = ZONE_SCREEN[1] + 6 + 36 + 20 + 9;
+    static float saved[NPARAMS];
+    snapshot(fx, saved);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    click_zone(child, s, ZONE_TAB_SEQ);
+    click(child, s, x0 + 56 + 22, ty);   /* NOTES */
+    static const answer_t yes = {"ONE-ish", NULL, IDYES};
+    click_answered(child, s, x0 + 4 * (bw + 4) + bw / 2, by, &yes);   /* CLEAR */
+    click(child, s, x0 + 384 - 100 + 11, ty);   /* page 1 */
+    cell_xy(3, 2, &x, &y);
+    click(child, s, x, y);   /* (another cell selected first) */
+    cell_xy(0, 0, &x, &y);
+    click(child, s, x, y);   /* step 1 selected (empty) ... */
+    seq_now(fx, &q);
+    int one = sq_has(&q.n[0][0]);
+    click(child, s, x, y);   /* ... clicked again: a note */
+    cell_xy(1, 0, &x, &y);
+    click(child, s, x, y);
+    click(child, s, x, y);
+    seq_now(fx, &q);
+    snprintf(what, sizeof what, "SEQ page: one click on an empty cell selects it (note %d), a second puts a note there "
+             "(steps 1 and 2: %d %d)", one, sq_has(&q.n[0][0]), sq_has(&q.n[1][0]));
+    check(!one && sq_has(&q.n[0][0]) && sq_has(&q.n[1][0]) && !sq_has(&q.n[2][0]), what);
+    float cw = (ZONE_SCREEN[2] - 16 - 24) / 16.0f, nx = ZONE_SCREEN[0] + 8 + 24;
+    click(child, s, nx + 0.5f * cw, numy);   /* step 1's number: the first step */
+    click(child, s, x0 + 26, ty);           /* RANGE */
+    click(child, s, nx + 1.5f * cw, numy);   /* step 2's number: the last */
+    fx->dispatcher(fx, 50, TEST_SEQ, SQT_MESSAGE, buf, 0);
+    char msg[128];
+    snprintf(msg, sizeof msg, "%s", buf);
+    if (bmp) shot(child, w, h, bmp, "_seq_range");
+    int len0 = (int)lroundf(PARAMS[rnd_key("seq_length")].min + getkey(fx, "seq_length") *
+                            (PARAMS[rnd_key("seq_length")].max - PARAMS[rnd_key("seq_length")].min));
+    click(child, s, x0 + 5 * (bw + 4) + bw / 2, by);   /* DUP */
+    seq_now(fx, &q);
+    snprintf(what, sizeof what, "SEQ page: RANGE, then step 2's number marks steps 1-2 (\"%s\"); DUP copies just them after "
+             "step %d (steps %d, %d have notes, %d not)", msg, len0, len0 + 1, len0 + 2, len0 + 3);
+    check(strstr(msg, "Steps 1-2 marked") && sq_has(&q.n[len0][0]) && sq_has(&q.n[len0 + 1][0]) && !sq_has(&q.n[len0 + 2][0]),
+          what);
+    snprintf(buf, sizeof buf, "Walking Test");   /* as it was */
+    fx->dispatcher(fx, 50, TEST_SEQ, SQT_LOAD, buf, 0);
+    for (int i = 0; i < NPARAMS; i++)
+        if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     together_test(fx, child, s, bmp, w, h);
     undo_buttons_test(fx, child, s);
     qm_plain_test(fx, child, s, bmp, w, h);
+    seq_plain_test(fx, child, s, bmp, w, h);
 }
 
 static void reload_test(const char *path, HMODULE old) {
