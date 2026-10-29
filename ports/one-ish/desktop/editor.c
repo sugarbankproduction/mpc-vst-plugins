@@ -817,6 +817,7 @@ static int qk_semitone(WPARAM vk) {
         if (MAP[i].vk == vk) return MAP[i].st;
     return -1;
 }
+static void send_kb_oct(ed_t *e);
 static void qk_all_off(ed_t *e) {
     for (int k = 0; k < 256; k++)
         if (e->qk_note[k]) { ui_midi(e, 0x80, e->qk_note[k], 0); e->qk_note[k] = 0; }
@@ -828,6 +829,7 @@ static int qk_key(ed_t *e, WPARAM vk, int down, LPARAM lp) {   /* 1: the key was
         if (down && !(lp & 0x40000000)) {
             int o = e->oct + (vk == 'X' ? 1 : -1);
             e->oct = o < -2 ? -2 : o > 2 ? 2 : o;
+            send_kb_oct(e);
             InvalidateRect(e->wnd, NULL, FALSE);   /* (the keyboard's labels and the octave LEDs) */
         }
         return 1;
@@ -941,10 +943,18 @@ static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes
     InvalidateRect(e->wnd, NULL, FALSE);
 }
 
+/* (2026-10-30) the keyboard's octave to the engine, for the balls' FOLLOW OCTAVE (src/synths.h "kboct"; never saved) */
+static void send_kb_oct(ed_t *e) {
+    char b[16];
+    snprintf(b, sizeof b, "kboct\n%d", e->oct);
+    wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(b) + 1, b, 0);
+}
+
 static void set_octave(ed_t *e, int oct) {
     if (oct < -2 || oct > 2) return;
     key_off(e);
     e->oct = oct;
+    send_kb_oct(e);
     InvalidateRect(e->wnd, NULL, FALSE);
 }
 
@@ -1426,6 +1436,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         e->wnd = CreateWindowExA(0, CLASS_NAME, "ONE-ish", WS_CHILD | WS_VISIBLE, 0, 0, L.w, L.h, (HWND)ptr, NULL, dll, e);
         e->corner_tries = 0;
         e->corners = square_corners(e->wnd);   /* (again from the timer: some hosts size their window afterwards) */
+        send_kb_oct(e);   /* (2026-10-30) the engine follows this window's keyboard octave */
         return e->wnd != NULL;
     }
     case effEditClose:

@@ -2246,6 +2246,10 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
 static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);
     if (!strcmp(key, "phys_view")) return ph_view_text(s, buf, n);   /* the balls and particles (the window's view) */   /* the sequencer's readout (a "display": "string" param) */
+    if (!strcmp(key, "gen_src")) {   /* (2026-10-30) a test readout: the generators' eight matrix sources now */
+        const float *m = s->ph.m_out;
+        return snprintf(buf, n, "%.5f %.5f %.5f %.5f %.5f %.5f %.5f %.5f", m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7]);
+    }
     if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
         int used = 0;
         buf[0] = 0;

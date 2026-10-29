@@ -407,6 +407,10 @@ def build(lay):
               ("phys_keys", "Keys"), ("phys_restart", "Key Restarts"), ("phys_octave", "Low Octave"),
               ("phys_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")]
     world = [("phys_speed", "Speed"), ("phys_gravity", "Gravity"), ("phys_size", "Box Size"), ("phys_bounce", "Bounce")]
+    # (2026-10-30) each wall PLAYS, SILENT or OPEN; FOLLOW OCTAVE (the keyboard's octave buttons move LOW OCTAVE)
+    world += [(k, lab) for k, lab in (("phys_floor", "Floor"), ("phys_ceil", "Ceiling"), ("phys_left", "Left Wall"),
+                                      ("phys_right", "Right Wall")) if k in L.index]
+    shared += [("phys_follow_oct", "Follow Octave")] if "phys_follow_oct" in L.index else []
     L.page("BALLS", "BOUNCING BALLS", "Balls bounce in a box: each wall they hit plays a note in the KEY.",
            [("phys_balls_on", "Balls On"), ("phys_balls", "Balls")] + world + shared, pic=("PHYS", "phys_"))
     L.page("PARTICLES", "PARTICLES", "Particles fall from the top: the LINE, a collision or their end plays a note.",

@@ -154,7 +154,7 @@ static const char *help_for(int i) {
         {"phys_life", "Particle life: how long each particle lasts."},
         {"phys_attract", "Attraction: pulls the particles to the middle of the box, so they swirl and play more."},
         {"phys_trigger", "Particles play: on crossing the line, on colliding with each other, or when they die."},
-        {"phys_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one."},
+        {"phys_keys", "Keys: Free plays whenever it is on; Held Keys only while you hold keys, from the lowest; Key Launch: each key throws in a ball and a burst of particles; Key Emit: a ball per key held, particles while held (faster when played harder)."},
         {"phys_restart", "Key restarts: a key starts the balls and particles again from the start (each key its own start)."},
         {"phys_sync", "Sync: puts each note on the next beat line at the host's tempo (Off: as it hits)."},
         {"phys_len", "Note length: how long each ball or particle note lasts."},
@@ -162,6 +162,12 @@ static const char *help_for(int i) {
         {"phys_range", "Octaves: how many octaves the box spans, left to right."},
         {"phys_max", "Max notes/s: at most this many notes a second (the rest are not played)."},
         {"phys_dyn", "Dynamics: how much a hard hit plays louder than a soft one. 0: every note at the same velocity."},
+        /* (2026-10-30) the walls and FOLLOW OCTAVE */
+        {"phys_floor", "Floor: Plays a note when a ball lands, Silent bounces without a note, Open lets balls and particles fall out (new balls come in)."},
+        {"phys_ceil", "Ceiling: Plays (an octave up), Silent (bounces, no note) or Open (balls and particles leave; new balls come in)."},
+        {"phys_left", "Left wall: Plays the root, Silent bounces without a note, Open lets balls and particles out (new balls come in)."},
+        {"phys_right", "Right wall: Plays the fifth, Silent bounces without a note, Open lets balls and particles out (new balls come in)."},
+        {"phys_follow_oct", "Follow octave: with Free keys, the keyboard's octave buttons move the balls' and particles' notes too."},
         /* the macro oscillator */
         {"mac_model", "Macro oscillator model: the kind of sound it makes (virtual analog, FM, wavetables, chords, speech, percussion and more)."},
         {"mac_harm", "Harmonics: the model's main tone control (what it does depends on the model)."},
