@@ -20,6 +20,12 @@ Added 2026-10-27, tested offline (load_test.exe on Windows), not yet on a device
     (`-  name *`), so SAVE AS can still keep it.
   - IMPORT: picks a `.oneish` file anywhere (from a friend, a backup) and copies it into your patches.
   - EXPORT: writes the sound to a `.oneish` file wherever you choose.
+  - INTO S1/2/3 (the number is the Synth in focus): while lit, the preset or patch you click loads into that Synth
+    only; it keeps its ON, MIDI channel and key range, and the other Synths and the master effects stay as they are.
+    From a patch or preset with several Synths, its Synth 1 is loaded. Click INTO again to go back to loading whole
+    sounds (2026-10-28, offline).
+  - SAVE S1/2/3: saves the Synth in focus alone as a new user patch (asks for a name), as Synth 1's keys, so it loads
+    into any Synth later. SAVE and SAVE AS keep all three Synths (a performance) (2026-10-28, offline).
 - Names: up to 32 plain characters; not `\ / : * ? " < > | ;`, no space at either end, no dot at the end. Upper and
   lower case count as the same name (as in Windows).
 - Messages (saved, deleted, a file that couldn't be read or written and why) show for a few seconds where the help
@@ -63,6 +69,10 @@ o2_wave=0
 - The step sequencer's steps, when there are any, are one more line, `seq=<text>` (the engine's own form, see
   `docs/SEQUENCER.md`): a patch keeps its sequence, and loading a patch without the line empties the sequencer
   (2026-10-27, offline). A typical sequence adds a few hundred characters.
+- Synths 2 and 3 (`docs/MULTITIMBRAL.md`): their values are lines with `s2_` / `s3_` in front of the key
+  (`s2_flt_cut=40`), their sequences `s2_seq=` / `s3_seq=`. A patch without them has Synths 2 and 3 at their defaults
+  (off), so every patch saved before 2026-10-28 loads as before. A three-Synth patch is about 4 KB (2026-10-28,
+  offline).
 
 ## How it works
 

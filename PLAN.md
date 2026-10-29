@@ -100,7 +100,7 @@ Read CLAUDE.md, PLAN.md and docs/PORTING.md. Then do Phase 1 of PLAN.md: build p
 
 ## Where we are (resume here)
 
-Updated 2026-10-27. Owner's instruction: build ONE-ish as a **local desktop VST2 first** and test it; port and adjust
+Updated 2026-10-28. Owner's instruction: build ONE-ish as a **local desktop VST2 first** and test it; port and adjust
 for MPC afterwards. Work through the steps without stopping for approval at each one.
 
 - **Done and pushed (branch `one-ish` on the owner's fork):** Phases 1-8 offline; fixes from the phase 6-8 code
@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (now 324 have,
-  57 partial, 94 missing, 27 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-28: 359 have,
+  42 partial, 74 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -201,6 +201,22 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      compiled to WebAssembly in an AudioWorklet, a browser panel generated from the same layout data, Web MIDI, patches
      in the browser (download/share as files), static hosting on Vercel. Build and test locally first; deploying
      publishes it, so only on the owner's go-ahead.
+  12. Voices, MIDI and three Synths (audit packages 9, 8 in part, and 13). Owner's decision (2026-10-28, option A):
+     every Synth's params are host parameters, so a host automates any Synth (about 1,400 per-Synth params rather than
+     one set following the focus). Done 2026-10-28 (offline and the desktop window; `ports/one-ish/docs/MULTITIMBRAL.md`):
+     16 voices and unison that shares them out as keys are added; `midi_ch` (Omni, 1-16, Per Synth), silent chord
+     learn, OCTAVE held for the default octave then a panic; three Synths per instance, each a whole sound with its own
+     arp, chord memory, sequencer and synth effect, its own ON, MIDI channel, key range, transpose, octave, voices,
+     level, pan and two sends into the shared master effects; one 16-voice pool; SYNTH 1/2/3 focus buttons (Ctrl for
+     several, Shift/Ctrl+F5-F7), a SETUP page, INTO S1/2/3 and SAVE S1/2/3 on the PATCHES page, PLAY ALL; three factory
+     performances. 1,529 params (468 per Synth, 125 shared); Synth 1's keys unchanged, so old projects, patches and
+     presets play sample for sample as before (`test/golden_check.c`). State: worst case 39.5 KB of the desktop's
+     256 KB; on the MPC's 8 KB Synths 3 then 2 are left out, Synth 1 always kept. CPU (PC, per 128-frame block,
+     2026-10-29): Synths 2 and 3 off cost nothing measurable (1, 4, 8 voices 9.40, 33.91, 67.20 us against 9.15, 33.69,
+     66.07 before: within 3%); 16 voices 135 us (8.4 a voice); 16 voices of a busy patch with a chorus 124 us in Synth 1
+     alone, 134 us shared 6/5/5 by three Synths with a chorus each (+8%: two more synth effects).
+     Left: per-Synth outputs, solo, sequencer OUTPUT to another Synth, the sustain pedal's target, a range set by
+     pressing a key, the SETTINGS page, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

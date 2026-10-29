@@ -26,6 +26,9 @@ sequence, its text form, the factory sequences), `src/stepseq_run.h` (playing, r
   controller at its minimum silences the lane) and an offset per step (drag across the row; right-click removes one).
   STEP MOD makes them from the knobs: with it lit, turning a knob records its move as that step's offset (the playing
   step, or the selected one when stopped) in a lane for that knob's destination; the knob itself stays where it was.
+- **Three Synths** (`docs/MULTITIMBRAL.md`, 2026-10-28, offline): each Synth has its own sequencer, settings and steps;
+  the SEQUENCER module and the step editor show the Synth in focus. PLAY ALL SEQS on the SETUP page (`seq_all`)
+  starts or stops every Synth that is on with its sequencer ON on the same sample.
 - **The two presets:** "Seq Bass Line" and "Seq Chord Stabs" (NOTE TRIG and TRANSPOSE on): hold a key and the sequence
   plays from that key; the bass line's cutoff lane comes in with the mod wheel.
 
@@ -84,7 +87,7 @@ seq=<text>
 
 ## How the window edits it
 
-The engine owns the sequence. The window sends commands (`seqcmd` lines: `note`, `rest`, `clear`, `dup`, `lane`, `off`,
+The engine owns the sequence. The window sends commands (`seqcmd` lines, `seqcmd2` / `seqcmd3` for Synths 2 and 3: `note`, `rest`, `clear`, `dup`, `lane`, `off`,
 `sel`, `gate`, `rtz`, `load`; `src/stepseq_run.h` `sq_command`) through the plugin's chunk call (`effSetChunk`), which
 the wrapper hands to the engine under its per-instance lock, between two audio blocks, the same way as any knob move:
 no new lock, no allocation, no file access on the audio thread (files are read and written by the window). It reads the
@@ -93,8 +96,8 @@ change them, and the playing step from the `seq_pos` readout.
 
 ## Not built yet
 
-- OUTPUT to Synth 1/2/3 or all synths [MULTI]: waits for multitimbral parts. The run state (`sq_run_t`) is one per
-  instance; a part would get its own, and its notes would go to that part's voices instead of `out_on`.
+- OUTPUT to another Synth or all of them [MULTI]: each Synth's sequence plays its own Synth (2026-10-28). Sending it
+  elsewhere needs its notes to go to that Synth's voices instead of `out_on`.
 - Performance notes with a saved sequence, and sorting the load list by date (the Windows file dialog sorts by name or
   date itself).
 - The arpeggiator following the master swing.
