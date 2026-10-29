@@ -108,8 +108,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   installed in `%USERPROFILE%\VST2` and plays in Carla.
 - **Now (owner, 2026-10-27): match the Moog One's features, and give the desktop VST a front-panel window laid out
   like the instrument** (original artwork, no maker's names or marks; reference photos in `DOWNLOADS/`, not
-  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-28: 359 have,
-  42 partial, 74 missing, 27 of those hardware-only) and the build order, worked through in this order:
+  committed). `ports/one-ish/docs/MOOG_ONE_AUDIT.md` lists every Moog One feature against ONE-ish (2026-10-29: 370 have,
+  39 partial, 66 missing, 27 of those hardware-only) and the build order, worked through in this order:
   1. Tier 1, the sound: done 2026-10-27 (offline; 180 params, 21 presets): dual-wave oscillators with linear FM and
      ring mod; glide (LCR/LCT/EXP, legato, gated, glissando); unison (count, detune) and pitch variance; envelope
      extras (delay, hold, curves, loop, latch, sync, time scale, velocity amount, multi trig, reset); the SVF pair
@@ -217,6 +217,16 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      alone, 134 us shared 6/5/5 by three Synths with a chorus each (+8%: two more synth effects).
      Left: per-Synth outputs, solo, sequencer OUTPUT to another Synth, the sustain pedal's target, a range set by
      pressing a key, the SETTINGS page, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
+  13. The library (audit packages 5, 12a, 12b). Done 2026-10-29 (offline and the desktop window; `desktop/library.c`,
+     `docs/PATCHES.md`): UNDO / REDO of any edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, the
+     randomiser, loads; a drag or a wheel burst is one step; 100 steps; Ctrl+Z / Ctrl+Y), COMPARE and SNAPSHOT on the
+     console (where the console's name plate was), the SNAPSHOTS page and autosaves of unsaved edits (newest 32), all
+     over the whole state of the three Synths; tags (TYPE, CATEGORY, MOOD, GROUP) and notes in the save box, the TAGS
+     page (filters, editable lists, TAG PATCH, NOTES, SHOW NOTES), the home line with tags and the host's tempo (patch
+     format version 2; version 1 still loads); 128 performance sets of 64 (SET with A-H / 1-8, a long press assigns, bank
+     preview; ALL SETS; ARRANGE); MIDI bank select and program change reach user patches and sets (a hidden window loads
+     them when the editor is closed). No engine change and no new params. Left: the library's parts (12c: effect and
+     matrix presets, sequences), user spaces and bulk export (12d), a PRESET AUTOLOAD and BANK PREVIEW switch (settings).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

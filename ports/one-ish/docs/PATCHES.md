@@ -1,7 +1,8 @@
 # ONE-ish user patches (desktop window)
 
 Added 2026-10-27, tested offline (load_test.exe on Windows), not yet on a device. Code: `desktop/patches.c`,
-`desktop/patches.h`.
+`desktop/patches.h`; undo, COMPARE, snapshots, tags and notes, performance sets and MIDI program change (2026-10-29,
+offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_test.c` inside load_test.
 
 ## Using them
 
@@ -30,6 +31,68 @@ Added 2026-10-27, tested offline (load_test.exe on Windows), not yet on a device
   lower case count as the same name (as in Windows).
 - Messages (saved, deleted, a file that couldn't be read or written and why) show for a few seconds where the help
   text is.
+- **Tabs on the title line** of the PATCHES page lead to the library's other pages: SET, ALL SETS, ARRANGE (performance
+  sets), SNAPSHOTS and TAGS (2026-10-29, offline).
+- **The home line** under the patch name shows its tags (TYPE, CATEGORY, MOOD, GROUP), `NOTES` when it has notes, and
+  the host's tempo when the host reports one (2026-10-29, offline).
+
+## Undo, COMPARE, snapshots (2026-10-29, offline)
+
+- **UNDO / REDO** (Ctrl+Z, Ctrl+Y or Ctrl+Shift+Z in the window; the UNDO and REDO buttons on the SNAPSHOTS page): every
+  edit made in the window is a step: a knob, a button, an option list, the matrix, the SETUP page, the step editor, the
+  randomiser, and loading a preset or patch (undoing a load brings back the sound and its name). A knob drag is one
+  step, so is a burst of mouse-wheel clicks (a step once the wheel rests 0.4 s) and a RANDOMISE or MUTATE. The last 100
+  steps are kept. A step is the whole performance (all three Synths and their sequences). Changes the host makes
+  (automation) are not steps. The randomiser keeps its own UNDO / REDO too.
+- **COMPARE** (console, under PREV): plays the saved version of the patch; COMPARE again: back to your edit. The name
+  line says `COMPARE`. Loading another sound ends it (the edit is autosaved); turning a knob while comparing edits the
+  saved version, and the edit COMPARE was hiding is kept as an autosave. SAVE, SAVE AS, SAVE S1/2/3 and EXPORT first
+  bring the edit back, so they save the edit.
+- **SNAPSHOT** (console, under NEXT) opens the SNAPSHOTS page: TAKE keeps the sound as it is now with a note (asked
+  for); click a snapshot to select it, then LOAD, NOTES (change its note), DELETE (asks first), SAVE OVER (loads it and
+  saves it over the patch it was taken of; of a factory preset: asks for a name), SAVE NEW (loads it and saves it as a
+  new patch). The newest are first, 8 at a time.
+- **Autosave:** when another sound loads (from the list, PREV / NEXT, the PRESET knob, INTO, a snapshot, a set, a MIDI
+  program change, the host's program list from its window thread) and the sound has unsaved changes (`*`), a snapshot
+  marked `AUTO` is made first ("Autosave before loading ..."). The newest 32 autosaves are kept, older ones deleted;
+  snapshots you TAKE are never deleted. An autosave that would be the same as the newest snapshot is not made.
+
+## Tags and notes (2026-10-29, offline)
+
+- **The save box** (SAVE AS, and SAVE of a sound that isn't a user patch yet) asks for the name, TYPE (Single, Layer,
+  Split, Multi; it starts from what the Synths do: one on Single, key ranges apart Split, all overlapping Layer, else
+  Multi), CATEGORY, MOOD, GROUP and notes. SAVE over a user patch keeps its tags and notes. A sound saved from a factory
+  preset starts with that preset's tags (the factory presets carry ONE-ish's own tags).
+- **The TAGS page:** four columns, TYPE, CATEGORY, MOOD and GROUP. A click on a tag filters the PATCHES page (and PREV
+  / NEXT) by it, one tag per column (again: off; the column title says `(filter)`); a small square marks the current
+  patch's tags. TAG PATCH puts the selected tag on the current user patch (again: off); ADD (asks a name, into the
+  selected tag's list, CATEGORY when none), RENAME and DELETE (asks first) change the CATEGORY, MOOD and GROUP lists,
+  and every patch file that carries the tag; CLEAR takes the filters off; NOTES writes the current patch's notes; SHOW
+  NOTES shows them in the help area of every page.
+- Tag names: up to 24 plain characters, not `; = | , \`.
+
+## Performance sets (2026-10-29, offline)
+
+- 128 sets of 64 patches each, banks A-H x numbers 1-8 (a factory preset or a user patch in each).
+- **SET** (the current set): the bank buttons A-H show that bank's eight patches below (bank preview: nothing loads; a
+  dark letter is an empty bank). Click a number to load its patch (the number lights); **hold it 0.6 s to put the
+  current patch there** (a sound that isn't saved must be saved first; an edited patch is assigned as saved). ASSIGN and
+  CLEAR act on the selected number; `<` `>` step through the sets.
+- **ALL SETS:** every set with how many patches it holds; a click makes it the current set.
+- **ARRANGE:** click a set, then UP / DOWN (move it), COPY (a copy after it), DELETE (asks first; its patches stay),
+  NAME, NOTES; ADD makes a new empty set at the end (asks for a name). The first set ("Set 1") is made when none exist.
+- A number that points at a user patch that was renamed or deleted says so when clicked.
+
+## MIDI program and bank change (2026-10-29, offline)
+
+The host's MIDI reaches user patches and sets:
+
+- Bank select MSB (CC 0) **0**, LSB (CC 32) **n**, then a program change **p**: position 128 x n + p of the list,
+  factory presets first, then your patches A to Z (with 40 factory presets, program 40 is your first patch).
+- MSB **1**, LSB **n**, program **p** (0-63): performance set n + 1, number p (0 = A1, 7 = A8, 8 = B1 ... 63 = H8).
+- Other MSBs are ignored. Any MIDI channel. The host's own program list (`effSetProgram`) still picks factory presets.
+- The program change is noted on the host's thread (no file touched there) and loaded on the window's thread: by the
+  window's timer, or, with the window closed, by a hidden window's timer (made when the plugin instance is made).
 
 ## Where they live
 
@@ -44,16 +107,24 @@ breaks the rules above is not listed; IMPORT it to give it a usable name.
 Plain text, one `key=value` per line:
 
 ```
-ONE-ish patch 1
+ONE-ish patch 2
 name=Bright Pad
 author=...        (optional, kept when the patch is saved over)
-category=...      (optional, kept when the patch is saved over)
+type=Single       (the tags and notes, optional, kept when the patch is saved over)
+category=Pad
+mood=Warm
+group=Live
+notes=Slow attack.\nMod wheel: vibrato.
 flt_cut=42.5
 o2_wave=0
 ...
 ```
 
 - The first line is the header, with the format's version. IMPORT needs it; loading tolerates a file without it.
+- **Versions.** 1 (2026-10-27): the name, `author=`, `category=` (free text), then the parameters. **2 (2026-10-29)**:
+  adds `type=`, `mood=`, `group=` and `notes=` beside `category=`, written after the name line. Notes are one line:
+  `\n` is a new line, `\s` a `;` and `\\` a backslash. A version-1 file loads as before (its `category=` is its
+  CATEGORY); a version-1 reader (an older ONE-ish) skips the new lines, because they are not parameters.
 - After it, the parameters as the engine's own state holds them (`get_state` in `src/engine.c`): the parameter key from
   `params.json`, its value in the parameter's units, an option as its number (its label, e.g. `o2_wave=Tri`, works
   too). Only values that differ from the defaults are written, and loading starts from the defaults, so a missing key
@@ -74,6 +145,22 @@ o2_wave=0
   (off), so every patch saved before 2026-10-28 loads as before. A three-Synth patch is about 4 KB (2026-10-28,
   offline).
 
+## The library's other files (2026-10-29)
+
+All beside the patches (so `ONEISH_PATCH_DIR` moves them too), plain text, written to `<file>.tmp` and then moved over
+the old file:
+
+- `Snapshots\<yyyymmdd-hhmmss-mmm>[-auto].oneishsnap`: `ONE-ish snapshot 1`, then `time=`, `of=<F|U|N>,<program>,<name>`
+  (the patch it was taken of), `auto=0|1`, `notes=` (escaped as above), then the state one `key=value` per line as in a
+  patch file (the sequences included). The file names sort by time; `-auto` marks an autosave.
+- `tags.oneishtags`: `ONE-ish tags 1`, then `category=`, `mood=`, `group=` lines, one tag each, in list order (TYPE's
+  four are fixed). Missing: the default lists (CATEGORY Bass, Lead, Pad, Keys, Strings, Brass, Bells, Pluck, Arp,
+  Sequence, Drum, FX; MOOD Bright, Dark, Warm, Soft, Aggressive, Dirty, Clean, Evolving; GROUP Favourites, Live,
+  Studio, Work in progress).
+- `sets.oneishsets`: `ONE-ish sets 1`, `current=<set number>`, then per set `[set]`, `name=`, `notes=` (escaped) and one
+  line per filled number, `A1=U,0,Bright Pad` or `B3=F,3,Acid Line` (a factory preset by name first, its program
+  number if the name is gone).
+
 ## How it works
 
 - Everything runs on the window's thread; no file is touched on the audio thread.
@@ -87,6 +174,13 @@ o2_wave=0
 - The project the host saves (`effGetChunk`) gets `;ui_patch=<edited>,<F|U|N>,<program>,<name>` appended (up to 96 bytes) when it
   fits the chunk; the engine ignores the key, and the window uses it on reopening to show the same patch name and `*`.
 - The `*`: the editor keeps every parameter's value from the moment the patch was loaded or saved and compares.
+- Undo, COMPARE and snapshots use the engine's whole state (`effGetChunk` / `effSetChunk`, as a project), so they cover
+  every parameter of the three Synths and the sequences, and nothing in the engine changed for them. The editor reports
+  to the library before an edit (`set_value`, the step editor's clicks and keys, the randomiser, loads) and when it ends
+  (mouse up, a one-shot edit, 0.4 s after the wheel); a step is kept only if the state changed. A step holds the state,
+  which patch it was, its saved version and the values the `*` compares with (a few KB; at most 100 undo and 100 redo
+  steps per instance). If a host picks a program or restores a project from another thread, the library only notes
+  it: the saved version and the tags are fetched on the window's thread later.
 
 ## On the MPC later (not built)
 
