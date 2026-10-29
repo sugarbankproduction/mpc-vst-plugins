@@ -298,7 +298,7 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     check(changed > 40 && told == changed && begins == ends && begins >= changed && never_moved == 0, what);
     send_midi(fx, 0x90, 60, 100);
     send_midi(fx, 0x90, 64, 100);
-    double rms = play(fx, 60, 512);
+    double rms = play(fx, 172, 512);   /* 2 s: a random pad may fade in slowly */
     send_midi(fx, 0xB0, 123, 0);
     play(fx, 200, 512);
     snprintf(what, sizeof what, "the random sound plays (rms %.3f)", rms);
@@ -361,7 +361,7 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
                 if (!strcmp(PARAMS[i].key, kd)) rows += after[i] > 0.0f;
         }
         send_midi(fx, 0x90, 60, 100);
-        double wrms = play(fx, 60, 512);
+        double wrms = play(fx, 172, 512);   /* (2 s, as above) */
         send_midi(fx, 0xB0, 123, 0);
         play(fx, 200, 512);
         snprintf(what, sizeof what, "WILD 100%% with ARPEGGIATOR and GENERATIVE lit: %d matrix rows with a destination, %d arp / "
