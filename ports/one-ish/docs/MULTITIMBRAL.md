@@ -13,7 +13,7 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   randomiser show and change that Synth. Ctrl-click (or Ctrl+F5-F7) adds a Synth: a knob then moves the same control
   on every Synth picked (the last picked is the one drawn).
 - **M | S** beside each SYNTH button (2026-10-29): M switches the Synth off and on (its ON; red while off; saved with the
-  sound; a double-click on the SYNTH button does the same). S solos it (Shift-click the SYNTH button too): while any
+  sound). S solos it (a double-click or Shift-click on the SYNTH button too; 2026-10-30: the double-click solos): while any
   Synth is soloed only the soloed ones are heard, the others keep playing silently; never saved (`syn_solo`, kept out
   of states, patches and the randomiser; a 10 ms glide so it never clicks).
 - **Shared** sections stay the same whichever Synth is in focus, and say so on the panel: MASTER EFFECTS, DELAY and

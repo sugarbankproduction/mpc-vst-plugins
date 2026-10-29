@@ -1699,17 +1699,18 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
             shot(child, w, h, bmp, "_mute_solo");
             setkey(fx, "s3_syn_solo", 0.0f);
         }
-        float m0 = getkey(fx, "s3_syn_on");
+        float m0 = getkey(fx, "s3_syn_solo");
         LPARAM at = MAKELPARAM((int)lroundf((FZ[2][0] + 12) * s), (int)lroundf((FZ[2][1] + 12) * s));
         SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);
         SendMessageA(child, WM_LBUTTONUP, 0, at);
         SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, at);
         SendMessageA(child, WM_LBUTTONUP, 0, at);
-        float m1 = getkey(fx, "s3_syn_on");
+        float m1 = getkey(fx, "s3_syn_solo");
         intptr_t f = fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0);
-        snprintf(what, sizeof what, "a double-click on SYNTH 3 picks it and mutes it (focus %d, ON %.0f -> %.0f)",
+        snprintf(what, sizeof what, "a double-click on SYNTH 3 picks it and solos it (focus %d, SOLO %.0f -> %.0f)",
                  (int)(f % 4), m0, m1);
-        check(f % 4 == 2 && m0 != m1, what);
+        check(f % 4 == 2 && m0 == 0.0f && m1 == 1.0f, what);
+        setkey(fx, "s3_syn_solo", 0.0f);
         setkey(fx, "s2_syn_on", on0);
         setkey(fx, "s3_syn_on", s3_was);
     }

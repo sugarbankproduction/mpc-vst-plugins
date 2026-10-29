@@ -239,13 +239,13 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3:
         return "SYNTH 1 / 2 / 3 (Panel Focus): the panel, the MORE pages, the matrix and the step editor show and edit this "
                "Synth. Ctrl-click to edit several together (keys 1 / 2 / 3 pick one, Shift+1 / 2 / 3 add one; Shift+F5/F6/F7 too). "
-               "Double-click mutes or unmutes it, Shift-click solos it. Sections marked SHARED are the same for all three.";
+               "Double-click (or Shift-click) solos it. Sections marked SHARED are the same for all three.";
     case Z_MUTE1: case Z_MUTE2: case Z_MUTE3:
         return "M (MUTE): red, this Synth is off (its ON on the SETUP page): it stops and plays nothing. Saved with the "
-               "sound. Double-clicking the SYNTH button does the same.";
+               "sound.";
     case Z_SOLO1: case Z_SOLO2: case Z_SOLO3:
         return "S (SOLO): lit, you hear only the soloed Synths (several can be); the others keep playing silently. Not "
-               "saved with the sound: a listening aid. Shift-click the SYNTH button does the same.";
+               "saved with the sound: a listening aid. A double-click or Shift-click on the SYNTH button does the same.";
     case Z_TAB_SETUP: return "SETUP: the three Synths side by side: on, MIDI channel, key range (splits and layers), "
                              "transpose, octave, voices, level, pan, sends; then MIDI, master level, PLAY ALL.";
     case Z_TAB_SEQ: return "SEQ: the step sequencer's step editor (64 steps in four pages, note lanes and modulation lanes). "

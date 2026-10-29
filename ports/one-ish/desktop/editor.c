@@ -1242,7 +1242,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp), i = hit(e, x, y);
         if (seq_zone(i) && i < Z_SEQ_BASE + 200) { lib_touch(e, NULL); seq_double(e, i); lib_commit(e); }   /* an empty step cell: a new note */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);
-        else if (i >= Z_FOCUS1 && i <= Z_FOCUS3 && NSYNTHS > 1) synth_toggle(e, i - Z_FOCUS1, 0);   /* mute (the first
+        else if (i >= Z_FOCUS1 && i <= Z_FOCUS3 && NSYNTHS > 1) synth_toggle(e, i - Z_FOCUS1, 1);   /* solo (the first
                                                                                  * click picked the Synth already) */
         else if (i >= 0) press(e, x, y);   /* a second click on a button or a key counts as a click */
         return 0;
