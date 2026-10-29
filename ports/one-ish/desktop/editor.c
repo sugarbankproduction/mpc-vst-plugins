@@ -20,6 +20,10 @@
  *
  * Patches (patches.c): the name line, < >, PREV/NEXT and the PRESET knob browse the factory presets then the owner's
  * own patch files; a click on the name opens the PATCHES page (save, save as, rename, delete, import, export).
+ * The library (library.c): every edit from the window is an undo step (Ctrl+Z / Ctrl+Y; set_value, the step editor,
+ * the randomiser and loads report to it), COMPARE and SNAPSHOT under PREV / NEXT, the SET, SETS, SNAPSHOTS and TAGS
+ * pages next to PATCHES; MIDI program and bank change from the host load user patches and set slots (noted on the
+ * host's thread, loaded on the window's: a hidden window's timer does it while the editor is closed).
  *
  * It sits in front of the shared wrapper: wrapper/vst2_wrap.c is compiled with -DVSTPluginMain=one_ish_wrapped_main,
  * and this file's VSTPluginMain adds the editor opcodes and passes everything else on. Where each control sits comes
@@ -38,7 +42,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "editor.h"
+#include "library.h"
 #include "hostrate.h"
 #include "skin.h"
 #include "../src/randomize.h"
@@ -184,6 +188,11 @@ static void layout(void) {
     L.bprev = zone(ZONE_PREV);
     L.bnext = zone(ZONE_NEXT);
     L.brand = zone(ZONE_BRAND);
+    /* COMPARE and SNAPSHOT (library.c) under PREV and NEXT, where the console's name was */
+    /* (a little further apart than PREV and NEXT: their names are longer) */
+    SetRect(&L.compare, sc(ZONE_PREV[0] - 9), sc(ZONE_FOCUS1[1]), sc(ZONE_PREV[0] + ZONE_PREV[2] - 9), sc(ZONE_FOCUS1[1] + ZONE_FOCUS1[3]));
+    SetRect(&L.snapshot, sc(ZONE_NEXT[0] - 2), sc(ZONE_FOCUS1[1]), sc(ZONE_NEXT[0] + ZONE_NEXT[2] - 2), sc(ZONE_FOCUS1[1] + ZONE_FOCUS1[3]));
+    SetRectEmpty(&L.brand);
     L.oct_leds = zone(ZONE_OCT_LEDS);
     L.oct_down = zone(ZONE_OCT_DOWN);
     L.oct_up = zone(ZONE_OCT_UP);
@@ -246,7 +255,7 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
                 if (MATRIX[m][k] == i) return 1;
         return 0;
     }
-    if (e->screen == SCR_INDEX || e->screen == SCR_PATCHES) return 0;
+    if (e->screen == SCR_INDEX || lib_screen(e->screen)) return 0;   /* (the patch list, the library's pages) */
     if (e->screen == SCR_SETUP) return 1;   /* (every Synth's setup: any change may show) */
     if (e->screen < 0 || e->screen >= NPAGES) return 1;   /* RANDOM (it describes the sound), SEQ: all of it */
     for (int k = PAGES[e->screen].first; k < PAGES[e->screen].first + PAGES[e->screen].count; k++)
@@ -301,6 +310,8 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_FOCUS1: case Z_FOCUS2: case Z_FOCUS3: r = &L.focus[z - Z_FOCUS1]; break;
     case Z_TAB_SETUP: r = &L.tab_setup; break;
     case Z_EUCLID: r = &L.euclid; break;
+    case Z_COMPARE: r = &L.compare; break;
+    case Z_SNAPSHOT: r = &L.snapshot; break;
     }
     if (seq_zone(z)) r = &L.seq_leds;   /* the step editor (on the screen) or the SEQUENCER's page LEDs */
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES)   /* its triangle(s) */
@@ -425,6 +436,7 @@ void param_text(ed_t *e, int i, char *out, int n) {
 
 static void set_value(ed_t *e, int i, float v) {   /* i: a panel index (the focused Synths'), or with abs its own */
     int t[NSYNTHS], n = edit_targets(e, i, t);
+    lib_touch(e, NULL);   /* an undo step (a drag or a burst of wheel clicks: one) */
     v = v < 0 ? 0 : v > 1 ? 1 : v;
     for (int k = 0; k < n; k++) {
         e->fx->setParameter(e->fx, t[k], v);
@@ -436,6 +448,7 @@ static void set_value(ed_t *e, int i, float v) {   /* i: a panel index (the focu
 static void begin_edit(ed_t *e, int i, int end) {   /* the host's undo / automation bracket, for every target */
     int t[NSYNTHS], n = edit_targets(e, i, t);
     for (int k = 0; k < n && e->host; k++) e->host(e->fx, end ? audioMasterEndEdit : audioMasterBeginEdit, t[k], 0, NULL, 0);
+    if (end) lib_commit(e);   /* the edit is over: its undo step */
 }
 
 static void edit_value(ed_t *e, int i, float v) {   /* a one-shot change, bracketed for the host's undo/automation */
@@ -482,6 +495,8 @@ static void rnd_action(ed_t *e, int mutate) {   /* RANDOMISE (0) or MUTATE (1) *
     if (!e->rnd_seed) e->rnd_seed = ((uint32_t)GetTickCount() * 2654435761u) ^ (uint32_t)(uintptr_t)e ^ 0x2545F491u;
     if (!e->rnd_seed) e->rnd_seed = 1;
     if (e->hist_focus != e->focus) { e->hist_n = e->hist_pos = 0; e->hist_focus = e->focus; }   /* another Synth's */
+    lib_hold(e, 1);   /* the whole new sound is one undo step */
+    lib_touch(e, mutate ? "Mutate" : "Randomise");
     rnd_snapshot(e, cur);
     if (e->hist_n == 0 || !rnd_same(cur, e->hist[e->hist_pos])) {   /* the sound before, to come back to */
         char prog[32] = "";
@@ -503,6 +518,7 @@ static void rnd_action(ed_t *e, int mutate) {   /* RANDOMISE (0) or MUTATE (1) *
     rnd_apply(e, out);
     rnd_snapshot(e, cur);   /* as the plugin took it */
     rnd_push(e, cur, name);
+    lib_hold(e, -1);
     InvalidateRect(e->wnd, NULL, FALSE);
 }
 static void rnd_step(ed_t *e, int dir) {   /* UNDO (-1) / REDO (+1) through the history */
@@ -513,7 +529,10 @@ static void rnd_step(ed_t *e, int dir) {   /* UNDO (-1) / REDO (+1) through the 
     int to = e->hist_pos + dir;
     if (to < 0 || to >= e->hist_n) return;
     e->hist_pos = to;
+    lib_hold(e, 1);
+    lib_touch(e, dir < 0 ? "the randomiser's UNDO" : "the randomiser's REDO");
     rnd_apply(e, e->hist[to]);
+    lib_hold(e, -1);
     InvalidateRect(e->wnd, NULL, FALSE);
 }
 static void rnd_set_amount(ed_t *e, int x) {   /* the amount bar: 0 .. 100% across it */
@@ -543,7 +562,7 @@ int page_items(ed_t *e, int p, int *items) {
 }
 
 int screen_subs(ed_t *e) {
-    if (e->screen == SCR_PATCHES) return patches_subs(e);
+    if (lib_screen(e->screen)) return lib_subs(e);   /* (the patch list and the library's pages) */
     if (e->screen == SCR_SETUP) return 2;
     int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
     int per = e->screen == SCR_MATRIX ? ROWS : SLOTS;
@@ -582,6 +601,7 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (!PtInRect(&L.screen, pt)) return -1;
     if (PtInRect(&L.sub_prev, pt) && screen_subs(e) > 1) return Z_SUB_PREV;
     if (PtInRect(&L.sub_next, pt) && screen_subs(e) > 1) return Z_SUB_NEXT;
+    if (lib_screen(e->screen)) return lib_hit(e, pt);   /* the patch list and the library's pages (library.c) */
     if (e->screen == SCR_RANDOM) {
         static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_UNDO, Z_RND_REDO};
         for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
@@ -600,8 +620,6 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
                 int i = MATRIX[e->sub * ROWS + r][k];
                 if (i >= 0 && PtInRect(&c, pt)) { e->hit_screen = 1; e->hit_rect = c; return i; }
             }
-    } else if (e->screen == SCR_PATCHES) {
-        return patches_hit(e, pt);
     } else if (e->screen == SCR_SEQ) {
         return seq_hit(e, pt);
     } else if (e->screen == SCR_SETUP) {   /* a cell: a param's own index (Synth 1, 2 or 3's, or a shared one) */
@@ -652,7 +670,7 @@ static int hit(ed_t *e, int x, int y) {
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
         {&L.focus[0], Z_FOCUS1}, {&L.focus[1], Z_FOCUS2}, {&L.focus[2], Z_FOCUS3}, {&L.tab_setup, Z_TAB_SETUP},
-        {&L.euclid, Z_EUCLID}};   /* (an empty rect when there is no GENERATIVE section) */
+        {&L.euclid, Z_EUCLID}, {&L.compare, Z_COMPARE}, {&L.snapshot, Z_SNAPSHOT}};   /* (euclid: empty when there is no GENERATIVE section) */
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++)
         if (PtInRect(Z[k].r, pt)) return Z[k].z;
     return -1;
@@ -735,6 +753,7 @@ static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes
     if (m == M_PAD) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); }
     if (m == M_RIBBON) { e->ribbon_on = 0; e->ribbon_cc = -1; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
     if (m == M_ENC && !e->enc_moved) patches_open(e);   /* a click on the preset knob: the patch list */
+    if (m == M_LIB) lib_release(e);   /* a set's number: let go early, it loads; held, it was assigned */
     InvalidateRect(e->wnd, NULL, FALSE);
 }
 
@@ -806,7 +825,9 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
 static void press(ed_t *e, int x, int y) {
     int i = hit(e, x, y);
     if (seq_zone(i)) {   /* the step editor and the page LEDs (seq_page.c); a drag on a note or a value follows */
+        lib_touch(e, NULL);   /* (a step edit is an undo step; a click that changes nothing is none) */
         if (seq_press(e, i, x, y, GetKeyState(VK_SHIFT) < 0)) { e->mode = M_SEQ; SetCapture(e->wnd); }
+        else lib_commit(e);
         return;
     }
     int absolute = i >= Z_ABS && i < Z_ABS + NPARAMS;   /* a SETUP cell: its param's own index, not the focus's */
@@ -897,6 +918,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             e->corners = square_corners(w);
         }
         octave_hold(e);
+        lib_tick(e);   /* an undo step after a pause, a set's number held, a MIDI program change, the tempo */
         int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
             float v = e->fx->getParameter(e->fx, i);
@@ -941,11 +963,19 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_KEYDOWN:   /* Shift+F5/F6/F7: the Synth in focus (Ctrl too: added); the step editor: arrows, Delete */
+        if (e && GetKeyState(VK_CONTROL) < 0 && (wp == 'Z' || wp == 'Y')) {   /* undo, redo (Ctrl+Shift+Z: redo) */
+            if (wp == 'Y' || GetKeyState(VK_SHIFT) < 0) lib_redo(e);
+            else lib_undo(e);
+            return 0;
+        }
         if (e && wp >= VK_F5 && wp <= VK_F7 && GetKeyState(VK_SHIFT) < 0) {
             set_focus(e, (int)wp - VK_F5, GetKeyState(VK_CONTROL) < 0);
             return 0;
         }
-        if (e && e->screen == SCR_SEQ && seq_key(e, (int)wp, GetKeyState(VK_SHIFT) < 0)) return 0;
+        if (e && e->screen == SCR_SEQ) {
+            lib_touch(e, NULL);   /* (committed after a pause) */
+            if (seq_key(e, (int)wp, GetKeyState(VK_SHIFT) < 0)) return 0;
+        }
         break;
     case WM_MOUSELEAVE:
         if (e && e->mode == M_NONE) { e->hover = -1; InvalidateRect(w, NULL, FALSE); }
@@ -958,7 +988,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_RBUTTONDOWN: {   /* a list of options for any option control */
         if (!e) return 0;
         int i = hit(e, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
-        if (seq_zone(i)) seq_right(e, i);   /* the step editor: delete, a step's rest */
+        if (seq_zone(i)) { lib_touch(e, NULL); seq_right(e, i); }   /* the step editor: delete, a step's rest */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts > 1) pick_option(e, i, e->hit_rect);
         return 0;
     }
@@ -968,6 +998,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         if (e->mode == M_SEQ) {
             seq_release(e);
             e->mode = M_NONE;
+            lib_commit(e);
         } else if (e->mode == M_PARAM) {
             if (e->drag >= 0) begin_edit(e, e->drag, 1);
             e->drag = -1;
@@ -981,7 +1012,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_LBUTTONDBLCLK: {   /* back to the default */
         if (!e) return 0;
         int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp), i = hit(e, x, y);
-        if (seq_zone(i) && i < Z_SEQ_BASE + 200) seq_double(e, i);   /* an empty step cell: a new note */
+        if (seq_zone(i) && i < Z_SEQ_BASE + 200) { lib_touch(e, NULL); seq_double(e, i); lib_commit(e); }   /* an empty step cell: a new note */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);
         else if (i >= 0) press(e, x, y);   /* a second click on a button or a key counts as a click */
         return 0;
@@ -992,9 +1023,10 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         ScreenToClient(w, &pt);
         int i = hit(e, pt.x, pt.y), dir = GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 1 : -1;
         if (i == Z_ENCODER) { patches_step(e, -dir); return 0; }
-        if ((seq_zone(i) || (e->screen == SCR_SEQ && PtInRect(&L.screen, pt) && (i < 0 || i >= NPARAMS)))
-            && seq_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0))
-            return 0;
+        if (seq_zone(i) || (e->screen == SCR_SEQ && PtInRect(&L.screen, pt) && (i < 0 || i >= NPARAMS))) {
+            lib_touch(e, NULL);   /* (committed after a pause) */
+            if (seq_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;
+        }
         if (i == Z_RND_AMOUNT) {
             float v = e->rnd_amount + dir * 0.01f;
             e->rnd_amount = roundf((v < 0 ? 0 : v > 1 ? 1 : v) * 100.0f) / 100.0f;
@@ -1039,10 +1071,12 @@ static HFONT font(float px, int weight, const char *face) {
 /* The window class and the fonts, made when the first editor opens and undone when the last instance closes (and,
  * should a host unload the DLL without closing an instance, as the DLL goes): a class left registered would point into
  * the unloaded DLL, and a rebuilt DLL loaded again at the same address would then open its window through it. */
-static int class_ready;
+static int class_ready, idle_ready;
+static const char *IDLE_CLASS = "ONEishIdle";
 static HFONT *const FONTS[] = {&font_title, &font_label, &font_value, &font_tiny, &font_screen, &font_cell, &font_big,
                                &font_brand};
 static void free_window_class(void) {
+    if (idle_ready) { UnregisterClassA(IDLE_CLASS, dll); idle_ready = 0; }
     if (!class_ready) return;
     UnregisterClassA(CLASS_NAME, dll);
     for (unsigned k = 0; k < sizeof FONTS / sizeof FONTS[0]; k++) {
@@ -1072,6 +1106,41 @@ static void init_window_class(void) {
     font_big = font(18, FW_SEMIBOLD, "Segoe UI");
     font_brand = font(17, FW_LIGHT, "Segoe UI");
     class_ready = 1;
+}
+
+/* a message-only window per instance: its timer loads what a MIDI program change asked for while the editor is closed
+ * (library.c: lib_idle). Made on the thread that makes the instance (the host's main thread) and closed with it. */
+static LRESULT CALLBACK idle_proc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
+    if (msg == WM_TIMER) {
+        ed_t *e = (ed_t *)GetWindowLongPtrA(w, GWLP_USERDATA);
+        if (e && e->idle == w) lib_idle(e);
+        return 0;
+    }
+    return DefWindowProcA(w, msg, wp, lp);
+}
+static HWND make_idle(ed_t *e) {
+    if (!idle_ready) {
+        GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           (LPCSTR)(void *)&idle_proc, &dll);
+        WNDCLASSA wc = {0};
+        wc.lpfnWndProc = idle_proc;
+        wc.hInstance = dll;
+        wc.lpszClassName = IDLE_CLASS;
+        idle_ready = RegisterClassA(&wc) != 0;
+        if (!idle_ready) return NULL;
+    }
+    HWND w = CreateWindowExA(0, IDLE_CLASS, "", 0, 0, 0, 0, 0, HWND_MESSAGE, NULL, dll, NULL);
+    if (!w) return NULL;
+    SetWindowLongPtrA(w, GWLP_USERDATA, (LONG_PTR)e);
+    SetTimer(w, 1, 100, NULL);
+    return w;
+}
+static void close_idle(ed_t *e) {
+    if (!e || !e->idle) return;
+    KillTimer(e->idle, 1);
+    SetWindowLongPtrA(e->idle, GWLP_USERDATA, 0);
+    DestroyWindow(e->idle);   /* (only works on its own thread; elsewhere it stays inert: its pointer is cleared) */
+    e->idle = NULL;
 }
 
 BOOL WINAPI DllMain(HINSTANCE inst, DWORD why, LPVOID reserved) {
@@ -1141,6 +1210,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             return (intptr_t)n;
         }
         if (idx == TEST_PATCH && e && ptr) return patches_test(e, v, ptr, opt);   /* load_test: user patches */
+        if (idx == TEST_LIB && e && ptr) return lib_test(e, v, ptr, opt);         /* load_test: the library */
         if (idx == TEST_FOCUS && e) {   /* load_test: the Panel Focus, as the SYNTH buttons (with Ctrl) set it */
             if (v > 0) {
                 set_focus(e, (int)lroundf(opt), 0);
@@ -1162,13 +1232,20 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         if (e && e->hr && v) hr_restart(e->hr);
         break;
     case effProcessEvents:   /* host MIDI waits for the engine block nearest its time (hostrate.c) */
+        if (e && ptr) lib_midi_events(e, ptr);   /* a program change for a user patch: noted, loaded on the UI thread */
         if (e && e->hr && ptr && hr_events(e->hr, fx, ptr)) return 1;
         break;
     case effSetProgram:   /* the host's or the browser's: the patch shown follows (patches.c) */
         if (e) {
             int before = (int)wrapped_dispatch(fx, effGetProgram, 0, 0, NULL, 0);
+            /* on the window's thread: an unsaved edit autosaved and the load an undo step (never on another thread) */
+            int ui = e->lib && GetCurrentThreadId() == e->lib->ui_thread && v != before;
+            char what[64] = "";
+            if (ui) wrapped_dispatch(fx, effGetProgramNameIndexed, (int32_t)v, 0, what, 0);
+            if (ui) lib_before_load(e, what);
             intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
             patches_program_set(e, before);
+            if (ui) lib_after_load(e);
             return r;
         }
         break;
@@ -1184,6 +1261,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         break;
     case 1: {   /* effClose: the instance goes away; forget it after the wrapper is done */
         if (e && e->wnd) { DestroyWindow(e->wnd); e->wnd = NULL; }
+        close_idle(e);
         intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
         for (int i = 0; i < MAX_INSTANCES; i++)
             if (eds[i] == e) eds[i] = NULL;   /* the slot stays allocated: see pool */
@@ -1225,6 +1303,8 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         fx->processReplacing = hooked_replacing;
         fx->process = hooked_process;
         fx->flags |= effFlagsHasEditor;
+        lib_new(e);   /* (before patches_init: it records the saved version) */
+        e->idle = make_idle(e);
         patches_init(e);
         seq_init(e);
         break;

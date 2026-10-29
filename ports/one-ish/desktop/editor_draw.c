@@ -760,7 +760,14 @@ static void screen_static(void) {
 static void draw_screen(HDC dc, ed_t *e) {
     char title[96];
     patches_title(e, title, sizeof title);   /* "F 001  Init", "U  Bright Pad *" (patches.c) */
-    text(dc, &L.name, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    char home[160];
+    RECT nr = L.name;
+    if (lib_home_line(e, home, sizeof home)) {   /* the home line: the patch's tags and the tempo (library.c) */
+        RECT hr = {L.name.left + sc(6), L.name.bottom - sc(13), L.name.right - sc(6), L.name.bottom - sc(1)};
+        nr.bottom -= sc(10);
+        text(dc, &hr, home, font_tiny, T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
+    text(dc, &nr, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     text(dc, &L.prev, "<", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     text(dc, &L.next, ">", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
@@ -778,10 +785,7 @@ static void draw_screen(HDC dc, ed_t *e) {
         gfx_begin(dc);
         skin_bind(gfx_g);
     }
-    else if (e->screen == SCR_PATCHES) {
-        title_line(dc, e, "PATCHES:  factory presets and your own sounds", subs);
-        patches_draw(dc, e);
-    }
+    else if (lib_screen(e->screen)) lib_draw(dc, e);   /* PATCHES and the library's pages, with their tabs */
     else if (e->screen == SCR_SETUP) draw_setup(dc, e, subs);
     else draw_page(dc, e, subs);
     /* help: what the control under the mouse does */
@@ -800,12 +804,13 @@ static void draw_screen(HDC dc, ed_t *e) {
         e->abs = was;
     } else if (zh) {
         snprintf(help, sizeof help, "%s", zh);
+    } else if (lib_notes_help(e, help, sizeof help)) {   /* SHOW NOTES: the patch's notes */
     } else if (e->screen == SCR_RANDOM) {
         snprintf(help, sizeof help, "RANDOMISE makes a new sound; MUTATE a variation of this one (AMOUNT: how far). "
                                     "Light a section to keep it. UNDO / REDO step through the last sounds. Like it? "
                                     "Save it in your host (a preset or the project).");
-    } else if (e->screen == SCR_PATCHES) {
-        patches_help(e, help, sizeof help);
+    } else if (lib_screen(e->screen)) {
+        lib_help(e, help, sizeof help);
     } else if (e->screen == SCR_SEQ) {
         seq_help(e, help, sizeof help);
     } else if (e->screen == SCR_MATRIX) {
@@ -852,6 +857,8 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.tab_setup, "SETUP", e->screen == SCR_SETUP, e->hover == Z_TAB_SETUP);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
+    panel_button(dc, &L.compare, "COMPARE", lib_comparing(e), e->hover == Z_COMPARE);   /* (library.c) */
+    panel_button(dc, &L.snapshot, "SNAPSHOT", e->screen == SCR_SNAPS, e->hover == Z_SNAPSHOT);
     if (vis(&L.encoder, sc(12))) {
         float cx, cy, r;
         encoder_geom(&cx, &cy, &r);

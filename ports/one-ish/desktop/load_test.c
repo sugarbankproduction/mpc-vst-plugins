@@ -50,6 +50,8 @@ typedef struct {
 } VstMidiEvent;
 typedef struct { int32_t numEvents; intptr_t reserved; void *events[2]; } VstEvents;
 
+double host_tempo;   /* library_test.c sets it: the tempo the host reports (audioMasterGetTime; 0: none) */
+static struct { double d[8]; int32_t i[6]; } host_time;
 static int automated[NPARAMS], begins, ends;   /* what the plugin told the host per param (audioMasterAutomate, Begin/EndEdit) */
 static int automated_n, begun, ended;          /* and in total: audioMasterAutomate / BeginEdit / EndEdit calls */
 static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, float o) {
@@ -58,10 +60,17 @@ static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, flo
     if (op == 0) automated_n++;
     if (op == 43) { begins++; begun++; }
     if (op == 44) { ends++; ended++; }
+    if (op == 7 && host_tempo > 0) {   /* audioMasterGetTime: the tempo only (kVstTempoValid) */
+        host_time.d[1] = 44100.0;
+        host_time.d[4] = host_tempo;
+        host_time.i[5] = 1 << 10;
+        return (intptr_t)&host_time;
+    }
     return op == 1 ? 2400 : 0;   /* audioMasterVersion */
 }
 
 int rate_tests(void *entry, void *old_entry);   /* rate_test.c: returns its failures */
+int library_tests(void *fx, HWND child, float s, const char *bmp, int w, int h, const char *patch_dir);   /* library_test.c */
 
 static int failures;
 static void check(int ok, const char *what) {
@@ -477,7 +486,7 @@ static void patch_tests(AEffect *fx) {
     size_t n = f ? fread(buf, 1, sizeof buf - 1, f) : 0;
     if (f) fclose(f);
     buf[n] = 0;
-    check(!strncmp(buf, "ONE-ish patch 1\nname=Bright Pad\n", 32), "the file starts with its header and its new name");
+    check(!strncmp(buf, "ONE-ish patch 2\nname=Bright Pad\n", 32), "the file starts with its header (version 2) and its new name");
 
     /* the PRESET knob / < >: factory presets, then user patches A to Z */
     pt(fx, PT_LOAD_POS, NULL, NULL, (float)(np - 1));
@@ -958,6 +967,7 @@ static void editor(AEffect *fx, const char *bmp) {
         patch_page(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         seq_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         focus_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        failures += library_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* undo, compare, sets ... */
     }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");

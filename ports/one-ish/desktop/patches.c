@@ -7,10 +7,10 @@
  * variable ONEISH_PATCH_DIR overrides both (load_test points it at a temporary folder).
  *
  * The file, <name>.oneish, plain text (docs/PATCHES.md):
- *     ONE-ish patch 1          the header (the format's version; a newer number still loads what it can)
+ *     ONE-ish patch 2          the header (the format's version; a newer number still loads what it can)
  *     name=Bright Pad          the name (the file's name is what the list shows)
  *     author=...               optional, kept when the patch is saved over
- *     category=...             optional, kept when the patch is saved over
+ *     type=, category=, mood=, group=, notes=   its tags and notes (version 2; library.c), kept when saved over
  *     flt_cut=42.5             then one parameter per line: its key and value as the engine's own state has them
  *     o1_wave=1                (an option's number; its label, e.g. o1_wave=Saw, works too)
  * Only values that differ from the defaults are written, and loading starts from the defaults, so a patch made today
@@ -29,14 +29,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "editor.h"
+#include "library.h"
 #include <commdlg.h>
 #include <shlobj.h>
 
 #define EXT ".oneish"
 static const char HEADER[] = "ONE-ish patch";
 /* FILE_MAX: a whole state, one value per line, and room for the rest; PER: list entries per column (row 0: its heading) */
-enum { FORMAT_VERSION = 1, FILE_MAX = PATCH_STATE_MAX + 65536, PER = ROWS - 1 };
+enum { FORMAT_VERSION = 2, FILE_MAX = PATCH_STATE_MAX + 65536, PER = ROWS - 1 };
 enum { ID_PROMPT = 100, ID_EDIT, ID_WHY };
 enum { effGetProgram_ = 3, effGetProgramNameIndexed_ = 29 };
 
@@ -171,11 +171,11 @@ void patches_rescan(ed_t *e) {
     patches_t *p = &e->pt;
     char dir[MAX_PATH], pat[MAX_PATH + 16];
     p->count = 0;
-    if (!patch_dir(dir, sizeof dir, 0)) return;
+    if (!patch_dir(dir, sizeof dir, 0)) { lib_list_meta(e); return; }
     snprintf(pat, sizeof pat, "%s\\*" EXT, dir);
     WIN32_FIND_DATAA f;
     HANDLE h = FindFirstFileA(pat, &f);
-    if (h == INVALID_HANDLE_VALUE) return;
+    if (h == INVALID_HANDLE_VALUE) { lib_list_meta(e); return; }
     do {
         size_t l = strlen(f.cFileName), x = strlen(EXT);
         if ((f.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) || l <= x || _stricmp(f.cFileName + l - x, EXT)) continue;
@@ -194,6 +194,7 @@ void patches_rescan(ed_t *e) {
     } while (FindNextFileA(h, &f));
     FindClose(h);
     qsort(p->list, p->count, sizeof *p->list, by_name);
+    lib_list_meta(e);   /* their tags, for the filters */
 }
 
 static int user_index(ed_t *e, const char *name) {
@@ -295,7 +296,8 @@ static void parse(char *t, char *state, int n, parsed_t *r) {
             r->values++;
             continue;
         }
-        if (!strcmp(key, "author") || !strcmp(key, "category") || !strcmp(key, "v") || !strcmp(key, "ui_patch"))
+        if (!strcmp(key, "author") || !strcmp(key, "category") || !strcmp(key, "type") || !strcmp(key, "mood") ||
+            !strcmp(key, "group") || !strcmp(key, "notes") || !strcmp(key, "v") || !strcmp(key, "ui_patch"))
             continue;
         int i = param_of(key);
         if (i < 0) continue;   /* a parameter this version doesn't have: skipped quietly */
@@ -344,7 +346,8 @@ static void keep_meta(const char *t, char *out, int n) {
         char line[512];
         snprintf(line, sizeof line, "%.*s", len, t);
         trim(line);
-        if (!strncmp(line, "author=", 7) || !strncmp(line, "category=", 9))
+        if (!strncmp(line, "author=", 7) || !strncmp(line, "category=", 9) || !strncmp(line, "type=", 5) ||
+            !strncmp(line, "mood=", 5) || !strncmp(line, "group=", 6) || !strncmp(line, "notes=", 6))
             used += snprintf(out + used, n - used, "%s\n", line);
         t += len + (eol ? 1 : 0);
     }
@@ -378,6 +381,7 @@ static int current_state(ed_t *e, char *buf, int n) {   /* the engine's state, w
 static void mark_clean(ed_t *e) {   /* what is loaded now is what the patch holds */
     for (int i = 0; i < NPARAMS; i++) e->pt.base[i] = e->fx->getParameter(e->fx, i);
     e->pt.forced_edit = e->pt.edited = 0;
+    lib_set_base(e);   /* the saved version COMPARE plays */
     redraw(e);
 }
 
@@ -416,11 +420,14 @@ static void apply_state(ed_t *e, const char *state) {
 }
 
 static void follow(ed_t *e) {   /* the list page shows the part with the current patch */
-    int pos = patches_pos(e), nf = e->fx->numPrograms;
-    if (e->screen == SCR_PATCHES && pos >= 0) e->sub = (pos < nf ? pos : pos - nf) / PER;
+    int pos = patches_pos(e), k = pos >= 0 ? lib_view_index(e, pos) : -1;
+    if (e->screen == SCR_PATCHES && k >= 0) e->sub = k / PER;
 }
 
 static void load_factory(ed_t *e, int prog) {
+    char what[64] = "";
+    wrapped_call(e->fx, effGetProgramNameIndexed_, prog, 0, what, 0);
+    lib_before_load(e, what);   /* an unsaved edit autosaved; the load one undo step */
     if (prog != prog_of(e)) {
         e->fx->dispatcher(e->fx, effSetProgram, 0, prog, NULL, 0);   /* the host's program list, as before */
     } else {   /* the wrapper skips re-picking the current program: put its values back ourselves */
@@ -438,11 +445,20 @@ static void load_factory(ed_t *e, int prog) {
     e->pt.name[0] = 0;
     e->pt.msg[0] = 0;
     mark_clean(e);
+    lib_identity(e);
     if (e->host) e->host(e->fx, audioMasterUpdateDisplay, 0, 0, NULL, 0);
     follow(e);
+    lib_after_load(e);
 }
 
-int patches_load_user(ed_t *e, const char *name_in) {
+static int load_user(ed_t *e, const char *name_in);
+int patches_load_user(ed_t *e, const char *name_in) {   /* an unsaved edit autosaved; the load one undo step */
+    lib_before_load(e, name_in);
+    int r = load_user(e, name_in);
+    lib_after_load(e);
+    return r;
+}
+static int load_user(ed_t *e, const char *name_in) {
     char name[PATCH_NAME_MAX + 1], path[MAX_PATH];
     snprintf(name, sizeof name, "%s", name_in);
     if (!patch_path(name, path, sizeof path, 0)) { say(e, "No patch folder found."); return PE_FAIL; }
@@ -450,6 +466,7 @@ int patches_load_user(ed_t *e, const char *name_in) {
     if (!t) { say(e, "Could not open '%s': %s.", name, why_io(GetLastError())); return PE_FAIL; }
     static char state[PATCH_STATE_MAX];
     parsed_t r;
+    if (e->lib) lib_meta_read(t, &e->lib->cur);   /* its tags and notes */
     parse(t, state, sizeof state, &r);
     free(t);
     apply_state(e, state);
@@ -473,7 +490,16 @@ int patches_load_user(ed_t *e, const char *name_in) {
 static int setup_key(const char *k) {   /* a Synth's setup: not part of its sound */
     return !strcmp(k, "syn_on") || !strcmp(k, "syn_ch") || !strcmp(k, "key_lo") || !strcmp(k, "key_hi");
 }
-int patches_into_pos(ed_t *e, int pos) {
+static int into_pos(ed_t *e, int pos);
+int patches_into_pos(ed_t *e, int pos) {   /* (autosave and undo as for any load) */
+    char what[48];
+    snprintf(what, sizeof what, "a sound into Synth %d", e->focus + 1);
+    lib_before_load(e, what);
+    int r = into_pos(e, pos);
+    lib_after_load(e);
+    return r;
+}
+static int into_pos(ed_t *e, int pos) {
     static char state[PATCH_STATE_MAX], cmd[PATCH_STATE_MAX + 32];
     int nf = e->fx->numPrograms;
     if (pos < 0 || pos >= patches_total(e)) return PE_FAIL;
@@ -553,9 +579,10 @@ int patches_save_synth(ed_t *e, const char *name_in, int overwrite) {
         return PE_FAIL;
     }
     if (is_file(path) && !overwrite) return PE_EXISTS;
+    lib_end_compare(e);
     static char state[PATCH_STATE_MAX];
     if (!synth_sound(e, state, sizeof state)) { say(e, "Could not read the sound from the engine."); return PE_FAIL; }
-    char *text = build_text(name, "", state);
+    char *text = build_text(name, "type=Single\n", state);
     if (!text || !write_text(path, text)) {
         DWORD err = text ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY;
         free(text);
@@ -589,6 +616,7 @@ int patches_load_pos(ed_t *e, int pos) {
 
 void patches_step(ed_t *e, int d) {
     patches_rescan(e);
+    if (lib_step_filtered(e, d)) return;   /* the tag filters narrow PREV / NEXT too */
     int pos = patches_pos(e), n = patches_total(e), to = pos < 0 ? (d > 0 ? 0 : n - 1) : pos + d;
     if (to < 0) to = 0;
     if (to > n - 1) to = n - 1;
@@ -597,15 +625,15 @@ void patches_step(ed_t *e, int d) {
 
 void patches_title(ed_t *e, char *out, int n) {
     patches_t *p = &e->pt;
-    const char *mark = p->edited ? " *" : "";
+    const char *mark = p->edited ? " *" : "", *cmp = lib_comparing(e) ? "COMPARE  " : "";
     if (p->bank == BANK_FACTORY) {
         char nm[64] = "";
         wrapped_call(e->fx, effGetProgramNameIndexed_, p->prog, 0, nm, 0);
-        snprintf(out, n, "F %03d  %s%s", p->prog + 1, nm, mark);
+        snprintf(out, n, "%sF %03d  %s%s", cmp, p->prog + 1, nm, mark);
     } else if (p->bank == BANK_USER) {
-        snprintf(out, n, "U  %s%s", p->name, mark);
+        snprintf(out, n, "%sU  %s%s", cmp, p->name, mark);
     } else {
-        snprintf(out, n, "-  %s%s", p->name[0] ? p->name : "Unsaved sound", mark);
+        snprintf(out, n, "%s-  %s%s", cmp, p->name[0] ? p->name : "Unsaved sound", mark);
     }
 }
 
@@ -621,14 +649,17 @@ int patches_save_as(ed_t *e, const char *name_in, int overwrite) {
     }
     int exists = is_file(path);
     if (exists && !overwrite) return PE_EXISTS;
+    lib_end_compare(e);   /* (COMPARE on: the edit is what gets saved) */
     static char state[PATCH_STATE_MAX];
     if (!current_state(e, state, sizeof state)) { say(e, "Could not read the sound from the engine."); return PE_FAIL; }
-    char meta[512] = "";
+    static char kept[2 * NOTES_MAX + 1024], meta[2 * NOTES_MAX + 1024];
+    kept[0] = 0;
     if (exists) {
         char *old = read_text(path);
-        if (old) keep_meta(old, meta, sizeof meta);
+        if (old) keep_meta(old, kept, sizeof kept);
         free(old);
     }
+    lib_meta_for_save(e, kept, meta, sizeof meta);   /* the save box's tags, else the file's, else the sound's */
     char *text = build_text(name, meta, state);
     if (!text || !write_text(path, text)) {
         DWORD err = text ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY;
@@ -642,6 +673,7 @@ int patches_save_as(ed_t *e, const char *name_in, int overwrite) {
     e->pt.bank = BANK_USER;
     snprintf(e->pt.name, sizeof e->pt.name, "%s", u >= 0 ? e->pt.list[u] : name);
     mark_clean(e);
+    lib_after_save(e, meta);
     follow(e);
     say(e, "Saved '%s'.", e->pt.name);
     return PE_OK;
@@ -749,10 +781,13 @@ int patches_import(ed_t *e, const char *src, int overwrite) {
 
 int patches_export(ed_t *e, const char *dst) {
     char name[PATCH_NAME_MAX + 1];
-    static char state[PATCH_STATE_MAX];
+    static char state[PATCH_STATE_MAX], meta[2 * NOTES_MAX + 256];
+    lib_end_compare(e);
     if (!current_state(e, state, sizeof state)) { say(e, "Could not read the sound from the engine."); return PE_FAIL; }
     name_from_path(dst, name);
-    char *text = build_text(name, "", state);
+    meta[0] = 0;
+    if (e->lib) lib_meta_lines(&e->lib->cur, meta, sizeof meta);   /* its tags and notes go along */
+    char *text = build_text(name, meta, state);
     if (!text || !write_text(dst, text)) {
         DWORD err = text ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY;
         free(text);
@@ -769,9 +804,11 @@ void patches_init(ed_t *e) {
     e->pt.bank = BANK_FACTORY;
     e->pt.prog = prog_of(e);
     mark_clean(e);
+    lib_identity(e);
 }
 
 void patches_free(ed_t *e) {
+    lib_free(e);
     free(e->pt.list);
     e->pt.list = NULL;
     e->pt.count = e->pt.cap = 0;
@@ -784,6 +821,7 @@ void patches_program_set(ed_t *e, int before) {   /* after effSetProgram (the ho
     e->pt.prog = now;
     e->pt.name[0] = 0;
     mark_clean(e);
+    lib_identity(e);
     follow(e);
 }
 
@@ -831,6 +869,9 @@ void patches_chunk_set(ed_t *e, const void *chunk, intptr_t len) {   /* after th
         edited = 0;
     }
     p->forced_edit = p->edited = edited != 0;
+    lib_host_restored(e);
+    if (p->forced_edit) lib_saved_base(e);   /* (an edited project sound: COMPARE plays its patch's saved version) */
+    lib_identity(e);
     redraw(e);
 }
 
@@ -869,11 +910,11 @@ static INT_PTR CALLBACK ask_proc(HWND d, UINT m, WPARAM wp, LPARAM lp) {
     return FALSE;
 }
 
-static WORD *wstr(WORD *w, const char *s) {   /* a dialog template's text: UTF-16, here plain ASCII */
+WORD *dlg_wstr(WORD *w, const char *s) {   /* a dialog template's text: UTF-16, here plain ASCII */
     do *w++ = (WORD)(unsigned char)*s; while (*s++);
     return w;
 }
-static WORD *item(WORD *w, DWORD style, short x, short y, short cx, short cy, WORD id, WORD cls, const char *text) {
+WORD *dlg_item(WORD *w, DWORD style, short x, short y, short cx, short cy, WORD id, WORD cls, const char *text) {
     w = (WORD *)(((ULONG_PTR)w + 3) & ~(ULONG_PTR)3);
     DLGITEMTEMPLATE *it = (DLGITEMTEMPLATE *)w;
     it->style = style | WS_CHILD | WS_VISIBLE;
@@ -882,7 +923,7 @@ static WORD *item(WORD *w, DWORD style, short x, short y, short cx, short cy, WO
     w = (WORD *)(it + 1);
     *w++ = 0xFFFF;
     *w++ = cls;   /* 0x80 button, 0x81 edit, 0x82 static */
-    w = wstr(w, text);
+    w = dlg_wstr(w, text);
     *w++ = 0;     /* no creation data */
     return w;
 }
@@ -899,14 +940,14 @@ static int ask_name(ed_t *e, const char *title, const char *prompt, char *name) 
     WORD *w = (WORD *)(dt + 1);
     *w++ = 0;   /* no menu */
     *w++ = 0;   /* the standard dialog class */
-    w = wstr(w, title);
+    w = dlg_wstr(w, title);
     *w++ = 9;   /* DS_SETFONT: 9 pt */
-    w = wstr(w, "Segoe UI");
-    w = item(w, SS_LEFT, 8, 8, 214, 10, ID_PROMPT, 0x82, "");
-    w = item(w, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 8, 21, 214, 13, ID_EDIT, 0x81, "");
-    w = item(w, SS_LEFT, 8, 38, 214, 10, ID_WHY, 0x82, "");
-    w = item(w, WS_TABSTOP | BS_DEFPUSHBUTTON, 118, 55, 50, 14, IDOK, 0x80, "OK");
-    item(w, WS_TABSTOP | BS_PUSHBUTTON, 172, 55, 50, 14, IDCANCEL, 0x80, "Cancel");
+    w = dlg_wstr(w, "Segoe UI");
+    w = dlg_item(w, SS_LEFT, 8, 8, 214, 10, ID_PROMPT, 0x82, "");
+    w = dlg_item(w, WS_BORDER | WS_TABSTOP | ES_AUTOHSCROLL, 8, 21, 214, 13, ID_EDIT, 0x81, "");
+    w = dlg_item(w, SS_LEFT, 8, 38, 214, 10, ID_WHY, 0x82, "");
+    w = dlg_item(w, WS_TABSTOP | BS_DEFPUSHBUTTON, 118, 55, 50, 14, IDOK, 0x80, "OK");
+    dlg_item(w, WS_TABSTOP | BS_PUSHBUTTON, 172, 55, 50, 14, IDCANCEL, 0x80, "Cancel");
     ask_t a = {title, prompt, ""};
     snprintf(a.text, sizeof a.text, "%s", name);
     HINSTANCE inst = e->wnd ? (HINSTANCE)GetWindowLongPtrA(e->wnd, GWLP_HINSTANCE) : GetModuleHandleA(NULL);
@@ -926,14 +967,20 @@ static void suggestion(ed_t *e, char *out) {   /* a starting name for SAVE AS */
     }
 }
 
-static void ui_save_as(ed_t *e) {
+static void ui_save_as(ed_t *e) {   /* the save box: a name, the tags and notes (library.c) */
     char name[PATCH_NAME_MAX + 1], q[200];
+    meta_t m;
     suggestion(e, name);
-    while (ask_name(e, "Save as", "A name for this sound (up to 32 characters):", name)) {
-        if (patches_save_as(e, name, 0) != PE_EXISTS) return;
+    lib_save_defaults(e, &m);
+    while (lib_save_dialog(e, name, &m)) {
+        e->lib->save_meta = m;
+        e->lib->save_meta_set = 1;
+        int r = patches_save_as(e, name, 0);
+        if (r != PE_EXISTS) break;
         snprintf(q, sizeof q, "A patch named '%s' already exists.\nReplace it with this sound?", name);
-        if (confirm(e, q)) { patches_save_as(e, name, 1); return; }
+        if (confirm(e, q)) { patches_save_as(e, name, 1); break; }
     }
+    if (e->lib) e->lib->save_meta_set = 0;
 }
 
 static void ui_save_synth(ed_t *e) {
@@ -1039,7 +1086,7 @@ void patches_toggle(ed_t *e) {   /* the preset name: the list, or back to the ma
 }
 
 int patches_subs(ed_t *e) {
-    int a = (e->fx->numPrograms + PER - 1) / PER, b = (e->pt.count + PER - 1) / PER;
+    int a = (lib_view_count(e, 0) + PER - 1) / PER, b = (lib_view_count(e, 1) + PER - 1) / PER;
     return a > b ? (a > 1 ? a : 1) : (b > 1 ? b : 1);
 }
 
@@ -1057,10 +1104,9 @@ static RECT entry_rect(int col, int row) {   /* column 0 factory, 1 user; row 0 
 }
 
 static int entry_pos(ed_t *e, int col, int row) {   /* the list position shown at col/row of this sub-page, or -1 */
-    int k = e->sub * PER + row - 1, nf = e->fx->numPrograms;
+    int k = e->sub * PER + row - 1;
     if (row < 1 || k < 0) return -1;
-    if (col == 0) return k < nf ? k : -1;
-    return k < e->pt.count ? nf + k : -1;
+    return lib_view_pos(e, col, k);   /* (through the tag filters) */
 }
 
 int patches_hit(ed_t *e, POINT pt) {
@@ -1078,8 +1124,9 @@ int patches_hit(ed_t *e, POINT pt) {
 }
 
 int patches_press(ed_t *e, int z) {   /* 1: z was the page's */
+    if (lib_press(e, z)) return 1;   /* COMPARE, SNAPSHOT, the library's pages (library.c) */
     if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { patches_action(e, z - Z_PATCH_ACT); return 1; }
-    if (z >= Z_PATCH_ITEM) {
+    if (z >= Z_PATCH_ITEM && z < Z_PATCH_ITEM + 10000) {
         patches_rescan(e);
         if (e->pt.into) patches_into_pos(e, z - Z_PATCH_ITEM);   /* into the focused Synth only */
         else patches_load_pos(e, z - Z_PATCH_ITEM);
@@ -1132,7 +1179,11 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
     for (int col = 0; col < 2; col++) {
         char h[48];
         RECT r = entry_rect(col, 0);
-        snprintf(h, sizeof h, col ? "USER  (%d)" : "FACTORY  (%d)", col ? p->count : nf);
+        if (lib_filtering(e))
+            snprintf(h, sizeof h, col ? "USER  (%d of %d, filtered)" : "FACTORY  (%d of %d, filtered)",
+                     lib_view_count(e, col), col ? p->count : nf);
+        else
+            snprintf(h, sizeof h, col ? "USER  (%d)" : "FACTORY  (%d)", col ? p->count : nf);
         label(dc, r, h, font_tiny, P_DIM, DT_LEFT);
         RECT line = {r.left, r.bottom - 1, r.right, r.bottom};
         fill(dc, line, P_FRAME);
@@ -1153,7 +1204,7 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
             label(dc, tr, t, font_cell, hot || cur ? P_HOT : P_LCD, DT_LEFT);
         }
     }
-    if (p->count == 0 && e->sub == 0) {
+    if (p->count == 0 && e->sub == 0 && !lib_filtering(e)) {
         RECT r1 = entry_rect(1, 1), r2 = entry_rect(1, 2);
         r1.left += sc(6);
         r2.left += sc(6);
@@ -1171,6 +1222,8 @@ void patches_help(ed_t *e, char *out, int n) {   /* the page's own help, when th
 }
 
 const char *patches_zone_help(int z) {
+    const char *lh = lib_zone_help(z);   /* the library's pages and buttons */
+    if (lh) return lh;
     switch (z - Z_PATCH_ACT) {
     case PA_SAVE: return "SAVE: stores the sound over the current user patch. A factory preset or an unsaved sound "
                          "asks for a name (factory presets are never changed).";
@@ -1212,4 +1265,63 @@ intptr_t patches_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case PT_MESSAGE: snprintf(buf, 1024, "%s", e->pt.msg); return 1;
     }
     return 0;
+}
+
+/* where zone z of the PATCHES page is (load_test's clicks, library.c) */
+int patches_zone_rect(ed_t *e, int z, RECT *r) {
+    if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { *r = action_rect(z - Z_PATCH_ACT); return 1; }
+    for (int col = 0; col < 2; col++)
+        for (int row = 1; row < ROWS; row++)
+            if (entry_pos(e, col, row) == z - Z_PATCH_ITEM && z >= Z_PATCH_ITEM) { *r = entry_rect(col, row); return 1; }
+    return 0;
+}
+
+/* ---- for library.c (library.h) ---- */
+char *pt_read(const char *path) { return read_text(path); }
+int pt_write(const char *path, const char *text) { return write_text(path, text); }
+const char *pt_why(DWORD err) { return why_io(err); }
+void pt_vsay(ed_t *e, const char *fmt, va_list ap) {
+    vsnprintf(e->pt.msg, sizeof e->pt.msg, fmt, ap);
+    e->pt.msg_at = GetTickCount();
+    redraw(e);
+}
+void pt_apply_state(ed_t *e, const char *state) { apply_state(e, state); }
+void pt_parse(char *text, char *state, int n, int *bad, int *header) {
+    parsed_t r;
+    parse(text, state, n, &r);
+    if (bad) *bad = r.bad;
+    if (header) *header = r.header;
+}
+char *pt_build(const char *name, const char *meta, const char *state) { return build_text(name, meta, state); }
+int pt_user_index(ed_t *e, const char *name) { return user_index(e, name); }
+int pt_confirm(ed_t *e, const char *text) {
+    if (e->lib) e->lib->busy++;
+    int r = confirm(e, text);
+    if (e->lib) e->lib->busy--;
+    return r;
+}
+HWND pt_owner(ed_t *e) { return owner(e); }
+void pt_ui_save_as(ed_t *e) { ui_save_as(e); }
+int pt_patch_path(const char *name, char *out, int n, int create) { return patch_path(name, out, n, create); }
+char *pt_saved_state(ed_t *e) {   /* the current patch's saved version, as a state (malloc'd; NULL: none) */
+    static char state[PATCH_STATE_MAX];
+    if (e->pt.bank == BANK_USER) {
+        char path[MAX_PATH];
+        char *t = patch_path(e->pt.name, path, sizeof path, 0) ? read_text(path) : NULL;
+        if (!t) return NULL;
+        parsed_t r;
+        parse(t, state, sizeof state, &r);
+        free(t);
+        return strdup(state);
+    }
+#ifdef NPRESETS
+    if (e->pt.bank == BANK_FACTORY && e->pt.prog >= 0 && e->pt.prog < NPRESETS) {
+        int used = snprintf(state, sizeof state, "v=1");
+        for (int k = 0; k < PRESETS[e->pt.prog].n && used < (int)sizeof state; k++)
+            used += snprintf(state + used, sizeof state - used, ";%s=%s", PARAMS[PRESETS[e->pt.prog].values[k].param].key,
+                             PRESETS[e->pt.prog].values[k].value);
+        return used < (int)sizeof state ? strdup(state) : NULL;
+    }
+#endif
+    return NULL;
 }

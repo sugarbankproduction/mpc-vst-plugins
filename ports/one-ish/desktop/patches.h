@@ -11,6 +11,12 @@
 enum { PATCH_NAME_MAX = 32, PATCH_STATE_MAX = VST2_CHUNK_MAX };   /* a name's characters; the engine's state and the chunk */
 enum { SCR_PATCHES = -10 };                             /* the centre screen showing the patch list (see SCR_MATRIX) */
 enum { Z_PATCH_ACT = 100300, Z_PATCH_ITEM = 200000 };   /* hit codes: an action button (+ PA_), a list entry (+ pos) */
+/* the library's pages (library.c): performance SET, ALL SETS, ARRANGE (sets), SNAPSHOTS, TAGS; and their hit codes:
+ * the page tabs, the buttons on each page, the console's COMPARE and SNAPSHOT, the list entries */
+enum { SCR_SET = -12, SCR_SETS = -13, SCR_ARRANGE = -14, SCR_SNAPS = -15, SCR_TAGS = -16 };
+enum { Z_LIB_TAB = 100320, Z_SNAP_ACT = 100340, Z_TAG_ACT = 100360, Z_ARR_ACT = 100380, Z_SET_BANK = 100400,
+       Z_SET_SIDE = 100410, Z_COMPARE = 100430, Z_SNAPSHOT = 100431,
+       Z_SNAP_ITEM = 210000, Z_TAG_ITEM = 220000 /* + 1000 * kind + tag */, Z_SET_SLOT = 230000, Z_SETS_ITEM = 240000 };
 enum { PA_SAVE, PA_SAVE_AS, PA_RENAME, PA_DELETE, PA_IMPORT, PA_EXPORT, PA_INTO, PA_SAVE_SYNTH, PA_COUNT };
 enum { effGetChunk = 23, effSetChunk = 24 };              /* VST2 opcodes editor.h doesn't name */
 enum { BANK_NONE, BANK_FACTORY, BANK_USER };            /* where the current sound came from */
@@ -22,6 +28,11 @@ enum { PE_OK = 1, PE_FAIL = 0, PE_EXISTS = -1, PE_BADNAME = -2, PE_NOT_USER = -3
 #define TEST_PATCH 0x4F315054
 enum { PT_SAVE = 1, PT_SAVE_AS, PT_RENAME, PT_DELETE, PT_IMPORT, PT_EXPORT, PT_LOAD, PT_STEP, PT_TITLE, PT_EDITED,
        PT_COUNT, PT_DIR, PT_MESSAGE, PT_LOAD_POS, PT_POS, PT_INTO_POS, PT_SAVE_SYNTH };
+/* ... and the library (library.c): index TEST_LIB, value = LT_ op, ptr = a 1 KB text buffer out, opt = a number in.
+ * LT_ZONE: where hit code opt is on the window now, (x | y << 16) in pixels, or -1 */
+#define TEST_LIB 0x4F314C42
+enum { LT_UNDO = 1, LT_REDO, LT_STEPS, LT_COMPARING, LT_SNAPS, LT_AUTOS, LT_SNAP_INFO, LT_SNAP_SEL, LT_ZONE, LT_SCREEN,
+       LT_META, LT_VIEW, LT_SETS, LT_SLOT, LT_SET_INFO, LT_IDLE, LT_TAGS, LT_HOME, LT_LABEL, LT_NOTES_SHOWN, LT_TICK, LT_FORGET };
 
 #ifdef NPARAMS   /* the editor (params.h); load_test only needs the numbers above */
 typedef struct {
