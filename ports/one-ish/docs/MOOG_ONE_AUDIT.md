@@ -504,7 +504,7 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 | Up to 5 effects at once (3 synth + 2 master) | p96 | Have | Three synth effects (one per Synth) and the two master effects (2026-10-28, offline and the desktop window) | - | shared medium |
 | MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Have | Each Synth's `mfx_send1` / `mfx_send2` into the shared master effects (their sum, `fx_master_multi`); returns added to the mix (2026-10-28, offline and the desktop window) | - | shared |
 | Master Effects ON button | on/off (p99) | Have | `mfx_on` | - | none |
-| MASTER EFFECT 1 / 2 TYPE: any type from the synth-effect list, plus the Eventide reverbs (synth effect presets usable as master effects and back) | p96, p101 | Have | `dly_type` / `rev_type`: 23 types in either slot (Plate, Room, Hall, Space, Shimmer, Blackhole, Stereo Delay, Ping Pong and the manual's 15 synth types; the 5 open-source synth types stay synth-only); each slot has its own controls (slot 1 the `dly_*` params, slot 2 the `rev_*`), MIX and GAIN; switching a type fades the old one out, clears its memory a block at a time and fades the new one in (2026-10-27, offline). Effect presets: package 12c | - | none/voice; shared, by type |
+| MASTER EFFECT 1 / 2 TYPE: any type from the synth-effect list, plus the Eventide reverbs (synth effect presets usable as master effects and back) | p96, p101 | Have | `dly_type` / `rev_type`: 23 types in either slot (Plate, Room, Hall, Space, Shimmer, Blackhole, Stereo Delay, Ping Pong and the manual's 15 synth types; the 5 open-source synth types stay synth-only); each slot has its own controls (slot 1 the `dly_*` params, slot 2 the `rev_*`), MIX and GAIN; switching a type fades the old one out, clears its memory a block at a time and fades the new one in (2026-10-27, offline). Effect presets: package 12c. On the window: a TYPE button per slot and a MORE page with only the controls its type uses (2026-10-29, desktop) | - | none/voice; shared, by type |
 | MASTER BUSS MODE | Dual Mono (two effects), Stereo (one effect) (p100) | Have | `mfx_buss`: Dual Mono (both effects, on SEND 1 and SEND 2) or Stereo (effect 1 alone on SEND 1, stereo in). ONE-ish keeps each voice's place in Dual Mono's inputs too (the instrument's mono buss loses it), so the earlier sounds are unchanged | - | shared |
 | STEREO WIDTH at the end of the master chain | 0% to 100% to 200% (p100) | Have | `mfx_width` 0-200%, mid/side on the returns (the dry path stays exact) | - | none/voice; shared low |
 | EFFECT 1 -> 2 SERIES (parallel to series blend) | 0% to 100% (p100) | Have | `mfx_series`: effect 1's return moves from the output into effect 2 (Dual Mono only) | - | none |
@@ -1018,6 +1018,10 @@ about twice what 8 do; fine on the desktop, the MPC keeps its benched default).
 - Files: `src/fx.h`, `src/fx/*`, the effect parts of `src/engine.c` (`fx_field`, `fx_params`), `params.json`.
 - Done 2026-10-27 (offline and the desktop build): 10a, 10b and 10c as above (section 18). Left: the desktop window's
   pages for the slots' new controls (they are on its OTHER page for now), effect presets (12c), the vocoders (11).
+  The window's pages done 2026-10-29 (desktop): MASTER FX 1 and 2 (the slots' MORE pages) show each type's own
+  controls (`gen_layout.py` MFX_USES, e.g. a hall 19, a ping pong 9), the panel a TYPE button per slot, the MASTER
+  EFFECTS page the buss mode; the synth effect's page by type for the two-tap delays and the crusher's crossover too,
+  its sync only for types with a time or a rate. No OTHER page is left (every param has a home).
 
 **11. Audio input and vocoders** (sections 0, 6, 15e, 18). Effort M for the input, L for the vocoders. CPU: low per
 voice for the EXT channel; shared medium (10-band) to medium-high (16-band) for the vocoders.

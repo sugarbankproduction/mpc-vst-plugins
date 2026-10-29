@@ -1,8 +1,9 @@
 /* Load the desktop ONE-ish.dll the way a DAW does (LoadLibrary + VSTPluginMain), play a note, save/restore its
  * state, then play every preset in its program list, then drive the editor window (keyboard, ribbon, the randomiser
  * page: RANDOMISE, UNDO, REDO, MUTATE, locks, and clicks while another thread renders), times its painting (a full
- * repaint, a knob turned) and checks it gives back its GDI handles over 20 opens. Proves the DLL's export, MIDI
- * path, audio path and presets on Windows itself; with a second path, writes all the presets to one WAV to listen
+ * repaint, a knob turned, a rate LED flashing: only its own square) and checks it gives back its GDI handles over 20
+ * opens; the MORE pages' pictures and the master effect pages by type are pictured and checked. Proves the DLL's
+ * export, MIDI path, audio path and presets on Windows itself; with a second path, writes all the presets to one WAV to listen
  * to; with a third, pictures of the editor. User patches (save, load, rename, delete, import, export) are tested in
  * a temporary folder; so are .oneseq sequences, after notes are entered into the step sequencer's page from the window's
  * keyboard and with clicks. Then the host sample rate checks (rate_test.c): other rates and block sizes, float output;
@@ -914,6 +915,52 @@ static void pictures(AEffect *fx, HWND child, float s, const char *bmp, int w, i
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
+/* the master effect slots' pages by type (gen_layout.py MFX_USES): a hall in slot 1 and a blackhole in slot 2 show
+ * their own controls and not the delays'; pictures of them, of the MASTER EFFECTS page and of the synth effect's
+ * stereo delay. Whatever has no home is on an OTHER page (none expected) */
+static int page_has(AEffect *fx, int page, const char *key) {   /* is key among the items page shows now? */
+    int i = rnd_key(key);
+    for (int k = PAGES[page].first; k < PAGES[page].first + PAGES[page].count; k++) {
+        const lay_item_t *it = &ITEMS[k];
+        if (it->param != i) continue;
+        if (it->cond < 0) return 1;
+        int n = PARAMS[it->cond].nopts, o = n > 1 ? (int)lroundf(fx->getParameter(fx, it->cond) * (n - 1)) : 0;
+        if (o < 32 && (it->mask >> o & 1u)) return 1;
+    }
+    return 0;
+}
+static void master_pages(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[160];
+    if (PG_DELAY < 0 || PG_REVERB < 0) return;
+    int t1 = rnd_key("dly_type"), t2 = rnd_key("rev_type"), st = rnd_key("modfx_type");
+    float was1 = fx->getParameter(fx, t1), was2 = fx->getParameter(fx, t2), was3 = fx->getParameter(fx, st);
+    int ok = set_option(fx, "dly_type", "Hall") && set_option(fx, "rev_type", "Blackhole");
+    snprintf(what, sizeof what, "master FX 1 as a hall shows its decays and levels, not the delay's times (%d %d %d)",
+             page_has(fx, PG_DELAY, "dly_ldecay"), page_has(fx, PG_DELAY, "dly_mlevel"), page_has(fx, PG_DELAY, "dly_time"));
+    check(ok && page_has(fx, PG_DELAY, "dly_ldecay") && page_has(fx, PG_DELAY, "dly_mlevel") &&
+          !page_has(fx, PG_DELAY, "dly_time") && page_has(fx, PG_DELAY, "dly_mix"), what);
+    snprintf(what, sizeof what, "master FX 2 as a blackhole shows GRAVITY, not the plate's DISTANCE (%d %d)",
+             page_has(fx, PG_REVERB, "rev_gravity"), page_has(fx, PG_REVERB, "rev_distance"));
+    check(page_has(fx, PG_REVERB, "rev_gravity") && !page_has(fx, PG_REVERB, "rev_distance"), what);
+    static const struct { int page; const char *suffix; } P[] = {
+        {PG_DELAY, "_more_fx1_hall"}, {PG_REVERB, "_more_fx2_blackhole"}, {PG_MFX, "_more_mfx"}};
+    for (unsigned k = 0; k < sizeof P / sizeof P[0] && bmp; k++) {
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        if (click_more(child, s, P[k].page)) shot(child, w, h, bmp, P[k].suffix);
+    }
+    if (set_option(fx, "modfx_type", "Stereo Delay")) {
+        check(page_has(fx, PG_SFX, "modfx_fbl") && !page_has(fx, PG_SFX, "modfx_vrate"),
+              "the synth effect as a stereo delay shows FEEDBACK LEFT, not the choruses' vibrato");
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        if (bmp && click_more(child, s, PG_SFX)) shot(child, w, h, bmp, "_more_sfx_sdelay");
+    }
+    fx->setParameter(fx, t1, was1);
+    fx->setParameter(fx, t2, was2);
+    fx->setParameter(fx, st, was3);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    printf("     MORE pages: %d, OTHER page: %s\n", NPAGES, PG_OTHER >= 0 ? "yes (params without a home)" : "none");
+}
+
 /* the rate LEDs (rate_leds.c): over 1.5 s of their timer they flash (the TEMPO LED on the beat at 120 BPM: this host
  * gives no tempo; LFO 1 at a few Hz), and each repaint asks for only the LEDs' own small squares; one LED's repaint
  * is timed */
@@ -1031,6 +1078,7 @@ static void editor(AEffect *fx, const char *bmp) {
         shot(child, w, h, bmp, "_matrix2");
         if (click_more(child, s, PG_LFO1)) shot(child, w, h, bmp, "_more_lfo1");
         pictures(fx, child, s, bmp, w, h);
+        master_pages(fx, child, s, bmp, w, h);
         if (PG_SFX >= 0) {   /* the synth effect's page for some of its types (stereo flanger: two sub-pages) */
             static const char *const T[][2] = {{"Stereo Flanger", "_more_synthfx"}, {"Modal Resonator", "_more_sfx_rings"},
                                                {"Granular", "_more_sfx_clouds"}, {"Tape Color", "_more_sfx_tape"}};

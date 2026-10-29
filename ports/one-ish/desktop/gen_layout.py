@@ -42,7 +42,8 @@ ABBREV = {"Triangle": "TRI", "Sine": "SINE", "Square": "SQR", "Saw": "SAW", "Ram
 DELAYS = ["Delay", "BBD Delay", "Tape Delay", "Echo"]
 LINES = ["Flanger", "Stereo Flanger", "Chorus", "Dual Chorus", "Ensemble", "Stereo Chorus"]
 PHASERS = ["6-Stage Phaser", "12-Stage Phaser", "Time Phaser"]
-SFX_COMMON = [("modfx_sync", "Tempo Sync"), ("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
+TWO_TAP = ["Stereo Delay", "Ping Pong"]
+SFX_COMMON = [("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
               ("modfx_c2_dst", "CTRL 2 Target"), ("modfx_on", "On"), ("modfx_mix", "Mix"), ("modfx_ctrl1", "CTRL 1"),
               ("modfx_ctrl2", "CTRL 2")]
 RINGS, CLOUDS = "Modal Resonator", "Granular"   # Mutable Instruments Rings and Clouds (src/fx/mi_effects.*)
@@ -51,7 +52,8 @@ SFX_USES = [   # key, label, the types that use it
     ("modfx_model", "Resonator Model", [RINGS]),
     ("modfx_gmode", "Granular Mode", [CLOUDS]),
     ("modfx_quality", "Grain Quality", [CLOUDS]),
-    ("modfx_dtime", "Delay Time", [*DELAYS, "Time Phaser"]),
+    ("modfx_dtime", "Delay Time", [*DELAYS, "Time Phaser", *TWO_TAP]),
+    ("modfx_dtime_r", "Delay Time R", TWO_TAP),
     ("modfx_time", "Time", LINES),
     ("modfx_time_r", "Time R", ["Stereo Flanger", "Stereo Chorus"]),
     ("modfx_pitch", "Pitch", [RINGS, CLOUDS]),
@@ -65,14 +67,18 @@ SFX_USES = [   # key, label, the types that use it
     ("modfx_drive", "Drive", [AW_TAPE, AW_DENSITY, AW_CONSOLE]),
     ("modfx_bump", "Head Bump", [AW_TAPE]),
     ("modfx_lowcut", "Low Cut", [AW_DENSITY]),
-    ("modfx_rate", "Rate", ["Echo", *LINES, *PHASERS, "Resonator"]),
-    ("modfx_rate_r", "Rate R", ["Stereo Flanger", "Stereo Chorus"]),
-    ("modfx_depth", "Depth", ["BBD Delay", "Echo", *LINES, *PHASERS, "Resonator"]),
+    ("modfx_rate", "Rate", ["Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay"]),
+    ("modfx_rate_r", "Rate R", ["Stereo Flanger", "Stereo Chorus", "Stereo Delay"]),
+    ("modfx_depth", "Depth", ["BBD Delay", "Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay"]),
+    ("modfx_depth_r", "Depth R", ["Stereo Delay"]),
+    ("modfx_offset", "Offset", ["Ping Pong"]),
     ("modfx_sweep", "Sweep", PHASERS),
-    ("modfx_fb", "Feedback", [*DELAYS, *LINES, *PHASERS, CLOUDS]),
+    ("modfx_fb", "Feedback", [*DELAYS, *LINES, *PHASERS, CLOUDS, *TWO_TAP]),
     ("modfx_fb_r", "Feedback R", ["Stereo Flanger", "Stereo Chorus"]),
+    ("modfx_fbl", "Feedback Left", ["Stereo Delay"]),
+    ("modfx_fbr", "Feedback Right", ["Stereo Delay"]),
     ("modfx_dfb", "Delay Feedback", ["Time Phaser"]),
-    ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS, RINGS, AW_TAPE]),
+    ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS, RINGS, AW_TAPE, *TWO_TAP]),
     ("modfx_spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS, CLOUDS]),
     ("modfx_vrate", "Vibrato Rate", ["Dual Chorus", "Ensemble"]),
     ("modfx_vdepth", "Vibrato Depth", ["Dual Chorus", "Ensemble"]),
@@ -84,6 +90,7 @@ SFX_USES = [   # key, label, the types that use it
     ("modfx_decay", "Decay", ["Echo", RINGS]),    # Rings: its damping
     ("modfx_bits", "Bit Depth", ["Bit Crusher"]),
     ("modfx_srate", "Sample Rate", ["Bit Crusher"]),
+    ("modfx_xover", "Crossover", ["Bit Crusher"]),
     ("modfx_ftype", "Filter Type", ["Resonator"]),
     ("modfx_reso", "Resonance", ["Resonator"]),
     ("modfx_cut1", "Cutoff Low", ["Resonator"]),
@@ -92,7 +99,70 @@ SFX_USES = [   # key, label, the types that use it
     ("modfx_lvl2", "Level Mid", ["Resonator"]),
     ("modfx_cut3", "Cutoff High", ["Resonator"]),
     ("modfx_lvl3", "Level High", ["Resonator"]),
+    ("modfx_sync", "Tempo Sync", [*DELAYS, *LINES, *PHASERS, "Resonator", *TWO_TAP]),   # its times and rates
 ]
+# a master effect slot's controls (slot 1's keys "dly_" + the suffix, slot 2's "rev_"): suffix, label, the types that
+# read it (engine.c fx_bank_field, src/fx/reverb.h; the synth effect's types as SFX_USES, a slot's TIME being both
+# their delay time and their chorus time), then each slot's TYPE, MIX and GAIN for every type
+REVERBS = ["Plate", "Room", "Hall", "Space", "Shimmer", "Blackhole"]
+CLASSIC = ["Plate", "Room", "Hall", "Shimmer"]   # the ones with pre-delay, damping and diffusion in the loop
+MFX_USES = [
+    ("time", "Time", [*DELAYS, *LINES, "Time Phaser", *TWO_TAP]),
+    ("time_r", "Time R", ["Stereo Flanger", "Stereo Chorus", *TWO_TAP]),
+    ("decay", "Decay", ["Plate", "Room", "Hall", "Space", "Shimmer", "Echo"]),
+    ("size", "Size", REVERBS),
+    ("pre", "Pre-delay", [*CLASSIC, "Blackhole"]),
+    ("fb", "Feedback", [*DELAYS, *LINES, *PHASERS, *TWO_TAP, "Blackhole"]),   # (the blackhole's: its decay)
+    ("fb_r", "Feedback R", ["Stereo Flanger", "Stereo Chorus"]),
+    ("fbl", "Feedback Left", ["Stereo Delay"]),
+    ("fbr", "Feedback Right", ["Stereo Delay"]),
+    ("dfb", "Delay Feedback", ["Time Phaser"]),
+    ("rate", "Rate", ["Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay", "Blackhole"]),
+    ("rate_r", "Rate R", ["Stereo Flanger", "Stereo Chorus", "Stereo Delay"]),
+    ("depth", "Depth", ["BBD Delay", "Echo", *LINES, *PHASERS, "Resonator", "Stereo Delay"]),
+    ("depth_r", "Depth R", ["Stereo Delay"]),
+    ("offset", "Offset", ["Ping Pong"]),
+    ("tone", "Tone", [*REVERBS, *DELAYS, *LINES, *PHASERS, *TWO_TAP]),
+    ("damp", "High Damp", CLASSIC),
+    ("lowdamp", "Low Damp", CLASSIC),
+    ("diff", "Diffusion", CLASSIC),
+    ("mod", "Mod Level", REVERBS),
+    ("early", "Early / Late", ["Room", "Hall"]),
+    ("distance", "Distance", ["Plate"]),
+    ("hifreq", "High Freq", ["Room", "Hall", "Shimmer"]),
+    ("hlevel", "High Level", ["Room", "Hall", "Blackhole"]),
+    ("mlevel", "Mid Level", ["Hall"]),
+    ("llevel", "Low Level", ["Room", "Hall", "Blackhole"]),
+    ("ldecay", "Low Decay", ["Hall", "Shimmer"]),
+    ("hdecay", "High Decay", ["Hall", "Shimmer"]),
+    ("pitch", "Pitch A", ["Shimmer"]),
+    ("pitch_b", "Pitch B", ["Shimmer"]),
+    ("pdecay", "Pitch Decay", ["Shimmer"]),
+    ("gravity", "Gravity", ["Blackhole"]),
+    ("reso", "Resonance", ["Blackhole", "Resonator"]),
+    ("sweep", "Sweep", PHASERS),
+    ("spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS]),
+    ("vrate", "Vibrato Rate", ["Dual Chorus", "Ensemble"]),
+    ("vdepth", "Vibrato Depth", ["Dual Chorus", "Ensemble"]),
+    ("noise", "Noise", ["BBD Delay", *LINES, *PHASERS]),
+    ("wow", "Wow", ["Tape Delay"]),
+    ("flutter", "Flutter", ["Tape Delay"]),
+    ("bias", "Tape Bias", ["Tape Delay"]),
+    ("room", "Echo Room", ["Echo"]),
+    ("bits", "Bit Depth", ["Bit Crusher"]),
+    ("srate", "Sample Rate", ["Bit Crusher"]),
+    ("xover", "Crossover", ["Bit Crusher"]),
+    ("ftype", "Filter Type", ["Resonator"]),
+    ("cut1", "Cutoff Low", ["Resonator"]),
+    ("lvl1", "Level Low", ["Resonator"]),
+    ("cut2", "Cutoff Mid", ["Resonator"]),
+    ("lvl2", "Level Mid", ["Resonator"]),
+    ("cut3", "Cutoff High", ["Resonator"]),
+    ("lvl3", "Level High", ["Resonator"]),
+    ("freeze", "Hold", REVERBS),
+    ("sync", "Tempo Sync", [*DELAYS, *LINES, *PHASERS, "Resonator", *TWO_TAP, "Blackhole"]),
+]
+MFX_COMMON = [("mix", "Mix"), ("gain", "Gain")]
 # a MORE page's picture (more_pics.c), drawn over its last PIC_ROWS rows: an envelope, an LFO, the filters, the mixer
 PICS = {"ENV": 1, "LFO": 2, "FILTER": 3, "MIXER": 4}
 PIC_ROWS = 3
@@ -202,6 +272,24 @@ def sfx_page(lay):
                 name = name[len(pre):] if name.startswith(pre) else name
             items.append((k, name, "modfx_type", mask(new or range(len(opts)))))
     return items + SFX_COMMON
+
+
+def mfx_page(lay, pre):
+    """a master effect slot's MORE page items (pre: "dly_" slot 1, "rev_" slot 2): TYPE, each control while its type
+    uses it, MIX and GAIN. A type this layout doesn't know shows every control, and a key of the slot it doesn't
+    know shows for those types (or for every type while there are none): nothing new lands on the OTHER page."""
+    cond = pre + "type"
+    opts = lay.params[lay.index[cond]].get("options", []) if cond in lay.index else []
+    known_types = {n for _, _, names in MFX_USES for n in names}
+    new = [t for t, n in enumerate(opts) if n not in known_types]
+    mask = lambda ts: [t for t in ts if 0 <= t < 32]
+    items = [(cond, "Type")]
+    items += [(pre + k, lab, cond, mask(lay.types(cond, names) + new)) for k, lab, names in MFX_USES]
+    known = {cond} | {pre + k for k, _, _ in MFX_USES} | {pre + k for k, _ in MFX_COMMON}
+    for p in lay.params:
+        if p["key"].startswith(pre) and p["key"] not in known:
+            items.append((p["key"], p.get("name", p["key"]), cond, mask(new or range(len(opts)))))
+    return items + [(pre + k, lab) for k, lab in MFX_COMMON]
 
 
 def build(lay):
@@ -426,10 +514,12 @@ def build(lay):
     L.panel(X + 1784, 334, 236, 102, "MASTER EFFECTS - SHARED", more="MFX")
     L.cells([("mfx_on", "ON", 40, "toggle"), ("mfx_send1", "SEND 1", 46), ("mfx_send2", "SEND 2", 46),
              ("mfx_series", "SERIES", 50), ("mfx_width", "WIDTH", 50)], X + 1786, 354, 64)
-    L.panel(X + 1542, 440, 162, 100, "DELAY - SHARED", more="DELAY")
-    L.cells([("dly_time", "TIME", 52), ("dly_fb", "FDBK", 52), ("dly_sync", "SYNC", 54, "toggle")], X + 1544, 458, 72)
-    L.panel(X + 1708, 440, 162, 100, "REVERB - SHARED", more="REVERB")
-    L.cells([("rev_type", "TYPE", 50, "leds"), ("rev_decay", "DECAY", 54), ("rev_size", "SIZE", 54)], X + 1710, 452,
+    # the two master effect slots, any type each (by default a stereo delay and a plate): TYPE and the two knobs their
+    # default types are played by most; every control of the chosen type is on the slot's MORE page
+    L.panel(X + 1542, 440, 162, 100, "MASTER FX 1 - SHARED", more="DELAY")
+    L.cells([("dly_type", "TYPE", 60, "button"), ("dly_time", "TIME", 50), ("dly_fb", "FDBK", 50)], X + 1544, 452, 84)
+    L.panel(X + 1708, 440, 162, 100, "MASTER FX 2 - SHARED", more="REVERB")
+    L.cells([("rev_type", "TYPE", 60, "button"), ("rev_decay", "DECAY", 50), ("rev_size", "SIZE", 50)], X + 1710, 452,
             84)
     L.panel(X + 1874, 440, 146, 100, "SYNTH OUTPUT")
     L.ctl("volume", "knob", X + 1876, 456, 54, 78, "VOLUME", 34)
@@ -442,16 +532,11 @@ def build(lay):
             if p["key"].startswith("mac_") and p["key"] not in dict(mac)]
     L.page("MACRO", "MACRO OSCILLATOR", "A fourth sound source with many models (level: the mixer).",
            mac)
-    L.page("MFX", "MASTER EFFECTS", "Delay and reverb on two sends after the synth effect.", [
-        ("mfx_on", "On"), ("mfx_send1", "Send 1 (Delay)"), ("mfx_send2", "Send 2 (Reverb)"),
-        ("mfx_series", "Delay > Reverb"), ("mfx_width", "Width")])
-    L.page("DELAY", "DELAY", "The master delay (send 1).", [
-        ("mfx_send1", "Send 1"), ("dly_time", "Time L"), ("dly_time_r", "Time R"), ("dly_sync", "Tempo Sync"),
-        ("dly_fb", "Feedback"), ("dly_tone", "Tone"), ("dly_pp", "Ping-Pong"), ("dly_offset", "Ping-Pong Offset")])
-    L.page("REVERB", "REVERB", "The master reverb (send 2).", [
-        ("mfx_send2", "Send 2"), ("rev_type", "Type"), ("rev_decay", "Decay"), ("rev_size", "Size"),
-        ("rev_pre", "Pre-delay"), ("rev_damp", "High Damp"), ("rev_lowdamp", "Low Damp"), ("rev_tone", "Tone"),
-        ("rev_diff", "Diffusion"), ("rev_early", "Early / Late"), ("rev_mod", "Modulation"), ("rev_freeze", "Freeze")])
+    L.page("MFX", "MASTER EFFECTS", "Two effects on two sends after the synth effects, shared by the Synths.", [
+        ("mfx_on", "On"), ("mfx_buss", "Buss Mode"), ("mfx_send1", "Send 1 (FX 1)"), ("mfx_send2", "Send 2 (FX 2)"),
+        ("mfx_series", "FX 1 > FX 2"), ("mfx_width", "Width")])
+    L.page("DELAY", "MASTER FX 1", "Its type's controls (TYPE changes the list). Fed by SEND 1.", mfx_page(L, "dly_"))
+    L.page("REVERB", "MASTER FX 2", "Its type's controls (TYPE changes the list). Fed by SEND 2.", mfx_page(L, "rev_"))
 
     # ---- left-hand controller: octave, glide, wheels, X/Y pad, bend range; the ribbon over the keys ----
     zones.update({"OCT_LEDS": (50, 576, 116, 26), "OCT_DOWN": (64, 606, 36, 16), "OCT_UP": (118, 606, 36, 16),

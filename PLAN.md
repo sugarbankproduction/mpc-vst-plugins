@@ -147,7 +147,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      Dual Mono / Stereo, each slot's own MIX, GAIN and controls (slot 1 `dly_*`, slot 2 `rev_*`), the manual's L/R
      feedback and modulation, band decays and levels, Infinite, DISTANCE, the room's detents, the crusher's crossover;
      the synth effect gains Stereo Delay and Ping Pong. 564 params, 158 effect destinations; 4.3 MB of effect buffers;
-     the factory presets sound as before (within 1 LSB). Left: the window's pages for the new controls, effect presets. Tier 4: arpeggiator and chord memory done 2026-10-27
+     the factory presets sound as before (within 1 LSB). The window's pages for the new controls done 2026-10-29 (desktop):
+     each slot's MORE page shows only its type's controls, no OTHER page left. Left: effect presets. Tier 4: arpeggiator and chord memory done 2026-10-27
      (offline): the manual's arp (Up/Down/Order/Random, 1-4 octaves up/down/up-down/down-up, octave order, pendulum
      once/twice, random repeating or not, synced 1/1-1/128 straight/dotted/triplet or a free 10-280 BPM, gate, swing,
      latch (and HOLD), note reset) and chord memory (CHORD LEARN as an on/off param, first key the root; 14 built-in
