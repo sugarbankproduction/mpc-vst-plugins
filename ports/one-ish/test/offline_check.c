@@ -107,6 +107,9 @@
  *             carrier's energy in its band, silence in gives silence out, the gate, sibilance, tone, bounded at the
  *             extremes, in the engine as the synth effect and on a master send); vocoder_demo.wav (offline_check
  *             ext <dir>/demo.wav: these alone)
+ *   banks     (test/bank_check.c, 2026-10-30) every factory bank preset played a phrase for its category: peak,
+ *             loudness and CPU in a table; fails on a peak above -1 dBFS, silence, non-finite samples or a loudness
+ *             more than 6 dB from the bank's median; bank_a_demo.wav (offline_check banka <dir>/demo.wav: bank A alone)
  *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
  *             MACRO channel at each model; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
@@ -5163,6 +5166,7 @@ static void arp_wav(const char *demo_path) {
 #include "physgen_check.c"   /* the bouncing balls and particles (2026-10-29) */
 #include "gens_b_check.c"    /* (2026-10-30) rain and ripples, the Markov melody */
 #include "gens_a_check.c"   /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
+#include "bank_check.c"     /* (2026-10-30) the factory banks: peak, loudness and CPU per preset */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5927,7 +5931,13 @@ int main(int argc, char **argv) {
         bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench(); tuning_bench(); lfoenv_bench(); physgen_bench();
         gens_b_bench();   /* (2026-10-30) */
         gens_a_bench();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
+        bank_a_bench();   /* (2026-10-30) bank A's presets: CPU */
         return 0;
+    }
+    if (argc > 2 && !strcmp(argv[1], "banka")) {   /* (2026-10-30) just bank A: offline_check banka <dir>/demo.wav */
+        bank_a_checks(argv[2]);
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
     }
     if (argc > 1 && !strcmp(argv[1], "gensa")) {   /* (2026-10-30) just LIFE, ORBITS, PENDULUMS: offline_check gensa */
         gens_a_checks();
@@ -6056,6 +6066,7 @@ int main(int argc, char **argv) {
     physgen_checks();
     gens_b_checks();   /* (2026-10-30) */
     gens_a_checks();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
+    bank_a_checks(argc > 1 ? argv[1] : "demo.wav");   /* (2026-10-30) bank A's presets */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

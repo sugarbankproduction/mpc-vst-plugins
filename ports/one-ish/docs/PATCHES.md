@@ -11,7 +11,7 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
   before this feature). A `*` after the name means the sound has changed since it was loaded or saved.
 - **The PRESET box's `<` `>`** (inside the box round the name, labelled PRESET on its top edge, since 2026-10-30;
   BACK / FWD at the box's two ends only change the page the screen shows, never the sound), **PREV / NEXT and the
-  PRESET knob** step through the 27 factory presets, then your patches A to Z. With
+  PRESET knob** step through the factory presets (168 with bank A, 2026-10-30), then your patches A to Z. With
   PRESET AUTOLOAD off (SETTINGS page, `docs/SETTINGS.md`, 2026-10-29) they only point (`> F 004  Name ?`); a click on
   the PRESET knob or the name then loads it.
 - **Click the name** (or click the PRESET knob) for the PATCHES page: factory presets on the left, yours on the right,
@@ -39,6 +39,22 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
   sets), SNAPSHOTS and TAGS (2026-10-29, offline).
 - **The home line** under the patch name shows its tags (TYPE, CATEGORY, MOOD, GROUP), `NOTES` when it has notes, and
   the host's tempo when the host reports one (2026-10-29, offline).
+
+## Factory bank A (2026-10-30, offline)
+
+`presets/banks/bank_a.py`: 128 presets after the original 40, tagged for the browser: 32 Bass, 32 Lead, 20 Keys,
+16 Brass, 16 Pluck and 12 Organ (ORGAN is a new category). Most are Single (Synths 2 and 3 off); 11 are Layers or
+Splits across Synths 2 and 3. One controller plan throughout: the mod wheel opens basses up, gives leads and brass
+vibrato, moves keys (tremolo) and speeds the organs' rotor; aftertouch opens, swells or adds vibrato; velocity
+brightens; pad X shapes the timbre and pad Y the space or dirt; the ribbon bends leads and sweeps bass cutoffs. Each
+preset's one-line description is in the file (`ABOUT`).
+
+Loudness: `LEVEL` in the file trims every preset's volume so the bank plays at one level (past 100% volume, a matrix row
+Constant > Amp Level adds the rest). `test/bank_check.c` (in the offline checks; alone: `offline_check banka
+<dir>/demo.wav`) plays each preset a phrase for its category (bass line, melody, chords; a split adds bass notes, a
+sequenced preset holds a key), then again with the wheel and aftertouch full, and fails on a peak above -1 dBFS,
+silence, non-finite samples or a loudness 6 dB away from the bank's median. 2026-10-30, offline: every preset within
+-19.3 .. -17.3 dB (the loudest 300 ms of RMS), loudest peak -2.0 dBFS; `bank_a_demo.wav` in `test/out` has them all.
 
 ## Undo, COMPARE, snapshots (2026-10-29, offline)
 
@@ -94,7 +110,7 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
 The host's MIDI reaches user patches and sets:
 
 - Bank select MSB (CC 0) **0**, LSB (CC 32) **n**, then a program change **p**: position 128 x n + p of the list,
-  factory presets first, then your patches A to Z (with 40 factory presets, program 40 is your first patch).
+  factory presets first, then your patches A to Z (with 168 factory presets, bank 1 program 40 is your first patch: 128 + 40).
 - MSB **1**, LSB **n**, program **p** (0-63): performance set n + 1, number p (0 = A1, 7 = A8, 8 = B1 ... 63 = H8).
 - Other MSBs are ignored. Any MIDI channel. The host's own program list (`effSetProgram`) still picks factory presets.
 - The program change is noted on the host's thread (no file touched there) and loaded on the window's thread: by the
