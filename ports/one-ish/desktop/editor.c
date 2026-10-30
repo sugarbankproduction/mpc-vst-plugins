@@ -1452,6 +1452,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_RBUTTONDOWN: {   /* a list of options for any option control */
         if (!e) return 0;
         int i = hit(e, GET_X_LPARAM(lp), GET_Y_LPARAM(lp)), q = 0;
+        if (cb_right(e, i, GET_X_LPARAM(lp), GET_Y_LPARAM(lp))) return 0;   /* (2026-10-31) a cable's menu (cables.c) */
         if (!seq_zone(i)) q = qm_right(e, i, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));   /* connections, or a source */
         if (q == 1) return 0;
         if (q == 2) { pick_option(e, i, e->hit_rect); return 0; }
@@ -1483,6 +1484,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_LBUTTONDBLCLK: {   /* back to the default */
         if (!e) return 0;
         int x = GET_X_LPARAM(lp), y = GET_Y_LPARAM(lp), i = hit(e, x, y);
+        if (cb_double(e, i)) return 0;   /* (2026-10-31) a cable: its row removed (cables.c) */
         if (e->qm.src) { press(e, x, y); return 0; }   /* (quick assign on: a second click, not a reset) */
         if (seq_zone(i) && i < Z_SEQ_BASE + 200) { lib_touch(e, NULL); seq_double(e, i); lib_commit(e); }   /* an empty step cell: a new note */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);

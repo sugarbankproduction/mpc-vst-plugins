@@ -964,6 +964,7 @@ int qm_dst_of(int i) { return dst_of(i); }
 unsigned qm_family(int s) { return family(s); }
 int qm_is_gen_src(int s) { return is_gen_src(s); }
 void qm_remove_row(ed_t *e, int row) { remove_link(e, row); }
+void qm_open_matrix(ed_t *e, int row) { open_matrix(e, row); }   /* (2026-10-31) a cable's menu: OPEN IN MATRIX */
 void qm_pick(ed_t *e, int s) {   /* a source's jack clicked: quick assign from s (the same again: done) */
     if (s <= 0 || s >= nsources()) return;
     if (e->qm.src == s) { arm(e, 0); say(e, "Quick assign from %s done.", src_name(s)); return; }
