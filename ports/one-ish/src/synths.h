@@ -49,7 +49,8 @@ typedef struct inst {
 static int engine_global(int k) {
     static const char *const SHARED[] = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune",
                                          "fine_tune", "midi_ch", "learn_mode", "master_level", "seq_all",
-                                         "gen_follow_tempo"};   /* (2026-10-30: the generators follow the tempo) */
+                                         "gen_follow_tempo",   /* (2026-10-30: the generators follow the tempo) */
+                                         "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share"};   /* (2026-10-30) */
     const char *key = KEYS[k];
     if (!strncmp(key, "dly_", 4) || !strncmp(key, "rev_", 4)) return 1;   /* the master effect slots' controls */
     if (!strncmp(key, "link_", 5)) return 1;   /* the window's LINKs across the Synths (2026-10-30) */
@@ -582,6 +583,26 @@ static int get_param(void *inst, const char *key, char *buf, int n) {
     if (!strcmp(key, "midimap")) return mi_map_text(in, buf, n);   /* the learned CC map, */
     if (!strcmp(key, "nrpn_table")) return mi_nrpn_check(in, buf, n);   /* the NRPN table's keys, */
     if (!strcmp(key, "bpm")) return snprintf(buf, n, "%g", in->syn[0]->bpm);   /* the tempo the Synths follow */
+    if (!strncmp(key, "lfo_out", 7)) {   /* (2026-10-30) a test readout, "lfo_out<n>": Synth n's free-running LFO
+                                          * values, then each sounding voice's (oldest first), exact (%a) */
+        int c = key[7] >= '1' && key[7] <= '9' ? key[7] - '1' : 0, u = 0;
+        if (c >= NSYN) return 0;
+        const one_t *s = in->syn[c];
+        for (int l = 0; l < NLFO && u < n; l++) u += snprintf(buf + u, (size_t)(n - u), "%a ", s->lfo_val[l]);
+        const voice_t *order[MAX_VOICES];
+        int nv = 0;
+        for (int i = 0; i < MAX_VOICES; i++)
+            if (voice_busy(&s->voice[i])) order[nv++] = &s->voice[i];
+        for (int i = 1; i < nv; i++)   /* by age: the same keys line up between Synths */
+            for (int j = i; j > 0 && order[j]->age < order[j - 1]->age; j--) {
+                const voice_t *t = order[j]; order[j] = order[j - 1]; order[j - 1] = t;
+            }
+        for (int i = 0; i < nv && u < n; i++) {
+            u += snprintf(buf + u, (size_t)(n - u), "|");
+            for (int l = 0; l < NLFO && u < n; l++) u += snprintf(buf + u, (size_t)(n - u), "%a ", order[i]->lfo_out[l]);
+        }
+        return u < n ? u : n - 1;
+    }
     if (!strcmp(key, "heals")) {
         int h = 0;
         for (int c = 0; c < NSYN; c++) h += in->syn[c]->heals;
@@ -659,6 +680,7 @@ static void *create(const char *data_dir) {
     for (int c = 0; c < NSYN; c++)
         if (!(in->syn[c] = synth_create(in, c, pidx[c]))) { destroy(in); return NULL; }
     for (int c = 0; c < NSYN; c++) in->solo_g[c] = 1.0f;
+    for (int c = 0; c < NSYN; c++) in->syn[c]->syn1 = in->syn[0];   /* (2026-10-30) SHARE's LFOs: engine.c lfo_owner */
     return in;
 }
 

@@ -24,7 +24,8 @@ PATH = os.path.join(HERE, "..", "params.json")
 PREFIXES = ("s2_", "s3_")
 GLOBAL_PREFIX = ("dly_", "rev_", "link_")   # the master effect slots' controls; the window's LINKs (2026-10-30)
 GLOBAL = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune", "fine_tune", "midi_ch",
-          "learn_mode", "master_level", "seq_all", "gen_follow_tempo"}
+          "learn_mode", "master_level", "seq_all", "gen_follow_tempo",
+          "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share"}   # (2026-10-30) SHARE: Synth 1's LFO n in all 3
 SYNTH_DEFAULTS = {"s2_": {"syn_on": "On", "syn_ch": "2", "o1_oct": "16'", "volume": 45},
                   "s3_": {"syn_on": "On", "syn_ch": "3", "o1_oct": "4'", "o1_wave": "Tri", "volume": 35}}
 # (2026-10-30) Synth 1's defaults that changed that day, with their values before: the aftertouch, X/Y pad and ribbon

@@ -759,6 +759,10 @@ gen_eu_notes
 gen_tempo_src
 gen_bpm
 gen_follow_keys
+lfo1_share
+lfo2_share
+lfo3_share
+lfo4_share
 s2_o1_wave
 s2_amp_a
 s2_amp_d

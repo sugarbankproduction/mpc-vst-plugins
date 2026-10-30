@@ -648,7 +648,7 @@ for the types that use it (2026-10-29, desktop).
 master slot type, apart from Granular: a 5.9 s recording with FREEZE holding all of it, POSITION, SIZE (10-500 ms),
 DENSITY (1-150 a second), PITCH, SPRAY, PITCH RANDOM, PITCH QUANTISE (semitones, octaves, octaves and fifths), REVERSE,
 SPREAD, ENVELOPE (TEXTURE), FEEDBACK, MIX; a fixed pool of 64 grains. PC cost per 128-frame block, shared: 17 us at its
-defaults, 77 us at full density (PLAN.md item 30).
+defaults, 77 us at full density (PLAN.md item 33).
 
 **CTRL 1 / CTRL 2 on Auto** (2026-10-30, the owner's request): no longer the manual's pre-assignments in the tables
 above (which put MIX on CTRL 1 for most types, a second MIX knob): each type's two most audible controls, never MIX

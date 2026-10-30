@@ -2362,6 +2362,21 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
         check(alone && lit && all && told, what);
         click_ctl(child, s, T[k].link);
     }
+    /* (2026-10-30) SHARE on each LFO panel: a plain click lights it (shared: all three Synths), again: off; LINK stays */
+    for (int n = 1; n <= 4; n++) {
+        char k[24], lk[24];
+        snprintf(k, sizeof k, "lfo%d_share", n);
+        snprintf(lk, sizeof lk, "link_lfo%d", n);
+        setkey(fx, k, 0);
+        float l0 = pv(fx, lk);
+        click_ctl(child, s, k);
+        int on = pv(fx, k) > 0.5f && pv(fx, lk) == l0;
+        if (bmp && n == 1) shot(child, w, h, bmp, "_lfo_share");
+        click_ctl(child, s, k);
+        snprintf(what, sizeof what, "SHARE (LFO %d): a plain click on its button turns it on (%d) and off again (%.0f); "
+                 "LINK untouched", n, on, pv(fx, k));
+        check(on && pv(fx, k) < 0.5f, what);
+    }
     /* ALL 3 over LINK CUTOFF: relative, each Synth's cutoff moves by the same amount */
     {
         static const char *const K[3] = {"flt_cut", "s2_flt_cut", "s3_flt_cut"};
@@ -2508,7 +2523,7 @@ static void pad_drag(AEffect *fx, HWND child, float s, float fx0, float fy0, flo
 }
 static void pad_up(AEffect *fx, HWND child) { SendMessageA(child, WM_LBUTTONUP, 0, 0); play(fx, 2, 512); }
 static float pad_peek(AEffect *fx, int c, float *gate) {
-    enum { HT_PEEK_OP = 10 };   /* (editor.h HT_PEEK) */
+    enum { HT_PEEK_OP = 12 };   /* (editor.h HT_PEEK: after HT_GEN_ARMED and HT_RND_VOICING since the merge) */
     static char b[1024];
     snprintf(b, sizeof b, c ? "s%d_pad_now" : "pad_now", c + 1);
     fx->dispatcher(fx, 50, TEST_HUB, HT_PEEK_OP, b, 0);
@@ -2587,14 +2602,15 @@ static void hover_at(HWND child, float s, float x, float y) {   /* base units */
 static void hover_zone(HWND child, float s, const short z[4]) { hover_at(child, s, z[0] + z[2] / 2.0f, z[1] + z[3] / 2.0f); }
 static int focus_now(AEffect *fx) { return (int)fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0); }   /* focus + 4 * mask */
 
-/* (2026-10-30) FOLLOW TEMPO on the GENERATIVE page (the right column's last row): a plain click flips the shared
+/* (2026-10-30) FOLLOW TEMPO on the GENERATIVE page (FOLLOW KEYS' row, its right half): a plain click flips the shared
  * gen_follow_tempo (one param for all three Synths), its help says what it does; the MORE pages show it too */
 static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     char what[300];
     fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
     click_zone(child, s, ZONE_TAB_GEN);
     float x, y, f0 = pv(fx, "gen_follow_tempo");
-    hub_xy(2 * 6 - 1, 0, &x, &y);
+    hub_xy(2 * 6 - 2, 0, &x, &y);   /* (row 10, the right half: hub.c hub_follow_rect) */
+    x += (ZONE_SCREEN[2] - 16.0f - 8.0f) / 4 + 3.0f;
     hover_at(child, s, x, y);
     int helped = strstr(help_fresh(fx), "Follow tempo") != NULL;
     click(child, s, x, y);
@@ -2629,12 +2645,13 @@ static int lt_gen_key(const char *k) {   /* hub_gens.c gen_param(): a generator'
     return 0;
 }
 static int lt_synth_of(const char *k) { return k[0] == 's' && (k[1] == '2' || k[1] == '3') && k[2] == '_' ? k[1] - '1' : 0; }
-/* hub_gens.c's buttons: RANDOMISE (0) the whole first row; MUTATE (1) and RESET (2) the halves of the second */
+/* hub_gens.c's buttons: RANDOMISE (0) and MUTATE (1) the halves of the right column's last row; RESET (2) the right
+ * half of the bottom row's left half, beside ALL OFF (since the merge with the generators' GEN TEMPO / FOLLOW KEYS) */
 static void gens_xy(int which, int all, float *x, float *y) {
     float x0 = ZONE_SCREEN[0] + 8.0f, hw = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2, xr = x0 + hw + 8.0f;
-    float w = which ? (hw - 6.0f) / 2 : hw, a = xr + (which == 2 ? w + 6.0f : 0.0f);
+    float w = (hw - 6.0f) / 2, a = which == 2 ? x0 + w + 6.0f : xr + (which == 1 ? w + 6.0f : 0.0f);
     *x = all ? a + w - 15.0f : a + (w - 33.0f) / 2;
-    *y = ZONE_SCREEN[1] + 80.0f + 22.0f * (NHUB - 6 + (which ? 1 : 0)) + 11.0f;
+    *y = ZONE_SCREEN[1] + 80.0f + 22.0f * (which == 2 ? 7 : 5) + 11.0f;
 }
 static int lt_steps(AEffect *fx) { static char b[1024]; return (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, b, 0) % 1000); }
 static void gens_count(const float *a, const float *b, int *gen, int *other) {   /* changed params per Synth */

@@ -52,6 +52,18 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   params (`link_*`, one copy, no engine effect), so they are saved with the sound (projects, patches, presets, undo)
   and the host can automate them; the randomiser leaves them alone (it follows them: a linked setting it changes
   goes to all three).
+- **SHARE** (2026-10-30, offline and the desktop window; `lfo1_share` .. `lfo4_share`, shared, default Off;
+  `src/engine.c` `lfo_owner`, `control_lfos`; `test/lfoshare_check.c`): the button beside LINK at the bottom of each LFO
+  panel (and on the LFO's MORE page). Lit, that LFO in Synths 2 and 3 *is* Synth 1's: rate, sync, timing, wave and
+  every setting on its page (range, polarity, variation, smoothing, start phase, note reset, delay, fades, repeats),
+  and in step: the free-running LFO is Synth 1's, the same value at the same moment in all three, so one wobble moves
+  all three Synths together. A voice that runs the LFO itself (note reset, repeats, the High range, an LFO the matrix
+  modulates) still restarts per note, now with Synth 1's settings, so voices of two Synths started by the same key move
+  in step; each Synth's own matrix still reaches its own voices. With Synth 1 switched off it goes on (the first Synth
+  sharing it steps it). It is done in the engine, so host automation, MIDI learn and the MPC follow it. The Synths' own
+  LFO settings stay stored (and the window shows them while SHARE is lit); SHARE off, each Synth hears its own again.
+  Unlike LINK (which copies the rate into the other Synths' own settings), SHARE copies nothing. Saved with the sound;
+  the randomiser never touches it (no rule, like the LINKs). Old sounds: Off, unchanged (golden check).
 - **GEN OFF** (the console's third row) and **ALL OFF** (the GENERATIVE page) switch every generator off in all three
   Synths at once; pressed again while they are all still off, they bring back the ones they switched off.
 - **MASTER** (2026-10-30): the small MASTER button in SYNTH OUTPUT turns that section's VOLUME knob into MASTER, the
@@ -71,7 +83,7 @@ follows the focus, would have let automation reach only the focused Synth). 1,52
   `GEN_VST_RELOCK=1`, `gen_vst --params-h`) after adding a param.
 - Shared, one copy (Synth 1's key, mirrored into the others): the master effects (`dly_*`, `rev_*`, `mfx_on`,
   `mfx_series`, `mfx_width`, `mfx_buss`), `clock_swing`, `master_tune`, `fine_tune`, `midi_ch`, `learn_mode`,
-  `master_level`, `seq_all`, `gen_follow_tempo` (2026-10-30) (`engine_global()` in `src/synths.h`; `is_global()` in
+  `master_level`, `seq_all`, `gen_follow_tempo` (2026-10-30), `lfo1_share` .. `lfo4_share` (2026-10-30) (`engine_global()` in `src/synths.h`; `is_global()` in
   `make_synths.py` keeps the same list).
 - Per Synth, beyond the sound: `syn_on` (all three On since 2026-10-30; before, Synths 2 and 3 started Off), `syn_ch` (1, 2, 3), `key_lo` / `key_hi` (0-127,
   shown as note names), and its own `transpose`, `octave_shift`, `voices`, `volume`, `pan`, `mfx_send1/2`, the synth

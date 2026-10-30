@@ -694,6 +694,28 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      RANDOMISE | ALL and MUTATE | ALL; RESET | ALL sits beside ALL OFF (now "ALL OFF" / "BRING BACK", all three Synths
      as before). The factory presets (the first 40 and both banks) are filled with the old Held Keys / Follow Keys Off
      (`make_synths.py` OLD_S1), so they play as they were designed.
+  35. (2026-10-30) SHARE: one LFO for all three Synths (owner: "a separate LINK button so an LFO can be shared by all
+     three Synths, not only its speed"). Done 2026-10-30 (offline and the desktop window; `src/engine.c` lfo_owner,
+     control_lfos, `src/synths.h`, `test/lfoshare_check.c` (`offline_check lfoshare`), load_test `link_test`;
+     `docs/MULTITIMBRAL.md`). Four shared params `lfo1_share` .. `lfo4_share` ("Share LFO n (3 Synths)", Off / On,
+     default Off). In the engine (so automation, MIDI learn and the MPC follow it): lit, LFO n of Synths 2 and 3 reads
+     Synth 1's settings (rate, sync, timing, wave, range, polarity, variation, smoothing, start phase, note reset,
+     delay, fades, repeats) and its free-running LFO is copied from Synth 1's every control step (the Synths render in
+     lockstep, Synth 1 first; with Synth 1 off the first Synth sharing it steps it), so all three hear the same value
+     at the same moment. Phase-lock choice: a voice that runs the LFO itself (note reset, repeats, the High range, a
+     matrix-modulated LFO) keeps its own restart per note, with Synth 1's settings, so voices started by the same key
+     in two Synths move in step; each Synth's own matrix still reaches its own voices. The Synths' own LFO settings
+     stay stored and are heard again with SHARE off. The window: SHARE beside LINK at the bottom of each LFO panel
+     (a plain click, lit when on; LINK, which copies the rate, unchanged and still labelled LINK: LINK RATE would not
+     fit beside SHARE), and on each LFO's MORE page, with help text. The randomiser never touches it (no rule, like the
+     LINKs); old sounds unchanged (golden check, randomiser golden). Offline: with SHARE on every LFO output of Synths
+     2 and 3, free-running and in every voice, equals Synth 1's in 4000 of 4000 pieces (notes at odd moments, note
+     reset, delay, fades, S&H, synced, High); off, 0 of 2000; off again restores each Synth's own; a state round trips
+     and plays in step. CPU on the PC (offline_bench, O2, 128-frame block, 3 Synths x 4 keys, best of five): with every
+     Synth already on Synth 1's LFO settings, off 88.12 us, on 87.60 us (SHARE's own work, a copy per LFO per control
+     step, is not measurable); with their own settings 84.35 off, 87.34 on (the difference is running Synth 1's LFOs,
+     here a High-range one per sample, in place of their own). Nothing in the audio path allocates, locks or touches a
+     file. Left: the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
