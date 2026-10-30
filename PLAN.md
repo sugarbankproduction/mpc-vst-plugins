@@ -716,6 +716,34 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      step, is not measurable); with their own settings 84.35 off, 87.34 on (the difference is running Synth 1's LFOs,
      here a High-range one per sample, in place of their own). Nothing in the audio path allocates, locks or touches a
      file. Left: the MPC page.
+  36. (2026-10-30) CABLES: the matrix seen as patch cables (owner said yes 2026-10-29/30). Done 2026-10-30 (the
+     desktop window only, offline; `desktop/cables.c`, `skin.c` skin_layer_blend, load_test `cables_test`). CABLES on
+     the MATRIX page's title line (left of the 1-8 / 9-16 arrows; the console rows have no free spot) is a plain click:
+     the panel stays as it is, a quarter darker, and each active matrix row of the Synth in focus (SYNTH 1/2/3 switch
+     it; with TOGETHER, the one shown) is a sagging cable with a dark outline, coloured by the source's family as quick
+     assign's rings (envelopes amber, LFOs blue, the hands' controllers green, random violet, the generators pink),
+     from its source to the control it moves (a ring round that knob). Sources with a place on the panel start there:
+     LFO 1-4 and the three envelopes on their title strip, NOISE (Noise EG), the pitch and mod wheels, the X/Y pad (X,
+     Y, GATE), the ribbon, GENERATIVE (each generator source used, named, down its right edge). The rest (velocity,
+     aftertouch, the key, KB gate, sustain, sostenuto, EXP 1/2, constant, random, random uni) have labelled jacks in a
+     JACK BAY laid over the keyboard's top, with CABLES OFF at its left; a destination with no knob of its own (Pitch,
+     an LFO's rate in semitones, a MORE page's item) ends at a jack after them. A row switched off (its ENABLE) is
+     faint. Each cable's middle has an amount knob (green positive, red negative, the arc from 12 o'clock): drag up or
+     down, 1% a pixel (Shift 0.2%), one undo step a drag, the host told as for a knob; the Synths edited TOGETHER get
+     the same amount (as MOD FROM's - / +). A drag or a click on a cable selects it: a label by its knob (row, source >
+     destination, amount, VIA, XFORM, "row off") with an X that removes the row (quick assign's REMOVE: one undo step,
+     the Synths edited together too). A click on a source's jack starts quick assign from it (then a knob: a new
+     cable); clicks anywhere else go to the panel as always; Esc, CABLES again or CABLES OFF hide it. The knobs keep
+     off the centre screen and away from each other and the ends; the screen's title and help lines stay in front of
+     the cables. The MATRIX page is unchanged and stays the only truth (a row changed there, by the host or by undo
+     redraws the cables at the window's timer). Drawing: the cables, jacks and bay are a cached layer (premultiplied,
+     GDI+ anti-aliased) drawn again only when a row's source, destination or ENABLE, the Synth in focus or the size
+     changes; a paint blends its part in and draws the knobs and labels on top. On the PC (load_test, 2026-10-30,
+     the machine busy with other builds): full repaint 9.8 ms without, 11.5 ms with 3 cables (target 16); the layer
+     drawn once over 20 repaints; a cable knob dragged repaints 227 x 28 px in 0.93 ms (target 2). Screenshots:
+     load_test's `_cables`, `_cables_drag`, `_cables_sel`, `_cables4`. Nothing in the audio path changes. Left: a
+     drag from a jack to a knob (a click on the jack, then the knob, does it); hover highlighting of a whole cable;
+     VIA shown only in the label (no second cable); the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
