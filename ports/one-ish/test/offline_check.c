@@ -5205,6 +5205,7 @@ static void arp_wav(const char *demo_path) {
 #include "grains_check.c"   /* (2026-10-30) GRAINS, Auto's CTRL targets, the X/Y pad's LINK */
 #include "gen_keys_check.c"   /* (2026-10-30) every generator's KEYS (FREE, HELD, LAUNCH, EMIT) and GEN TEMPO */
 #include "lfoshare_check.c"   /* (2026-10-30) SHARE: Synth 1's LFOs in all three Synths, in step */
+#include "midiout_check.c"    /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5977,7 +5978,14 @@ int main(int argc, char **argv) {
         bank_bench_all();   /* (2026-10-30) the factory banks' presets: CPU */
         grains_bench();   /* (2026-10-30) */
         lfo_share_bench();   /* (2026-10-30) SHARE */
+        midi_out_bench();   /* (2026-10-30) MIDI OUT */
         return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "midiout")) {   /* (2026-10-30) just MIDI OUT and the pedal: offline_check midiout */
+        midi_out_checks();
+        midi_out_bench();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
     }
     if (argc > 1 && !strcmp(argv[1], "defaults")) {   /* (2026-10-30) just the new defaults: offline_check defaults */
         defaults_checks();
@@ -6154,6 +6162,7 @@ int main(int argc, char **argv) {
     grains_checks();   /* (2026-10-30) */
     gen_keys_checks();   /* (2026-10-30) the generators' KEYS, GEN TEMPO */
     lfo_share_checks();   /* (2026-10-30) SHARE (test/lfoshare_check.c) */
+    midi_out_checks();   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (test/midiout_check.c) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

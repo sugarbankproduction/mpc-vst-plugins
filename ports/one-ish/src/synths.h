@@ -43,6 +43,7 @@ typedef struct inst {
     int ext_n;
     midi_in_t mi;            /* the MIDI input settings (the window's SETTINGS page: src/midi_in.h) */
     float solo_g[NSYN];      /* SOLO: each Synth's gain, gliding to 1 (heard) or 0 (another Synth soloed) */
+    mo_buf_t mob;            /* (2026-10-30) MIDI OUT: the events of the current render (src/midi_out.h) */
 } inst_t;
 
 /* the shared params: one copy, in Synth 1's values (presets/make_synths.py GLOBAL keeps the same list) */
@@ -504,7 +505,8 @@ static void set_state(inst_t *in, const char *str) {
 /* LOAD INTO SYNTH n: a sound's own values (a single-Synth patch or preset, or a performance's Synth 1) into Synth c,
  * which keeps its setup (on, channel, key range) ; the shared values and the other Synths stay as they are */
 static int load_skip(int k) {
-    return engine_global(k) || k == P_SYN_ON || k == P_SYN_CH || k == P_KEY_LO || k == P_KEY_HI || k == P_SYN_SOLO;
+    return engine_global(k) || k == P_SYN_ON || k == P_SYN_CH || k == P_KEY_LO || k == P_KEY_HI || k == P_SYN_SOLO ||
+           k == P_MOUT_ON || k == P_MOUT_SEND || k == P_MOUT_CH || k == P_SUS_PEDAL;   /* (2026-10-30: its MIDI OUT and pedal) */
 }
 static void load_value(inst_t *in, int c, const char *key, const char *val) {
     one_t *s = in->syn[c];
@@ -681,6 +683,7 @@ static void *create(const char *data_dir) {
         if (!(in->syn[c] = synth_create(in, c, pidx[c]))) { destroy(in); return NULL; }
     for (int c = 0; c < NSYN; c++) in->solo_g[c] = 1.0f;
     for (int c = 0; c < NSYN; c++) in->syn[c]->syn1 = in->syn[0];   /* (2026-10-30) SHARE's LFOs: engine.c lfo_owner */
+    for (int c = 0; c < NSYN; c++) in->syn[c]->mob = &in->mob;   /* (2026-10-30) MIDI OUT (off until enabled) */
     return in;
 }
 
@@ -747,6 +750,7 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
     const fx_params_t *ps[NSYN];
     const float *pl[NSYN], *pr[NSYN];
     int nl = 0;
+    in->mob.now0 = s0->now;   /* (MIDI OUT: this render's events from its first frame; every Synth's now is the same) */
     for (int c = 0; c < NSYN; c++) {
         one_t *s = in->syn[c];
         if (synth_live(s)) {
@@ -810,7 +814,22 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         done += n;
         for (int c = 0; c < NSYN; c++) synth_advance(in->syn[c], n);
     }
+    in->mob.now0 = s0->now;   /* (MIDI OUT) what comes before the next render (MIDI in, a param) lands at its first frame */
 }
+
+/* (2026-10-30) Not in the engine contract either: the desktop build's MIDI OUT (desktop/hostrate.c), under the wrapper's
+ * engine lock like render(). Enable once (the MPC build never does: the engine then sends nothing). Take after each
+ * render(): every event since the last take, in the order they happened, `at` frames from that render's first frame
+ * (0 .. frames; the ones that came before it, from MIDI or a param, at 0). Returns how many there were. */
+void one_ish_midi_out_enable(void *inst, int on) { ((inst_t *)inst)->mob.enabled = on != 0; }
+int one_ish_midi_out_take(void *inst, void (*fn)(void *ctx, int at, const uint8_t *m), void *ctx) {
+    mo_buf_t *b = &((inst_t *)inst)->mob;
+    int n = b->n;
+    for (int i = 0; i < n; i++) fn(ctx, b->ev[i].at, b->ev[i].m);
+    b->n = 0;
+    return n;
+}
+unsigned one_ish_midi_out_dropped(void *inst) { return ((inst_t *)inst)->mob.dropped; }
 
 static void render(void *inst, int16_t *out, int frames) { render_to(inst, out, NULL, frames); }
 

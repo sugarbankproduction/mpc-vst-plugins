@@ -115,6 +115,7 @@ static void sq_lane_legato(one_t *s, int l, int root, int vel, int tied) {
         if (moved) {
             s->ocnt[from] = 0;
             s->ocnt[out[0]] = 1;
+            mo_gen_move(s, from, out[0], vel);   /* (2026-10-30) MIDI OUT: the tie, legato (the new note, then the old off) */
             forget(s, from);
             if (s->nheld == MAX_HELD) forget(s, s->held[0]);
             s->held[s->nheld++] = out[0];

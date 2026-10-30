@@ -763,6 +763,10 @@ lfo1_share
 lfo2_share
 lfo3_share
 lfo4_share
+mout_on
+mout_send
+mout_ch
+sus_pedal
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1969,3 +1973,11 @@ s2_gen_follow_keys
 s3_gen_tempo_src
 s3_gen_bpm
 s3_gen_follow_keys
+s2_mout_on
+s2_mout_send
+s2_mout_ch
+s2_sus_pedal
+s3_mout_on
+s3_mout_send
+s3_mout_ch
+s3_sus_pedal
