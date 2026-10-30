@@ -128,7 +128,8 @@ static inline void env_stage_done(env_t *e) {
         break;
     default:   /* release */
         e->level = 0.0f;
-        if (c->loop && e->held) env_enter(e, ENV_DELAY);           /* and round again */
+        if (e->held) env_enter(e, ENV_DELAY);   /* round again; or, LOOP switched off while it looped with the key
+                                                 * still down (2026-10-30), once more to its sustain */
         else e->stage = ENV_IDLE;
     }
 }
