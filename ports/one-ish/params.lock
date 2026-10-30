@@ -768,6 +768,10 @@ an_warm
 an_warm_amt
 an_warm_time
 syn_out
+mout_on
+mout_send
+mout_ch
+sus_pedal
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1984,3 +1988,11 @@ s3_an_warm_amt
 s3_an_warm_time
 s2_syn_out
 s3_syn_out
+s2_mout_on
+s2_mout_send
+s2_mout_ch
+s2_sus_pedal
+s3_mout_on
+s3_mout_send
+s3_mout_ch
+s3_sus_pedal

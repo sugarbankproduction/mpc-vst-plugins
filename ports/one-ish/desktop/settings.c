@@ -289,8 +289,12 @@ int settings_cue_load(ed_t *e) {   /* a click on the PRESET knob or the name: lo
 }
 
 /* ---- MIDI I/O LOAD FROM PRESET off: a load keeps the MIDI channels ---- */
-static const char *const MIDI_IO_KEY[] = {"midi_ch", "syn_ch", "s2_syn_ch", "s3_syn_ch"};
+static const char *const MIDI_IO_KEY[] = {"midi_ch", "syn_ch", "s2_syn_ch", "s3_syn_ch",
+                                          /* (2026-10-30) MIDI OUT: on, what it sends, its channel, per Synth */
+                                          "mout_on", "s2_mout_on", "s3_mout_on", "mout_send", "s2_mout_send",
+                                          "s3_mout_send", "mout_ch", "s2_mout_ch", "s3_mout_ch"};
 enum { NMIDI_IO = sizeof MIDI_IO_KEY / sizeof MIDI_IO_KEY[0] };
+_Static_assert(NMIDI_IO <= SETTINGS_MIDI_KEEP, "the callers' keep[] holds them all");
 static int index_of(const char *key) {
     for (int i = 0; i < NPARAMS; i++)
         if (!strcmp(PARAMS[i].key, key)) return i;

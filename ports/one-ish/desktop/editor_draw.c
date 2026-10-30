@@ -382,8 +382,9 @@ static const char *zone_help(ed_t *e, int z) {
         return "S (SOLO): lit, you hear only the soloed Synths (several can be); the others keep playing silently. Not "
                "saved with the sound: a listening aid. (Shortcut: double-click the SYNTH button.)";
     case Z_TAB_SETUP: return "SETUP: the three Synths side by side: on, MIDI channel, key range (splits and layers), "
-                             "transpose, octave, voices, level, pan, sends, OUTPUT (main or its own pair); then MIDI, master level, "
-                             "PLAY ALL.";
+                             "transpose, octave, voices, level, pan, sends, OUTPUT (main or its own pair); then MIDI, master "
+                             "level, PLAY ALL; page 3: MIDI OUT (the notes each Synth plays, to the host, on its own channel), "
+                             "which Synths the SUSTAIN PEDAL holds, CHORD LEARN. Click again for the next page.";
     case Z_TAB_SEQ: return "SEQ: the step sequencer's step editor (64 steps in four pages, note lanes and modulation lanes). "
                            "Click again for its other view.";
     case Z_RND_GO: return "RANDOMISE: a new sound for the Synth in focus (ALL beside it: all three), made to be playable "

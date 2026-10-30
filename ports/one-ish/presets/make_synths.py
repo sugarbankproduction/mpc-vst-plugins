@@ -26,8 +26,9 @@ GLOBAL_PREFIX = ("dly_", "rev_", "link_")   # the master effect slots' controls;
 GLOBAL = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune", "fine_tune", "midi_ch",
           "learn_mode", "master_level", "seq_all", "gen_follow_tempo",
           "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share"}   # (2026-10-30) SHARE: Synth 1's LFO n in all 3
-SYNTH_DEFAULTS = {"s2_": {"syn_on": "On", "syn_ch": "2", "o1_oct": "16'", "volume": 45},
-                  "s3_": {"syn_on": "On", "syn_ch": "3", "o1_oct": "4'", "o1_wave": "Tri", "volume": 35}}
+SYNTH_DEFAULTS = {"s2_": {"syn_on": "On", "syn_ch": "2", "mout_ch": "2", "o1_oct": "16'", "volume": 45},
+                  "s3_": {"syn_on": "On", "syn_ch": "3", "mout_ch": "3", "o1_oct": "4'", "o1_wave": "Tri", "volume": 35}}
+# (2026-10-30) MIDI OUT's channel: Synth n sends on channel n (mout_ch, new: no old default to keep)
 # (2026-10-30) Synth 1's defaults that changed that day, with their values before: the aftertouch, X/Y pad and ribbon
 # rows (matrix rows 13-16: Aftertouch -> Pitch LFO1 Amt (vibrato), Pad X -> Ladder Cutoff, Pad Y -> Ladder Res,
 # Ribbon -> Pitch). Synths 2 and 3 had Synth 1's (old) defaults but for their channel, and were off. (LINK SENDS and
@@ -36,7 +37,7 @@ OLD_S1 = {"mod%d_%s" % (r, f): v for r in (13, 14, 15, 16) for f, v in (("src", 
 # (2026-10-30) the generators' KEYS and FOLLOW KEYS: Euclid / Turing played from the held keys, in the Synth's KEY
 # (src/synths.h state_absent reads an old state's missing keys the same way, whatever its dv=)
 OLD_S1.update({"gen_keys": "Held Keys", "gen_follow_keys": "Off"})
-OLD_SYNTH = {"s2_": {"syn_on": "Off", "syn_ch": "2"}, "s3_": {"syn_on": "Off", "syn_ch": "3"}}
+OLD_SYNTH = {"s2_": {"syn_on": "Off", "syn_ch": "2", "mout_ch": "2"}, "s3_": {"syn_on": "Off", "syn_ch": "3", "mout_ch": "3"}}
 
 
 def old_default(key, by_key):

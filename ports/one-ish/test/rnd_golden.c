@@ -33,7 +33,8 @@ static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the ma
     /* (2026-10-30) the generators' KEYS, LOW OCTAVE, EUCLID NOTES, GEN TEMPO, FOLLOW KEYS */
     "gen_keys", "gen_octave", "gen_eu_notes", "gen_tempo_src", "gen_bpm", "gen_follow_keys",
     "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   /* (2026-10-30) SHARE */
-    "syn_out"};   /* (2026-10-30) a Synth OUTPUT (multi-out; no randomiser rule) */
+    "syn_out",   /* (2026-10-30) a Synth OUTPUT (multi-out; no randomiser rule) */
+    "mout_on", "mout_send", "mout_ch", "sus_pedal"};   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (no rule: never touched) */
 static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
                                       "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
 

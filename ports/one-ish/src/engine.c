@@ -76,6 +76,7 @@
 #include "macro.h"
 #include "tuning.h"
 #include "hq.h"   /* (2026-10-30) HQ MODE's decimation filters */
+#include "midi_out.h"   /* (2026-10-30) MIDI OUT: the notes each Synth plays, to the host */
 
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
@@ -287,6 +288,8 @@ enum {
      * much, how long: a cold instrument's pitch and cutoffs settling over minutes) */
     P_AN_HQ, P_AN_WARM, P_AN_WARM_AMT, P_AN_WARM_TIME,
     P_SYN_OUT,       /* (2026-10-30) the Synth's output: MAIN, its own pair, or both (src/synths.h; desktop multi-out) */
+    P_MOUT_ON, P_MOUT_SEND, P_MOUT_CH,   /* (2026-10-30) MIDI OUT per Synth: on, what it sends, its channel (src/midi_out.h) */
+    P_SUS_PEDAL,     /* (2026-10-30) SUSTAIN IN SYNTH: the sustain pedal (CC 64) holds this Synth (On) or not */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -450,6 +453,7 @@ static const char *const KEYS[P_COUNT] = {
     "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   /* (2026-10-30) */
     "an_hq", "an_warm", "an_warm_amt", "an_warm_time",   /* (2026-10-30) */
     "syn_out",   /* (2026-10-30) */
+    "mout_on", "mout_send", "mout_ch", "sus_pedal",   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -753,6 +757,8 @@ typedef struct one_s {
     int warm_on;
     int64_t warm_t;
     float warm_w, warm_common;
+    mo_syn_t mo;             /* (2026-10-30) MIDI OUT: the notes it sent (src/midi_out.h) ... */
+    mo_buf_t *mob;           /* ... into its instance's buffer */
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
 static int pool_room(one_t *s, const int *idx, int n);   /* src/synths.h */
@@ -1495,6 +1501,8 @@ static void gate_off(voice_t *v) {
 
 static int hold_on(const one_t *s) { return s->val[P_HOLD] > 0.5f; }
 
+#include "midi_out_run.h"   /* (2026-10-30) MIDI OUT: part of this file */
+
 /* a released key: held on by the sustain pedal, HOLD or (a note sounding when it went down) the sostenuto pedal, or
  * let go */
 static void key_up(one_t *s, voice_t *v) {
@@ -1510,6 +1518,7 @@ static void release_held(one_t *s, int keep_latched) {
         voice_t *v = &s->voice[i];
         if (v->sustained && !s->sustain && !(keep_latched && hold_on(s)) && !(s->sostenuto && v->sost)) gate_off(v);
     }
+    mo_release(s, keep_latched);   /* (MIDI OUT: the notes they kept end too) */
 }
 
 /* a stack of voices (voices first .. first + stack - 1) taken as one: idle when all are, held when any is */
@@ -1773,6 +1782,7 @@ static void sostenuto_pedal(one_t *s, int down) {
 
 static void all_off(one_t *s, int hard) {
     s->nheld = 0;
+    mo_flush(s);   /* (MIDI OUT: every note it sent ends) */
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
         if (hard) {   /* All Sound Off: silent within a few ms, without a click */
@@ -1845,10 +1855,12 @@ static void out_on(one_t *s, int note, int vel) {
     if (s->ocnt[note] < 255) s->ocnt[note]++;
     glog_add(s, note, vel);
     note_on(s, note, vel);
+    mo_gen_on(s, note, vel);   /* (MIDI OUT) */
 }
 static void out_off(one_t *s, int note, int bypass) {
     if (note < 0 || note > 127 || !s->ocnt[note] || --s->ocnt[note]) return;
     glog_add(s, note, 0);
+    mo_gen_off(s, note, bypass);   /* (MIDI OUT) */
     s->gen_bypass = bypass;
     note_off(s, note);
     s->gen_bypass = 0;
@@ -1876,6 +1888,7 @@ static void sq_forget(one_t *s);   /* src/stepseq_run.h */
 static void gen_stop(one_t *s) {
     s->nheld = 0;   /* (2026-10-30) every held key goes too: mono doesn't move on to another of them as each ends */
     s->gen_bypass = 1;
+    mo_flush_tab(s, &s->mo.gen);   /* (MIDI OUT: every generated note it sent ends) */
     for (int n = 0; n < 128; n++)
         if (s->ocnt[n]) { s->ocnt[n] = 0; note_off(s, n); }
     s->gen_bypass = 0;
@@ -1895,8 +1908,10 @@ static void chord_key_off(one_t *s, int key) {
 static void chord_key_on(one_t *s, int key, int vel) {
     int out[CHORD_MAX], n = chord_notes(s, key, out);
     chord_key_off(s, key);   /* a repeated key (no note-off between) */
+    s->mo.keyctx = 1;   /* (MIDI OUT: a key's chord is the keys' notes) */
     for (int i = 0; i < n; i++)
         if (out[i] >= 0 && out[i] <= 127) { s->cmem[key][s->cmem_n[key]++] = (uint8_t)out[i]; out_on(s, out[i], vel); }
+    s->mo.keyctx = 0;
 }
 
 /* CHORD LEARN: the first key clears the last chord and is the root; up to five more keys add to it */
@@ -2225,12 +2240,13 @@ static void key_on(one_t *s, int note, int vel) {
     case ROUTE_CHORD: chord_key_on(s, note, vel); return;
     case ROUTE_LEARN:   /* heard as played, or with SILENT LEARN (a setting) not at all */
         learn_key(s, note);
-        if (s->val[P_LEARN_MODE] < 0.5f) note_on(s, note, vel);
+        if (s->val[P_LEARN_MODE] < 0.5f) { note_on(s, note, vel); mo_key_on(s, note, vel); }
         return;
-    default: note_on(s, note, vel); return;
+    default: note_on(s, note, vel); mo_key_on(s, note, vel); return;   /* (MIDI OUT: the key as it plays) */
     }
 }
 static void key_off(one_t *s, int note) {
+    mo_key_off(s, note);   /* (MIDI OUT: a key it sent ends, whatever the way is now) */
     if (sq_key_off(s, note)) return;
     switch (s->route) {
     case ROUTE_SEQ: seq_key_off(s, note); return;
@@ -2311,6 +2327,7 @@ static void synth_midi(one_t *s, const uint8_t *m, int len) {
     else if (st == 0xe0) s->bend = (((d2 << 7) | d1) - 8192) / 8192.0f;
     else if (st == 0xb0 && d1 == 1) s->wheel = d2 / 127.0f;
     else if (st == 0xb0 && d1 == 64) {
+        if (s->val[P_SUS_PEDAL] < 0.5f) return;   /* (2026-10-30) SUSTAIN IN SYNTH: the pedal doesn't hold this Synth */
         sustain_pedal(s, d2 >= 64);
         if (d2 < 64 && s->route == ROUTE_SEQ) seq_unlatch(s);   /* the keys it kept in the arp leave */
     }
@@ -2381,9 +2398,15 @@ static void synth_after(one_t *s, int k) {
             if (!(s->mod_env ? s->voice[i].env[n].cfg->latch : s->ecfg[n].latch) && s->voice[i].env[n].held
                 && !s->voice[i].gate)   /* (with modulation reaching an envelope: the voice's own LATCH) */
                 env_release(&s->voice[i].env[n]);
+    /* (2026-10-30) SUSTAIN IN SYNTH off while the pedal holds this Synth: it lets go, as the pedal coming up would */
+    if ((k < 0 || k == P_SUS_PEDAL) && s->val[P_SUS_PEDAL] < 0.5f && s->sustain) {
+        sustain_pedal(s, 0);
+        if (s->route == ROUTE_SEQ) seq_unlatch(s);
+    }
     perf_after_set(s, k);
     sq_sync_params(s);
     synth_switch(s);   /* ON off: everything it plays lets go */
+    if (k < 0 || k == P_MOUT_ON || k == P_MOUT_SEND || k == P_MOUT_CH) mo_settings(s);   /* (MIDI OUT: see there) */
 }
 
 /* a param of this Synth (slot k) set from the host or the window */

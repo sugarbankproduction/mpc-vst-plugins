@@ -57,8 +57,25 @@ double host_tempo;   /* library_test.c sets it: the tempo the host reports (audi
 static struct { double d[8]; int32_t i[6]; } host_time;
 static int automated[NPARAMS], begins, ends;   /* what the plugin told the host per param (audioMasterAutomate, Begin/EndEdit) */
 static int automated_n, begun, ended;          /* and in total: audioMasterAutomate / BeginEdit / EndEdit calls */
+/* (2026-10-30) MIDI OUT: what the plugin sent with audioMasterProcessEvents (8), with the host block it came in */
+#define MO_LOG 4096
+static struct { int block, delta; unsigned char m[3]; } mo_log[MO_LOG];
+static int mo_n, mo_calls, mo_block, mo_in_process;
 static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, float o) {
     (void)e; (void)v; (void)p; (void)o;
+    if (op == 8 && p) {   /* audioMasterProcessEvents: Carla takes them only while processing, so must the plugin */
+        const VstEvents *ev = p;
+        mo_calls++;
+        for (int k = 0; k < ev->numEvents && mo_n < MO_LOG; k++) {
+            const VstMidiEvent *m = ev->events[k];
+            if (m->type != 1) continue;
+            mo_log[mo_n].block = mo_in_process ? mo_block : -1;
+            mo_log[mo_n].delta = m->deltaFrames;
+            memcpy(mo_log[mo_n].m, m->midiData, 3);
+            mo_n++;
+        }
+        return 1;
+    }
     if (op == 0 && i >= 0 && i < NPARAMS) automated[i]++;
     if (op == 0) automated_n++;
     if (op == 43) { begins++; begun++; }
@@ -72,6 +89,7 @@ static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, flo
     return op == 1 ? 2400 : 0;   /* audioMasterVersion */
 }
 
+static void midi_out_test(AEffect *fx);   /* (2026-10-30) below */
 int rate_tests(void *entry, void *old_entry);   /* rate_test.c: returns its failures */
 int library_tests(void *fx, HWND child, float s, const char *bmp, int w, int h, const char *patch_dir);   /* library_test.c */
 
@@ -1994,6 +2012,18 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
     click_zone(child, s, ZONE_TAB_SETUP);   /* its second page: pan, sends, synth effect, the shared settings */
     if (bmp) shot(child, w, h, bmp, "_setup2");
     click(child, s, cx, cy);   /* (Synth 2's pan: a drag cell; a click leaves it) */
+    {   /* (2026-10-30, merge) the third page: MIDI OUT, its sends and channel, the sustain pedal, CHORD LEARN */
+        click_zone(child, s, ZONE_TAB_SETUP);
+        if (bmp) shot(child, w, h, bmp, "_setup3");
+        float mo2 = getkey(fx, "s2_mout_on");
+        click(child, s, cx, cy);   /* row 1: Synth 2's MIDI OUT, a plain click */
+        float mo2b = getkey(fx, "s2_mout_on");
+        snprintf(what, sizeof what, "SETUP page 3: a click on Synth 2's MIDI OUT cell switches it %s -> %s; Synth 1's stays %s",
+                 mo2 > 0.5f ? "on" : "off", mo2b > 0.5f ? "on" : "off", getkey(fx, "mout_on") > 0.5f ? "on" : "off");
+        check((mo2b > 0.5f) != (mo2 > 0.5f) && getkey(fx, "mout_on") < 0.5f, what);
+        setkey(fx, "s2_mout_on", mo2);
+        click_zone(child, s, ZONE_TAB_SETUP);   /* (back to its first page) */
+    }
     setkey(fx, "s2_syn_on", 0.0f);
     fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);
     click_zone(child, s, ZONE_TAB_MATRIX);
@@ -3546,6 +3576,7 @@ int main(int argc, char **argv) {
     if (n > 0) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, chunk, 0);
     check(fabsf(fx->getParameter(fx, 1) - before) < 1e-3f, "restores them");
 
+    midi_out_test(fx);   /* (2026-10-30) */
     audition(fx, argc > 2 && argv[2][0] ? argv[2] : NULL);
     patch_tests(fx);
     editor(fx, argc > 3 ? argv[3] : NULL);
@@ -3813,7 +3844,7 @@ enum { Z_MX_FSRC = 695001, Z_MX_FDST, Z_MX_CLEAR, Z_MX_DEL = 695010, Z_MX_KEY = 
 enum { MXT_XY = 1, MXT_VIEW, MXT_FSRC, MXT_FDST, MXT_WAIT, MXT_CELL_XY, MXT_SECTION };
 static char mxbuf[1024];
 static intptr_t mxt(AEffect *fx, int op, float opt) { mxbuf[0] = 0; return fx->dispatcher(fx, 50, TEST_MX, op, mxbuf, opt); }
-static int opt_named(const char *key, const char *name) {   /* option `name` of param key, or -1 */
+static int opt_of_key(const char *key, const char *name) {   /* option `name` of param key, or -1 */
     int k = rnd_key(key);
     for (int o = 0; k < NPARAMS && o < PARAMS[k].nopts; o++)
         if (!strcmp(PARAMS[k].opts[o], name)) return o;
@@ -3888,10 +3919,10 @@ static void matrix_page_test(AEffect *fx, HWND child, float s, const char *bmp, 
     snapshot(fx, saved);
     fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone in focus */
     mclear(fx);
-    int lfo1 = opt_named("mod1_src", "LFO 1"), lfo2 = opt_named("mod1_src", "LFO 2"), vel = opt_named("mod1_src", "Velocity"),
-        rib = opt_named("mod1_src", "Ribbon"), d_lad = opt_named("mod1_dst", "Ladder Cutoff"),
-        d_pitch = opt_named("mod1_dst", "Pitch"), d_svf = opt_named("mod1_dst", "SVF Cutoff"), d_pan = opt_named("mod1_dst", "Pan"),
-        d_res = opt_named("mod1_dst", "Ladder Res");
+    int lfo1 = opt_of_key("mod1_src", "LFO 1"), lfo2 = opt_of_key("mod1_src", "LFO 2"), vel = opt_of_key("mod1_src", "Velocity"),
+        rib = opt_of_key("mod1_src", "Ribbon"), d_lad = opt_of_key("mod1_dst", "Ladder Cutoff"),
+        d_pitch = opt_of_key("mod1_dst", "Pitch"), d_svf = opt_of_key("mod1_dst", "SVF Cutoff"), d_pan = opt_of_key("mod1_dst", "Pan"),
+        d_res = opt_of_key("mod1_dst", "Ladder Res");
     mset(fx, 0, "src", lfo1); mset(fx, 0, "dst", d_lad); mset(fx, 0, "amt", 20);
     mset(fx, 1, "src", lfo2); mset(fx, 1, "dst", d_pitch); mset(fx, 1, "amt", 10);
     mset(fx, 2, "src", vel); mset(fx, 2, "dst", d_svf); mset(fx, 2, "amt", 30); mset(fx, 2, "via", lfo1);
@@ -3978,9 +4009,9 @@ static void matrix_page_test(AEffect *fx, HWND child, float s, const char *bmp, 
     snprintf(what, sizeof what, "DESTINATION in two steps: a plain click on row 4's, Filters, then Ladder Res (%s): row 4's "
              "destination %d (want %d), one undo step (%d -> %d); every destination in a named section (%d in Other); the "
              "vocoder's SIBILANCE in Synth effect (%d)", m4 ? "picked" : "NOT picked", mopt(fx, 3, 0, "dst"), d_res, st2,
-             qm_steps(fx), other, (int)mxt(fx, MXT_SECTION, (float)opt_named("mod1_dst", "Synth FX Sibilance")));
+             qm_steps(fx), other, (int)mxt(fx, MXT_SECTION, (float)opt_of_key("mod1_dst", "Synth FX Sibilance")));
     check(m4 && mopt(fx, 3, 0, "dst") == d_res && qm_steps(fx) == st2 + 1 && other == 0 &&
-          mxt(fx, MXT_SECTION, (float)opt_named("mod1_dst", "Synth FX Sibilance")) == 6, what);
+          mxt(fx, MXT_SECTION, (float)opt_of_key("mod1_dst", "Synth FX Sibilance")) == 6, what);
     if (bmp) shot(child, w, h, bmp, "_matrix_twostep");
     /* KEY RANGE by a key on the SETUP page: LOW for Synth 2, then a key of the window's keyboard; HIGH, then a computer
      * key an octave above; LOW for Synth 3, then a MIDI note; HIGH below it (LOW follows); Esc and a second click cancel */
@@ -4044,4 +4075,115 @@ static void matrix_page_test(AEffect *fx, HWND child, float s, const char *bmp, 
         if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
     click_zone(child, s, ZONE_TAB_MATRIX);
     SendMessageA(child, WM_TIMER, 1, 0);
+}
+
+/* ---- (2026-10-30) MIDI OUT through the DLL: it says it sends MIDI (canDo), and with MIDI OUT on it calls the host's
+ * audioMasterProcessEvents from inside processReplacing, in the host block the note plays in, sorted, every note-on
+ * followed by its note-off (desktop/hostrate.c, src/midi_out.h) ---- */
+static void mo_play(AEffect *fx, int blocks) {
+    static float px[6][512];   /* (multi-out: outputs 3-8 too) */
+    float l[512], r[512], *out[8] = {l, r, px[0], px[1], px[2], px[3], px[4], px[5]};
+    for (int b = 0; b < blocks; b++) {
+        mo_in_process = 1;
+        fx->processReplacing(fx, NULL, out, 512);
+        mo_in_process = 0;
+        mo_block++;
+    }
+}
+static void midi_out_test(AEffect *fx) {
+    char what[256];
+    int cd1 = (int)fx->dispatcher(fx, 51 /* effCanDo */, 0, 0, (void *)"sendVstEvents", 0);
+    int cd2 = (int)fx->dispatcher(fx, 51, 0, 0, (void *)"sendVstMidiEvent", 0);
+    int cd3 = (int)fx->dispatcher(fx, 51, 0, 0, (void *)"receiveVstMidiEvent", 0);
+    snprintf(what, sizeof what, "MIDI OUT: canDo sendVstEvents %d, sendVstMidiEvent %d (receiveVstMidiEvent %d)", cd1, cd2,
+             cd3);
+    check(cd1 == 1 && cd2 == 1 && cd3 == 1, what);
+    mo_play(fx, 4);
+    mo_n = mo_calls = 0;
+    send_midi(fx, 0x90, 60, 100);   /* MIDI OUT off (the default): nothing */
+    mo_play(fx, 4);
+    send_midi(fx, 0x80, 60, 0);
+    mo_play(fx, 4);
+    check(mo_n == 0, "MIDI OUT off (the default): the plugin sends nothing to the host");
+    setkey(fx, "mout_on", 1.0f);
+    mo_play(fx, 2);
+    int b0 = mo_block;
+    send_midi(fx, 0x90, 60, 100);   /* at the host block's start */
+    mo_play(fx, 1);
+    int ok = mo_n == 1 && mo_log[0].block == b0 && mo_log[0].delta >= 0 && mo_log[0].delta < 128 &&
+             mo_log[0].m[0] == 0x90 && mo_log[0].m[1] == 60 && mo_log[0].m[2] == 100;
+    snprintf(what, sizeof what, "MIDI OUT on: a key goes to the host in its own host block (event %d: block %d of %d, "
+             "deltaFrames %d, %02X %d %d)", mo_n, mo_n ? mo_log[0].block : -1, b0, mo_n ? mo_log[0].delta : -1,
+             mo_n ? mo_log[0].m[0] : 0, mo_n ? mo_log[0].m[1] : 0, mo_n ? mo_log[0].m[2] : 0);
+    check(ok, what);
+    send_midi(fx, 0x80, 60, 0);
+    mo_play(fx, 2);
+    check(mo_n == 2 && mo_log[1].m[0] == 0x80 && mo_log[1].m[1] == 60, "MIDI OUT on: its note-off follows");
+    /* generated: Euclid FREE (plays by itself) for 3 s, then switched off; every event in a process call, sorted */
+    mo_n = mo_calls = 0;
+    setkey(fx, "gen_euclid_on", 1.0f);
+    mo_play(fx, 3 * 44100 / 512);
+    setkey(fx, "gen_euclid_on", 0.0f);
+    mo_play(fx, 20);
+    setkey(fx, "mout_on", 0.0f);
+    mo_play(fx, 2);
+    int ons = 0, offs = 0, inproc = 1, sorted = 1, twice = 0, stray = 0, hang = 0;
+    static int held[16][128];
+    memset(held, 0, sizeof held);
+    for (int k = 0; k < mo_n; k++) {
+        int st = mo_log[k].m[0] & 0xF0, ch = mo_log[k].m[0] & 15, n = mo_log[k].m[1];
+        inproc &= mo_log[k].block >= 0 && mo_log[k].delta >= 0 && mo_log[k].delta < 512;
+        if (k && mo_log[k].block == mo_log[k - 1].block && mo_log[k].delta < mo_log[k - 1].delta) sorted = 0;
+        if (st == 0x90 && mo_log[k].m[2]) { ons++; twice += held[ch][n] > 0; held[ch][n]++; }
+        else if (st == 0x80 || st == 0x90) { offs++; if (held[ch][n]) held[ch][n]--; else stray++; }
+    }
+    for (int c = 0; c < 16; c++)
+        for (int n = 0; n < 128; n++) hang += held[c][n];
+    snprintf(what, sizeof what, "MIDI OUT: Euclid's notes reach the host (%d note-ons, %d note-offs in %d calls), all "
+             "from inside processReplacing (%s), sorted (%s); none twice on (%d), no stray off (%d), none hanging (%d)",
+             ons, offs, mo_calls, inproc ? "yes" : "NO", sorted ? "yes" : "NO", twice, stray, hang);
+    check(ons > 3 && inproc && sorted && !twice && !stray && !hang, what);
+    /* at 48 kHz: the key's note-on goes out where its sound is heard: its engine block's start, converted to 48 kHz,
+     * plus the converter's latency (the plugin's initialDelay) */
+    fx->dispatcher(fx, 12, 0, 0, NULL, 0);
+    fx->dispatcher(fx, 10, 0, 0, NULL, 48000.0f);
+    fx->dispatcher(fx, 12, 0, 1, NULL, 0);
+    setkey(fx, "mout_on", 1.0f);
+    mo_play(fx, 3);   /* host samples 0 .. 1535 */
+    mo_n = 0;
+    send_midi(fx, 0x90, 60, 100);   /* at host sample 1536: engine frame 1411, the engine block at 1408 (or, when the
+                                     * converter's look-ahead has rendered that one already, the next, at 1536) */
+    mo_play(fx, 2);
+    send_midi(fx, 0x80, 60, 0);
+    mo_play(fx, 2);
+    setkey(fx, "mout_on", 0.0f);
+    long want_a = (1408L * 48000 + 22050) / 44100 + fx->initialDelay, want_b = (1536L * 48000 + 22050) / 44100 + fx->initialDelay;
+    long got = mo_n ? (long)(mo_log[0].block - (mo_block - 4)) * 512 + 1536 + mo_log[0].delta : -1;
+    snprintf(what, sizeof what, "MIDI OUT at 48 kHz: the note-on at host sample %ld (its sound's: %ld or %ld, latency "
+             "%d), its note-off after (%d events)", got, want_a, want_b, fx->initialDelay, mo_n);
+    check(mo_n == 2 && (got == want_a || got == want_b) && mo_log[1].m[0] == 0x80, what);
+    /* (2026-10-30, merge) the same with Synth 1 on its own pair (multi-out: that pair's converter runs too): the events'
+     * times are the same (every pair's converter is fed the same engine frames as MAIN's) */
+    long got_main = got;
+    fx->dispatcher(fx, 12, 0, 0, NULL, 0);   /* (the converters start again, as above) */
+    fx->dispatcher(fx, 10, 0, 0, NULL, 48000.0f);
+    fx->dispatcher(fx, 12, 0, 1, NULL, 0);
+    setkey(fx, "syn_out", 0.5f);   /* Own Pair */
+    setkey(fx, "mout_on", 1.0f);
+    mo_play(fx, 3);
+    mo_n = 0;
+    send_midi(fx, 0x90, 60, 100);
+    mo_play(fx, 2);
+    send_midi(fx, 0x80, 60, 0);
+    mo_play(fx, 2);
+    setkey(fx, "mout_on", 0.0f);
+    long got_pair = mo_n ? (long)(mo_log[0].block - (mo_block - 4)) * 512 + 1536 + mo_log[0].delta : -1;
+    setkey(fx, "syn_out", 0.0f);
+    snprintf(what, sizeof what, "MIDI OUT at 48 kHz with Synth 1 on its own pair (outputs 3-4, its converter running): the "
+             "note-on at host sample %ld (on MAIN: %ld; its sound's: %ld or %ld), its note-off after (%d events)", got_pair,
+             got_main, want_a, want_b, mo_n);
+    check(mo_n == 2 && (got_pair == want_a || got_pair == want_b) && mo_log[1].m[0] == 0x80, what);
+    fx->dispatcher(fx, 12, 0, 0, NULL, 0);
+    fx->dispatcher(fx, 10, 0, 0, NULL, 44100.0f);
+    fx->dispatcher(fx, 12, 0, 1, NULL, 0);
 }

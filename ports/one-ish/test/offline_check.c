@@ -5211,6 +5211,7 @@ static void arp_wav(const char *demo_path) {
 #include "lfoshare_check.c"   /* (2026-10-30) SHARE: Synth 1's LFOs in all three Synths, in step */
 #include "hq_check.c"   /* (2026-10-30) HQ MODE and WARM-UP (the ANALOG page) */
 #include "multiout_check.c"   /* (2026-10-30) multi-out: each Synth's OUTPUT (MAIN, its own pair, both) */
+#include "midiout_check.c"    /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5985,7 +5986,14 @@ int main(int argc, char **argv) {
         lfo_share_bench();   /* (2026-10-30) SHARE */
         hq_bench();   /* (2026-10-30) HQ MODE, WARM-UP */
         multiout_bench();   /* (2026-10-30) multi-out */
+        midi_out_bench();   /* (2026-10-30) MIDI OUT */
         return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "midiout")) {   /* (2026-10-30) just MIDI OUT and the pedal: offline_check midiout */
+        midi_out_checks();
+        midi_out_bench();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
     }
     if (argc > 1 && !strcmp(argv[1], "defaults")) {   /* (2026-10-30) just the new defaults: offline_check defaults */
         defaults_checks();
@@ -6173,6 +6181,7 @@ int main(int argc, char **argv) {
     lfo_share_checks();   /* (2026-10-30) SHARE (test/lfoshare_check.c) */
     hq_checks();   /* (2026-10-30) HQ MODE and WARM-UP (test/hq_check.c) */
     multiout_checks();   /* (2026-10-30) multi-out (test/multiout_check.c) */
+    midi_out_checks();   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (test/midiout_check.c) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

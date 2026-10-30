@@ -779,7 +779,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      rather than the Moog One's single shared SUB pair (each Synth gets its own mixer channel in the host; MAIN plus one
      Synth on its own pair is the instrument's MAIN / SUB split; SUB VOLUME is the host's fader on the pair). Per Synth
      `syn_out` ("Synth Output": Main (default), Own Pair, Main + Own), a plain click on the SETUP page's new OUTPUT row
-     (the page now has three sub-pages) or on SYNTH OUTPUT's MORE page, with help text. The shared master effects'
+     (the page now has three sub-pages; since the merge with MIDI OUT, item 40, OUTPUT is on page 2) or on SYNTH OUTPUT's MORE page, with help text. The shared master effects'
      returns always go to MAIN; a Synth on its own pair still feeds them through its sends (an aux send: echo and
      reverb on MAIN, dry on its pair; sends at 0 for a dry pair). The master level and the limiter apply to every
      pair. OUTPUT is setup, not sound: kept by LOAD INTO SYNTH, left out of SAVE SYNTH, never randomised. The engine API
@@ -830,6 +830,45 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      Old sounds unchanged (golden check), the randomiser as before (randomiser golden). No engine change but the six
      destinations; nothing new in the audio path (no CPU cost to measure). Not done: shift-click shortcuts on DEST /
      MORE for the filters (the buttons are the way), matrix presets (another helper's), the MPC page.
+  40. (2026-10-30) MIDI OUT (audit 14b) and SUSTAIN IN SYNTH. Done 2026-10-30 (offline and the desktop DLL; the window's
+     SETUP page; `src/midi_out.h`, `src/midi_out_run.h`, engine.c `out_on` / `out_off` / `key_on` / `key_off` /
+     `all_off` / `gen_stop` / `release_held`, `src/synths.h` (the buffer, `one_ish_midi_out_take`), `desktop/hostrate.c`
+     (`oev_add`, `oev_send`), `desktop/editor.c` (canDo), `test/midiout_check.c` (`offline_check midiout`), load_test
+     `midi_out_test`; `docs/MULTITIMBRAL.md` MIDI, `docs/SETTINGS.md` "MIDI OUT in a host").
+     - MIDI OUT per Synth, on SETUP page 3: MIDI OUT (`mout_on`, Off by default), MIDI OUT SENDS (`mout_send`: Keys,
+       Generated, Both: default Both), MIDI OUT CHANNEL (`mout_ch`, Synth n on n). Keys: the notes played from the keys
+       (chord memory's chord too); Generated: the arp, the step sequencer and every generator. Saved with the sound, as
+       the Moog One keeps its MIDI I/O with the preset (and has MIDI I/O LOAD FROM PRESET to keep them as set: that
+       setting now covers these three too); INTO SYNTH keeps the Synth's own.
+     - Sample-accurate: the engine notes each event at the sample it plays (the step clock already splits render() at
+       every step); `desktop/hostrate.c` puts it at that engine sample's host sample (x fs / 44100, plus the converter's
+       latency: with the sound, not before it) and sends each host block's events, sorted, with
+       audioMasterProcessEvents from inside processReplacing. canDo "sendVstEvents" / "sendVstMidiEvent" is answered by
+       the desktop layer (`editor.c`): `wrapper/vst2_wrap.c` is untouched, so the MPC build's ABI and behaviour are
+       unchanged; there nothing enables the engine's buffer and it sends nothing.
+     - Pairs: each note-on is remembered with the note and channel it went out on; its note-off always follows (its
+       key or step's end; All Notes Off / All Sound Off, so PANIC; the Synth off; a change of way; a state or preset
+       loaded; MIDI OUT off; SENDS or CHANNEL changed: those end at once on the old channel). A key let go under the
+       sustain pedal or HOLD ends when they let go. One note and channel held by two sources (keys and sequencer, or two
+       Synths on one channel) is counted per instance: the second retriggers, the last end sends the note-off.
+     - Fixed buffers only (2048 events per render, note-ons refused past 512 so note-offs always fit; 4096 waiting in
+       hostrate); no allocation, lock or file in the audio path.
+     - SUSTAIN PEDAL per Synth (`sus_pedal`, On by default = All, as before): SETUP page 3, a click toggles; any
+       combination of the three. Off while the pedal is down: that Synth lets go. Saved with the sound (a split's pedal
+       is part of the performance), kept by INTO SYNTH.
+     Tested offline: every generator's note-ons (arp, sequencer, Euclid, Turing, balls, particles, LIFE, orbits,
+     pendulums, rain, Markov) go out at the engine's own sample, note and velocity, on the chosen channel; every way a
+     note is cut short leaves nothing hanging and never two note-ons; the pedal holds only the chosen Synths. load_test:
+     the DLL answers the canDos, calls audioMasterProcessEvents from inside processReplacing, sorted, paired, and at
+     48 kHz places the note-on where its sound is. Old sounds unchanged (golden check, 61 sounds; randomiser golden).
+     CPU on the PC (offline_bench, O2, 128-frame block, three Synths playing arp, sequencer and Euclid, 4 keys, best of
+     five): MIDI OUT off 54.97 us, on 55.05 us (614 events in 3000 blocks): not measurable. Left: the MPC
+     page (MPC ignores plugin MIDI out); MIDI out of CCs, pitch bend and the pedal itself (only notes go out); Carla not
+     yet tried by the owner (`docs/SETTINGS.md` says how).
+     Merged 2026-10-30 with multi-out (item 38) and the MATRIX page (item 39): the SETUP page has three pages: 1 ON ..
+     LEVEL; 2 PAN, SENDS, SYNTH EFFECT, OUTPUT, MIDI IN (ALL), MASTER LEVEL, PLAY ALL SEQS; 3 MIDI OUT, MIDI OUT SENDS,
+     MIDI OUT CHANNEL, SUSTAIN PEDAL, CHORD LEARN (every row a plain click). load_test checks MIDI OUT's timing at 48 kHz
+     with a Synth on its own pair too (its converter running: the same host sample as on MAIN).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

@@ -25,10 +25,19 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   do the SEND 1 and SEND 2 knobs in the MASTER EFFECTS panel: how much of the Synth in focus goes into each.
 - **SETUP** (next to the SYNTH buttons): the three Synths side by side: ON, MIDI CHANNEL, LOWEST KEY, HIGHEST KEY,
   TRANSPOSE, OCTAVE, VOICES, LEVEL, PAN, SEND 1, SEND 2, SYNTH EFFECT, and the shared MIDI IN (ALL), MASTER LEVEL,
-  PLAY ALL SEQS, CHORD LEARN mode. (2026-10-30, the desktop window) Each Synth's LOWEST KEY and HIGHEST KEY cell has
+  PLAY ALL SEQS, CHORD LEARN mode, on three pages (2026-10-30; a click on SETUP again, or the page arrows): page 1 ON
+  .. LEVEL; page 2 PAN, SEND 1, SEND 2, SYNTH EFFECT, OUTPUT (see OUTPUT below), MIDI IN (ALL), MASTER LEVEL, PLAY ALL
+  SEQS; page 3 MIDI OUT, MIDI OUT SENDS, MIDI OUT CHANNEL (see MIDI below), SUSTAIN PEDAL (each Synth's own) and
+  CHORD LEARN. (2026-10-30, the desktop window) Each Synth's LOWEST KEY and HIGHEST KEY cell has
   a LOW / HIGH button: click it (it reads PRESS, the help line says what to do), then press a key on the window's
   keyboard, the computer keyboard or a MIDI keyboard, and that key is the end of the range; if the other end would
   cross, it moves to the same key. One undo step; Esc, a second click or leaving the page cancels.
+- **SUSTAIN PEDAL** (2026-10-30, offline and the desktop window; `sus_pedal`, per Synth, On by default; the manual's
+  SUSTAIN IN SYNTH, p131): which Synths the sustain pedal (CC 64, or the SETTINGS page's number) holds. All three On is
+  the manual's All (as before); any one, two or none: a click on a Synth's cell switches it. Off while the pedal is
+  down, that Synth lets go at once. Split example: Synth 1 a bass below C4 with SUSTAIN PEDAL Off, Synth 2 a pad above
+  with it On: the pedal holds only the pad. Saved with the sound; INTO SYNTH keeps the Synth's own (it is its setup,
+  like its channel). The sostenuto pedal (CC 66) still reaches every Synth.
 - **Split:** Synth 1 HIGHEST KEY B3, Synth 2 ON with LOWEST KEY C4. **Layer:** both on, full range. Factory
   performances: "Split Bass + Lead", "Layer Pad + Pluck", "Split Bass, Pad + Bells".
 - **PATCHES page:** INTO S1/2/3 loads the picked preset or patch into the Synth in focus only (that Synth keeps its
@@ -137,6 +146,21 @@ way.
   was down left it hanging. A Synth on Omni lets go on any channel, as before. All Notes Off / All Sound Off on a
   channel a Synth has left ends the notes it started there. `test/robust_check.c` routing.)
 - The window's keyboard plays on `midi_ch`, or on the focused Synth's `syn_ch` when it is Per Synth.
+- **MIDI OUT** (2026-10-30, offline and the desktop DLL; `src/midi_out.h`, `desktop/hostrate.c`; the manual's MIDI OUT
+  ROUTE, p129-130, Per Synth): each Synth can send the notes it plays to the host's MIDI out, to play another instrument.
+  SETUP page 3, per Synth: MIDI OUT (Off by default; a click), MIDI OUT SENDS (KEYS: the notes played from the keys,
+  chord memory's chord included; GENERATED: the arpeggiator's, the step sequencer's and every generator's (Euclid,
+  Turing, balls, particles, LIFE, orbits, pendulums, rain, Markov); BOTH, the default), MIDI OUT CHANNEL (Synth n on
+  channel n by default). A note goes out as the Synth plays it (its TRANSPOSE and OCTAVE in), at the sample it starts,
+  with its velocity. A sequence played on another Synth (OUTPUT) goes out from the Synth that plays it, on that one's
+  channel. Every note-on is followed by its note-off, whatever happens meanwhile (PANIC, All Notes Off, the Synth off,
+  a preset loaded, MIDI OUT switched off, its channel or SENDS changed: those end at once, on the channel they went out
+  on); a key let go under the sustain pedal or HOLD ends with them. Two sources on one note and channel (the keys and the
+  sequencer, or two Synths on one channel) never give two note-ons in a row: the second retriggers (off, then on) and
+  the last end sends the note-off. Saved with the sound, like the channels; MIDI I/O FROM PRESET off keeps them as set
+  when a preset or patch loads, and INTO SYNTH keeps the Synth's own. The plugin also tells the host it sends MIDI
+  (VST2 canDo "sendVstEvents" / "sendVstMidiEvent"). Desktop only: the MPC build sends nothing (MPC ignores a plugin's
+  MIDI out), and its wrapper is unchanged.
 
 ## A new instance (2026-10-30, owner's request: "make the default that all 3 synths are turned on")
 
@@ -200,6 +224,5 @@ gets three Synths (and how its page shows them) is the owner's later call.
 
 - Per-Synth outputs (MAIN / SUB as extra VST2 output pairs), SUB VOLUME.
 - The master effects' matrix destinations follow Synth 1's matrix only.
-- Sequencer OUTPUT to another Synth or all of them; the sustain pedal's target Synth.
 - Timbre names on the home line. (NRPN for Synths 2 and 3 came with MIDI learn, 2026-10-29: `docs/SETTINGS.md`.)
 - The randomiser's undo history starts again when the focus changes.

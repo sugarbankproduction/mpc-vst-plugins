@@ -29,7 +29,7 @@ The rate LEDs and the home line follow the own tempo while it is OWN.
 three Synths, saved with the sound), the generators that run at their own speed (the balls and particles, the rain,
 the orbits, LIFE's FREE rate) follow this tempo too: tempo / 120 times as fast (0.25 .. 4), gliding over about 0.1 s.
 At 120 BPM nothing changes.
-| MIDI I/O FROM PRESET | On: a preset or patch you load brings its MIDI channels (MIDI IN (ALL) and each Synth's channel). Off: the channels you set stay. A project always restores everything. | On |
+| MIDI I/O FROM PRESET | On: a preset or patch you load brings its MIDI channels (MIDI IN (ALL) and each Synth's channel) and (2026-10-30) each Synth's MIDI OUT, MIDI OUT SENDS and MIDI OUT CHANNEL. Off: the ones you set stay. A project always restores everything. | On |
 | SUSTAIN PEDAL CC | The CC number of your sustain pedal. | 64 |
 | EXP 1 PEDAL CC | The CC number the mod matrix reads as Exp 1 (its list still says "Exp 1 (CC 11)", the default). | 11 |
 | EXP 2 PEDAL CC | The CC number the mod matrix reads as Exp 2 ("Exp 2 (CC 4)"). | 4 |
@@ -90,6 +90,36 @@ samples; 19-EDO puts every key a 19th of an octave from key 60 (within 0.001 cen
 keyboard map (D as the first degree, A at 440 Hz, G# left out) gives the just pitches and a silent G#. CPU (PC,
 2026-10-29, `test/run.sh`'s bench): 8 gliding voices 62.63 us per 128-frame block without a scale, 63.60 with 19-EDO
 (+1.5%, about 0.12 us a voice); without a scale nothing changes.
+
+## MIDI OUT in a host (2026-10-30)
+
+MIDI OUT is set per Synth on the SETUP page's third page (`docs/MULTITIMBRAL.md`, MIDI), not here: like the
+Moog One's MIDI I/O (p129-130) it is saved with the sound, and MIDI I/O FROM PRESET above decides whether a loaded
+preset brings it. The plugin tells the host it sends MIDI (canDo "sendVstEvents" and "sendVstMidiEvent"); a host
+reads that when it loads the plugin, so a host that had Moo Won loaded before must load it again (remove and add it,
+or reopen the project) to see its MIDI output.
+
+**Timing.** Each note goes out at the host sample its own sound is heard at: at 44.1 kHz on the very sample; at other
+rates (the engine runs at 44.1 kHz behind a rate converter, `desktop/hostrate.c`) its engine sample converted to the
+host's rate, plus the converter's latency (the delay the plugin reports), so a second instrument played by it sounds
+together with Moo Won's own audio as you hear it. Host MIDI coming in is placed per engine block (128 frames, about
+3 ms) as before, so a key played into Moo Won goes out at the start of the engine block it was played in.
+
+**Carla 2.5.10** (checked against Carla's source, `CarlaPluginVST2.cpp` and `CarlaEngineGraph.cpp` of v2.5.10; not yet
+tried by the owner): Carla gives a VST2 plugin a MIDI output when it answers either canDo above, takes its events only
+while it is processing (which is when Moo Won sends them) and writes them out in the order given (Moo Won sorts
+them).
+- **Continuous Rack** (the owner's setup): there are no MIDI cables in a rack; a plugin's MIDI output goes to the
+  plugin **below** it in the rack, which gets only that (not the keyboard's MIDI any more), and the last plugin's goes to
+  Carla's MIDI out. Audio of a plugin below is added to Moo Won's. So: switch MIDI OUT on for a Synth (SETUP, page 3),
+  then add the instrument to be played (Add Plugin) and drag it below Moo Won; Moo Won's notes play it, on the
+  channel(s) you set. To send them to a hardware synth or another program, leave Moo Won last in the rack and connect
+  Carla's MIDI output to the device in Carla's Patchbay tab (the external connections, where the audio-out cables of
+  the owner's `.carxp` also are; this last step is from Carla's design, not yet tried).
+  Note: with Moo Won above other plugins, those plugins hear only what Moo Won sends (nothing while its MIDI OUT is
+  off); that is how Carla's rack works.
+- **Patchbay** mode (Carla's settings, Engine, Process Mode): Moo Won gets its own MIDI output port in the patchbay;
+  drag a cable from it to the other plugin's MIDI input (or to a MIDI out device).
 
 ## The file
 

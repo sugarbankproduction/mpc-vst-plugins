@@ -533,10 +533,16 @@ static void set_focus(ed_t *e, int c, int add) {
 /* ---- the SETUP page: the three Synths side by side (and the shared settings) ---- */
 static const char *const SETUP_KEY[] = {"syn_on", "syn_ch", "key_lo", "key_hi", "transpose", "octave_shift", "voices",
                                         "volume", "pan", "mfx_send1", "mfx_send2", "modfx_on", "syn_out", "midi_ch",
-                                        "master_level", "seq_all", "learn_mode"};
+                                        "master_level", "seq_all",
+                                        /* (2026-10-30) page 3: MIDI OUT and the sustain pedal, per Synth (a click each) */
+                                        "mout_on", "mout_send", "mout_ch", "sus_pedal", "learn_mode"};
 const char *const SETUP_LABEL[] = {"ON", "MIDI CHANNEL", "LOWEST KEY", "HIGHEST KEY", "TRANSPOSE", "OCTAVE", "VOICES",
                                    "LEVEL", "PAN", "SEND 1", "SEND 2", "SYNTH EFFECT", "OUTPUT", "MIDI IN (ALL)",
-                                   "MASTER LEVEL", "PLAY ALL SEQS", "CHORD LEARN"};   /* (OUTPUT: 2026-10-30) */
+                                   "MASTER LEVEL", "PLAY ALL SEQS",
+                                   "MIDI OUT", "MIDI OUT SENDS", "MIDI OUT CHANNEL", "SUSTAIN PEDAL", "CHORD LEARN"};
+/* three pages of 8 rows (2026-10-30): the Synths' sound setup; their output and the shared settings; MIDI OUT,
+ * the pedal and CHORD LEARN */
+enum { SETUP_PAGES = (sizeof SETUP_KEY / sizeof SETUP_KEY[0] + ROWS - 1) / ROWS };
 int setup_rows(int sub, int *keys) {
     int n = 0;
     for (int r = 0; r < ROWS; r++) {
@@ -782,7 +788,7 @@ int page_items(ed_t *e, int p, int *items) {
 
 int screen_subs(ed_t *e) {
     if (lib_screen(e->screen)) return lib_subs(e);   /* (the patch list and the library's pages) */
-    if (e->screen == SCR_SETUP) return (int)(sizeof SETUP_KEY / sizeof SETUP_KEY[0] + ROWS - 1) / ROWS;
+    if (e->screen == SCR_SETUP) return SETUP_PAGES;
     if (e->screen == SCR_SETTINGS) return settings_subs(e);
     if (e->screen == SCR_QMOD) return qm_subs(e);   /* (quickmod.c: MOD FROM, the picked source's connections) */
     int items[512], n = e->screen == SCR_MATRIX ? mx_view(e, items) : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
@@ -1689,6 +1695,10 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
     case effMainsChanged:    /* resume: the converter starts clean */
         if (e && e->hr && v) hr_restart(e->hr);
         break;
+    case 51:   /* effCanDo: (2026-10-30) MIDI OUT, desktop only (the MPC build's wrapper still says no): the host gives the
+                * plugin a MIDI output (Carla: an events-out port, or the next plugin in its rack) */
+        if (e && e->hr && ptr && (!strcmp(ptr, "sendVstEvents") || !strcmp(ptr, "sendVstMidiEvent"))) return 1;
+        break;
     case effProcessEvents:   /* host MIDI waits for the engine block nearest its time (hostrate.c) */
         if (e && ptr) lib_midi_events(e, ptr);   /* a program change for a user patch: noted, loaded on the UI thread */
         if (e && ptr) settings_midi_seen(e, ptr);   /* (MIDI LEARN listens: the last CC, lock-free) */
@@ -1703,7 +1713,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             char what[64] = "";
             if (ui) wrapped_dispatch(fx, effGetProgramNameIndexed, (int32_t)v, 0, what, 0);
             if (ui) lib_before_load(e, what);
-            float keep[4];
+            float keep[SETTINGS_MIDI_KEEP];
             int held = settings_midi_keep(e, keep);   /* MIDI I/O FROM PRESET off: the channels stay */
             intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
             if (held) settings_midi_put(e, keep);
@@ -1761,6 +1771,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->nav.ov_synth = -1;   /* (the overview: the Synth in focus) */
         e->cb.sel = -1;         /* (the CABLES view: hidden, nothing selected) */
         e->hr = hr;
+        if (hr) hr_set_host(hr, host);   /* (2026-10-30) MIDI OUT goes to the host from hr_process */
         eds[i] = e;
         wrapped_dispatch = fx->dispatcher;
         wrapped_replacing = fx->processReplacing;
