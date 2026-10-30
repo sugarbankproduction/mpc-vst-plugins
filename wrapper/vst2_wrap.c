@@ -447,7 +447,12 @@ static void render_frames(wrap_t *w, float **out, int32_t n, int accumulate) {
  * (at most DSP_BLOCK per call), and each queued MIDI event goes in right before its own frame. An event past the end
  * of the block (deltaFrames >= n) goes in after the last frame, i.e. at the start of the next block. */
 static void queue_midi(wrap_t *w, const uint8_t *msg, int32_t frame) {
-    if (w->nev == WRAP_EVQ) { eng_midi(w, msg, 3); return; }   /* full: apply now, as without SAMPLE_ACCURATE */
+    if (w->nev == WRAP_EVQ) {   /* full: what is queued goes in now, in order, as without SAMPLE_ACCURATE; then this one
+                                 * queues. Nothing is dropped, and nothing jumps ahead of what came before it (a note-off
+                                 * applied before its own queued note-on left the note hanging, 2026-10-30) */
+        for (int k = 0; k < w->nev; k++) eng_midi(w, w->evq[k].msg, 3);
+        w->nev = 0;
+    }
     if (frame < 0) frame = 0;
     int k = w->nev++;
     while (k > 0 && w->evq[k - 1].frame > frame) { w->evq[k] = w->evq[k - 1]; k--; }   /* stable: after equal frames */

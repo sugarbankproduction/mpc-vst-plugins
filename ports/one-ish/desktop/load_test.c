@@ -1472,6 +1472,7 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
 static void quickmod_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void learn_shows_test(AEffect *fx, HWND child, float s, int w, int h);   /* (2026-10-30) */
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
     check(fx->flags & 1, "the plugin says it has an editor window");
@@ -1571,6 +1572,7 @@ static void editor(AEffect *fx, const char *bmp) {
         failures += library_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* undo, compare, sets ... */
         settings_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         panel2_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* TEMPO, GENERATIVE, LINK, MASTER (2026-10-30) */
+        learn_shows_test(fx, child, cr.right / (float)BASE_W, w, h);   /* (2026-10-30) a learned CC on the panel */
     }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
@@ -3318,4 +3320,45 @@ int main(int argc, char **argv) {
     RemoveDirectoryA(seq_dir);
     printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
     return failures != 0;
+}
+
+/* ---- (2026-10-30) values moved by MIDI show on the panel (it polls): the ladder SLOPE and the SVF MODE, each by a
+ * learned CC ---- */
+static int learn_cc(AEffect *fx, const char *key, int cc) {   /* LEARN, the control, a CC: 1 learned */
+    int i = rnd_key(key);
+    if (i >= NPARAMS) return 0;
+    st(fx, STT_LEARN, NULL, NULL, 0);
+    if (st(fx, STT_LEARN_PICK, NULL, NULL, (float)i) != 1) return 0;
+    send_midi(fx, 0xB0, (unsigned char)cc, 0);
+    return st(fx, STT_LEARN_TICK, NULL, NULL, 0) == 0;
+}
+static void learn_shows_test(AEffect *fx, HWND child, float s, int w, int h) {
+    char what[256], map[1024] = "";
+    click_zone(child, s, ZONE_FOCUS1);   /* the panel shows Synth 1 */
+    st(fx, STT_MAP_CLEAR, NULL, NULL, 0);
+    int a = learn_cc(fx, "flt_slope", 22), b = learn_cc(fx, "svf_mode", 23);
+    st(fx, STT_MAP, NULL, map, 0);
+    send_midi(fx, 0xB0, 22, 0);   /* 24 dB, LP */
+    send_midi(fx, 0xB0, 23, 0);
+    play(fx, 4, 512);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    unsigned char *before = grab(child, w, h);
+    send_midi(fx, 0xB0, 22, 127);   /* 6 dB */
+    send_midi(fx, 0xB0, 23, 43);    /* BP */
+    play(fx, 4, 512);
+    SendMessageA(child, WM_TIMER, 1, 0);   /* the panel's poll */
+    unsigned char *after = grab(child, w, h);
+    float slope = getkey(fx, "flt_slope"), mode = getkey(fx, "svf_mode");
+    RECT rs = ctl_px("flt_slope", s), rm = ctl_px("svf_mode", s);
+    int shown_s = before && after && !IsRectEmpty(&rs) && !region_same(before, after, w, rs);
+    int shown_m = before && after && !IsRectEmpty(&rm) && !region_same(before, after, w, rm);
+    snprintf(what, sizeof what, "MIDI learn (\"%s\"): CCs 22 and 23 set the ladder slope (%.2f) and the SVF mode (%.2f), "
+             "and the panel shows both (slope's LEDs %s, mode's %s)", map, slope, mode, shown_s ? "changed" : "SAME",
+             shown_m ? "changed" : "SAME");
+    check(a && b && slope == 1.0f && fabsf(mode - 1.0f / 3) < 1e-4f && shown_s && shown_m, what);
+    free(before);
+    free(after);
+    st(fx, STT_MAP_CLEAR, NULL, NULL, 0);
+    setkey(fx, "flt_slope", 0.0f);
+    setkey(fx, "svf_mode", 0.0f);
 }

@@ -120,6 +120,24 @@ static void sample_accurate_tests(void) {
     send(c, 0, 0x80, 0, 0, 0); c->pr(c, 0, o, 128);
     send(c, -5, 0x90, 0, 0, 0); c->pr(c, 0, o, 128);   /* negative: treated as 0 */
     CHECK(first_nonzero(L, 128) == 0, "negative deltaFrames starts at frame 0");
+    {   /* more events than the queue holds: a note-on, 298 CCs, its note-off. The overflow must keep their order (the
+         * off used to go in at once, before its own queued on: the note hung) */
+        static ME m[300];
+        static struct { int32_t n; intptr_t r; void *ev[300]; } ev;
+        ev.n = 300;
+        for (int i = 0; i < 300; i++) {
+            ME t = {1, sizeof(ME), i == 0 ? 2 : i == 299 ? 50 : 3, 0, 0, 0,
+                    {(unsigned char)(i == 0 ? 0x90 : i == 299 ? 0x80 : 0xB0), i == 0 || i == 299 ? 60 : 7, 100, 0}};
+            m[i] = t;
+            ev.ev[i] = &m[i];
+        }
+        c->d(c, 25, 0, 0, &ev, 0); c->pr(c, 0, o, 128);
+        int on = last_nonzero(L, 128);
+        c->pr(c, 0, o, 128);
+        CHECK(on >= 0 && on < 128 && first_nonzero(L, 128) < 0,
+              "300 events in one block (the queue holds 256): the note-off still follows its note-on (sounds to frame %d, "
+              "then silent: %d)", on, first_nonzero(L, 128));
+    }
     CHECK(sampleprobe_bad == 0, "render() always got 1..128 frames (%d bad calls)", sampleprobe_bad);
     c->d(c, 1, 0, 0, 0, 0);
 }

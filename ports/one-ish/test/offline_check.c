@@ -5188,6 +5188,7 @@ static void arp_wav(const char *demo_path) {
 #include "gens_b_check.c"    /* (2026-10-30) rain and ripples, the Markov melody */
 #include "gens_a_check.c"   /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
 #include "defaults_check.c"   /* (2026-10-30) the new defaults, old states, the effects' ONs, the hands, the randomiser */
+#include "robust_check.c"   /* (2026-10-30) robustness: envelopes end, routing, floods, panic, learn */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5963,6 +5964,11 @@ int main(int argc, char **argv) {
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "robust")) {   /* (2026-10-30) just the robustness checks: offline_check robust */
+        robust_checks();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "gensa")) {   /* (2026-10-30) just LIFE, ORBITS, PENDULUMS: offline_check gensa */
         gens_a_checks();
         gens_a_bench();
@@ -6091,6 +6097,7 @@ int main(int argc, char **argv) {
     gens_b_checks();   /* (2026-10-30) */
     gens_a_checks();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
     defaults_checks();   /* (2026-10-30) */
+    robust_checks();   /* (2026-10-30) robustness (test/robust_check.c) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

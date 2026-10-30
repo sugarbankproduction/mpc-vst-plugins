@@ -159,6 +159,9 @@ static const nrpn_t NRPN[] = {
 #undef OPTS
 #define NNRPN ((int)(sizeof NRPN / sizeof NRPN[0]))
 #define NRPN_SYNTH 3840   /* Synth n's numbers: Synth 1's + (n - 1) x 3840 */
+/* the 13 synced values (64 .. 1/64 beats) as 13 equal bands of 0..16383 (2026-10-30: was v x 12 / 16383, where only
+ * 16383 itself reached the last, so a controller sending the data MSB alone never got 64 beats) */
+#define NRPN_BAND13(v) ((v) * 13 / 16384)
 
 /* NRPN num to v (0..16383) */
 static void mi_nrpn(inst_t *in, int num, int v) {
@@ -182,9 +185,13 @@ static void mi_nrpn(inst_t *in, int num, int v) {
         switch (r->kind) {
         case NK_CONT: mi_put_norm(in, p, v / 16383.0); break;
         case NK_OPT: { int b = v * r->n / 16383; mi_put(in, p, r->opt[b < r->n ? b : r->n - 1]); break; }
-        case NK_LFO_SYNC: mi_put(in, p, (v * 12 / 16383) * 100.0 / 12.0); break;   /* LFO_DIV: the same 13, in order */
+        case NK_LFO_SYNC: mi_put(in, p, (NRPN_BAND13(v)) * 100.0 / 12.0); break;   /* LFO_DIV: the same 13, in order */
         case NK_ENV_SYNC: {   /* 1/64 .. 64 beats: the nearest of the envelopes' divisions (engine.c env_div) */
-            double beats = exp2((v * 12 / 16383) - 6), best = 1e9;
+            if (eg13(in->syn[c])) {   /* (2026-10-30) EG TIMES "MIN, 13 Syncs": the same 13 (env_div13), exactly */
+                mi_put(in, p, (NRPN_BAND13(v)) * 100.0 / 12.0);
+                break;
+            }
+            double beats = exp2((NRPN_BAND13(v)) - 6), best = 1e9;
             int div = 0;
             for (int d = 0; d < NDIV; d++) {
                 double far = fabs(log2(beats / SYNC_DIV[d].beats));

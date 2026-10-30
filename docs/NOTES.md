@@ -1727,3 +1727,9 @@ Maschine 4, Rhythmbank 6; JV-880, Dexed and Profit-8 show all theirs. Existing b
   own binary. Built with `tools/mpc310_on_391/` (2 copies of the salt found in the image, as in the binary).
 - Caveats: 3.10 may rewrite `MPC.settings` (the stick backs it up first); projects saved in 3.10 may not open in 3.9.1.
 
+## 2026-10-30: the wrapper's SAMPLE_ACCURATE queue keeps the events' order when a block has more than 256 (offline only)
+- With `SAMPLE_ACCURATE` the wrapper queues a block's MIDI (256 events). The 257th used to go to the engine at once,
+  ahead of the events still queued, so a note-off could reach the engine before its own note-on and the note hung.
+  Now a full queue goes in first, in order, then the new event queues; nothing is dropped. `tools/host_test.c` (SAMPLE_PROBE,
+  `poc/sampleprobe`) sends 300 events in one block: fails on the old wrapper, passes now. Ports without SAMPLE_ACCURATE
+  pass every event straight to the engine and were never affected. Not tried on a device.

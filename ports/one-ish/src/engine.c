@@ -689,7 +689,8 @@ typedef struct {
     const float *ext;        /* this piece's audio input (mono, the EXT channel's signal), NULL while it is silent */
     const short *pidx;       /* each slot's params.json entry for this Synth (its own copies; the shared ones Synth 1's) */
     int on;                  /* ON, as last applied */
-    uint8_t kin[128];        /* the keys it took (each key's release goes where the key went) */
+    uint16_t kin[128];       /* the keys it took, a bit per MIDI channel they came on (each key's release goes where
+                              * the key went, whatever the routing is by then: src/synths.h midi(), 2026-10-30) */
     int64_t quiet;           /* samples since a voice of it last sounded */
     int moved;               /* LOAD INTO SYNTH changed its values: the host is told (mpc_engine_changed) */
     tuning_t tun;            /* MICROTUNING (src/tuning.h): a Scala scale and keyboard map, saved with the sound */
@@ -1749,6 +1750,7 @@ static void sq_forget(one_t *s);   /* src/stepseq_run.h */
 /* stop everything this section started and forget its keys (a change of way, All Notes Off); the step sequencer's
  * notes are generated notes too */
 static void gen_stop(one_t *s) {
+    s->nheld = 0;   /* (2026-10-30) every held key goes too: mono doesn't move on to another of them as each ends */
     s->gen_bypass = 1;
     for (int n = 0; n < 128; n++)
         if (s->ocnt[n]) { s->ocnt[n] = 0; note_off(s, n); }
