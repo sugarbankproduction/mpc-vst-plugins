@@ -10,6 +10,7 @@
 #include "patches.h"
 #include "seq_page.h"
 #include "settings.h"
+#include "parts.h"
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*audioMasterCallback)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -234,6 +235,7 @@ typedef struct {
     int no_link;                               /* (2026-10-30) the randomiser's edits: no LINK to the other Synths */
     int gens_arm;                              /* (2026-10-30) RESET (hub_gens.c): the half clicked once (0: none) */
     unsigned gens_arm_t;                       /* ... and when (GetTickCount): a second click within 4 s resets */
+    parts_ui_t pa;                             /* (2026-10-30) effect / matrix presets, names, libraries (parts.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
        M_QMOD, M_TEMPO };   /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
@@ -507,3 +509,37 @@ void ed_rnd_gens(ed_t *e, int mutate, int all);   /* (editor.c) the randomiser o
 int gen_param(int i);                          /* a generator's setting (Synth 1's index; not KEY / SCALE, not shared) */
 void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f);   /* (editor_draw.c) */
 void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot);
+/* parts.c (2026-10-30): effect and matrix presets (the library's PARTS page), the Synths' names, user libraries,
+ * DUPLICATE NAMES (parts.h) */
+int parts_zone_rect(ed_t *e, int z, RECT *r);  /* where PARTS page zone z is (0: not shown) */
+int parts_hit(ed_t *e, POINT pt);              /* the PARTS page */
+int parts_subs(ed_t *e);
+void parts_open(ed_t *e, int slot);            /* the PARTS page on slot (-1: as it was) */
+void parts_draw(HDC dc, ed_t *e);
+void parts_help(ed_t *e, char *out, int n);
+int parts_press(ed_t *e, int z);               /* 1: z was parts.c's */
+const char *parts_zone_help(ed_t *e, int z);
+int parts_more_page(int p);                    /* MORE page p is an effect's: its slot (PS_), else -1 */
+RECT parts_more_rect(void);                    /* its PRESETS button, at the right of the note line */
+void parts_more_draw(HDC dc, ed_t *e);
+int parts_name(ed_t *e, int c, char *out, int n);   /* Synth c's name (1), or "" (0) */
+void parts_label(ed_t *e, int c, char *out, int n); /* "SYNTH 1" or its name, for the SYNTH buttons */
+int parts_names_line(ed_t *e, char *out, int n);    /* "S1 Bass  S2 Pad" for the home line (0: no names) */
+void parts_names_clear(ed_t *e);               /* a factory preset loaded: no names */
+RECT parts_name_head(int c);                   /* the SETUP page's head of Synth c */
+void parts_tick(ed_t *e);                      /* the window's timer: names that changed repaint */
+int parts_lib_hit(ed_t *e, POINT pt);          /* the SETTINGS page's LIBRARY rows (-1: none) */
+void parts_lib_draw(HDC dc, ed_t *e);
+intptr_t parts_test(ed_t *e, intptr_t op, char *buf, float opt);
+int space_dir(const char *name, char *out, int n, int create);   /* user library `name`'s folder (1 it exists / made) */
+/* settings.c: the library in use and DUPLICATE NAMES */
+int settings_space(char *out, int n);
+int settings_space_set(const char *name);
+int settings_import_dup(void);
+int settings_import_dup_set(int v);
+/* patches.c (2026-10-30) */
+int patch_home_dir(char *out, int n, int create);   /* the default library's folder (patch_dir: the one in use) */
+int patches_import_named(ed_t *e, const char *src, const char *as, int overwrite);
+int patches_import_choice(ed_t *e, const char *file);   /* IMPORT with DUPLICATE NAMES' choice */
+int patches_free_name(const char *name, char *out);     /* "Name 2", "Name 3" ...: one no patch has */
+int patches_factory_state(int p, char *out, int n, const char **name);   /* factory preset p as a state (0: none) */

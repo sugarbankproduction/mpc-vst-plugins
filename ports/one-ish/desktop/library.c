@@ -50,9 +50,11 @@ static const char *const SNAP_ACT[NSNAP_ACT] = {"TAKE", "LOAD", "NOTES", "DELETE
 static const char *const TAG_ACT[NTAG_ACT] = {"TAG PATCH", "ADD", "RENAME", "DELETE", "CLEAR", "NOTES", "SHOW NOTES"};
 static const char *const ARR_ACT[NARR_ACT] = {"UP", "DOWN", "COPY", "DELETE", "ADD", "NAME", "NOTES"};
 /* the library's pages, as tabs on the title line */
-static const int TAB_SCR[] = {SCR_PATCHES, SCR_SET, SCR_SETS, SCR_ARRANGE, SCR_SNAPS, SCR_TAGS};
-static const char *const TAB_NAME[] = {"PATCHES", "SET", "ALL SETS", "ARRANGE", "SNAPSHOTS", "TAGS"};
-static const short TAB_W[] = {52, 30, 52, 54, 66, 38};
+/* (2026-10-30: PARTS, parts.c's effect and matrix presets; the tabs a little narrower to make room) */
+static const int TAB_SCR[] = {SCR_PATCHES, SCR_SET, SCR_SETS, SCR_ARRANGE, SCR_SNAPS, SCR_TAGS, SCR_PARTS};
+static const char *const TAB_NAME[] = {"PATCHES", "SET", "ALL SETS", "ARRANGE", "SNAPSHOTS", "TAGS", "PARTS"};
+static const short TAB_W[] = {46, 24, 46, 52, 62, 32, 36};
+enum { TAB_GAP = 3 };
 enum { NTABS = sizeof TAB_SCR / sizeof TAB_SCR[0] };
 
 #define LIB(e) ((e)->lib)
@@ -915,7 +917,7 @@ int lib_step_filtered(ed_t *e, int d) {
 int lib_load_pos(ed_t *e, int pos) { return patches_load_pos(e, pos); }
 
 /* ---- dialogs: a line, notes, or the save box (name, tags and notes) ---- */
-enum { DK_TAG, DK_SETNAME, DK_NOTES, DK_SAVE };
+/* (the kinds: library.h DK_) */
 enum { ID_PROMPT = 100, ID_EDIT, ID_WHY, ID_COMBO = 110, ID_NOTES = 114, ID_CLABEL = 120, ID_NLABEL = 124 };
 typedef struct { ed_t *e; int kind; const char *title, *prompt; char text[NOTES_MAX + 1]; meta_t meta; } dlg_t;
 
@@ -948,7 +950,8 @@ static INT_PTR CALLBACK dlg_proc(HWND d, UINT m, WPARAM wp, LPARAM lp) {
         char t[NOTES_MAX * 2 + 8];
         to_crlf(a->text, t, sizeof t);
         SetDlgItemTextA(d, ID_EDIT, t);
-        int lim = a->kind == DK_TAG ? TAG_LEN : a->kind == DK_NOTES ? NOTES_MAX : PATCH_NAME_MAX;
+        int lim = a->kind == DK_TAG ? TAG_LEN : a->kind == DK_NOTES ? NOTES_MAX : a->kind == DK_SYNNAME ? SYNNAME_MAX
+                : PATCH_NAME_MAX;
         SendDlgItemMessageA(d, ID_EDIT, EM_LIMITTEXT, lim, 0);
         if (a->kind == DK_SAVE) {
             lib_t *L = LIB(a->e);
@@ -973,6 +976,7 @@ static INT_PTR CALLBACK dlg_proc(HWND d, UINT m, WPARAM wp, LPARAM lp) {
         from_edit(d, ID_EDIT, t, sizeof t);
         if (a->kind != DK_NOTES) trim(t);
         int ok = a->kind == DK_NOTES ? 1 : a->kind == DK_TAG ? text_ok(t, TAG_LEN, why, sizeof why) :
+                 a->kind == DK_SYNNAME ? synname_ok(t, why, sizeof why) :
                  a->kind == DK_SETNAME ? text_ok(t, PATCH_NAME_MAX, why, sizeof why) : patch_name_ok(t, why, sizeof why);
         if (!ok) { SetDlgItemTextA(d, ID_WHY, why); return TRUE; }
         snprintf(a->text, sizeof a->text, "%s", t);
@@ -1044,6 +1048,9 @@ static int ask(ed_t *e, int kind, const char *title, const char *prompt, char *t
     if (!run_dialog(e, &a)) return 0;
     snprintf(text, n, "%s", a.text);
     return 1;
+}
+int lib_ask(ed_t *e, int kind, const char *title, const char *prompt, char *text, int n) {   /* (2026-10-30, parts.c) */
+    return ask(e, kind, title, prompt, text, n);
 }
 /* the save box: a name, the tags and notes; name and *m in and out */
 int lib_save_dialog(ed_t *e, char *name, meta_t *m) {
@@ -1248,7 +1255,7 @@ int lib_screen(int s) {
 }
 static RECT tab_rect(int k) {
     int x = L.tabline.left;
-    for (int j = 0; j < k; j++) x += sc(TAB_W[j] + 6);
+    for (int j = 0; j < k; j++) x += sc(TAB_W[j] + TAB_GAP);
     RECT r = {x, L.tabline.top + sc(1), x + sc(TAB_W[k]), L.tabline.bottom - sc(1)};
     return r;
 }
@@ -1302,6 +1309,7 @@ static int zone_rect(ed_t *e, int z, RECT *r) {
     if (!lib_screen(s)) return 0;
     if (z >= Z_LIB_TAB && z < Z_LIB_TAB + NTABS) { *r = tab_rect(z - Z_LIB_TAB); return 1; }
     if (s == SCR_PATCHES) return patches_zone_rect(e, z, r);
+    if (s == SCR_PARTS) return parts_zone_rect(e, z, r);   /* (2026-10-30, parts.c) */
     if (s == SCR_SNAPS && z >= Z_SNAP_ACT && z < Z_SNAP_ACT + NSNAP_ACT) { *r = head_var(SNAP_ACT, NSNAP_ACT, z - Z_SNAP_ACT); return 1; }
     if (s == SCR_SNAPS && z >= Z_SNAP_ITEM && z < Z_SNAP_ITEM + L_->nsnaps) {
         int row = z - Z_SNAP_ITEM - e->sub * PER_SNAPS;
@@ -1339,6 +1347,7 @@ int lib_hit(ed_t *e, POINT pt) {
         if (zone_rect(e, Z_LIB_TAB + k, &r) && PtInRect(&r, pt)) return Z_LIB_TAB + k;
     switch (e->screen) {
     case SCR_PATCHES: return patches_hit(e, pt);
+    case SCR_PARTS: return parts_hit(e, pt);
     case SCR_SNAPS:
         for (int k = 0; k < NSNAP_ACT; k++)
             if (zone_rect(e, Z_SNAP_ACT + k, &r) && PtInRect(&r, pt)) return Z_SNAP_ACT + k;
@@ -1376,6 +1385,7 @@ int lib_subs(ed_t *e) {
     int n = 1;
     switch (e->screen) {
     case SCR_PATCHES: return patches_subs(e);
+    case SCR_PARTS: return parts_subs(e);
     case SCR_SNAPS: n = (L_->nsnaps + PER_SNAPS - 1) / PER_SNAPS; break;
     case SCR_SETS: case SCR_ARRANGE: n = (L_->nsets + PER_SETS - 1) / PER_SETS; break;
     case SCR_TAGS:
@@ -1392,6 +1402,7 @@ int lib_subs(ed_t *e) {
 void lib_open(ed_t *e, int scr) {
     lib_t *L_ = LIB(e);
     if (scr == SCR_PATCHES) { patches_open(e); return; }
+    if (scr == SCR_PARTS) { parts_open(e, -1); return; }   /* (2026-10-30: the slot shown last) */
     lists_ensure(e);
     if (scr == SCR_SNAPS) snaps_rescan(e);
     if (scr == SCR_SET || scr == SCR_SETS || scr == SCR_ARRANGE) sets_ensure(e);
@@ -1958,6 +1969,7 @@ void lib_draw(HDC dc, ed_t *e) {
     case SCR_ARRANGE: draw_sets(dc, e, 1); break;
     case SCR_SNAPS: draw_snaps(dc, e); break;
     case SCR_TAGS: draw_tags(dc, e); break;
+    case SCR_PARTS: parts_draw(dc, e); break;
     }
 }
 
@@ -1970,6 +1982,8 @@ int lib_home_line(ed_t *e, char *out, int n) {
     for (int k = 0; k < TAG_KINDS; k++)
         if (L_->cur.tag[k][0]) used += snprintf(out + used, used < n ? n - used : 0, "%s%s", used ? "  |  " : "", L_->cur.tag[k]);
     if (L_->cur.notes[0] && used < n) used += snprintf(out + used, n - used, "%sNOTES", used ? "  |  " : "");
+    char nm[96];   /* (2026-10-30) the Synths' names, when any has one (parts.c) */
+    if (used < n && parts_names_line(e, nm, sizeof nm)) used += snprintf(out + used, n - used, "%s%s", used ? "  |  " : "", nm);
     float own;
     if (settings_tempo(&own) && used < n) snprintf(out + used, n - used, "%s%.1f BPM (OWN)", used ? "      " : "", own);
     else if (L_->tempo > 0 && used < n) snprintf(out + used, n - used, "%s%.1f BPM", used ? "      " : "", L_->tempo);
@@ -2034,6 +2048,7 @@ void lib_help(ed_t *e, char *out, int n) {
         snprintf(out, n, "Click a tag to filter PATCHES by it (again: off; one per column). TAG PATCH puts the selected "
                          "tag on the current patch (the square marks its tags). ADD, RENAME, DELETE edit the lists.");
         break;
+    case SCR_PARTS: parts_help(e, out, n); break;   /* (2026-10-30, parts.c) */
     }
 }
 const char *lib_zone_help(int z) {
@@ -2047,7 +2062,9 @@ const char *lib_zone_help(int z) {
                                              "ALL SETS: pick the performance set to play.",
                                              "ARRANGE: move, copy, delete, add, name the sets, and their notes.",
                                              "SNAPSHOTS: saves of the sound in progress, autosaves, undo and redo.",
-                                             "TAGS: filter the patch list, tag the current patch, edit the tag lists, notes."};
+                                             "TAGS: filter the patch list, tag the current patch, edit the tag lists, notes.",
+                                             "PARTS: presets of one part of a sound: an effect's settings (the Synth "
+                                             "effect, master FX 1 and 2) or a whole mod matrix. Save, load, initialise."};
         return H[z - Z_LIB_TAB];
     }
     if (z >= Z_SNAP_ACT && z < Z_SNAP_ACT + NSNAP_ACT) {
@@ -2115,6 +2132,24 @@ void lib_tick(ed_t *e) {
             if (e->wnd) InvalidateRect(e->wnd, &L.tempo, FALSE);   /* (the console's TEMPO readout, hub.c) */
         }
     }
+}
+
+/* (2026-10-30, parts.c) another user library is in use: its tag lists, sets and snapshots are read afresh; the filters
+ * go (the other library's tags may differ). The sound playing stays. */
+void lib_space_changed(ed_t *e) {
+    lib_t *L_ = LIB(e);
+    if (!L_) return;
+    L_->lists_read = 0;
+    free(L_->sets);
+    L_->sets = NULL;
+    L_->nsets = L_->sets_read = L_->cur_set = 0;
+    L_->cur_slot = L_->arr_sel = -1;
+    L_->nsnaps = 0;
+    L_->snap_sel = -1;
+    free(L_->last_snap);
+    L_->last_snap = NULL;
+    memset(L_->filter, 0, sizeof L_->filter);
+    L_->sel_kind = L_->sel_idx = -1;
 }
 
 /* ---- load_test (effVendorSpecific TEST_LIB; buf holds 1 KB) ---- */

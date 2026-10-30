@@ -797,6 +797,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (PtInRect(&L.sub_prev, pt) && screen_subs(e) > 1) return Z_SUB_PREV;
     if (PtInRect(&L.sub_next, pt) && screen_subs(e) > 1) return Z_SUB_NEXT;
     if (lib_screen(e->screen)) return lib_hit(e, pt);   /* the patch list and the library's pages (library.c) */
+    int pz = parts_hit(e, pt);   /* (2026-10-30, parts.c) an effect page's PRESETS, the SETUP page's Synth heads */
+    if (pz >= 0) return pz;
     int nz = nav_hit(e, pt);   /* (2026-10-30) the generator tabs, the overview, the hub's ALL RUNNING (nav.c) */
     if (nz >= 0 || e->screen == SCR_GENALL) return nz;
     if (e->screen == SCR_RANDOM) {
@@ -1093,6 +1095,7 @@ static void octave_hold(ed_t *e) {
 }
 
 static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangles, page entries, sub-page arrows */
+    if (parts_press(e, z)) return;     /* (2026-10-30) PARTS, PRESETS, the Synths' names, user libraries (parts.c) */
     if (patches_press(e, z)) return;   /* the PATCHES page's buttons and entries */
     if (settings_press(e, z)) return;   /* the SETTINGS page's */
     if (hub_press(e, z)) return;        /* the GENERATIVE hub page and the console's third row (hub.c) */
@@ -1264,6 +1267,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         lib_tick(e);   /* an undo step after a pause, a set's number held, a MIDI program change, the tempo */
         qm_tick(e);   /* quick assign's message runs out */
         settings_tick(e);   /* MIDI LEARN: a CC heard */
+        parts_tick(e);      /* (2026-10-30) a Synth's name changed (a load, undo, the host): repaint */
         int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
             float v = e->fx->getParameter(e->fx, i);
@@ -1620,6 +1624,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         if (idx == TEST_SETTINGS && e && ptr) return settings_test(e, v, ptr, opt);   /* load_test: the settings */
         if (idx == TEST_HUB && e) return hub_test(e, v, ptr, opt);   /* load_test: TEMPO, GEN OFF, LINK (hub.c) */
         if (idx == TEST_NAV && e) return nav_test(e, v, ptr, opt);   /* load_test: BACK / FWD, tabs, overview (nav.c) */
+        if (idx == TEST_PARTS && e && ptr) return parts_test(e, v, ptr, opt);   /* load_test: parts.c (2026-10-30) */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
             hr_set_legacy(e->hr, (int)v);
             fx->initialDelay = hr_latency(e->hr);
@@ -1651,6 +1656,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             int held = settings_midi_keep(e, keep);   /* MIDI I/O FROM PRESET off: the channels stay */
             intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
             if (held) settings_midi_put(e, keep);
+            if (v != before) parts_names_clear(e);   /* (2026-10-30) a factory preset has no Synth names */
             patches_program_set(e, before);
             if (ui) lib_after_load(e);
             return r;

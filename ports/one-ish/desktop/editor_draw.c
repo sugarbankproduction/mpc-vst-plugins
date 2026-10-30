@@ -320,6 +320,7 @@ static const char *zone_help(ed_t *e, int z) {
     if (z >= Z_QM && z < Z_QM_END) return qm_zone_help(e, z);   /* a DEST button (quickmod.c) */
     if (z >= Z_HUB_ON && z < Z_HUB_END) return hub_zone_help(e, z);   /* the hub page, the console's third row */
     if (z >= Z_NAV_BACK && z < Z_NAV_END) return nav_zone_help(e, z);   /* BACK / FWD, the tabs, the overview (nav.c) */
+    if (z >= Z_PARTS && z < Z_PARTS_END) return parts_zone_help(e, z);   /* (2026-10-30, parts.c) */
     if (z >= Z_SET_BASE && z < Z_SET_END) return settings_zone_help(e, z);   /* the SETTINGS page */
     if (z == Z_TAB_SETTINGS) return "SETTINGS: the instrument's own settings, kept apart from the sounds: preset "
                                     "autoload, MIDI clock and channels, pedals, MIDI learn, the library and tuning.";
@@ -888,6 +889,12 @@ static void draw_page(HDC dc, ed_t *e, int subs) {
     snprintf(t, sizeof t, "MORE:  %s", PAGES[e->screen].title);
     title_line(dc, e, t, subs);
     if (nav_tabs_shown(e)) foreign(dc, e, nav_tabs_draw);   /* a generator's page: the tabs (its note: the help line) */
+    else if (parts_more_page(e->screen) >= 0) {   /* (2026-10-30) an effect's page: PRESETS at the note's right end */
+        RECT nr = L.head;
+        nr.right = parts_more_rect().left - sc(4);
+        text(dc, &nr, PAGES[e->screen].note, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        foreign(dc, e, parts_more_draw);
+    }
     else text(dc, &L.head, PAGES[e->screen].note, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     int per = page_slots(e->screen);
     for (int j = e->sub * per; j < n && j < (e->sub + 1) * per; j++) {
@@ -930,13 +937,15 @@ static void draw_index(HDC dc, ed_t *e, int subs) {
  * synth effect), then the shared settings across all three columns. Each cell is that Synth's own param. */
 static void draw_setup(HDC dc, ed_t *e, int subs) {
     title_line(dc, e, "SETUP:  the three Synths side by side (split, layer, mix)", subs);
-    for (int c = 0; c < NSYNTHS; c++) {   /* column heads: the focused Synth bright */
-        RECT h = setup_cell(0, c);
-        h.top = L.head.top;
-        h.bottom = L.head.bottom;
-        char t[16];
-        snprintf(t, sizeof t, "SYNTH %d", c + 1);
-        text(dc, &h, t, font_tiny, (e->focus_mask >> c & 1u) ? T_LCD : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    for (int c = 0; c < NSYNTHS; c++) {   /* column heads: the focused Synth bright; a click names it (parts.c) */
+        RECT h = parts_name_head(c);
+        char t[40], nm[SYNNAME_MAX + 1];
+        if (parts_name(e, c, nm, sizeof nm)) snprintf(t, sizeof t, "%d: %s", c + 1, nm);
+        else snprintf(t, sizeof t, "SYNTH %d (name)", c + 1);
+        int hot = e->hover == ZP_NAME + c;
+        gfx_frame((float)h.left, (float)h.top, (float)rw(&h), (float)rh(&h), 1.0f, hot ? 0xFFFFFFFF : 0xFF27404E);
+        text(dc, &h, t, font_tiny, hot ? T_HOT : (e->focus_mask >> c & 1u) ? T_LCD : T_LCD_DIM,
+             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     int keys[ROWS], was = e->abs;
     setup_rows(e->sub, keys);
@@ -1282,6 +1291,12 @@ static void synth_button(HDC dc, ed_t *e, int c, const char *label) {
     text(dc, &m, "M", font_tiny, muted ? RGB(255, 236, 228) : mhot ? T_HOT : T_LABEL, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     text(dc, &s, "S", font_tiny, solo ? RGB(40, 34, 24) : shot ? T_HOT : T_LABEL, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     int cx = (z->left + z->right) / 2;
+    if (strncmp(label, "SYNTH ", 6)) {   /* (2026-10-30) a Synth's name (parts.c): small, within its own button's width */
+        RECT r = {z->left + sc(1), cap.bottom + sc(5), z->right - sc(1), cap.bottom + sc(5) + sc(14)};
+        text(dc, &r, label, font_tiny, hot || mhot || shot ? T_HOT : T_LABEL,
+             DT_CENTER | DT_TOP | DT_SINGLELINE | DT_END_ELLIPSIS);
+        return;
+    }
     text_c(dc, cx, cap.bottom + sc(5), rw(z) + sc(10), sc(14), label, font_label, hot || mhot || shot ? T_HOT : T_LABEL);
 }
 
@@ -1300,9 +1315,12 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.tab_random, "RANDOM", e->screen == SCR_RANDOM, e->hover == Z_TAB_RANDOM);
     panel_button(dc, &L.tab_seq, "SEQ", e->screen == SCR_SEQ, e->hover == Z_TAB_SEQ);
     static const char *const FOCUS_NAME[NSYNTHS] = {"SYNTH 1", "SYNTH 2", "SYNTH 3"};
-    for (int c = 0; c < NSYNTHS; c++)   /* PANEL FOCUS: lit = the panel shows (and edits) that Synth */
-        if (NSYNTHS > 1) synth_button(dc, e, c, FOCUS_NAME[c]);
+    for (int c = 0; c < NSYNTHS; c++) {   /* PANEL FOCUS: lit = the panel shows (and edits) that Synth */
+        char lb[SYNNAME_MAX + 8];
+        parts_label(e, c, lb, sizeof lb);   /* (2026-10-30) its name when it has one (parts.c) */
+        if (NSYNTHS > 1) synth_button(dc, e, c, lb);
         else panel_button(dc, &L.focus[c], FOCUS_NAME[c], e->focus_mask >> c & 1u, e->hover == Z_FOCUS1 + c);
+    }
     panel_button(dc, &L.tab_setup, "SETUP", e->screen == SCR_SETUP, e->hover == Z_TAB_SETUP);
     panel_button(dc, &L.tab_settings, "SETTINGS", e->screen == SCR_SETTINGS, e->hover == Z_TAB_SETTINGS);
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);

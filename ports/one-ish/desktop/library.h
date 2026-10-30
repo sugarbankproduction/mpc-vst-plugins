@@ -126,3 +126,8 @@ void lib_cat_pick(ed_t *e, const char *cat); /* a category tab clicked ("ALL": n
 void lib_end_compare(ed_t *e);               /* COMPARE off (the edit back) before a save reads the sound */
 int lib_save_dialog(ed_t *e, char *name, meta_t *m);   /* the save box: name, tags, notes; 0 cancelled */
 void lib_save_defaults(ed_t *e, meta_t *m);  /* the save box's starting tags */
+/* (2026-10-30) the one-line boxes for parts.c: DK_PNAME a patch-style name (a file's), DK_SYNNAME a Synth's name */
+enum { DK_TAG, DK_SETNAME, DK_NOTES, DK_SAVE, DK_PNAME, DK_SYNNAME };
+int lib_ask(ed_t *e, int kind, const char *title, const char *prompt, char *text, int n);   /* 0: cancelled */
+int synname_ok(const char *s, char *why, int n);   /* parts.c: a Synth's name (SYNNAME_MAX, no ; | \) */
+void lib_space_changed(ed_t *e);             /* another user library: tags, sets, snapshots read again */
