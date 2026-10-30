@@ -189,6 +189,14 @@ typedef struct {
     cb_jack_t jack[CB_JACKS];
     RECT label_at;                   /* the selected cable's label as drawn last (to repaint it) */
 } cb_ui_t;
+/* (2026-10-30, matrix_page.c) the MATRIX page's filters and the SETUP page's key range set by pressing a key */
+typedef struct {
+    int fsrc, fdst;          /* the MATRIX page shows only the rows with this source (or VIA) / destination; 0: any */
+    int kr;                  /* the SETUP page waits for a key: 1 + 2 x Synth + (0 LOWEST, 1 HIGHEST); 0: not waiting */
+    unsigned heard, heard0;  /* the host's MIDI (its thread writes): (note-ons heard << 8) | the last note; when armed */
+    char msg[160];           /* what the last action did, for the help line, and since when */
+    DWORD msg_at;
+} mx_ui_t;
 #define RND_HIST 32   /* sounds the randomiser's UNDO / REDO keep (the oldest goes) */
 enum { MLOG = 64 };
 /* (2026-10-30, nav.c) the centre screen's page history for BACK / FWD: a page and the sub-page it was left on */
@@ -256,6 +264,7 @@ typedef struct {
     int gens_arm;                              /* (2026-10-30) RESET (hub_gens.c): the half clicked once (0: none) */
     unsigned gens_arm_t;                       /* ... and when (GetTickCount): a second click within 4 s resets */
     cb_ui_t cb;                                /* (2026-10-30) the CABLES view (cables.c) */
+    mx_ui_t mx;                                /* (2026-10-30) the MATRIX page's filters, KEY RANGE by a key (matrix_page.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
        M_QMOD, M_TEMPO,     /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
@@ -570,3 +579,39 @@ void cb_free(ed_t *e);                          /* the window closes: the cached
 void cb_hover(ed_t *e, int z);                  /* the mouse moved onto or off zone z: it repaints */
 void cb_toggle(ed_t *e);
 intptr_t cb_test(ed_t *e, intptr_t op, char *buf, float opt);
+/* matrix_page.c (2026-10-30): the MATRIX page's DELETE per row (the rows below move up), its filters by source and by
+ * destination (SOURCE / DEST lists on the title line, CLEAR; EDIT MODULATIONS on quick assign's MOD FROM page opens
+ * it filtered by that source), a destination picked in two steps (its section, then the parameter); the SETUP page's
+ * LOW / HIGH buttons: click one, then press a key (the window's keyboard, the computer's keys or MIDI) */
+enum { Z_MX = 695000,                      /* (after the CABLES view's Z_CB .. Z_CB_END, before Z_ABS) */
+       Z_MX_FSRC, Z_MX_FDST, Z_MX_CLEAR,   /* the MATRIX page's title line: SOURCE, DEST, CLEAR */
+       Z_MX_DEL = 695010,                  /* + r: the DELETE of the screen's row r (0 .. ROWS-1) */
+       Z_MX_KEY = 695030,                  /* + 2 x Synth + (0 LOW, 1 HIGH): the SETUP page's buttons */
+       Z_MX_END = 695100 };
+#define TEST_MX 0x4F314D58   /* VENDOR_SPECIFIC index: value = MXT_ op (matrix_page.c) */
+enum { MXT_XY = 1,            /* opt = a zone (Z_MX_*): its middle in pixels (x + 65536 y; -1: not shown) */
+       MXT_VIEW,              /* the MATRIX page's rows shown (all sub-pages): their numbers (1-16) into ptr; how many */
+       MXT_FSRC, MXT_FDST,    /* the filters (0: none) */
+       MXT_WAIT,              /* the SETUP page's wait for a key (mx_ui_t.kr) */
+       MXT_CELL_XY,           /* opt = screen row r x 16 + column k (MX_*): that matrix cell's middle in pixels */
+       MXT_SECTION };         /* opt = a destination (MD_*): its section in the two-step list (-1: none) */
+int mx_view(ed_t *e, int *rows);                /* the MATRIX page's rows shown, in order (no filter: all NMATRIX) */
+int mx_filtering(ed_t *e);
+int mx_sub_of(ed_t *e, int row);                /* the MATRIX sub-page showing row (a filter that hides it goes) */
+void mx_edit_mods(ed_t *e, int src);            /* EDIT MODULATIONS: the MATRIX page filtered by that source */
+int mx_is_dst_list(int i);                      /* param i is a destination list (a matrix row's, the ribbon's) */
+void mx_pick_dst(ed_t *e, int i, RECT r);       /* its two-step list under r: a section, then the parameter */
+int mx_hit(ed_t *e, POINT pt);                  /* the MATRIX and SETUP pages' own buttons, or -1 */
+int mx_press(ed_t *e, int z);                   /* 1: z was one of them */
+RECT mx_rect(ed_t *e, int z);                   /* where it is (empty: not shown) */
+RECT mx_title_rect(void);                       /* the MATRIX title line's text, left of its buttons */
+const char *mx_zone_help(ed_t *e, int z);
+int mx_help(ed_t *e, char *out, int n);         /* the help line while waiting for a key, or just after (1) */
+void mx_key_heard(ed_t *e, int note);           /* a note-on from the window (its keyboard, the computer's keys) */
+void mx_midi_seen(ed_t *e, const void *events); /* the host's MIDI (its thread): a note-on, lock-free */
+int mx_key(ed_t *e, int vk);                    /* Esc: the wait for a key cancelled (1: taken) */
+void mx_tick(ed_t *e);                          /* the window's timer: a host note heard, a message that ran out */
+void mx_setup_draw(HDC dc, ed_t *e, int row, int key);   /* the SETUP page's LOW / HIGH buttons on that row (editor_draw.c) */
+RECT mx_setup_value(int row, int c);            /* a key row's cell, less its button */
+int mx_setup_key(int key);                      /* the SETUP row's param (Synth 1's) is key_lo (0) / key_hi (1), else -1 */
+intptr_t mx_test(ed_t *e, intptr_t op, char *buf, float opt);

@@ -105,7 +105,8 @@
  *   ext       the audio input (test/ext_check.c): the EXT channel's routes into the filters, level 0 and no input
  *             change nothing, the EXT LEVEL destination; the 10 and 16 band vocoders (a sine modulator puts the
  *             carrier's energy in its band, silence in gives silence out, the gate, sibilance, tone, bounded at the
- *             extremes, in the engine as the synth effect and on a master send); vocoder_demo.wav (offline_check
+ *             extremes, in the engine as the synth effect and on a master send; SIBILANCE and SENSITIVITY as
+ *             matrix destinations, 2026-10-30); vocoder_demo.wav (offline_check
  *             ext <dir>/demo.wav: these alone)
  *   banks     (test/bank_check.c, 2026-10-30) every factory bank preset played a phrase for its category: peak,
  *             loudness and CPU in a table; fails on a peak above -1 dBFS, silence, non-finite samples or a loudness
@@ -6056,6 +6057,7 @@ int main(int argc, char **argv) {
     if (argc > 2 && !strcmp(argv[1], "ext")) {   /* just the audio input: offline_check ext <dir>/demo.wav */
         ext_input();
         vocoders();
+        voc_matrix();
         voc_wav(argv[2]);
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
@@ -6151,6 +6153,7 @@ int main(int argc, char **argv) {
     multitimbral();
     ext_input();
     vocoders();
+    voc_matrix();
     midi_settings();
     midi_learn_nrpn();
     microtuning();

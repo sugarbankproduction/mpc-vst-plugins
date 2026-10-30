@@ -84,6 +84,9 @@ enum {
     MDF_GR_SPRAY = MDF_FX1_COUNT, MDF_GR_PRAND, MDF_GR_REV,
     MDF_F1_GPOS, MDF_F1_GDENS, MDF_F1_GENV, MDF_F1_GSPRAY, MDF_F1_GPRAND, MDF_F1_GREV,
     MDF_F2_GPOS, MDF_F2_GDENS, MDF_F2_GENV, MDF_F2_GSPRAY, MDF_F2_GPRAND, MDF_F2_GREV,
+    /* (2026-10-30) the vocoders' SIBILANCE and SENSITIVITY (src/fx/vocoder.h): the synth effect's, then each master
+     * slot's; after GRAINS', so again no older destination moved */
+    MDF_VOC_SIBIL, MDF_VOC_SENS, MDF_F1_SIBIL, MDF_F1_SENS, MDF_F2_SIBIL, MDF_F2_SENS,
     MDF_COUNT
 };
 #define MDF_WORDS ((MDF_COUNT + 63) / 64)
@@ -114,7 +117,7 @@ enum {
     MD_O1_OCT, MD_O2_OCT, MD_O3_OCT, MD_NOISE_A, MD_NOISE_SUS, MD_NOISE_R,
     MD_FENV_MULTI, MD_ENVSW_END = MD_FENV_MULTI + 3 * 4 - 1,   /* per envelope, MDS_COUNT apart (MDS_* below) */
     MD_LFO1_WAVE, MD_LFO_WAVE_END = MD_LFO1_WAVE + 3,
-    /* (2026-10-30) the effect destinations from MDF_FX1_COUNT on (GRAINS' controls), MDF_* order */
+    /* (2026-10-30) the effect destinations from MDF_FX1_COUNT on (GRAINS' controls, then the vocoders'), MDF_* order */
     MD_FX2_FIRST, MD_FX2_END = MD_FX2_FIRST + (MDF_COUNT - MDF_FX1_COUNT) - 1,
     MD_COUNT
 };

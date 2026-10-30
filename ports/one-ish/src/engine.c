@@ -482,6 +482,8 @@ static const short FXMD_SLOT[] = {
     P_MODFX_SPRAY, P_MODFX_PRAND, P_MODFX_REVERSE,
     P_DLY_GPOS, P_DLY_GDENS, P_DLY_GENV, P_DLY_GSPRAY, P_DLY_GPRAND, P_DLY_GREV,
     P_REV_GPOS, P_REV_GDENS, P_REV_GENV, P_REV_GSPRAY, P_REV_GPRAND, P_REV_GREV,
+    /* (2026-10-30) the vocoders' (MDF_VOC_SIBIL on) */
+    P_MODFX_SIBIL, P_MODFX_SENS, P_DLY_SIBIL, P_DLY_SENS, P_REV_SIBIL, P_REV_SENS,
 };
 _Static_assert(sizeof FXMD_SLOT / sizeof FXMD_SLOT[0] == MDF_COUNT, "an effect destination per MDF_* entry");
 /* each master effect slot's controls (fx.h; slot 1's were the delay's dly_* params, slot 2's the reverb's rev_*), in
@@ -3498,13 +3500,13 @@ static void fx_field(const one_t *s, int j, const int *ctrl, fx_params_t *f) {
     }
 }
 
-/* the vocoders' SIBILANCE and SENSITIVITY (not matrix destinations: CTRL 1/2 move the synth effect's, so they are
- * worked out again with every effect pass) */
+/* the vocoders' SIBILANCE and SENSITIVITY: matrix destinations since 2026-10-30 (MDF_VOC_SIBIL ..), and CTRL 1/2
+ * move the synth effect's, so they are worked out again with every effect pass (unmodulated, fx_eff gives the knob) */
 static void fx_voc_fields(const one_t *s, fx_params_t *f, const int *ctrl) {
     f->sfx.sibil = fx_eff(s, P_MODFX_SIBIL, ctrl) * 0.01f;
     f->sfx.sens = fx_eff(s, P_MODFX_SENS, ctrl) * 0.01f;
     for (int b = 0; b < 2; b++)
-        for (int k = BK_SIBIL; k <= BK_SENS; k++) fx_bank_field(s, b, k, s->val[BANK[b][k]], ctrl, &f->mfx[b]);
+        for (int k = BK_SIBIL; k <= BK_SENS; k++) fx_bank_field(s, b, k, fx_eff(s, BANK[b][k], ctrl), ctrl, &f->mfx[b]);
 }
 
 /* every effect setting (once per render: the knobs may have moved) */
