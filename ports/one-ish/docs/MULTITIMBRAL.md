@@ -175,5 +175,7 @@ gets three Synths (and how its page shows them) is the owner's later call.
 - Setting a key range by pressing LOW RANGE and then a key (the range is set as a value).
 - The master effects' matrix destinations follow Synth 1's matrix only.
 - Sequencer OUTPUT to another Synth or all of them; the sustain pedal's target Synth.
-- Timbre names on the home line. (NRPN for Synths 2 and 3 came with MIDI learn, 2026-10-29: `docs/SETTINGS.md`.)
+- (Timbre names came 2026-10-30: a click on a Synth's head on the SETUP page, saved with the sound, shown under the
+  SYNTH buttons and on the home line: `docs/PATCHES.md`. NRPN for Synths 2 and 3 came with MIDI learn, 2026-10-29:
+  `docs/SETTINGS.md`.)
 - The randomiser's undo history starts again when the focus changes.

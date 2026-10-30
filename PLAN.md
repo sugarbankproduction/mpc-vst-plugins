@@ -716,6 +716,29 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      step, is not measurable); with their own settings 84.35 off, 87.34 on (the difference is running Synth 1's LFOs,
      here a High-range one per sample, in place of their own). Nothing in the audio path allocates, locks or touches a
      file. Left: the MPC page.
+  36. (2026-10-30) Library parts and user libraries (audit package 12c / 12d and the timbre names; `desktop/parts.c`,
+     `desktop/parts_test.c` in load_test, `docs/PATCHES.md`; offline and the desktop window). Every one a plain click:
+     - EFFECT PRESETS: PRESETS on the SYNTH EFFECT, MASTER FX 1 and MASTER FX 2 MORE pages opens the library's new PARTS
+       tab on that slot: SAVE (a name, then notes; the time kept), a click on one then LOAD (type and settings), INIT
+       (the controls' defaults, the type kept), NOTES, DELETE, ALL TYPES; ON and the sends never change; one undo step.
+       Kept by type name and control name, so they move between the Synth effect and the master slots. 13 original
+       factory presets (chorus, ensemble, delays, flanger, phaser, crusher, room, hall, plate, space).
+     - MATRIX PRESETS (PARTS > MATRIX): SAVE the focused Synth's rows in use with notes and the time; ADD (into the free
+       rows) or REPLACE (each row where it was saved, the rest emptied); one undo step.
+     - SYNTH NAMES: a click on a Synth's head on the SETUP page names it (12 characters); the engine keeps it in the
+       state (`syn_name`, `s2_syn_name`, `s3_syn_name` after the tunings, written only when set, so older sounds write
+       the same state as before), read by the window without a lock; shown under the SYNTH buttons and on the home line;
+       saved with patches, snapshots, projects and SAVE S1/2/3; undo like any edit; a factory preset clears them.
+     - USER LIBRARIES (SETTINGS > LIBRARY): `<` `>` switch, NEW EMPTY, NEW + FACTORY (every factory sound as a patch),
+       RENAME, COPY SOUND TO. Each is a folder (patches, snapshots, sets, tags, effect and matrix presets); Default is the
+       old patch folder, untouched; the others in `Documents\ONE-ish\Libraries` (`ONEISH_LIB_DIR`). The settings file
+       keeps the one in use (`library=`).
+     - DUPLICATE NAMES (SETTINGS > LIBRARY): Ask (default, as before), Overwrite, Auto Rename, Ignore, for IMPORT and
+       COPY SOUND TO (`import_dup=`).
+     No new params; nothing in the audio path (files only on the window's thread; a name change is one chunk command,
+     as the tunings'). The library's tabs are a little narrower to fit PARTS. Left: export / import of sets, effect and
+     matrix presets and libraries from the window (they are plain files: OPEN PATCH FOLDER); deleting a library (delete
+     its folder); the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

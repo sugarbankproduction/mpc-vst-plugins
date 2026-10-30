@@ -64,8 +64,10 @@ numbers both set ONE-ish's one WAVE ANGLE; POLYPHONY MONO on is 1 voice, off goe
 HEADPHONES (2) has no plugin meaning. ONE-ish's own NRPN replaces the plugin wrapper's generic one (NRPN n = parameter
 n), which is switched off for ONE-ish (`vst.json` `"nrpn": false`).
 
-**LIBRARY**: where your patches and the settings file are (with buttons that open the folders), how many patches
-there are, the version and the build date, and **RESTORE DEFAULTS** (RESTORE DEFAULT SETTINGS: every setting on the
+**LIBRARY**: (2026-10-30) USER LIBRARY `<` `>` with how many patches it has, NEW EMPTY, NEW + FACTORY, RENAME, COPY
+SOUND TO, and DUPLICATE NAMES (IMPORT) (`docs/PATCHES.md`, "User libraries"); then the patch folder in use (with a
+button that opens it, and one for the settings file's folder), the version, the factory presets and the build date,
+and **RESTORE DEFAULTS** (RESTORE DEFAULT SETTINGS: every setting on the
 page, the MIDI map included, back to the defaults, after a question; patches and sounds are not touched).
 
 **TUNING**: MASTER FREQUENCY (400-480 Hz) and MASTER FINE TUNE (+-100 cents). These two stay part of the sound, as they
