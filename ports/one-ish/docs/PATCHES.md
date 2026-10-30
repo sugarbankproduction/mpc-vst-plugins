@@ -53,8 +53,10 @@ Loudness: `LEVEL` in the file trims every preset's volume so the bank plays at o
 Constant > Amp Level adds the rest). `test/bank_check.c` (in the offline checks; alone: `offline_check banka
 <dir>/demo.wav`) plays each preset a phrase for its category (bass line, melody, chords; a split adds bass notes, a
 sequenced preset holds a key), then again with the wheel and aftertouch full, and fails on a peak above -1 dBFS,
-silence, non-finite samples or a loudness 6 dB away from the bank's median. 2026-10-30, offline: every preset within
--19.3 .. -17.3 dB (the loudest 300 ms of RMS), loudest peak -2.0 dBFS; `bank_a_demo.wav` in `test/out` has them all.
+silence, non-finite samples or a loudness 6 dB away from the bank's median. 2026-10-30, offline: median -18 dB, every preset within
+-21 .. -17.3 dB (the loudest 300 ms of RMS; the lowest, Strung Air, uses the MACRO string model, which varies by a
+few dB from run to run), loudest peak -2.0 dBFS; CPU (x86, -O2) 36 us per 128-frame block on average, 122 us at most (a
+layer); `bank_a_demo.wav` in `test/out` has them all.
 
 ## Undo, COMPARE, snapshots (2026-10-29, offline)
 
