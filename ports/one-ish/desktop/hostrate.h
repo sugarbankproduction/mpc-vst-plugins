@@ -63,6 +63,12 @@ int hr_peek_view(hostrate_t *h, int synth, char *buf, int n);
 /* (2026-10-30) the same for a view by name ("rain_view", "markov_view": src/gens_b_run.h's seqlock). UI thread */
 int hr_peek_named(hostrate_t *h, int synth, const char *name, char *buf, int n);
 int hr_peek(hostrate_t *h, const char *key, char *buf, int n);   /* any readout of the engine (the tests' "bpm") */
+/* (2026-10-30) MIDI OUT: the engine's notes (src/midi_out.h) go to the host from hr_process, with
+ * audioMasterProcessEvents through this callback (set once, from VSTPluginMain), each at the host sample its sound is
+ * heard at: engine frame e at e * fs / 44100 + the reported latency (at 44.1 kHz exactly e), sorted, in the host block it
+ * falls in. hr_midi_out_lost: events that found the queue full (0; load_test reads it) */
+void hr_set_host(hostrate_t *h, intptr_t (*host)(struct AEffect *, int32_t, int32_t, intptr_t, void *, float));
+long hr_midi_out_lost(const hostrate_t *h);
 /* load_test only (effVendorSpecific TEST_LEGACY): 1 = the old path (the wrapper's own int16 output at 44.1 kHz, MIDI
  * at the block start), to compare against; set before the first block */
 void hr_set_legacy(hostrate_t *h, int on);

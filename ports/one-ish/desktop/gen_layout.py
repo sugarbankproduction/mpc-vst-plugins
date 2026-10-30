@@ -536,7 +536,9 @@ def build(lay):
     L.placed.update(k for k in L.index if k.startswith(("s2_", "s3_")))
     # (syn_solo: the S half of each SYNTH button, editor.c; never saved with the sound, so no MORE page row)
     L.placed.update(k for k in ("syn_on", "syn_ch", "key_lo", "key_hi", "seq_all", "midi_ch",
-                                "learn_mode", "syn_solo") if k in L.index)
+                                "learn_mode", "syn_solo",
+                                "mout_on", "mout_send", "mout_ch", "sus_pedal")   # (2026-10-30) SETUP page 3
+                     if k in L.index)
     if "arp_on" in L.index:
         L.rate_led("TEMPO", 0, 1094, 491)   # (2026-10-30) the beat, beside the TEMPO readout
     # the step sequencer: ON, PLAY, REC, NOTE TRIG, TRANSPOSE, STEP MOD; the page LEDs (the step editor's pages, the

@@ -415,7 +415,7 @@ int patches_tick(ed_t *e) {
 static void apply_state(ed_t *e, const char *state) {
     static float before[NPARAMS];
     for (int i = 0; i < NPARAMS; i++) before[i] = e->fx->getParameter(e->fx, i);
-    float keep[4];
+    float keep[SETTINGS_MIDI_KEEP];
     int held = settings_midi_keep(e, keep);   /* MIDI I/O FROM PRESET off: the channels stay (settings.c) */
     wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(state) + 1, (void *)state, 0);
     if (held) settings_midi_put(e, keep);

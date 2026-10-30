@@ -57,8 +57,25 @@ double host_tempo;   /* library_test.c sets it: the tempo the host reports (audi
 static struct { double d[8]; int32_t i[6]; } host_time;
 static int automated[NPARAMS], begins, ends;   /* what the plugin told the host per param (audioMasterAutomate, Begin/EndEdit) */
 static int automated_n, begun, ended;          /* and in total: audioMasterAutomate / BeginEdit / EndEdit calls */
+/* (2026-10-30) MIDI OUT: what the plugin sent with audioMasterProcessEvents (8), with the host block it came in */
+#define MO_LOG 4096
+static struct { int block, delta; unsigned char m[3]; } mo_log[MO_LOG];
+static int mo_n, mo_calls, mo_block, mo_in_process;
 static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, float o) {
     (void)e; (void)v; (void)p; (void)o;
+    if (op == 8 && p) {   /* audioMasterProcessEvents: Carla takes them only while processing, so must the plugin */
+        const VstEvents *ev = p;
+        mo_calls++;
+        for (int k = 0; k < ev->numEvents && mo_n < MO_LOG; k++) {
+            const VstMidiEvent *m = ev->events[k];
+            if (m->type != 1) continue;
+            mo_log[mo_n].block = mo_in_process ? mo_block : -1;
+            mo_log[mo_n].delta = m->deltaFrames;
+            memcpy(mo_log[mo_n].m, m->midiData, 3);
+            mo_n++;
+        }
+        return 1;
+    }
     if (op == 0 && i >= 0 && i < NPARAMS) automated[i]++;
     if (op == 0) automated_n++;
     if (op == 43) { begins++; begun++; }
@@ -72,6 +89,7 @@ static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, flo
     return op == 1 ? 2400 : 0;   /* audioMasterVersion */
 }
 
+static void midi_out_test(AEffect *fx);   /* (2026-10-30) below */
 int rate_tests(void *entry, void *old_entry);   /* rate_test.c: returns its failures */
 int library_tests(void *fx, HWND child, float s, const char *bmp, int w, int h, const char *patch_dir);   /* library_test.c */
 
@@ -3471,6 +3489,7 @@ int main(int argc, char **argv) {
     if (n > 0) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, chunk, 0);
     check(fabsf(fx->getParameter(fx, 1) - before) < 1e-3f, "restores them");
 
+    midi_out_test(fx);   /* (2026-10-30) */
     audition(fx, argc > 2 && argv[2][0] ? argv[2] : NULL);
     patch_tests(fx);
     editor(fx, argc > 3 ? argv[3] : NULL);
@@ -3535,4 +3554,93 @@ static void learn_shows_test(AEffect *fx, HWND child, float s, int w, int h) {
     st(fx, STT_MAP_CLEAR, NULL, NULL, 0);
     setkey(fx, "flt_slope", 0.0f);
     setkey(fx, "svf_mode", 0.0f);
+}
+
+/* ---- (2026-10-30) MIDI OUT through the DLL: it says it sends MIDI (canDo), and with MIDI OUT on it calls the host's
+ * audioMasterProcessEvents from inside processReplacing, in the host block the note plays in, sorted, every note-on
+ * followed by its note-off (desktop/hostrate.c, src/midi_out.h) ---- */
+static void mo_play(AEffect *fx, int blocks) {
+    float l[512], r[512], *out[2] = {l, r};
+    for (int b = 0; b < blocks; b++) {
+        mo_in_process = 1;
+        fx->processReplacing(fx, NULL, out, 512);
+        mo_in_process = 0;
+        mo_block++;
+    }
+}
+static void midi_out_test(AEffect *fx) {
+    char what[256];
+    int cd1 = (int)fx->dispatcher(fx, 51 /* effCanDo */, 0, 0, (void *)"sendVstEvents", 0);
+    int cd2 = (int)fx->dispatcher(fx, 51, 0, 0, (void *)"sendVstMidiEvent", 0);
+    int cd3 = (int)fx->dispatcher(fx, 51, 0, 0, (void *)"receiveVstMidiEvent", 0);
+    snprintf(what, sizeof what, "MIDI OUT: canDo sendVstEvents %d, sendVstMidiEvent %d (receiveVstMidiEvent %d)", cd1, cd2,
+             cd3);
+    check(cd1 == 1 && cd2 == 1 && cd3 == 1, what);
+    mo_play(fx, 4);
+    mo_n = mo_calls = 0;
+    send_midi(fx, 0x90, 60, 100);   /* MIDI OUT off (the default): nothing */
+    mo_play(fx, 4);
+    send_midi(fx, 0x80, 60, 0);
+    mo_play(fx, 4);
+    check(mo_n == 0, "MIDI OUT off (the default): the plugin sends nothing to the host");
+    setkey(fx, "mout_on", 1.0f);
+    mo_play(fx, 2);
+    int b0 = mo_block;
+    send_midi(fx, 0x90, 60, 100);   /* at the host block's start */
+    mo_play(fx, 1);
+    int ok = mo_n == 1 && mo_log[0].block == b0 && mo_log[0].delta >= 0 && mo_log[0].delta < 128 &&
+             mo_log[0].m[0] == 0x90 && mo_log[0].m[1] == 60 && mo_log[0].m[2] == 100;
+    snprintf(what, sizeof what, "MIDI OUT on: a key goes to the host in its own host block (event %d: block %d of %d, "
+             "deltaFrames %d, %02X %d %d)", mo_n, mo_n ? mo_log[0].block : -1, b0, mo_n ? mo_log[0].delta : -1,
+             mo_n ? mo_log[0].m[0] : 0, mo_n ? mo_log[0].m[1] : 0, mo_n ? mo_log[0].m[2] : 0);
+    check(ok, what);
+    send_midi(fx, 0x80, 60, 0);
+    mo_play(fx, 2);
+    check(mo_n == 2 && mo_log[1].m[0] == 0x80 && mo_log[1].m[1] == 60, "MIDI OUT on: its note-off follows");
+    /* generated: Euclid FREE (plays by itself) for 3 s, then switched off; every event in a process call, sorted */
+    mo_n = mo_calls = 0;
+    setkey(fx, "gen_euclid_on", 1.0f);
+    mo_play(fx, 3 * 44100 / 512);
+    setkey(fx, "gen_euclid_on", 0.0f);
+    mo_play(fx, 20);
+    setkey(fx, "mout_on", 0.0f);
+    mo_play(fx, 2);
+    int ons = 0, offs = 0, inproc = 1, sorted = 1, twice = 0, stray = 0, hang = 0;
+    static int held[16][128];
+    memset(held, 0, sizeof held);
+    for (int k = 0; k < mo_n; k++) {
+        int st = mo_log[k].m[0] & 0xF0, ch = mo_log[k].m[0] & 15, n = mo_log[k].m[1];
+        inproc &= mo_log[k].block >= 0 && mo_log[k].delta >= 0 && mo_log[k].delta < 512;
+        if (k && mo_log[k].block == mo_log[k - 1].block && mo_log[k].delta < mo_log[k - 1].delta) sorted = 0;
+        if (st == 0x90 && mo_log[k].m[2]) { ons++; twice += held[ch][n] > 0; held[ch][n]++; }
+        else if (st == 0x80 || st == 0x90) { offs++; if (held[ch][n]) held[ch][n]--; else stray++; }
+    }
+    for (int c = 0; c < 16; c++)
+        for (int n = 0; n < 128; n++) hang += held[c][n];
+    snprintf(what, sizeof what, "MIDI OUT: Euclid's notes reach the host (%d note-ons, %d note-offs in %d calls), all "
+             "from inside processReplacing (%s), sorted (%s); none twice on (%d), no stray off (%d), none hanging (%d)",
+             ons, offs, mo_calls, inproc ? "yes" : "NO", sorted ? "yes" : "NO", twice, stray, hang);
+    check(ons > 3 && inproc && sorted && !twice && !stray && !hang, what);
+    /* at 48 kHz: the key's note-on goes out where its sound is heard: its engine block's start, converted to 48 kHz,
+     * plus the converter's latency (the plugin's initialDelay) */
+    fx->dispatcher(fx, 12, 0, 0, NULL, 0);
+    fx->dispatcher(fx, 10, 0, 0, NULL, 48000.0f);
+    fx->dispatcher(fx, 12, 0, 1, NULL, 0);
+    setkey(fx, "mout_on", 1.0f);
+    mo_play(fx, 3);   /* host samples 0 .. 1535 */
+    mo_n = 0;
+    send_midi(fx, 0x90, 60, 100);   /* at host sample 1536: engine frame 1411, the engine block at 1408 (or, when the
+                                     * converter's look-ahead has rendered that one already, the next, at 1536) */
+    mo_play(fx, 2);
+    send_midi(fx, 0x80, 60, 0);
+    mo_play(fx, 2);
+    setkey(fx, "mout_on", 0.0f);
+    long want_a = (1408L * 48000 + 22050) / 44100 + fx->initialDelay, want_b = (1536L * 48000 + 22050) / 44100 + fx->initialDelay;
+    long got = mo_n ? (long)(mo_log[0].block - (mo_block - 4)) * 512 + 1536 + mo_log[0].delta : -1;
+    snprintf(what, sizeof what, "MIDI OUT at 48 kHz: the note-on at host sample %ld (its sound's: %ld or %ld, latency "
+             "%d), its note-off after (%d events)", got, want_a, want_b, fx->initialDelay, mo_n);
+    check(mo_n == 2 && (got == want_a || got == want_b) && mo_log[1].m[0] == 0x80, what);
+    fx->dispatcher(fx, 12, 0, 0, NULL, 0);
+    fx->dispatcher(fx, 10, 0, 0, NULL, 44100.0f);
+    fx->dispatcher(fx, 12, 0, 1, NULL, 0);
 }

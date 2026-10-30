@@ -12,8 +12,13 @@
 #define IN_FIFO 16384   /* the audio input at 44.1 kHz, waiting for its engine block (a power of two, frames) */
 #define IN_CHUNK 256    /* host input written into the converter at a time (its ring holds 1024 frames) */
 
+#define OEVQ 4096   /* (2026-10-30) MIDI OUT: the engine's events waiting for their host block */
+enum { audioMasterProcessEvents = 8 };   /* the VST2 opcode: the plugin's events to the host */
+
 void one_ish_render_float(void *inst, float *out_lr, int frames);     /* src/engine.c */
 void one_ish_set_input(void *inst, const float *in_lr, int frames);   /* src/engine.c */
+void one_ish_midi_out_enable(void *inst, int on);                     /* src/synths.h (MIDI OUT) */
+int one_ish_midi_out_take(void *inst, void (*fn)(void *ctx, int at, const uint8_t *m), void *ctx);
 
 struct hostrate {
     const mpc_engine_t *api;   /* the engine's own table (src/engine.c) */
@@ -36,6 +41,15 @@ struct hostrate {
     float in_blk[2 * BLOCK];      /* the next engine block's input, for shim_render() */
     int in_ready, in_live;        /* in_blk is this block's; it holds a sample other than 0 */
     long in_dry;                  /* engine frames that found no input yet (never expected; load_test reads it) */
+    /* (2026-10-30) MIDI OUT: the engine's events, each at its host sample (since the reset), sent to the host in the
+     * host block they fall in (hostrate.h); fixed arrays, nothing allocated on the audio thread */
+    audioMasterCallback host;     /* the host's callback (hr_set_host) */
+    int64_t blk_frame;            /* the engine frame the engine block being rendered starts at */
+    struct { int64_t t; uint8_t m[3]; } oev[OEVQ];
+    int noev;
+    long oev_lost;                /* events that found the queue full (never expected) */
+    VstMidiEvent oev_out[OEVQ];   /* this host block's, for audioMasterProcessEvents */
+    struct { int32_t n; intptr_t reserved; VstMidiEvent *ev[OEVQ]; } oev_list;
 };
 
 /* ---- the engine table the wrapper drives: everything forwarded, render() also keeps the float samples ---- */
@@ -53,6 +67,7 @@ static void *shim_create(const char *data_dir) {
     memset(h->in_fifo, 0, sizeof h->in_fifo);   /* (calloc'd: written once, so the audio thread never maps its pages) */
     h->in_lead = h->in_w = BLOCK;
     h->pending_fs = RS_RATE;
+    one_ish_midi_out_enable(h->eng, 1);   /* (2026-10-30) MIDI OUT: this build takes the events (hr_process sends them) */
     last_created = h;
     return h;
 }
@@ -67,6 +82,45 @@ static int shim_get_param(void *inst, const char *k, char *buf, int n) {
     hostrate_t *h = inst;
     return h->api->get_param(h->eng, k, buf, n);
 }
+/* (2026-10-30) MIDI OUT: an engine event `at` frames into the engine block being rendered, queued at the host sample
+ * its sound is heard at: engine frame e is output at host sample e * fs / 44100 + the converter's latency (the top of
+ * hostrate.h), so a downstream instrument plays together with this one's own audio (at 44.1 kHz: the same sample). An
+ * engine block is rendered no later than its first frame is output, so the time is never in a host block already
+ * gone. In time order (stable: a retrigger's off stays before its on). The old path (TEST_LEGACY): dropped. */
+static void oev_add(void *ctx, int at, const uint8_t *m) {
+    hostrate_t *h = ctx;
+    if (h->legacy) return;
+    if (h->noev == OEVQ) { h->oev_lost++; return; }
+    int64_t fs = h->rs.fs, e = h->blk_frame + at;
+    int64_t t = (e * fs + RS_RATE / 2) / RS_RATE + rs_delay_for((int)fs);
+    int k = h->noev++;
+    while (k > 0 && h->oev[k - 1].t > t) { h->oev[k] = h->oev[k - 1]; k--; }
+    h->oev[k].t = t;
+    memcpy(h->oev[k].m, m, 3);
+}
+/* the queued events that fall in the host block [host_pos, host_pos + n): to the host, in one call, from inside its
+ * processReplacing (Carla 2.5 takes them only while processing, and writes them out in the order given) */
+static void oev_send(hostrate_t *h, AEffect *fx, int32_t n) {
+    int k = 0;
+    while (k < h->noev && h->oev[k].t < h->host_pos + n) k++;
+    if (!k) return;
+    for (int i = 0; i < k; i++) {
+        VstMidiEvent *v = &h->oev_out[i];
+        memset(v, 0, sizeof *v);
+        v->type = 1;
+        v->byteSize = sizeof *v;
+        int64_t d = h->oev[i].t - h->host_pos;
+        v->deltaFrames = (int32_t)(d < 0 ? 0 : d >= n ? n - 1 : d);
+        memcpy(v->midiData, h->oev[i].m, 3);
+        h->oev_list.ev[i] = v;
+    }
+    h->oev_list.n = k;
+    h->oev_list.reserved = 0;
+    if (h->host) h->host(fx, audioMasterProcessEvents, 0, 0, &h->oev_list, 0.0f);
+    memmove(h->oev, h->oev + k, sizeof h->oev[0] * (h->noev - k));
+    h->noev -= k;
+}
+
 static void shim_render(void *inst, int16_t *out, int frames) {
     hostrate_t *h = inst;
     if (frames > BLOCK) frames = BLOCK;   /* (the wrapper never asks for more) */
@@ -77,6 +131,7 @@ static void shim_render(void *inst, int16_t *out, int frames) {
     one_ish_render_float(h->eng, h->tap, frames);
     for (int i = 0; i < 2 * frames; i++) out[i] = (int16_t)(h->tap[i] * 32767.0f);   /* exactly the engine's render() */
     h->tap_n = frames;
+    one_ish_midi_out_take(h->eng, oev_add, h);   /* (2026-10-30) MIDI OUT: this block's events, onto the host's timeline */
 }
 static void shim_song_pos(void *inst, double ppq, double bpm, int playing, int frames) {
     hostrate_t *h = inst;
@@ -209,6 +264,7 @@ static void restart(hostrate_t *h, AEffect *fx) {
     h->in_r = 0;
     h->in_ready = 0;
     h->host_pos = 0;
+    for (int i = 0; i < h->noev; i++) h->oev[i].t = 0;   /* (MIDI OUT: what waits goes out at the next block's start) */
 }
 
 /* ---- the audio input: the host block's input converted to 44.1 kHz into the FIFO, all of it before any output is
@@ -264,6 +320,7 @@ static void engine_block(hostrate_t *h, AEffect *fx, hr_render_t render) {
     h->sp_num = f * h->rs.fs - h->host_pos * RS_RATE;   /* this block's start minus the host block's, in seconds ... */
     h->sp_den = (int64_t)RS_RATE * h->rs.fs;             /* ... times 44100 * fs */
     h->tap_n = 0;
+    h->blk_frame = f;   /* (MIDI OUT: oev_add places this block's events from here) */
     input_take(h);
     float *o[2] = {h->out[0], h->out[1]};
     render(fx, NULL, o, BLOCK);   /* the wrapper's FIFO is empty at every call (whole blocks only): one render() */
@@ -280,5 +337,11 @@ void hr_process(hostrate_t *h, AEffect *fx, hr_render_t render, float **in, floa
         done += rs_out(&h->rs, out[0] + done, out[1] + done, n - done, add);
         if (done < n) engine_block(h, fx, render);
     }
+    oev_send(h, fx, n);   /* (2026-10-30) MIDI OUT */
     h->host_pos += n;
 }
+
+void hr_set_host(hostrate_t *h, intptr_t (*host)(struct AEffect *, int32_t, int32_t, intptr_t, void *, float)) {
+    h->host = host;
+}
+long hr_midi_out_lost(const hostrate_t *h) { return h->oev_lost; }
