@@ -44,7 +44,13 @@ Ground rules:
   the repo, files and folders keep the ONE-ish name). A rebuilt DLL is picked up when the plugin is reloaded in Carla. Carla is set to
   DirectSound, Speakers (Realtek), 44100 Hz, Continuous Rack. On Windows Carla does not wire its output to the sound card
   by itself: the .carxp carries `<ExternalPatchbay>` connections `Carla:AudioOut1/2` -> `AudioOut:Left/Right`
-  (fixed silence, 2026-10-27).
+  (fixed silence, 2026-10-27). Since 2026-10-31 Carla shows the plugin and the device as `Moo Won:output_1/2` and
+  `Audio Output:Playback 1/2` (the Patchbay view), so the old connections no longer matched and the shortcut started
+  silent every time; the owner wired them in Patchbay and saved, and the .carxp now has `<Patchbay>` connections
+  `Moo Won:output_1/2` -> `Audio Output:Playback 1/2` (backup `%USERPROFILE%\VST2\Moo Won (working wiring
+  2026-10-31).carxp.bak`). If silent again: check Carla's Patchbay for those two cables first. Never start a second Carla
+  (computer use's open_application on Carla launches a new, empty one): bring the existing window forward instead.
+  The default "Moo Won.dll" is stereo; "Moo Won Multi.dll" (eight outputs) is for Carla's Patchbay only.
 - MPC builds (`tools/build_port.sh ... all`, `tools/test_port.sh` x86 and aarch64) and an independent code review run at
   milestones only: after Phase 5 (both filters), after Phase 8 (polyphony; needs an on-device `tools/bench.sh`), after
   Phase 9 (page and Q-Links) and before a release. Inside this Dropbox folder `build_port.sh` fails at random (Dropbox
