@@ -1074,9 +1074,10 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         synth_toggle(e, z - Z_MUTE1, 0);
     } else if (z >= Z_SOLO1 && z <= Z_SOLO3) {
         synth_toggle(e, z - Z_SOLO1, 1);
-    } else if (z >= Z_FOCUS1 && z <= Z_FOCUS3) {   /* PANEL FOCUS (TOGETHER lit, or Ctrl: several Synths at once) */
-        if (GetKeyState(VK_SHIFT) < 0 && NSYNTHS > 1) synth_toggle(e, z - Z_FOCUS1, 1);   /* SHIFT + SYNTH: solo */
-        else set_focus(e, z - Z_FOCUS1, e->together || GetKeyState(VK_CONTROL) < 0);
+    } else if (z >= Z_FOCUS1 && z <= Z_FOCUS3) {   /* PANEL FOCUS (TOGETHER lit, or Shift / Ctrl: several Synths at once;
+                                                    * 2026-10-30: Shift adds, as the owner expects; solo is S or a
+                                                    * double-click) */
+        set_focus(e, z - Z_FOCUS1, e->together || GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_SHIFT) < 0);
     } else if (z == Z_TAB_SETUP) {   /* the three Synths side by side; again: its next page */
         show(e, SCR_SETUP, e->screen == SCR_SETUP ? (e->sub + 1) % subs : 0);
     } else if (z == Z_TAB_SEQ) {   /* the step editor; again: its other view (NOTES / MODS) */

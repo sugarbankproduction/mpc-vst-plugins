@@ -17,7 +17,7 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   (the panel stays on the Synth it shows unless that one goes); off again, back to just the Synth shown. Ctrl-click,
   Shift+1-3 and Ctrl+Shift+F5-F7 light it too. The window's own state, never saved. (load_test: `together_test`.)
 - **M | S** beside each SYNTH button (2026-10-29): M switches the Synth off and on (its ON; red while off; saved with the
-  sound). S solos it (shortcuts: a double-click or Shift-click on the SYNTH button; 2026-10-30): while any
+  sound). S solos it (shortcut: a double-click on the SYNTH button; Shift-click adds a Synth to the ones edited together, 2026-10-30): while any
   Synth is soloed only the soloed ones are heard, the others keep playing silently; never saved (`syn_solo`, kept out
   of states, patches and the randomiser; a 10 ms glide so it never clicks).
 - **Shared** sections stay the same whichever Synth is in focus, and say so on the panel: MASTER EFFECTS, DELAY and

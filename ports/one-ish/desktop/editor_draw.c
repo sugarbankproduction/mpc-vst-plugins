@@ -343,7 +343,7 @@ static const char *zone_help(ed_t *e, int z) {
             ? "SYNTH 1 / 2 / 3, TOGETHER lit: a click adds this Synth to the ones edited together (lit) or takes it out; "
               "the panel shows the last one clicked. TOGETHER again: back to one Synth. S solos, M mutes."
             : "SYNTH 1 / 2 / 3 (Panel Focus): the panel, the MORE pages, the matrix and the step editor show and edit this "
-              "Synth. To edit several at once, light TOGETHER (below) and click them. S beside it solos, M mutes. Sections "
+              "Synth. To edit several at once, Shift-click them (or light TOGETHER below and click). S beside it solos (or double-click), M mutes. Sections "
               "marked SHARED are the same for all three. Shortcuts: keys 1 / 2 / 3, Ctrl-click adds.";
     case Z_MUTE1: case Z_MUTE2: case Z_MUTE3:
         return "M (MUTE): red, this Synth is off (its ON on the SETUP page): it stops and plays nothing. Saved with the "
