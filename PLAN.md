@@ -892,6 +892,53 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      as the tunings'). The library's tabs are a little narrower to fit PARTS. Left: export / import of sets, effect and
      matrix presets and libraries from the window (they are plain files: OPEN PATCH FOLDER); deleting a library (delete
      its folder); the MPC page.
+  42. (2026-10-31) CABLES by dragging, and each cable's settings (owner, 2026-10-31: "build them all but also leave
+     the original implementation of clicking a source jack and then a knob"). Done 2026-10-31 (the desktop window only,
+     offline; `desktop/cables.c`, `quickmod.c` qm_connect, `editor.c` ed_hit; load_test `cables_drag_test`). Every way
+     of item 36 stays (a click on a jack then a knob, the middle amount knob, a click on a cable then X, CABLES OFF and
+     Esc); dragging is added, and each new action is also a plain click.
+     - DRAG TO CONNECT: every source with a place on the panel now has its jack always (LFO 1-4 and the envelopes on
+       their title strips, NOISE, the wheels, X / Y / GATE on the pad, the ribbon; the generators' when used), as the
+       bay's do, and Pitch always has a destination jack in the bay. Press on a jack and move more than 4 px: a live
+       sagging cable in the source's colour follows the mouse; a knob (or switch, or MORE-page item) the matrix can move
+       gets a white ring as the mouse passes over it, as does a destination jack. Let go there: a new row at +25% in the
+       focused Synth (with TOGETHER, in each Synth edited together, as quick assign), one undo step, the host told; the
+       new cable is selected (its box opens) so its middle knob can be dragged. A row that already joins the two is kept
+       and selected. Let go anywhere else: nothing happens ("Nothing connected" on the help line). A press and let go
+       without moving does what it did: quick assign from that source, then click a knob. With all 16 rows in use the
+       ring is red and the help line says, plainly, that the matrix is full and how to free a row; nothing is made.
+     - RE-PATCH: two small dots on each cable, near its source and near its destination, are grab handles (a jack press
+       makes a new cable, so the handles sit a little way along). Drag the destination's dot to another knob or
+       destination jack: the row's DESTINATION moves there; the source's dot to another source's jack: its SOURCE
+       changes. Let either go on empty panel (or the bay): the row is removed (UNDO brings it back). Over anything else,
+       or its own end, nothing changes. One undo step a drag; the Synths edited together follow. The cable being
+       re-patched is left out of the cached layer for the drag (the layer is drawn once at the start and once at the
+       end).
+     - SETTINGS ON THE CABLE: a selected cable's label is now a small box beside its knob (placed clear of the centre
+       screen, so the help line explaining its controls stays readable): the row's number and source > destination, ON
+       / OFF (the row's ENABLE; off, the cable is faint), X; AMOUNT (a bar, the value, < >), VIA (a list of the matrix's
+       controllers, None by default) and VIA AMOUNT, XFORM (its list) and its amount. Values drag up / down (1% a pixel,
+       Shift fine) or step 5% with < >. Each edit is one undo step, writes the MATRIX page's own params (the page stays
+       the only truth and redraws), told to the host as a knob is.
+     - The help line says what letting go would do in each state: dragging, over a knob ("Let go: Velocity > Ladder
+       Cutoff, connected at +25% ..."), the matrix full, re-patching ("Let go: row 1 moves from Ladder Cutoff to Ladder
+       Res ..."), over empty panel ("the cable is removed ... UNDO brings it back"), not a destination; afterwards what
+       was done, for six seconds.
+     load_test (offline): a drag from VELOCITY to the ladder CUTOFF makes row 1 Velocity > Ladder Cutoff at +25% as one
+     undo step, selected, UNDO / REDO; let go over nothing: no row, no step; a plain click on the jack still starts quick
+     assign and a knob click connects; the destination end dragged to RESONANCE moves the row (one step); the source end
+     to LFO 1 changes its source; the end let go on empty panel removes the row, UNDO restores it; every box control
+     (AMOUNT < > and its drag, VIA's list, VIA AMOUNT < >, XFORM's list, its amount < >, ON / OFF) changes the right
+     param as one undo step with the host told; 16 rows in use: the help line says so while dragging and after, nothing
+     made. Paint on the PC (load_test, 2026-10-31, the machine busy with other jobs, so the numbers moved a lot between
+     runs): the full repaint with cables 11.1-14.6 ms in the quieter runs (target 16; unchanged from item 36's 11.5);
+     the amount knob dragged 1.2 ms (target 2; the box's value line repaints, not all of the box); a live cable's move
+     repaints its own area (about 1100 x 660 px for a cable from the bay to the top right) in 5.8-7.2 ms with the
+     cached layer not drawn again. In the busiest runs every paint timing, the panel's own included, went over its
+     target. Screenshots: load_test's `_cables_dragging`, `_cables_box`, `_cables_box2`, `_cables_box_off`,
+     `_cables_repatch`, `_cables_full`. Nothing in the audio path changes. Left: VIA as a second thin cable (VIA shows
+     in the box and its list only); dragging a cable to a generator source that no row uses yet (GENERATIVE's DEST
+     does it); hover highlighting of a whole cable; the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
