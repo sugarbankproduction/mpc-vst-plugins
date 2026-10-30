@@ -130,16 +130,22 @@ static const char *help_for(int i) {
         {"chord_iv4", "Chord note: how far above (or below) the root this note of the Custom chord is, in semitones. LEARN fills these in."},
         {"chord_iv5", "Chord note: how far above (or below) the root this note of the Custom chord is, in semitones. LEARN fills these in."},
         /* the generative section */
-        {"gen_euclid_on", "Euclid: a rhythm that spreads HITS notes as evenly as it can over STEPS steps (the ring shows it). Plays the held keys, or the arpeggio."},
+        {"gen_euclid_on", "Euclid: a rhythm that spreads HITS notes as evenly as it can over STEPS steps (the ring shows it). KEYS Free: it plays by itself in the KEY (EUCLID NOTES); Held Keys: the held keys, or the arpeggio; Key Launch: one pattern from each key."},
         {"gen_steps", "Steps: how long the Euclidean pattern is, 1 to 32 steps (the dots around the ring)."},
         {"gen_hits", "Hits: how many of the steps play (the lit dots). 3 of 8 or 5 of 16 give classic grooves."},
         {"gen_rot", "Rotate: turns the Euclidean pattern round by this many steps, so it starts in another place."},
         {"gen_prob", "Chance: the probability that each step plays at all (100% = always). Lower it for patterns that breathe."},
         {"gen_vel_rand", "Velocity random: each generated note's loudness varies at random by up to this much."},
-        {"gen_tm_on", "Turing: a looping random melody over the held keys or a SCALE. CHANGE sets how often it alters a note (MORE page)."},
+        {"gen_tm_on", "Turing: a looping random melody, in the KEY and SCALE (KEYS Free), over the held keys or a SCALE (Held Keys), or one loop from each key (Key Launch). CHANGE sets how often it alters a note (MORE page)."},
+        {"gen_keys", "Euclid / Turing keys: Free plays by itself whenever the Synth is on, in its KEY from LOW OCTAVE (keys play as usual); Held Keys plays only while you hold keys (as before); Key Launch: each key plays one pattern (or one Turing loop) from that key. With the arp on, the arp plays the held keys."},
+        {"gen_octave", "Low octave: where Euclid's and Turing's notes start when they play by themselves (KEYS Free)."},
+        {"gen_eu_notes", "Euclid notes (Free and Key Launch): each hit plays the root, the next note of the scale up (then from the root again), up and down, or a random note of the scale, over the Turing OCTAVES."},
+        {"gen_tempo_src", "Gen tempo: Global, this Synth's generators follow the host's tempo (or the console's OWN TEMPO); Own, they run at OWN BPM instead (synced rates, grids, cycles and Follow Tempo's speed). The arp and the sequencer stay on the global tempo."},
+        {"gen_bpm", "Own BPM: the tempo this Synth's generators run at while GEN TEMPO is Own (20-300). A change carries on smoothly from where they are."},
+        {"gen_follow_keys", "Follow keys: on, a generator playing from the keys (Held, Launch, Emit) plays in the key you play: one key is the root of the SCALE, a chord gives only its own notes. Off: the Synth's KEY and SCALE stay, the key only says where to start."},
         {"gen_tm_len", "Turing length: how many steps the Turing machine's melody loops over."},
         {"gen_tm_change", "Turing change: how likely each step's note is replaced by a new random one. 0% locks the loop, 100% is new every time."},
-        {"gen_scale", "Turing scale: Held Notes picks from the keys you hold; a scale picks degrees from the lowest held key."},
+        {"gen_scale", "Turing scale: Held Notes picks from the keys you hold (KEYS Free or Launch: the Synth's own SCALE); a scale picks its degrees from the lowest held key (or the KEY's root)."},
         {"gen_range", "Turing octaves: how many octaves up the Turing melody may wander."},
         /* the bouncing balls and particles (2026-10-29) */
         {"phys_balls_on", "Balls: balls bounce in a box; the floor plays a note of the KEY by where it lands, the ceiling an octave up, the walls the root and the fifth."},
@@ -171,7 +177,7 @@ static const char *help_for(int i) {
         {"rain_life", "Ripple life: how long a ring lasts before it fades away."},
         {"rain_echo", "Echo: where two rings meet, or a ring reaches a stone, a softer note may play. 0: no echoes; more: more often and louder."},
         {"rain_stones", "Stones: dots in the pond; a ring reaching one plays an echo there."},
-        {"rain_keys", "Rain keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one."},
+        {"rain_keys", "Rain keys: Free rains by itself; Held Keys only while you hold keys, from the lowest one; Key Launch: each key a shower of drops (more when played harder); Key Emit: rain falls while you hold keys, harder playing more rain, and stops when you let go."},
         {"rain_len", "Rain note length: how long each drop or echo note lasts."},
         {"rain_octave", "Rain low octave: where the left edge of the pond is (with Free keys)."},
         {"rain_range", "Rain octaves: how many octaves the pond spans, left to right."},
@@ -186,7 +192,7 @@ static const char *help_for(int i) {
         {"mkv_gate", "Markov note length: how long each note lasts, as a part of the time to the next one."},
         {"mkv_quant", "In key: on, it learns and plays degrees of the KEY and SCALE; off, plain semitones as you played them."},
         {"mkv_range", "Markov octaves: how far it may wander, around where you played (or up from the lowest held key)."},
-        {"mkv_keys", "Markov keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one (and does not learn them)."},
+        {"mkv_keys", "Markov keys: Free plays by itself; Held Keys plays only while you hold keys, from the lowest one (and does not learn them); Key Launch: each key plays a phrase of 8 notes from it, ending on it."},
         {"mkv_max", "Markov max notes/s: at most this many notes a second."},
         /* (2026-10-30) the walls and FOLLOW OCTAVE */
         {"phys_floor", "Floor: Plays a note when a ball lands, Silent bounces without a note, Open lets balls and particles fall out (new balls come in)."},
@@ -198,7 +204,7 @@ static const char *help_for(int i) {
         {"gen_follow_tempo", "Follow tempo (all three Synths): on, the balls, particles, rain, orbits and Life's free rate run faster or slower with the BPM (twice as fast at 240, half at 60; as set at 120). Off: their own speeds."},
         /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
         {"life_on", "Life: a grid of cells lives and dies by the RULE; births, or a playhead scanning it, play notes of the KEY (bottom row lowest)."},
-        {"life_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one."},
+        {"life_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one; Key Launch: each key seeds a new grid from that key, which plays until it dies out or settles."},
         {"life_rate", "Rate: how often the grid steps, as a note value at the host's tempo, or Free (its own FREE RATE)."},
         {"life_speed", "Free rate: steps a second while RATE is Free."},
         {"life_mode", "Plays: Births plays each cell as it is born; Scan Column plays the live cells under a playhead moving across (row = note); Scan Row moves up the rows (column = note)."},
@@ -213,7 +219,7 @@ static const char *help_for(int i) {
         {"life_range", "Octaves: how many octaves the grid spans, bottom to top."},
         {"life_max", "Max notes/s: at most this many LIFE notes a second (the rest are not played)."},
         {"orb_on", "Orbits: planets circle a sun; a planet crossing a spoke plays that spoke's note of the KEY (spread over an octave)."},
-        {"orb_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one."},
+        {"orb_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one; Key Launch: each key launches the planets again in step, playing from that key."},
         {"orb_planets", "Planets: how many circle the sun (1-6). The inner ones go round faster."},
         {"orb_speed", "Speed: how fast time runs for the planets (50%: the innermost goes round in a few seconds)."},
         {"orb_gravity", "Gravity: how much the planets pull on each other. 0: each keeps its own orbit exactly (a steady pattern); more, the pattern wanders."},
@@ -227,7 +233,7 @@ static const char *help_for(int i) {
         {"orb_range", "Octaves: how many octaves the planets spread over (Planets as Octave)."},
         {"orb_max", "Max notes/s: at most this many orbit notes a second (the rest are not played)."},
         {"pend_on", "Pendulums: a row of pendulums, each a little faster than the last, drift out of step and meet again; each plays its own note of the KEY as it swings."},
-        {"pend_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one."},
+        {"pend_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one; Key Launch: each key starts the pendulums together from that key (DAMPING lets them die away)."},
         {"pend_count", "Pendulums: how many (2-12); each the next note of the scale."},
         {"pend_cycle", "Cycle: how many bars until they are all in step again, at the host's tempo."},
         {"pend_speed", "Swings: how many times the first pendulum swings in one cycle."},
@@ -890,17 +896,47 @@ static void draw_hub(HDC dc, ed_t *e) {
         if (HUB[k].on >= 0)
             screen_button(dc, on, "ON", hub_on(e, k, e->focus), e->hover == Z_HUB_ON + k, font_cell);
         gfx_frame((float)op.left, (float)op.top, (float)rw(&op), (float)rh(&op), 1.0f, hot ? 0xFF96D7E8 : 0xFF27404E);
-        RECT tr = {op.left + sc(6), op.top, op.right - sc(56), op.bottom};
+        int ky = HUB[k].keys, dw = ky >= 0 ? 9 : 12, dx = ky >= 0 ? 30 : 52;   /* (2026-10-30: KEYS takes room) */
+        RECT tr = {op.left + sc(6), op.top, op.right - sc(dx + 4), op.bottom};
         text(dc, &tr, HUB[k].label, font_cell, hot ? T_HOT : T_LCD, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         for (int c = 0; c < NSYNTHS; c++) {   /* 1 2 3: lit where it is on */
             int lit = hub_on(e, k, c);
             on_n[c] += lit;
             char d[2] = {(char)('1' + c), 0};
-            RECT dr = {op.right - sc(52) + c * sc(12), op.top, op.right - sc(42) + c * sc(12), op.bottom};
+            RECT dr = {op.right - sc(dx) + c * sc(dw), op.top, op.right - sc(dx - 10) + c * sc(dw), op.bottom};
             text(dc, &dr, d, font_tiny, lit ? T_LCD : RGB(46, 72, 84), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
-        RECT ar = {op.right - sc(14), op.top, op.right - sc(4), op.bottom};
-        text(dc, &ar, ">", font_cell, T_LCD_DIM, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        if (ky < 0) {
+            RECT ar = {op.right - sc(14), op.top, op.right - sc(4), op.bottom};
+            text(dc, &ar, ">", font_cell, T_LCD_DIM, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+            continue;
+        }
+        /* (2026-10-30) its KEYS, the Synth in focus's: FREE, HELD, LAUNCH or EMIT (lit unless FREE) */
+        static const char *const KS[4] = {"FREE", "HELD", "LAUNCH", "EMIT"};
+        int o = option_of(e, ky);
+        screen_button(dc, hub_keys_rect(k), KS[o < 0 ? 0 : o > 3 ? 3 : o], o > 0, e->hover == ky && e->hit_screen,
+                      font_tiny);
+    }
+    int gsrc = rnd_key("gen_tempo_src") < NPARAMS ? rnd_key("gen_tempo_src") : -1;   /* (2026-10-30) GEN TEMPO */
+    int gbpm = rnd_key("gen_bpm") < NPARAMS ? rnd_key("gen_bpm") : -1;
+    int gfk = rnd_key("gen_follow_keys") < NPARAMS ? rnd_key("gen_follow_keys") : -1;
+    if (gsrc >= 0 && gbpm >= 0) {
+        int own = option_of(e, gsrc) == 1;
+        char bv[32];
+        screen_button(dc, hub_gen_rect(0), own ? "OWN BPM" : "GLOBAL", own, gsrc == e->hover, font_cell);
+        RECT dn = hub_gen_rect(1), vr = hub_gen_rect(2), up = hub_gen_rect(3);
+        text(dc, &dn, "<", font_cell, e->hover == Z_HUB_BPM_DOWN ? T_HOT : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &up, ">", font_cell, e->hover == Z_HUB_BPM_UP ? T_HOT : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        gfx_frame((float)vr.left, (float)vr.top, (float)rw(&vr), (float)rh(&vr), 1.0f, gbpm == e->hover ? 0xFF96D7E8 : 0xFF27404E);
+        param_text(e, gbpm, bv, sizeof bv);
+        text(dc, &vr, bv, font_cell, own ? T_LCD : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    if (gfk >= 0) {
+        RECT f = hub_gen_rect(4), fr = {f.right + sc(6), f.top, L.row[0].right, f.bottom};
+        int on = option_of(e, gfk) == 1;
+        screen_button(dc, f, "FOLLOW KEYS", on, gfk == e->hover, font_cell);
+        text(dc, &fr, on ? "in the key you play" : "in the Synth's KEY", font_tiny, T_LCD_DIM,
+             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     static const char *const NAME[2] = {"KEY", "SCALE"}, *const KEY[2] = {"key_root", "key_scale"},
                       *const LNK[2] = {"link_key", "link_scale"};

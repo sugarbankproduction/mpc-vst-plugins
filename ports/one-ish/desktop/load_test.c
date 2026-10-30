@@ -448,7 +448,8 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         SendMessageA(child, WM_KEYDOWN, '1', 1);   /* (back to Synth 1) */
         /* the computer keyboard as a music keyboard: A plays C4, its release ends it, Z an octave down (on the first
          * preset: the R test above left a random sound, which may be a slow pad) */
-        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);   /* (2026-10-30: another first, so the first loads */
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);   /* again: the random sound's FREE Euclid off) */
         play(fx, 200, 512);
         double quiet = play(fx, 20, 512);
         unsigned char qlog[64][3];
@@ -456,13 +457,15 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         SendMessageA(child, WM_KEYDOWN, 'A', 1);
         SendMessageA(child, WM_KEYDOWN, 'A', 1 | 0x40000000);   /* (a repeat: no second note) */
         double held = play(fx, 40, 512);
-        if (held <= 0.0005) {   /* (diagnosis, only when it fails) */
+        if (held <= 0.0005 || quiet > 0.01) {   /* (diagnosis, only when it fails) */
             int nq = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, qlog, 0);
             fprintf(stderr, "DIAG keyboard: %d MIDI out:", nq);
             for (int k = 0; k < nq && k < 8; k++) fprintf(stderr, " %02x %d %d;", qlog[k][0], qlog[k][1], qlog[k][2]);
             static const char *const DK[] = {"syn_on", "syn_solo", "s2_syn_on", "s2_syn_solo", "s3_syn_on", "s3_syn_solo",
                 "seq_on", "seq_play", "arp_on", "gen_euclid_on", "gen_tm_on", "phys_keys", "phys_balls_on", "volume",
-                "master_level", "amp_s", "amp_a", "key_lo", "key_hi", "syn_ch", "midi_ch", "octave_shift", "transpose"};
+                "master_level", "amp_s", "amp_a", "key_lo", "key_hi", "syn_ch", "midi_ch", "octave_shift", "transpose",
+                "gen_keys", "s2_gen_euclid_on", "s2_gen_tm_on", "s3_gen_euclid_on", "s3_gen_tm_on", "s2_arp_on", "hold",
+                "s2_seq_play", "s3_seq_play", "seq_all"};
             for (unsigned k = 0; k < sizeof DK / sizeof DK[0]; k++) fprintf(stderr, " %s=%.3f", DK[k], rnd_key(DK[k]) < NPARAMS ? fx->getParameter(fx, rnd_key(DK[k])) : -1.0f);
             fprintf(stderr, "\n");
         }
@@ -2826,7 +2829,73 @@ static void seq_output_ui_test(AEffect *fx, HWND child, float s, const char *bmp
     hover_at(child, s, 0, 0);
 }
 
+/* (2026-10-30) the GENERATIVE page: each generator row's KEYS button (a plain click opens its list), GEN TEMPO (GLOBAL /
+ * OWN, < > on its BPM) and FOLLOW KEYS, all plain clicks on the Synth in focus's params */
+static void hub_part_xy(int slot, float from_left, float *x, float *y) {   /* from_left < 0: from the row's right end */
+    float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2, left = x0 + (slot / 6) * (half + 8.0f);
+    *x = from_left >= 0 ? left + from_left : left + half + from_left;
+    *y = ZONE_SCREEN[1] + 80.0f + 22.0f * (slot % 6) + 11.0f;
+}
+static void gen_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone in focus */
+    int all = 1;
+    for (int k = 0; k < NHUB; k++) all &= HUB[k].keys >= 0 && !strcmp(PARAMS[HUB[k].keys].key + strlen(PARAMS[HUB[k].keys].key) - 5, "_keys");
+    check(all, "GENERATIVE: every generator's row has its KEYS button (Euclid and Turing gen_keys, the balls and "
+          "particles phys_keys, and each other's own)");
+    static const struct { int row; const char *key; int downs; float want; } PICK[] = {
+        {0, "gen_keys", 2, 0.5f}, {0, "gen_keys", 3, 1.0f}, {0, "gen_keys", 1, 0.0f},
+        {7, "rain_keys", 4, 1.0f}, {7, "rain_keys", 3, 2.0f / 3}, {7, "rain_keys", 1, 0.0f},
+        {8, "mkv_keys", 3, 1.0f}, {8, "mkv_keys", 1, 0.0f}};
+    for (unsigned p = 0; p < sizeof PICK / sizeof PICK[0]; p++) {
+        float x, y;
+        if (PICK[p].want > 0.0f) setkey(fx, PICK[p].key, 0.0f);   /* (the list opens on FREE: the keys count from it) */
+        click_zone(child, s, ZONE_TAB_GEN);
+        hub_part_xy(PICK[p].row, -19.0f, &x, &y);
+        short z[4] = {(short)(x - 4), (short)(y - 4), 8, 8};
+        int menu = click_menu(child, s, z, PICK[p].downs);
+        float v = getkey(fx, PICK[p].key);
+        snprintf(what, sizeof what, "GENERATIVE row %d's KEYS: a plain click opens its list (%s), item %d sets %s (%.3f, "
+                 "want %.3f), not Synth 2's (%.3f)", PICK[p].row + 1, menu ? "shown" : "NOT shown", PICK[p].downs,
+                 PICK[p].key, v, PICK[p].want, getkey(fx, PICK[p].key[0] == 'g' ? "s2_gen_keys" : PICK[p].key[0] == 'r' ?
+                 "s2_rain_keys" : "s2_mkv_keys"));
+        check(menu && fabsf(v - PICK[p].want) < 1e-3f, what);
+        if (bmp && p == 0) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_hub_keys"); }
+    }
+    /* GEN TEMPO: GLOBAL -> OWN, > > < (one BPM a click), back to GLOBAL; FOLLOW KEYS off and on */
+    float gx, gy, ux, uy, dx, dy, fx_, fy;
+    click_zone(child, s, ZONE_TAB_GEN);
+    hub_part_xy(9, 30.0f, &gx, &gy);
+    hub_part_xy(9, -7.0f, &ux, &uy);
+    hub_part_xy(9, 77.0f, &dx, &dy);
+    hub_part_xy(10, 50.0f, &fx_, &fy);
+    float s0 = getkey(fx, "gen_tempo_src"), b0 = getkey(fx, "gen_bpm");
+    click(child, s, gx, gy);
+    float s1 = getkey(fx, "gen_tempo_src");
+    click(child, s, ux, uy); click(child, s, ux, uy); click(child, s, dx, dy);
+    float b1 = getkey(fx, "gen_bpm");
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_hub_tempo"); }
+    click(child, s, gx, gy);
+    float s2 = getkey(fx, "gen_tempo_src");
+    float k0 = getkey(fx, "gen_follow_keys");
+    click(child, s, fx_, fy);
+    float k1 = getkey(fx, "gen_follow_keys");
+    hover_at(child, s, fx_, fy);
+    int helped = strstr(help_fresh(fx), "Follow keys") != NULL;
+    click(child, s, fx_, fy);
+    float k2 = getkey(fx, "gen_follow_keys");
+    snprintf(what, sizeof what, "GEN TEMPO on the GENERATIVE page: GLOBAL to start (%.0f), a click OWN (%.0f), > > < "
+             "121 BPM (%.1f), a click GLOBAL again (%.0f); FOLLOW KEYS on to start (%.0f), a click off (%.0f), on (%.0f), "
+             "its help (%d)", s0, s1, 20 + 280 * b1, s2, k0, k1, k2, helped);
+    check(s0 < 0.5f && s1 > 0.5f && fabsf(20 + 280 * b1 - 121.0f) < 0.01f && s2 < 0.5f && k0 > 0.5f && k1 < 0.5f &&
+          k2 > 0.5f && helped && fabsf(20 + 280 * b0 - 120.0f) < 0.01f, what);
+    setkey(fx, "gen_bpm", b0);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    hover_at(child, s, 0, 0);
+}
+
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    gen_keys_ui_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     zone_help_test(fx, child, s);
     seq_output_ui_test(fx, child, s, bmp, w, h);
     oct_panic_test(fx, child, s);

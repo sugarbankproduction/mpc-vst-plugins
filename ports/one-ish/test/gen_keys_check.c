@@ -159,6 +159,34 @@ static void gen_keys_checks(void) {
                  "the key is let go (and the last drops have landed) %d, %d", pre, soft, hard, none, none2);
         check(pre == 0 && soft > 0 && hard > 2 * soft && none == 0 && none2 == 0, what);
     }
+    /* random sounds with ARPEGGIATOR and GENERATIVE (Euclid / Turing FREE playing by themselves), then every param back
+     * to its default one by one (as a preset loads): silence after the release, nothing left sounding */
+    {
+        static float def[NPARAMS], out[NPARAMS];
+        rnd_defaults(def);
+        int loud = 0, worst_s = -1;
+        double worst = 0;
+        for (int s = 0; s < 12; s++) {
+            rnd_opts_t o = {1.0f, 1u << RS_ARP | 1u << RS_GEN, 0};
+            uint32_t seed = 777 + 131 * s;
+            rnd_generate_x(def, out, 0, &seed, &o);
+            void *a = pg_patch();
+            rnd_apply_norm(a, out);
+            float buf[512];
+            for (int k = 0; k < 300; k++) render_f(a, buf, 128);
+            rnd_apply_norm(a, def);
+            for (int k = 0; k < 2000; k++) render_f(a, buf, 128);   /* (5.8 s: the longest release) */
+            double sum = 0;
+            for (int k = 0; k < 40; k++) { render_f(a, buf, 128); for (int i = 0; i < 128; i++) sum += buf[i] * buf[i]; }
+            double rms = sqrt(sum / (40 * 128));
+            if (rms > 0.001) loud++;
+            if (rms > worst) { worst = rms; worst_s = s; }
+            E->destroy(a);
+        }
+        snprintf(what, sizeof what, "12 random sounds with GENERATIVE playing FREE, then every param back to its default: "
+                 "%d still sounding (the worst rms %.4f, sound %d)", loud, worst, worst_s);
+        check(loud == 0, what);
+    }
     gen_follow_keys_checks();
     gen_tempo_src_checks();
 }

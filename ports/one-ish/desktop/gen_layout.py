@@ -426,12 +426,17 @@ def build(lay):
         L.euclid_at = (476, YL, 58, HL)
     L.column([("gen_steps", "STEPS"), ("gen_hits", "HITS")], 534, YL, 41, HL // 2, "small")
     L.column([("gen_rot", "ROTATE"), ("gen_prob", "CHANCE")], 575, YL, 41, HL // 2, "small")
-    L.page("GEN", "GENERATIVE", "Euclidean rhythm and Turing machine melodies from the held keys.", [
-        ("gen_euclid_on", "Euclid On"), ("gen_steps", "Euclid Steps"), ("gen_hits", "Euclid Hits"),
+    # (2026-10-30) KEYS (FREE / HELD / LAUNCH), FOLLOW KEYS and GEN TEMPO: every generator page lists them (gen_more)
+    gen_more = [it for it in (("gen_follow_keys", "Follow Keys"), ("gen_tempo_src", "Gen Tempo"),
+                              ("gen_bpm", "Own BPM", "gen_tempo_src", [1])) if it[0] in L.index]
+    L.page("GEN", "GENERATIVE", "Euclidean rhythm and Turing machine melodies: on their own, or from the keys.", [
+        ("gen_euclid_on", "Euclid On")] + [it for it in (("gen_keys", "Keys"),) if it[0] in L.index] + [
+        ("gen_steps", "Euclid Steps"), ("gen_hits", "Euclid Hits"),
         ("gen_rot", "Euclid Rotation"), ("gen_prob", "Step Probability"), ("gen_vel_rand", "Velocity Random"),
         ("gen_tm_on", "Turing On"), ("gen_tm_len", "Turing Length"), ("gen_tm_change", "Turing Change"),
         ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves"), ("key_root", "Key"), ("link_key", "Link Key"),
-        ("key_scale", "Scale"), ("link_scale", "Link Scale")])
+        ("key_scale", "Scale"), ("link_scale", "Link Scale")] +
+        [it for it in (("gen_eu_notes", "Euclid Notes"), ("gen_octave", "Low Octave")) if it[0] in L.index] + gen_more)
     # (2026-10-30) BALLS and PARTICLES on the third line, each its ON and its MORE triangle
     for k, (key, label, pid) in enumerate((("phys_balls_on", "BALLS", "BALLS"), ("phys_parts_on", "PARTICLES", "PARTICLES"))):
         y0 = YX - 2 + 22 * k
@@ -450,21 +455,21 @@ def build(lay):
                                       ("phys_right", "Right Wall")) if k in L.index]
     shared += [("phys_follow_oct", "Follow Octave")] if "phys_follow_oct" in L.index else []
     L.page("BALLS", "BOUNCING BALLS", "Balls bounce in a box: each wall they hit plays a note in the KEY.",
-           [("phys_balls_on", "Balls On"), ("phys_balls", "Balls")] + link + world + shared, pic=("PHYS", "phys_"))
+           [("phys_balls_on", "Balls On"), ("phys_balls", "Balls")] + link + world + shared + gen_more, pic=("PHYS", "phys_"))
     L.page("PARTICLES", "PARTICLES", "Particles fall from the top: the LINE, a collision or their end plays a note.",
            [("phys_parts_on", "Particles On"), ("phys_rate", "Rate"), ("phys_spread", "Spread"), ("phys_life", "Life"),
-            ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + link + world + shared, pic=("PHYS", "phys_"))
+            ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + link + world + shared + gen_more, pic=("PHYS", "phys_"))
     # (2026-10-30) rain and ripples, the Markov melody: a page each (in the MORE index), its picture moving
     L.page("RAIN", "RAIN AND RIPPLES", "Drops fall on a pond: each plays a note in the KEY; meeting rings echo softly.", [
         ("rain_on", "Rain On"), ("rain_rate", "Rate")] + follow + [("rain_sync", "Sync"), ("rain_spread", "Drop Size Spread"),
         ("rain_speed", "Ripple Speed"), ("rain_life", "Ripple Life"), ("rain_echo", "Echo"), ("rain_stones", "Stones"),
         ("rain_max", "Max Notes/s"), ("rain_len", "Note Length"), ("rain_keys", "Keys"), ("rain_octave", "Low Octave"),
-        ("rain_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")], pic=("RAIN", "rain_"))
+        ("rain_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")] + gen_more, pic=("RAIN", "rain_"))
     L.page("MARKOV", "MARKOV MELODY", "Learns from what you play into this Synth, then improvises in that style.", [
         ("mkv_on", "Markov On"), ("mkv_learn", "Learn"), ("mkv_forget", "Forget (Clear)"), ("mkv_order", "Order"),
         ("mkv_creat", "Creativity"), ("mkv_rhythm", "Rhythm"), ("mkv_rate", "Rate"), ("mkv_gate", "Note Length"),
         ("mkv_quant", "In Key"), ("mkv_range", "Octaves"), ("mkv_max", "Max Notes/s"), ("mkv_keys", "Keys"),
-        ("key_root", "Key"), ("key_scale", "Scale")], pic=("MARKOV", "mkv_"))
+        ("key_root", "Key"), ("key_scale", "Scale")] + gen_more, pic=("MARKOV", "mkv_"))
     # (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS: a page each (the MORE index lists them), each picture moving
     scale = [("key_root", "Key"), ("key_scale", "Scale")]
     L.page("LIFE", "GAME OF LIFE", "Cells live and die by the RULE; births or a scanning playhead play notes in the KEY.",
@@ -473,17 +478,17 @@ def build(lay):
             ("life_reseed", "Reseed"), ("life_rule", "Rule"), ("life_density", "Density"), ("life_seed", "Seed"),
             ("life_wrap", "Wrap Edges"),
             ("life_notes", "Notes per Step"), ("life_max", "Max Notes/s"), ("life_len", "Note Length"), ("life_keys", "Keys"),
-            ("life_octave", "Low Octave"), ("life_range", "Octaves")] + scale, pic=("LIFE", "life_"))
+            ("life_octave", "Low Octave"), ("life_range", "Octaves")] + scale + gen_more, pic=("LIFE", "life_"))
     L.page("ORBITS", "GRAVITY ORBITS", "Planets circle a sun: crossing a spoke plays a note in the KEY.",
            [("orb_on", "Orbits On"), ("orb_planets", "Planets"), ("orb_speed", "Speed")] + follow + [("orb_gravity", "Gravity"),
             ("orb_ecc", "Eccentricity"), ("orb_spread", "Spread"), ("orb_spokes", "Spokes"), ("orb_planet_to", "Planets As"),
             ("orb_quant", "Sync"), ("orb_max", "Max Notes/s"), ("orb_len", "Note Length"), ("orb_keys", "Keys"),
-            ("orb_octave", "Low Octave"), ("orb_range", "Octaves")] + scale, pic=("ORBITS", "orb_"))
+            ("orb_octave", "Low Octave"), ("orb_range", "Octaves")] + scale + gen_more, pic=("ORBITS", "orb_"))
     L.page("PEND", "PENDULUMS", "Pendulums drift out of step and meet again each CYCLE; each plays its note as it swings.",
            [("pend_on", "Pendulums On"), ("pend_count", "Pendulums"), ("pend_cycle", "Cycle"), ("pend_speed", "Swings"),
             ("pend_spread", "Spread"), ("pend_damp", "Damping"), ("pend_trigger", "Plays At"), ("pend_restart", "Key Restarts"),
             ("pend_max", "Max Notes/s"), ("pend_dyn", "Dynamics"), ("pend_len", "Note Length"), ("pend_keys", "Keys"),
-            ("pend_octave", "Low Octave")] + scale, pic=("PEND", "pend_"))
+            ("pend_octave", "Low Octave")] + scale + gen_more, pic=("PEND", "pend_"))
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
@@ -705,6 +710,12 @@ MATRIX_COLS = ("src", "dst", "amt", "via", "via_amt", "xf", "xf_amt")
 # pages other branches add (ids below) join by themselves: a row per two-option "..._on" item on the page.
 HUB_FIXED = [("EUCLID", "GEN", "gen_euclid_on"), ("TURING", "GEN", "gen_tm_on"),
              ("BOUNCING BALLS", "BALLS", "phys_balls_on"), ("PARTICLES", "PARTICLES", "phys_parts_on")]
+# (2026-10-30) each row's KEYS (FREE, HELD, LAUNCH, EMIT): the fixed rows' here, a later page's its "..._keys" item
+HUB_KEYS = {"gen_euclid_on": "gen_keys", "gen_tm_on": "gen_keys", "phys_balls_on": "phys_keys",
+            "phys_parts_on": "phys_keys"}
+# (2026-10-30) the rows' names, short enough to fit beside their KEYS button
+HUB_SHORT = {"BOUNCING BALLS": "BALLS", "GAME OF LIFE": "LIFE", "GRAVITY ORBITS": "ORBITS", "RAIN AND RIPPLES": "RAIN",
+             "MARKOV MELODY": "MARKOV"}
 HUB_LATER = ("LIFE", "ORBITS", "PEND", "RAIN", "MARKOV")
 # the LINKs (shared params): which settings each one keeps the same in all three Synths
 LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
@@ -720,17 +731,20 @@ def hub_and_links(lay, pages, page_ix, lines):
     rows = []
     for label, pid, key in HUB_FIXED:
         if pid in page_ix and key in lay.index:
-            rows.append((label, page_ix[pid], lay.index[key]))
+            rows.append((label, page_ix[pid], lay.index[key], lay.index.get(HUB_KEYS.get(key), -1)))
     for pid in HUB_LATER:
         if pid not in page_ix:
             continue
         _, title, _, got, _ = pages[page_ix[pid]]
         ons = [it for it in got if it[0].endswith("_on") and lay.nopts(it[0]) == 2]
+        keys = [it[0] for it in got if it[0].endswith("_keys") and lay.nopts(it[0]) >= 2]
         for it in ons or [(None, title)]:
-            rows.append((title if len(ons) <= 1 else it[1].upper(), page_ix[pid], lay.index[it[0]] if it[0] else -1))
-    lines.append("typedef struct { const char *label; short page, on; } lay_hub_t;   /* a generator: its ON (-1: none) */")
-    lines.append("LAY lay_hub_t HUB[] = {%s};" % ", ".join("{%s, %d, %d}" % (c_str(a), b, c) for a, b, c in rows or
-                                                          [("", -1, -1)]))
+            rows.append((title if len(ons) <= 1 else it[1].upper(), page_ix[pid], lay.index[it[0]] if it[0] else -1,
+                         lay.index[keys[0]] if keys else -1))
+    lines.append("typedef struct { const char *label; short page, on, keys; } lay_hub_t;   /* a generator: its ON and "
+                 "its KEYS (-1: none) */")
+    lines.append("LAY lay_hub_t HUB[] = {%s};" % ", ".join("{%s, %d, %d, %d}" % (c_str(HUB_SHORT.get(a, a)), b, c, d)
+                                                          for a, b, c, d in rows or [("", -1, -1, -1)]))
     lines.append("#define NHUB %d" % len(rows))
     groups = LINK_GROUPS + [("link_phys", tuple(k for k in lay.index if k.startswith("phys_")))]
     pairs = [(lay.index[k], lay.index[g]) for g, keys in groups if g in lay.index for k in keys if k in lay.index]

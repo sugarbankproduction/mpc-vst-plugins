@@ -70,6 +70,7 @@ enum { Z_HUB_ON = 670000,        /* + row: a generator's ON (HUB[row]) */
        Z_TEMPO_DOWN, Z_TEMPO_UP, /* the TEMPO readout's < and >: 1 BPM (Shift 0.1), OWN */
        Z_TOGETHER,               /* (2026-10-30) lit: a SYNTH button adds / removes that Synth (as Ctrl-click) */
        Z_UNDO, Z_REDO,           /* (2026-10-30) the console's UNDO / REDO (as Ctrl+Z / Ctrl+Y) */
+       Z_HUB_BPM_DOWN, Z_HUB_BPM_UP,   /* (2026-10-30) the hub page's GEN TEMPO < and > (the Synth's own BPM) */
        Z_HUB_END = 670300 };
 #define TEST_HUB 0x4F314842   /* VENDOR_SPECIFIC index: value = HT_ op (hub.c) */
 enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 1000) */
@@ -410,6 +411,8 @@ RECT hub_rect(int z);                          /* where hub zone z sits (the pag
 RECT hub_link_rect(int row);                   /* the hub page's KEY (0) / SCALE (1) row: its LINK button */
 RECT hub_value_rect(int row);                  /* ... and its value */
 RECT hub_follow_rect(void);                     /* (2026-10-30) the hub page's FOLLOW TEMPO button */
+RECT hub_keys_rect(int k);                      /* (2026-10-30) generator k's KEYS button on the hub page */
+RECT hub_gen_rect(int part);                    /* ... GEN TEMPO (0), its < (1), BPM (2), > (3); FOLLOW KEYS (4) */
 void hub_follow_text(ed_t *e, char *out, int n);   /* ... and the text beside it (how much faster) */
 int hub_hit(ed_t *e, POINT pt);                /* the hub page's zones (and KEY, SCALE, their LINKs: params) */
 int hub_hit_console(POINT pt);                 /* the console's third row */
