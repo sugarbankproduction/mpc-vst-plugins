@@ -762,7 +762,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | MIDI IN CHANNEL ALL (one channel for the whole preset) | Off, 1-16 (p129) | Have | `midi_ch`: Omni (the default: every channel, as before) or 1-16 for every Synth; the window plays on it (2026-10-28, offline) | - | none |
 | MIDI IN ROUTE PER SYNTH: a channel for each Synth [MULTI] | Off, 1-16 each (p129) | Have | `midi_ch` Per Synth: each Synth's `syn_ch` (Omni or 1-16; default 1, 2, 3); a key's release goes where the key went (2026-10-28, offline and the desktop window) | - | none |
 | MIDI OUT PORTS [HW] | DIN, USB, DIN & USB (p129) | Missing | Host | - | none |
-| MIDI OUT ROUTE and channels: the Synths' notes (keys, arp, sequencer) out | All or Per Synth, Off, 1-16 (p129-130) | Missing | The plugin sends no MIDI; a desktop VST2 can send the arp's and sequencer's notes to the host (MPC ignores plugin MIDI out) | M | none |
+| MIDI OUT ROUTE and channels: the Synths' notes (keys, arp, sequencer) out | All or Per Synth, Off, 1-16 (p129-130) | Have | Per Synth (`mout_on` Off / On, `mout_send` Keys / Generated / Both, `mout_ch` 1-16, Synth n on n): the notes each Synth plays (keys, chord memory, the arp, the step sequencer, every generator) go to the host's MIDI out at their exact sample, with the Synth's transpose; every note-on gets its note-off (panic, Synth off, a load, MIDI OUT off or moved). Saved with the sound, kept by MIDI I/O FROM PRESET off, as the manual's MIDI I/O. Desktop only: the MPC build sends nothing (2026-10-30, offline and the desktop DLL; `src/midi_out.h`, `docs/SETTINGS.md`) | - | none |
 
 ### 22c. CV inputs and outputs, pedals (p131-132)
 
@@ -770,7 +770,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 |---|---|---|---|---|---|
 | CV IN 1/2, EXP IN 1/2: FUNCTION, SYNTHS, VOLTAGE MIN/MAX; LOAD FROM PRESET [HW] | None, Next/Previous Preset, Next/Previous Set; -5 V to +5 V (p131-132) | Missing | - | - | none |
 | SUSTAIN IN FUNCTION | Off, Sustain Pedal, Sostenuto Pedal (p131) | Have | Both at once, as MIDI sends them: sustain CC 64, sostenuto CC 66 (holds the notes sounding as it goes down) (2026-10-27, offline) | - | none |
-| SUSTAIN IN SYNTH target [MULTI] | Synth 1/2/3, pairs, All (p131) | Missing | - | S (with parts) | none |
+| SUSTAIN IN SYNTH target [MULTI] | Synth 1/2/3, pairs, All (p131) | Have | SETUP page 3, SUSTAIN PEDAL per Synth (`sus_pedal`, On by default: All, as before): any of Synth 1/2/3 (a click each); a Synth switched off while the pedal is down lets go. Saved with the sound, kept by INTO SYNTH (2026-10-30, offline and the desktop window) | - | none |
 | SUSTAIN SWITCH TYPE [HW] | Open, Closed (p131) | Missing | Host | - | none |
 | CV OUT 1-4: SOURCE, OUT VOLTAGE MIN/MAX; LOAD FROM PRESET [HW] | Gate, Pitch Wheel, Mod Wheel, Aftertouch, Pad X/Y/Pressure/Gate; -5 V to +5 V (p132) | Missing | - | - | none |
 
@@ -873,9 +873,9 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 19. Left Hand Controller (p17-18, p112-117) | 17 | 1 | 1 | 1 | 0 |
 | 20. Browser, presets and timbres (p118-121) | 7 | 0 | 0 | 0 | 0 |
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
-| 22. Settings (p124-139) | 15 | 2 | 14 | 11 | 1 |
+| 22. Settings (p124-139) | 17 | 2 | 12 | 11 | 1 |
 | 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
-| **Total** | **424** | **15** | **36** | **27** | **4** |
+| **Total** | **426** | **15** | **34** | **27** | **4** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -1028,8 +1028,8 @@ that LFO: it needs a per-sample path).
   2026-10-29 (offline and the desktop window; `docs/SETTINGS.md`): the SETTINGS page (GLOBAL, LIBRARY, TUNING) and its
   file `Settings.txt` beside the Patches folder, RESTORE DEFAULT SETTINGS, the version, RECEIVE MIDI CLOCK with an own
   tempo, MIDI I/O LOAD FROM PRESET, the sustain / EXP 1 / EXP 2 pedal CC numbers (engine: `src/midi_in*.h`, the
-  "midicfg" command), PRESET AUTOLOAD. Left: the sustain pedal's target Synth [MULTI], bank preview (with
-  performance sets).
+  "midicfg" command), PRESET AUTOLOAD. The sustain pedal's target Synth [MULTI] done 2026-10-30 (SETUP page 3,
+  `sus_pedal`). Left: bank preview (with performance sets).
 - A SETTINGS page (GLOBAL, LIBRARY, TUNING) with settings kept outside the sounds, in a file beside the patches (UI
   thread only); RESTORE DEFAULT SETTINGS; the version.
 - MIDI: the receive channel (Off, 1-16; today every channel plays), receive clock on or off, MIDI I/O load from
@@ -1136,9 +1136,11 @@ effect: up to 3 synth effects and 2 master effects at once).
   CCs), and NRPN input after the manual's table (p149-158) for Synth 1 (2 and 3 with package 13). Done 2026-10-29
   (offline and the desktop window; `docs/SETTINGS.md`): the SETTINGS page's MIDI tab, the map in the settings file
   and in each engine as a fixed table (`src/midi_in*.h`, set by the "midicfg" command), NRPN for all three Synths;
-  the wrapper's own NRPN (param index) is off for ONE-ish (`vst.json` `"nrpn": false`). Left: 14b.
+  the wrapper's own NRPN (param index) is off for ONE-ish (`vst.json` `"nrpn": false`). 14b done 2026-10-30.
 - 14b MIDI out of the plugin's own notes (keys, arp, sequencer) on a chosen channel, for desktop hosts (MPC ignores
-  it). Needs the wrapper to send events to the host.
+  it). Done 2026-10-30 (offline and the desktop DLL; `src/midi_out.h`, `desktop/hostrate.c`, PLAN.md item 36): per
+  Synth, the keys and every generator, sample-accurate, on the SETUP page; the shared wrapper is unchanged (the desktop
+  layer answers canDo and calls audioMasterProcessEvents).
 - Depends on: package 8 (the settings page holds the mapping).
 - Files: `src/engine.c` (`midi()`), `desktop/settings.c`, `wrapper/vst2_wrap.c` (14b).
 
