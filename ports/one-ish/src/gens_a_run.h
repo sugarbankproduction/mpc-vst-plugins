@@ -226,7 +226,7 @@ static void lf_play(one_t *s, int64_t at, int64_t step_len) {
     }
     r->lpop = lf_pop(&r->lf) / (float)(LF_ROWS * LF_COLS);
 }
-static void lf_tick(one_t *s, int64_t t, int go) {
+static void lf_tick(one_t *s, int64_t t, int go, float tf) {   /* tf: FOLLOW TEMPO's factor (FREE) */
     ga_run_t *r = &s->ga;
     const float *p = s->val;
     const float dt = (float)GA_STEP / SR;
@@ -234,7 +234,7 @@ static void lf_tick(one_t *s, int64_t t, int go) {
     double frac = -1.0;
     int64_t len;
     if (rate == LF_FREE) {
-        float hz = lf_hz(p);
+        float hz = lf_hz(p) * tf;
         len = (int64_t)(SR / hz);
         r->lacc += hz * dt;
         if (r->lacc >= 1.0f) { r->lacc -= 1.0f; frac = 1.0 - r->lacc / (hz * dt); }
@@ -249,7 +249,7 @@ static void lf_tick(one_t *s, int64_t t, int go) {
 }
 
 /* ---- GRAVITY ORBITS: a step ---- */
-static void ob_tick(one_t *s, int64_t t, int go) {
+static void ob_tick(one_t *s, int64_t t, int go, float tf) {   /* tf: FOLLOW TEMPO's factor */
     ga_run_t *r = &s->ga;
     const float *p = s->val;
     const float dt = (float)GA_STEP / SR;
@@ -257,7 +257,7 @@ static void ob_tick(one_t *s, int64_t t, int go) {
     for (int k = 0; k < OB_SPOKES; k++) if (r->sflash[k]) r->sflash[k]--;
     if (!go) return;
     ob_hit_t h[OB_HITS];
-    int nh = ob_step(&r->ob, &r->oc, dt * ob_time(p), h), size = ga_scale_size(s);
+    int nh = ob_step(&r->ob, &r->oc, dt * ob_time(p) * tf, h), size = ga_scale_size(s);
     int range = (int)clampf(p[P_ORB_RANGE], 0, 3) + 1, as_vel = p[P_ORB_PLANET_TO] > 0.5f;
     double g = GA_SYNC_BEATS[(int)clampf(p[P_ORB_QUANT], 0, 6)];
     for (int i = 0; i < nh; i++) {
@@ -431,15 +431,16 @@ static void ga_tick(one_t *s, int64_t t) {
     const float *p = s->val;
     const float dt = (float)GA_STEP / SR;
     int keys = s->running && s->keys.n;
+    float tf = gen_tempo_factor(s, &r->tf, dt);   /* (2026-10-30) FOLLOW TEMPO: LIFE FREE and the orbits */
     ga_beat(s, t);
     if (r->lflash) r->lflash--;
     if (r->on & GA_LIFE) {
         r->lo.tokens = fminf(r->lo.tokens + clampf(p[P_LIFE_MAX], 1.0f, 30.0f) * dt, GA_BURST);
-        lf_tick(s, t, !(r->held & GA_LIFE) || keys);   /* (HELD KEYS with none held: it waits where it is) */
+        lf_tick(s, t, !(r->held & GA_LIFE) || keys, tf);   /* (HELD KEYS with none held: it waits where it is) */
     }
     if (r->on & GA_ORB) {
         r->oo.tokens = fminf(r->oo.tokens + clampf(p[P_ORB_MAX], 1.0f, 30.0f) * dt, GA_BURST);
-        ob_tick(s, t, !(r->held & GA_ORB) || keys);
+        ob_tick(s, t, !(r->held & GA_ORB) || keys, tf);
     }
     if (r->on & GA_PEND) {
         r->po.tokens = fminf(r->po.tokens + clampf(p[P_PEND_MAX], 1.0f, 30.0f) * dt, GA_BURST);

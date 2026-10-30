@@ -25,6 +25,10 @@ is RECEIVE MIDI CLOCK on, OWN is off, and the readout shows the host's tempo (HO
 readout (a click: 1 BPM), a drag up / down or the wheel on it set TEMPO (Shift: 0.1 BPM) and switch to OWN; a drag is
 saved once, when you let go.
 The rate LEDs and the home line follow the own tempo while it is OWN.
+(2026-10-30, offline and the window) With the GENERATIVE page's **FOLLOW TEMPO** on (the default; shared by the
+three Synths, saved with the sound), the generators that run at their own speed (the balls and particles, the rain,
+the orbits, LIFE's FREE rate) follow this tempo too: tempo / 120 times as fast (0.25 .. 4), gliding over about 0.1 s.
+At 120 BPM nothing changes.
 | MIDI I/O FROM PRESET | On: a preset or patch you load brings its MIDI channels (MIDI IN (ALL) and each Synth's channel). Off: the channels you set stay. A project always restores everything. | On |
 | SUSTAIN PEDAL CC | The CC number of your sustain pedal. | 64 |
 | EXP 1 PEDAL CC | The CC number the mod matrix reads as Exp 1 (its list still says "Exp 1 (CC 11)", the default). | 11 |

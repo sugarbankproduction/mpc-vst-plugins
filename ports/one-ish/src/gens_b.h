@@ -294,4 +294,5 @@ typedef struct {
     int16_t vd[RN_DROPS][3], vr[RN_RIPS][5], vs[RN_STONES][3];   /* drops x,y,fall; rings x,y,r,e,lit; stones x,y,lit */
     int16_t vmh[MK_HIST], vmspan, vmbar[MK_IV], vmchoice;   /* the melody: heights 0 .. span, the bars 0 .. 1000 */
     int32_t vmage[MK_HIST], vmlearned;   /* each note's age (ms), the notes learned */
+    float tf;                /* (2026-10-30) FOLLOW TEMPO: the pond's speed factor less 1, gliding */
 } gb_run_t;

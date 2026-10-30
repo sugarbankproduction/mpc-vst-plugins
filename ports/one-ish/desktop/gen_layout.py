@@ -442,6 +442,8 @@ def build(lay):
               ("phys_keys", "Keys"), ("phys_restart", "Key Restarts"), ("phys_octave", "Low Octave"),
               ("phys_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")]
     world = [("phys_speed", "Speed"), ("phys_gravity", "Gravity"), ("phys_size", "Box Size"), ("phys_bounce", "Bounce")]
+    follow = [("gen_follow_tempo", "Follow Tempo")] if "gen_follow_tempo" in L.index else []   # (2026-10-30, shared)
+    world = world[:1] + follow + world[1:]
     link = [("link_phys", "Link (3 Synths)")]   # (2026-10-30) every phys_* setting the same in all three
     # (2026-10-30) each wall PLAYS, SILENT or OPEN; FOLLOW OCTAVE (the keyboard's octave buttons move LOW OCTAVE)
     world += [(k, lab) for k, lab in (("phys_floor", "Floor"), ("phys_ceil", "Ceiling"), ("phys_left", "Left Wall"),
@@ -454,7 +456,7 @@ def build(lay):
             ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + link + world + shared, pic=("PHYS", "phys_"))
     # (2026-10-30) rain and ripples, the Markov melody: a page each (in the MORE index), its picture moving
     L.page("RAIN", "RAIN AND RIPPLES", "Drops fall on a pond: each plays a note in the KEY; meeting rings echo softly.", [
-        ("rain_on", "Rain On"), ("rain_rate", "Rate"), ("rain_sync", "Sync"), ("rain_spread", "Drop Size Spread"),
+        ("rain_on", "Rain On"), ("rain_rate", "Rate")] + follow + [("rain_sync", "Sync"), ("rain_spread", "Drop Size Spread"),
         ("rain_speed", "Ripple Speed"), ("rain_life", "Ripple Life"), ("rain_echo", "Echo"), ("rain_stones", "Stones"),
         ("rain_max", "Max Notes/s"), ("rain_len", "Note Length"), ("rain_keys", "Keys"), ("rain_octave", "Low Octave"),
         ("rain_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")], pic=("RAIN", "rain_"))
@@ -466,13 +468,14 @@ def build(lay):
     # (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS: a page each (the MORE index lists them), each picture moving
     scale = [("key_root", "Key"), ("key_scale", "Scale")]
     L.page("LIFE", "GAME OF LIFE", "Cells live and die by the RULE; births or a scanning playhead play notes in the KEY.",
-           [("life_on", "Life On"), ("life_mode", "Plays"), ("life_rate", "Rate"), ("life_speed", "Free Rate", "life_rate", [6]),
+           [("life_on", "Life On"), ("life_mode", "Plays"), ("life_rate", "Rate"), ("life_speed", "Free Rate", "life_rate", [6])] +
+           [it + ("life_rate", [6]) for it in follow] + [
             ("life_reseed", "Reseed"), ("life_rule", "Rule"), ("life_density", "Density"), ("life_seed", "Seed"),
             ("life_wrap", "Wrap Edges"),
             ("life_notes", "Notes per Step"), ("life_max", "Max Notes/s"), ("life_len", "Note Length"), ("life_keys", "Keys"),
             ("life_octave", "Low Octave"), ("life_range", "Octaves")] + scale, pic=("LIFE", "life_"))
     L.page("ORBITS", "GRAVITY ORBITS", "Planets circle a sun: crossing a spoke plays a note in the KEY.",
-           [("orb_on", "Orbits On"), ("orb_planets", "Planets"), ("orb_speed", "Speed"), ("orb_gravity", "Gravity"),
+           [("orb_on", "Orbits On"), ("orb_planets", "Planets"), ("orb_speed", "Speed")] + follow + [("orb_gravity", "Gravity"),
             ("orb_ecc", "Eccentricity"), ("orb_spread", "Spread"), ("orb_spokes", "Spokes"), ("orb_planet_to", "Planets As"),
             ("orb_quant", "Sync"), ("orb_max", "Max Notes/s"), ("orb_len", "Note Length"), ("orb_keys", "Keys"),
             ("orb_octave", "Low Octave"), ("orb_range", "Octaves")] + scale, pic=("ORBITS", "orb_"))

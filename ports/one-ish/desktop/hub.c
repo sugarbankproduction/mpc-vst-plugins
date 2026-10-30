@@ -4,7 +4,9 @@
  * generator (HUB[] from gen_layout.py: EUCLID, TURING, BOUNCING BALLS, PARTICLES, and any page another branch adds
  * under the ids LIFE, ORBITS, PEND, RAIN, MARKOV), its ON for the Synth in focus (a click switches it), the Synths it
  * is on in (1 2 3), and a click on its name opens its MORE page. Under them KEY and SCALE (what they all play in) with
- * their LINKs, and ALL OFF.
+ * their LINKs, and ALL OFF. (2026-10-30) FOLLOW TEMPO (the right column's last row): the shared gen_follow_tempo,
+ * a plain click toggles it; lit, the balls, particles, rain, orbits and LIFE's FREE rate run faster or slower with the
+ * tempo (tempo / 120 times their own speed); the text beside it says how much.
  *
  * GEN OFF (beside GENERATIVE) and ALL OFF (on the page) switch every generator's ON off in all three Synths: one undo
  * step, the host told of each. Pressed again while they are all still off (and the same sound loaded), it brings back
@@ -38,6 +40,7 @@
 #include "hostrate.h"
 
 enum { HUB_ROWS = 6 };   /* generator rows per column (two columns) */
+_Static_assert(NHUB < 2 * HUB_ROWS, "FOLLOW TEMPO takes the hub page's last generator row");
 
 /* ---- LINK ---- */
 static int key_ix(const char *k);
@@ -98,6 +101,11 @@ RECT hub_link_rect(int row) {
     r.left = r.right - sc(40);
     return r;
 }
+RECT hub_follow_rect(void) {   /* (2026-10-30) FOLLOW TEMPO's button: the right column's last row */
+    RECT r = hub_entry(2 * HUB_ROWS - 1);
+    r.right = r.left + sc(104);
+    return r;
+}
 RECT hub_rect(int z) {
     RECT r = {0, 0, 0, 0};
     if (z >= Z_HUB_ON && z < Z_HUB_ON + NHUB) {
@@ -141,6 +149,9 @@ int hub_hit(ed_t *e, POINT pt) {   /* the hub page (the screen shows it) */
         if (iv >= 0 && PtInRect(&v, pt)) { e->hit_screen = 1; e->hit_rect = v; return iv; }
         if (il >= 0 && PtInRect(&l, pt)) { e->hit_screen = 1; e->hit_rect = l; return il; }
     }
+    int ft = key_ix("gen_follow_tempo");   /* (2026-10-30) FOLLOW TEMPO: the param itself (a click toggles it) */
+    RECT f = hub_follow_rect();
+    if (ft >= 0 && PtInRect(&f, pt)) { e->hit_screen = 1; e->hit_rect = f; return ft; }
     RECT a = hub_rect(Z_HUB_ALLOFF);
     return PtInRect(&a, pt) ? Z_HUB_ALLOFF : -1;
 }
@@ -210,6 +221,17 @@ void tempo_text(ed_t *e, char *out, int n) {
     double host;
     if (!settings_tempo(&own) && !tempo_host_bpm(e, &host)) snprintf(out, n, "---");
     else snprintf(out, n, "%.1f", tempo_now(e));
+}
+/* (2026-10-30) FOLLOW TEMPO's text beside its button: how much faster the free-running generators go now */
+void hub_follow_text(ed_t *e, char *out, int n) {
+    int ft = key_ix("gen_follow_tempo");
+    if (ft < 0 || e->fx->getParameter(e->fx, ft) < 0.5f) { snprintf(out, n, "off"); return; }
+    float own, bpm;
+    double host;
+    if (!settings_tempo(&own) && !tempo_host_bpm(e, &host)) bpm = 120.0f;   /* (no tempo yet: the engine's 120) */
+    else bpm = tempo_now(e);
+    float f = bpm / 120.0f;
+    snprintf(out, n, "speed x %.2f", f < 0.25f ? 0.25f : f > 4.0f ? 4.0f : f);   /* (the tempo is on the console) */
 }
 static float clamp_bpm(float v) { return v < 10.0f ? 10.0f : v > 280.0f ? 280.0f : v; }
 void tempo_press(ed_t *e, int y) {   /* a drag starts (editor.c press: M_TEMPO) */
@@ -287,7 +309,7 @@ const char *hub_zone_help(ed_t *e, int z) {
         return t;
     }
     if (z == Z_TAB_GEN) return "GENERATIVE: the generators on one page: each one's ON (in the Synth in focus) and which Synths "
-                               "it is on in; click a name for its page. KEY, SCALE and their LINKs; ALL OFF.";
+                               "it is on in; click a name for its page. KEY, SCALE and their LINKs; FOLLOW TEMPO; ALL OFF.";
     if (z == Z_GEN_OFF || z == Z_HUB_ALLOFF)
         return "GEN OFF / ALL OFF: switches every generator (Euclid, Turing, balls, particles and the rest) off in all "
                "three Synths: one undo step. Press again while they are still off to bring back the ones it switched "
@@ -311,8 +333,9 @@ const char *hub_zone_help(ed_t *e, int z) {
 void hub_help(ed_t *e, char *out, int n) {
     (void)e;
     snprintf(out, n, "The generators play notes by themselves in the Synth's KEY and SCALE. ON switches one in the Synth "
-                     "in focus; a name opens its page. LINK lit: KEY or SCALE the same in all three Synths. ALL OFF: "
-                     "silence them all (again: back on).");
+                     "in focus; a name opens its page. LINK lit: KEY or SCALE the same in all three Synths. FOLLOW "
+                     "TEMPO lit: balls, particles, rain, orbits and Life's free rate speed up and slow down with the "
+                     "BPM. ALL OFF: silence them all (again: back on).");
 }
 
 /* ---- load_test (effVendorSpecific TEST_HUB) ---- */

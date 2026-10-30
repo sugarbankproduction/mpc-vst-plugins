@@ -456,6 +456,23 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        page is no longer made.
      load_test reads the help line now (`help_line()`, HT_HELP) and checks every console button and controller part has
      help of its own. No engine change, no new params, nothing in the audio path. Left: the MPC page has none of this.
+  27. (2026-10-30) FOLLOW TEMPO (owner's request: "when I adjust the bpm they adjust as well"). Done 2026-10-30 (offline
+     and the desktop window; `src/physgen_run.h` gen_tempo_factor, `src/gens_a_run.h`, `src/gens_b_run.h`,
+     `test/gens_a_check.c` gen_tempo_checks, load_test follow_tempo_test). One shared param `gen_follow_tempo` (Off / On,
+     default On; GLOBAL in make_synths.py, engine_global()). On, the generators that ran at their own speed follow the
+     tempo the synced parts use (the host's song position's, else the host's or the OWN tempo; 120 if none): the balls'
+     and particles' world (motion, gravity, the emitter, the particles' life, KEY EMIT), the rain's pond (drops a second,
+     ripple speed and life), the orbits' SPEED and LIFE's FREE rate run at tempo / 120 times their speed (0.25 .. 4),
+     the factor gliding over about 0.1 s, so a tempo change never jumps; MAX NOTES/S stays a real second's cap. The
+     already-synced parts (LIFE's note-value RATE, Markov, the pendulums' CYCLE, SYNC) are unchanged. At 120 BPM the
+     factor is exactly 1: the same notes on and off, old sounds sample for sample (golden check); the randomiser never
+     touches it. Offline: at 240 BPM, on, x 1.92 (balls), 2.08 (particles), 2.00 (rain), 2.00 (orbits), 1.96 (LIFE
+     free) the notes of 120 in 12 s, off x 1.00; OWN 240 with the host at 120 x 1.92; the host's song position at 60
+     x 0.53; 120 -> 400 -> 30 BPM at once moves a ball on smoothly (16 of 1000 at most a block) and its speed glides.
+     The window: FOLLOW TEMPO on the GENERATIVE page (the right column's last row, a plain click; beside it "speed x
+     1.50"), and on the BOUNCING BALLS, PARTICLES, RAIN, ORBITS and LIFE (with FREE) MORE pages. CPU on the PC per
+     128-frame block, 4 held voices with balls, particles, rain, orbits and LIFE playing at 120 BPM: off 41.84 us, on
+     40.98 us (no measurable cost: a glide and a multiply per generator step). Left: the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

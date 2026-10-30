@@ -730,6 +730,7 @@ pend_len
 pend_octave
 pend_max
 pend_dyn
+gen_follow_tempo
 s2_o1_wave
 s2_amp_a
 s2_amp_d

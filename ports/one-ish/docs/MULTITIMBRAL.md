@@ -65,8 +65,8 @@ follows the focus, would have let automation reach only the focused Synth). 1,52
   `GEN_VST_RELOCK=1`, `gen_vst --params-h`) after adding a param.
 - Shared, one copy (Synth 1's key, mirrored into the others): the master effects (`dly_*`, `rev_*`, `mfx_on`,
   `mfx_series`, `mfx_width`, `mfx_buss`), `clock_swing`, `master_tune`, `fine_tune`, `midi_ch`, `learn_mode`,
-  `master_level`, `seq_all` (`engine_global()` in `src/synths.h`; `is_global()` in `make_synths.py` keeps the same
-  list).
+  `master_level`, `seq_all`, `gen_follow_tempo` (2026-10-30) (`engine_global()` in `src/synths.h`; `is_global()` in
+  `make_synths.py` keeps the same list).
 - Per Synth, beyond the sound: `syn_on` (Synth 1 On, 2 and 3 Off), `syn_ch` (1, 2, 3), `key_lo` / `key_hi` (0-127,
   shown as note names), and its own `transpose`, `octave_shift`, `voices`, `volume`, `pan`, `mfx_send1/2`, the synth
   effect (`modfx_*`), arp, chord memory and sequencer. A Synth's matrix moves its own params, its synth effect

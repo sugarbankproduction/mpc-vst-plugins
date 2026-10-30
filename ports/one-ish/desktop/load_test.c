@@ -1246,7 +1246,7 @@ static void gens_a_test(AEffect *fx, HWND child, float s, const char *bmp, int w
             int still = 0, fresh = 0;
             for (int y = y0; st && y < y1 && y < h; y++)
                 for (int x = x0; x < x1 && x < w; x++) still += memcmp(&phys_px[0][y * st + 3 * x], &phys_px[1][y * st + 3 * x], 3) != 0;
-            int pr = PT_ROWS - PIC_ROWS, j = 4, r = j % pr, col = j / pr;   /* on, plays, rate, free rate, RESEED (editor.h page_slot) */
+            int pr = PT_ROWS - PIC_ROWS, j = 5, r = j % pr, col = j / pr;   /* on, plays, rate, free rate, follow tempo, RESEED (page_slot) */
             float sx0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
             click(child, s, sx0 + col * (half + 8.0f) + half * 0.75f, ZONE_SCREEN[1] + 80.0f + 22.0f * r + 11.0f);
             play(fx, 10, 512);
@@ -2418,9 +2418,11 @@ static void triangle_sub_test(AEffect *fx, HWND child, float s, const char *bmp,
 }
 
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
+    follow_tempo_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     link_test(fx, child, s, bmp, w, h);
     master_test(fx, child, s, bmp, w, h);
     triangle_sub_test(fx, child, s, bmp, w, h);
@@ -2439,6 +2441,37 @@ static void hover_at(HWND child, float s, float x, float y) {   /* base units */
 }
 static void hover_zone(HWND child, float s, const short z[4]) { hover_at(child, s, z[0] + z[2] / 2.0f, z[1] + z[3] / 2.0f); }
 static int focus_now(AEffect *fx) { return (int)fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0); }   /* focus + 4 * mask */
+
+/* (2026-10-30) FOLLOW TEMPO on the GENERATIVE page (the right column's last row): a plain click flips the shared
+ * gen_follow_tempo (one param for all three Synths), its help says what it does; the MORE pages show it too */
+static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    click_zone(child, s, ZONE_TAB_GEN);
+    float x, y, f0 = pv(fx, "gen_follow_tempo");
+    hub_xy(2 * 6 - 1, 0, &x, &y);
+    hover_at(child, s, x, y);
+    int helped = strstr(help_fresh(fx), "Follow tempo") != NULL;
+    click(child, s, x, y);
+    float f1 = pv(fx, "gen_follow_tempo");
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_hub_follow"); }
+    click(child, s, x, y);
+    float f2 = pv(fx, "gen_follow_tempo");
+    snprintf(what, sizeof what, "FOLLOW TEMPO on the GENERATIVE page: on by default (%.0f), a click turns it off (%.0f) "
+             "and on again (%.0f), one shared param (no Synth 2 copy: %d), its help shown (%d)", f0, f1, f2,
+             rnd_key("s2_gen_follow_tempo") < NPARAMS, helped);
+    check(f0 > 0.5f && f1 < 0.5f && f2 > 0.5f && rnd_key("s2_gen_follow_tempo") >= NPARAMS && helped, what);
+    setkey(fx, "life_rate", 1.0f);   /* (LIFE's shows it with FREE, as its FREE RATE) */
+    int pages = page_has(fx, PG_BALLS, "gen_follow_tempo") + page_has(fx, PG_PARTICLES, "gen_follow_tempo") +
+                page_has(fx, PG_RAIN, "gen_follow_tempo") + page_has(fx, PG_ORBITS, "gen_follow_tempo") +
+                page_has(fx, PG_LIFE, "gen_follow_tempo");
+    setkey(fx, "life_rate", 1.0f / 6.0f);
+    int life_hid = !page_has(fx, PG_LIFE, "gen_follow_tempo");
+    snprintf(what, sizeof what, "FOLLOW TEMPO on the BALLS, PARTICLES, RAIN, ORBITS and LIFE pages (%d of 5; LIFE's only "
+             "with its FREE rate: %d)", pages, life_hid);
+    check(pages == 5 && life_hid, what);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
 
 static void together_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     char what[300];

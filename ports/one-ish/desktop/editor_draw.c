@@ -194,6 +194,8 @@ static const char *help_for(int i) {
         {"phys_left", "Left wall: Plays the root, Silent bounces without a note, Open lets balls and particles out (new balls come in)."},
         {"phys_right", "Right wall: Plays the fifth, Silent bounces without a note, Open lets balls and particles out (new balls come in)."},
         {"phys_follow_oct", "Follow octave: with Free keys, the keyboard's octave buttons move the balls' and particles' notes too."},
+        /* (2026-10-30) FOLLOW TEMPO */
+        {"gen_follow_tempo", "Follow tempo (all three Synths): on, the balls, particles, rain, orbits and Life's free rate run faster or slower with the BPM (twice as fast at 240, half at 60; as set at 120). Off: their own speeds."},
         /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
         {"life_on", "Life: a grid of cells lives and dies by the RULE; births, or a playhead scanning it, play notes of the KEY (bottom row lowest)."},
         {"life_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, from the lowest one."},
@@ -907,6 +909,14 @@ static void draw_hub(HDC dc, ed_t *e) {
         gfx_frame((float)v.left, (float)v.top, (float)rw(&v), (float)rh(&v), 1.0f, 0xFF27404E);
         screen_menu(dc, e, iv, v, 1, font_cell);
         if (il >= 0) screen_button(dc, l, "LINK", option_of(e, il) == 1, il == e->hover, font_tiny);
+    }
+    int ft = rnd_key("gen_follow_tempo") < NPARAMS ? rnd_key("gen_follow_tempo") : -1;   /* (2026-10-30) */
+    if (ft >= 0) {
+        RECT f = hub_follow_rect(), fr = {f.right + sc(6), f.top, L.row[0].right, f.bottom};
+        char ftx[64];
+        screen_button(dc, f, "FOLLOW TEMPO", option_of(e, ft) == 1, ft == e->hover, font_cell);
+        hub_follow_text(e, ftx, sizeof ftx);
+        text(dc, &fr, ftx, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
     RECT a = hub_rect(Z_HUB_ALLOFF);
     int back = hub_restore_n(e);
