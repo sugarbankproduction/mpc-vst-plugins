@@ -82,8 +82,10 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   shared master level of all three Synths (`master_level`, also on the SETUP page); off, the knob is the focused
   Synth's own VOLUME again. The button is only a view (never saved).
 - **OUTPUT: separate outputs per Synth** (2026-10-30, offline and the desktop DLL; `syn_out`, `src/synths.h`
-  `one_ish_render_multi`, `desktop/hostrate.c`; `test/multiout_check.c`, load_test's rate tests). The desktop plugin
-  has eight outputs: 1-2 MAIN, 3-4 Synth 1, 5-6 Synth 2, 7-8 Synth 3 (named "Main L" .. "Synth 3 R" for hosts that ask).
+  `one_ish_render_multi`, `desktop/hostrate.c`; `test/multiout_check.c`, load_test's rate tests). Since 2026-10-31
+  (desktop) there are two DLLs: **Moo Won** is stereo (every Synth on its two outputs, whatever OUTPUT says), because
+  Carla's rack played nothing at all from the eight-output plugin (the owner's report; meters flat on a held key);
+  **Moo Won Multi** (`desktop/build.sh` with `-DONEISH_MULTI`, its own plugin ID, installed beside it) has eight outputs: 1-2 MAIN, 3-4 Synth 1, 5-6 Synth 2, 7-8 Synth 3 (named "Main L" .. "Synth 3 R" for hosts that ask).
   Each Synth's OUTPUT (the SETUP page's OUTPUT row, or SYNTH OUTPUT's MORE page: a plain click) is **Main** (the
   default: on 1-2 with the others, as always), **Own Pair** (only on its own pair) or **Main + Own** (both). Choice made
   (instead of the Moog One's one shared SUB pair): a pair per Synth gives each Synth its own mixer channel in the host,
@@ -96,10 +98,10 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   touches it. With every OUTPUT at Main (every old project and sound) outputs 1-2 are exactly as before and 3-8 are
   silent, so a host that only listens to the first two hears everything. The MPC build (and any stereo caller) has
   one output: every Synth is on it whatever its OUTPUT says.
-  **In Carla** (2.5.10): in Continuous Rack mode Carla uses only a plugin's first two outputs (its rack sends outputs
-  3 and up to a scratch buffer: `RackGraph::process` in Carla's `CarlaEngineGraph.cpp`), so there everything must stay
-  on Main, which is the default and plays as before. To use outputs 3-8, switch Carla to Patchbay mode (Configure
-  Carla, Engine, Process mode: Patchbay; Carla restarts its engine), load Moo Won, and in the Patchbay tab connect its
+  **In Carla** (2.5.10): use Moo Won in Continuous Rack mode. Carla's source suggested the rack would use the first two
+  of eight outputs, but on the PC (2026-10-31) the eight-output plugin played nothing there, so Moo Won Multi is for
+  Patchbay mode only. To use outputs 3-8, switch Carla to Patchbay mode (Configure
+  Carla, Engine, Process mode: Patchbay; Carla restarts its engine), load Moo Won Multi, and in the Patchbay tab connect its
   ports (`output_1` .. `output_8`: Carla names VST2 ports by number and does not read the plugin's names) to the
   Audio Output box or to other plugins: `output_1` / `output_2` (MAIN) to the speakers' left and right, and a Synth's
   pair (e.g. `output_5` / `output_6` for Synth 2) into its own effect or straight to the speakers. Save that as a new
