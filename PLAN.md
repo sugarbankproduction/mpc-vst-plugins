@@ -716,6 +716,34 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      step, is not measurable); with their own settings 84.35 off, 87.34 on (the difference is running Synth 1's LFOs,
      here a High-range one per sample, in place of their own). Nothing in the audio path allocates, locks or touches a
      file. Left: the MPC page.
+  36. (2026-10-30) HQ MODE and WARM-UP (audit package 15, sections 0, 3, 7). Done 2026-10-30 (offline and the desktop
+     window; `src/hq.h`, `src/engine.c` render_voice_os / voice_os / warm_drift / warm_tick, `test/hq_check.c`
+     (`offline_check hq`, `hqbench`), load_test `analog_test`). Both on the ANALOG page, per Synth (each Synth pays only
+     for itself, and a sound made in HQ keeps it), saved with the sound, Off by default, never touched by the
+     randomiser. HQ MODE (`an_hq` Off / 2x / 4x; a click opens its list): the voice's three oscillators, ring mod,
+     linear FM, sync and both filters (the non-linear ladder and drive included) run at 2 or 4 times 44.1 kHz, each
+     sample's noise, MACRO and EXT input held for the sub-samples; polyphase IIR half-bands (8 coefficients 2x to 1x,
+     flat to 20 kHz and 106 dB down from 24.1 kHz; 4 more for 4x) bring the filters' mix back before the amp, which
+     stays at 44.1 kHz. Offline, aliasing (power that is not a harmonic) Off / 2x / 4x: hard sync, notes 84-103,
+     -33..-40 / -61..-67 / -71..-82 dB; linear FM 40%, notes 84-96, -43..-51 / -63..-73 / -81..-87 dB; a triangle
+     into the ladder at full drive and NON-LINEAR LADDER 100%, notes 91-100, -24..-45 / -41..-64 / -78..-87 dB. The
+     note's level stays within 0.25 dB (the driven non-linear ladder about 1 dB quieter oversampled: its stages are
+     closer to the circuit there) and its pitch within 0.01 cent. WARM-UP (`an_warm` On, `an_warm_amt` 50%,
+     `an_warm_time` 1-20 min, default 5): like a cold synth, after the plugin loads or the switch goes on each voice's
+     oscillators sit off (at 100% up to about +-25 cents: a shift the whole Synth shares plus each oscillator's own,
+     fixed per voice from a seed, so a test gets the same every run), the cutoffs too (+-0.12 octave), and the drift
+     wanders up to 3 times deeper; it all fades as exp(-3t / TIME) (5% left at TIME) to the normal DRIFT. Offline at
+     100% and 1 minute with DRIFT 0: a held A5 is 5.8 cents off on average over the first 2 s and wanders 4.4 cents,
+     0.4 cent at 60 s, within 0.5 cent and still after 90 s; off and on again starts over. Both Off: exactly the old
+     samples (golden check, 61 sounds; an instance that had both on and off again equals a fresh one). No NaN or
+     denormal at extremes (16 voices, top notes, FM, sync, filter FM, full resonance and drive, 4x); nothing in the
+     audio path allocates (the filters' states sit in each voice). CPU on the PC (O2, per 128-frame block, a busy patch:
+     two saws, sync, the ladder; A/B against the engine before, same machine): Off 8.4-8.6 us a voice (before 8.0-8.7:
+     within the noise, about +3%), 2x 14.6-14.7 (1.75x), 4x 24.3-24.8 (2.9x); with the non-linear ladder Off 10.5, 2x
+     19.5, 4x 34 us; 8 voices at 2x 117 us, 16 voices 265 us. WARM-UP on costs about 0.1-0.2 us a voice. On the MPC
+     (not measured) a 2x voice should cost about 1.8 voices, so HQ stays optional there (the owner's call). Left: an
+     iterative (Newton) solve of the ladder's stages in HQ (audit row "how resonance thins the bass"); not done, as 4x
+     already takes the images below -77 dB and costs 3x a voice.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
