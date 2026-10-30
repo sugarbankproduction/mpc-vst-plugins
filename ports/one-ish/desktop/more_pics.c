@@ -39,7 +39,9 @@
 #define C_LIT 0xFF96D7E8
 #define C_DIM 0xFF1C2C36
 
+static int tile_mode, tile_part;   /* (2026-10-30) pics_tile: the picture alone, small (no text); PHYS: 1 balls, 2 parts */
 static void txt(HDC dc, RECT r, const char *s, COLORREF c, UINT fmt) {
+    if (tile_mode) return;
     fmt |= DT_SINGLELINE | DT_NOPREFIX;
     if (skin_text(&r, s, font_tiny, c, fmt)) return;
     SelectObject(dc, font_tiny);
@@ -343,12 +345,13 @@ static void pic_phys(HDC dc, ed_t *e, RECT a) {
         if (wall >> 4 & 1) gfx_line(x0, ly, x0 + side, ly, 2.0f * L.s, C_TRACE);
         else for (float x = x0; x < x0 + side; x += 5.0f * L.s) gfx_line(x, ly, fminf(x + 2.5f * L.s, x0 + side), ly, 1.0f, C_LIT);
     }
-    if (parts) gfx_circle(x0 + PH_EMIT_X * side, y0 + (1.0f - PH_EMIT_Y) * side, 3.0f * L.s, 1.0f, C_LIT);
+    if (parts && tile_part != 1) gfx_circle(x0 + PH_EMIT_X * side, y0 + (1.0f - PH_EMIT_Y) * side, 3.0f * L.s, 1.0f, C_LIT);
     const char *p = v + used;
     for (int i = 0; i < nb + np; i++) {
         int x, y, f, u;
         if (sscanf(p, "%d,%d,%d;%n", &x, &y, &f, &u) != 3) break;
         p += u;
+        if ((tile_part == 1 && i >= nb) || (tile_part == 2 && i < nb)) continue;   /* (a tile: its own kind only) */
         float cx = x0 + x * 0.001f * side, cy = y0 + (1.0f - y * 0.001f) * side;
         float r = i < nb ? fmaxf(PH_BALL_R * side, 2.5f * L.s) : 1.6f * L.s;
         if (f) gfx_disc(cx, cy, r * 2.0f, C_GLOW);
@@ -656,4 +659,39 @@ void pics_draw(HDC dc, ed_t *e, int page, RECT a) {
     }
     gfx_end();
     skin_bind(NULL);
+}
+
+/* (2026-10-30) the GENERATORS overview (nav.c): a moving picture alone, as large as fits in tile a and centred in it */
+int pics_tile(HDC dc, ed_t *e, int page, int part, RECT a) {
+    if (page < 0 || page >= NPAGES) return 0;
+    int pic = PAGES[page].pic;
+    float ratio = 1.0f, extra = 0.0f;   /* the picture's box: width = ratio x height + extra */
+    switch (pic) {
+    case PIC_PHYS: case PIC_RAIN: case PIC_ORBITS: break;
+    case PIC_LIFE: case PIC_PEND: ratio = 2.0f; break;
+    case PIC_MARKOV: ratio = 2.6f; extra = (float)sc(8); break;   /* (the roll, then the choice's bars) */
+    default: return 0;
+    }
+    float bh = (float)(rh(&a) - sc(2)), room = (float)(rw(&a) - sc(4));
+    if (bh * ratio + extra > room) bh = (room - extra) / ratio;
+    if (bh < 4.0f) return 1;
+    float bw = bh * ratio + extra, cx = (a.left + a.right) / 2.0f, cy = (a.top + a.bottom) / 2.0f;
+    RECT b = {(int)lroundf(cx - bw / 2 - sc(8)), (int)lroundf(cy - bh / 2 - sc(3)), a.right, 0};
+    b.bottom = b.top + (int)lroundf(bh) + sc(6);   /* (the pictures: their box is the rect's height less 6, from 8 in) */
+    gfx_begin(dc);
+    skin_bind(gfx_g);
+    tile_mode = 1;
+    tile_part = part;
+    switch (pic) {
+    case PIC_PHYS: pic_phys(dc, e, b); break;
+    case PIC_RAIN: pic_rain(dc, e, b); break;
+    case PIC_MARKOV: pic_markov(dc, e, b); break;
+    case PIC_LIFE: pic_life(dc, e, b); break;
+    case PIC_ORBITS: pic_orbits(dc, e, b); break;
+    case PIC_PEND: pic_pend(dc, e, b); break;
+    }
+    tile_mode = tile_part = 0;
+    gfx_end();
+    skin_bind(NULL);
+    return 1;
 }

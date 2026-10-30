@@ -111,6 +111,7 @@ typedef struct {
     RECT together, undo, redo;                /* (2026-10-30) the third row's TOGETHER, UNDO, REDO (hub.c) */
     RECT qm_hands, kb_hint;                   /* the controller's DEST (quickmod.c); the computer keyboard's hint */
     RECT panic;                               /* the controller's PANIC */
+    RECT back, fwd;                           /* (2026-10-30, nav.c) the screen's BACK / FWD, either side of the name */
 } layout_t;
 extern layout_t L;
 
@@ -158,6 +159,15 @@ typedef struct {
 } qm_ui_t;
 #define RND_HIST 32   /* sounds the randomiser's UNDO / REDO keep (the oldest goes) */
 enum { MLOG = 64 };
+/* (2026-10-30, nav.c) the centre screen's page history for BACK / FWD: a page and the sub-page it was left on */
+enum { NAV_HIST = 16 };
+typedef struct { short screen, sub; } nav_pos_t;
+typedef struct {
+    nav_pos_t back[NAV_HIST], fwd[NAV_HIST], cur;   /* back[nb - 1]: the page before; cur: the one shown now */
+    int nb, nf, ready;
+    int ov_synth;            /* the GENERATORS overview shows this Synth (-1: the one in focus) */
+    unsigned ticks;          /* the overview's repaints asked for (nav_tick) */
+} nav_ui_t;
 typedef struct {
     AEffect *fx;
     audioMasterCallback host;
@@ -209,6 +219,7 @@ typedef struct {
     float tempo_from;                          /* a TEMPO drag: the BPM it started at */
     int vol_master;                            /* SYNTH OUTPUT's MASTER lit: VOLUME is master_level (never saved) */
     int together;                              /* TOGETHER lit: SYNTH buttons add / remove Synths (never saved) */
+    nav_ui_t nav;                              /* (2026-10-30) BACK / FWD, the overview's Synth (nav.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
        M_QMOD, M_TEMPO };   /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
@@ -422,3 +433,44 @@ int tempo_wheel(ed_t *e, int z, int dir, int fine);   /* 1: used */
 const char *hub_zone_help(ed_t *e, int z);
 void hub_help(ed_t *e, char *out, int n);
 intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt);
+/* nav.c (2026-10-30): the screen's BACK / FWD (a history of the pages shown), the generator tabs (on the hub and every
+ * generator page: one per generator page, a dot when it is on in the Synth in focus, and ALL), and the GENERATORS
+ * overview (SCR_GENALL: every generator that is on, drawn small and moving; a click opens its page) */
+enum { SCR_GENALL = -41 };
+enum { Z_NAV_BACK = 680000, Z_NAV_FWD,
+       Z_NAV_ALL,                /* the hub page's ALL RUNNING button: the overview */
+       Z_NAV_SYN = 680010,       /* + c: the overview's SYNTH 1 / 2 / 3 */
+       Z_NAV_TAB = 680100,       /* + k: tab k (0 the hub, 1 .. NHUB_TAB the generator pages, then ALL) */
+       Z_NAV_TILE = 680200,      /* + row: the overview's tile of HUB[row] */
+       Z_NAV_END = 680300 };
+#define TEST_NAV 0x4F314E56   /* VENDOR_SPECIFIC index: value = NT_ op (nav.c) */
+enum { NT_BACK_N = 1,         /* how many pages BACK can go to */
+       NT_FWD_N,              /* ... and FWD */
+       NT_TABS,               /* 1: the screen shows the generator tabs */
+       NT_TILES,              /* the overview's tiles now (0: not shown) */
+       NT_TILE_XY,            /* opt = a tile: its middle in pixels (x + 65536 y; -1: none) */
+       NT_TILE_ROW,           /* opt = a tile: its HUB row (-1: none) */
+       NT_TAB_XY,             /* opt = a tab: its middle in pixels (-1: none) */
+       NT_TAB_DOT,            /* opt = a tab: 1 when its dot is lit */
+       NT_OV_SYNTH,           /* the Synth the overview shows */
+       NT_TICKS,              /* the overview's repaints asked for so far */
+       NT_XY };               /* opt = a zone (Z_NAV_BACK, Z_NAV_FWD, Z_NAV_ALL, Z_NAV_SYN + c): its middle (-1: none) */
+void nav_note(ed_t *e);                        /* the page shown now goes into the history if it changed */
+int nav_can(ed_t *e, int fwd);                 /* BACK (0) / FWD (1) has a page to go to */
+void nav_go(ed_t *e, int fwd);                 /* BACK / FWD */
+int nav_tabs_shown(ed_t *e);                   /* the screen shows the generator tabs (the hub, a generator page) */
+int nav_gen_param(int i);                      /* panel index i is a generator's ON (a tab's dot shows it) */
+int nav_hit(ed_t *e, POINT pt);                /* the tabs, the overview, the hub's ALL RUNNING (-1: none) */
+int nav_press(ed_t *e, int z);                 /* 1: z was nav's */
+void nav_tabs_draw(HDC dc, ed_t *e);           /* the tabs, on the column-heads line (its own drawing surface) */
+void nav_hub_draw(HDC dc, ed_t *e);            /* the hub page's ALL RUNNING */
+void nav_overview_draw(HDC dc, ed_t *e);       /* SCR_GENALL, all of it but the help line */
+void nav_top_draw(HDC dc, ed_t *e);            /* BACK / FWD */
+void nav_tick(ed_t *e);                        /* the rate timer: the overview's tiles move */
+const char *nav_zone_help(ed_t *e, int z);
+void nav_help(ed_t *e, char *out, int n);      /* the overview's help line */
+intptr_t nav_test(ed_t *e, intptr_t op, char *buf, float opt);
+/* more_pics.c: a page's moving picture drawn small in tile a (no text; part: PHYS 1 the balls, 2 the particles, 0 both) */
+int pics_tile(HDC dc, ed_t *e, int page, int part, RECT a);   /* 0: the page has no picture */
+/* editor_draw.c: the sub-page arrows and "n / m" at the title line's right end (also the library's pages) */
+void sub_pager_draw(HDC dc, ed_t *e, const char *n);

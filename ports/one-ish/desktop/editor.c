@@ -177,9 +177,13 @@ static void layout(void) {
     /* the screen: preset line, title line (with < > for sub-pages), column heads or a note, 8 rows, help */
     L.screen = zone(ZONE_SCREEN);
     int x0 = L.screen.left + sc(8), x1 = L.screen.right - sc(8), y = L.screen.top + sc(6);
-    SetRect(&L.prev, x0, y, x0 + sc(26), y + sc(34));
-    SetRect(&L.next, x1 - sc(26), y, x1, y + sc(34));
-    SetRect(&L.name, x0 + sc(28), y, x1 - sc(28), y + sc(34));
+    /* (2026-10-30) BACK and FWD (the page history, nav.c) at the ends; between them the PRESET box: the patch name with
+     * its own previous / next arrows inside the frame */
+    SetRect(&L.back, x0, y, x0 + sc(30), y + sc(34));
+    SetRect(&L.fwd, x1 - sc(30), y, x1, y + sc(34));
+    SetRect(&L.name, x0 + sc(34), y, x1 - sc(34), y + sc(34));
+    SetRect(&L.prev, L.name.left + sc(1), y + sc(1), L.name.left + sc(21), y + sc(33));
+    SetRect(&L.next, L.name.right - sc(21), y + sc(1), L.name.right - sc(1), y + sc(33));
     y += sc(36);
     SetRect(&L.tabline, x0, y, x1, y + sc(18));
     SetRect(&L.sub_next, x1 - sc(18), y, x1, y + sc(18));
@@ -320,6 +324,7 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
                 if (MATRIX[m][k] == i || MATRIX_ON[m] == i) return 1;
         return 0;
     }
+    if (nav_tabs_shown(e) && nav_gen_param(i)) return 1;   /* a generator's ON: its tab's dot (nav.c) */
     if (e->screen == SCR_INDEX || lib_screen(e->screen)) return 0;   /* (the patch list, the library's pages) */
     if (e->screen == SCR_SETUP || e->screen == SCR_SETTINGS) return 1;   /* (every Synth's setup: any change may show) */
     if (e->screen < 0 || e->screen >= NPAGES) return 1;   /* RANDOM (it describes the sound), SEQ: all of it */
@@ -751,6 +756,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (PtInRect(&L.sub_prev, pt) && screen_subs(e) > 1) return Z_SUB_PREV;
     if (PtInRect(&L.sub_next, pt) && screen_subs(e) > 1) return Z_SUB_NEXT;
     if (lib_screen(e->screen)) return lib_hit(e, pt);   /* the patch list and the library's pages (library.c) */
+    int nz = nav_hit(e, pt);   /* (2026-10-30) the generator tabs, the overview, the hub's ALL RUNNING (nav.c) */
+    if (nz >= 0 || e->screen == SCR_GENALL) return nz;
     if (e->screen == SCR_RANDOM) {
         static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_WILD, Z_RND_UNDO, Z_RND_REDO, Z_RND_ALL,
                                 Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2};
@@ -839,7 +846,7 @@ static int hit(ed_t *e, int x, int y) {
     static const struct { RECT *r; int z; } Z[] = {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
         {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.oct_leds, Z_OCT_PICK}, {&L.panic, Z_PANIC},
-        {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.bprev, Z_PREV},
+        {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.back, Z_NAV_BACK}, {&L.fwd, Z_NAV_FWD}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
         {&L.focus[0], Z_FOCUS1}, {&L.focus[1], Z_FOCUS2}, {&L.focus[2], Z_FOCUS3}, {&L.tab_setup, Z_TAB_SETUP},
@@ -1047,6 +1054,7 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
     if (patches_press(e, z)) return;   /* the PATCHES page's buttons and entries */
     if (settings_press(e, z)) return;   /* the SETTINGS page's */
     if (hub_press(e, z)) return;        /* the GENERATIVE hub page and the console's third row (hub.c) */
+    if (nav_press(e, z)) return;        /* BACK / FWD, the generator tabs, the overview (nav.c) */
     if (z == Z_TAB_SETTINGS) { settings_open(e); return; }
     int subs = screen_subs(e);
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) {   /* again on an open page: its next sub-page */
@@ -1177,6 +1185,7 @@ static void press(ed_t *e, int x, int y) {
 
 static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     ed_t *e = (ed_t *)GetWindowLongPtrA(w, GWLP_USERDATA);
+    if (e) nav_note(e);   /* (2026-10-30) a page shown since the last message: into BACK's history (nav.c) */
     switch (msg) {
     case WM_CREATE: {
         CREATESTRUCTA *cs = (CREATESTRUCTA *)lp;
@@ -1200,7 +1209,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER: {   /* values the host or a preset changed: redraw */
         if (!e) return 0;
-        if (wp == 2) { rate_leds_tick(e); pics_tick(e); return 0; }   /* the rate LEDs: only the ones that changed
+        if (wp == 2) { rate_leds_tick(e); pics_tick(e); nav_tick(e); return 0; }   /* the rate LEDs: only the ones that changed
                                                                          * repaint; the balls' box while it shows */
         if (e->corners == 0 && e->corner_tries < 100) {   /* the host's window sized to us yet? (for 5 s) */
             e->corner_tries++;
@@ -1296,6 +1305,12 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         break;
+    case WM_SYSKEYDOWN:   /* (2026-10-30) Alt+Left / Alt+Right: the screen's BACK / FWD (shortcuts; the buttons first) */
+        if (e && (wp == VK_LEFT || wp == VK_RIGHT)) { nav_go(e, wp == VK_RIGHT); return 0; }
+        break;
+    case WM_XBUTTONDOWN:   /* the mouse's back / forward buttons: the same */
+        if (e) nav_go(e, HIWORD(wp) == XBUTTON2);
+        return TRUE;
     case WM_KEYUP:   /* a music key let go (whatever Shift or Ctrl do meanwhile) */
         if (e && qk_key(e, wp, 0, lp)) return 0;
         break;
@@ -1559,6 +1574,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
         if (idx == TEST_SETTINGS && e && ptr) return settings_test(e, v, ptr, opt);   /* load_test: the settings */
         if (idx == TEST_HUB && e) return hub_test(e, v, ptr, opt);   /* load_test: TEMPO, GEN OFF, LINK (hub.c) */
+        if (idx == TEST_NAV && e) return nav_test(e, v, ptr, opt);   /* load_test: BACK / FWD, tabs, overview (nav.c) */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
             hr_set_legacy(e->hr, (int)v);
             fx->initialDelay = hr_latency(e->hr);
@@ -1641,6 +1657,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->ribbon_cc = -1;
         e->rnd_amount = 0.2f;   /* (WILD 0, no ticks: rnd_wild and rnd_also start at 0) */
         e->qm.dst = e->qm.ctl = e->qm.last_row = e->qm.last_dst = e->qm.mark = -1;   /* (quick assign: nothing yet) */
+        e->nav.ov_synth = -1;   /* (the overview: the Synth in focus) */
         e->hr = hr;
         eds[i] = e;
         wrapped_dispatch = fx->dispatcher;

@@ -729,6 +729,25 @@ def hub_and_links(lay, pages, page_ix, lines):
     lines.append("#define NLINKOF %d" % len(pairs))
 
 
+# (2026-10-30) the generator tabs (desktop/nav.c): one per generator page in HUB order, a short name each (EUCLID and
+# TURING share the GEN page); a page added to HUB_LATER joins with the first five letters of its id
+HUB_TAB_NAMES = {"GEN": "EUC", "BALLS": "BALLS", "PARTICLES": "PART", "LIFE": "LIFE", "ORBITS": "ORB", "PEND": "PEND",
+                 "RAIN": "RAIN", "MARKOV": "MKV"}
+
+
+def hub_tabs(lay, page_ix, lines):
+    """HUB_TAB[]: the generator pages, in the hub's order, with their tab names"""
+    pids = [pid for _, pid, key in HUB_FIXED if pid in page_ix and key in lay.index] +            [pid for pid in HUB_LATER if pid in page_ix]
+    tabs = []
+    for pid in pids:
+        if pid not in [t[0] for t in tabs]:
+            tabs.append((pid, HUB_TAB_NAMES.get(pid, pid[:5])))
+    lines.append("typedef struct { const char *label; short page; } lay_hub_tab_t;   /* a generator page's tab */")
+    lines.append("LAY lay_hub_tab_t HUB_TAB[] = {%s};" % ", ".join("{%s, %d}" % (c_str(n), page_ix[pid]) for pid, n in tabs
+                                                                   or [("", -1)]))
+    lines.append("#define NHUB_TAB %d" % len(tabs))
+
+
 def c_str(s):
     return '"%s"' % s.replace("\\", "\\\\").replace('"', '\\"')
 
@@ -853,6 +872,7 @@ def emit(lay, zones, out):
                                                               [(0, 0, 0, 0, -1)]))
     lines.append("#define NMORES %d" % len(tris))
     hub_and_links(lay, pages, page_ix, lines)
+    hub_tabs(lay, page_ix, lines)
     open(out, "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")
     return other, pages
 
