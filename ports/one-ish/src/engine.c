@@ -275,6 +275,7 @@ enum {
     P_GEN_FOLLOW_KEYS,   /* (2026-10-30) FOLLOW KEYS: the notes a generator plays from the keys, in the key played */
     P_LFO1_SHARE,    /* (2026-10-30) SHARE: LFO n of Synths 2 and 3 is Synth 1's (shared; lfo_owner), 4 of them */
     P_LFO4_SHARE = P_LFO1_SHARE + 3,
+    P_SYN_OUT,       /* (2026-10-30) the Synth's output: MAIN, its own pair, or both (src/synths.h; desktop multi-out) */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -436,6 +437,7 @@ static const char *const KEYS[P_COUNT] = {
     "gen_keys", "gen_octave", "gen_eu_notes",   /* (2026-10-30) */
     "gen_tempo_src", "gen_bpm", "gen_follow_keys",   /* (2026-10-30) */
     "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   /* (2026-10-30) */
+    "syn_out",   /* (2026-10-30) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */

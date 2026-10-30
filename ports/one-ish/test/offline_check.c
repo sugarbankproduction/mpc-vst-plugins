@@ -111,7 +111,10 @@
  *             loudness and CPU in a table; fails on a peak above -1 dBFS, silence, non-finite samples or a loudness
  *             more than 6 dB from the bank's median; bank_a_demo.wav, bank_b_demo.wav (offline_check banks
  *             <dir>/demo.wav: both banks alone; banka / bankb: one bank)
- *   bench     (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
+ *   multiout  (test/multiout_check.c, 2026-10-30) each Synth's OUTPUT: all at Main gives MAIN exactly as before and
+ *             silent pairs; Own Pair and Main + Own put the Synth where they say; the master effects stay on MAIN;
+ *             stereo callers keep everything on their one output; saved, kept by LOAD INTO SYNTH (with multi)
+ *   bench    (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
  *             MACRO channel at each model; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
 #include <fenv.h>
@@ -5205,6 +5208,7 @@ static void arp_wav(const char *demo_path) {
 #include "grains_check.c"   /* (2026-10-30) GRAINS, Auto's CTRL targets, the X/Y pad's LINK */
 #include "gen_keys_check.c"   /* (2026-10-30) every generator's KEYS (FREE, HELD, LAUNCH, EMIT) and GEN TEMPO */
 #include "lfoshare_check.c"   /* (2026-10-30) SHARE: Synth 1's LFOs in all three Synths, in step */
+#include "multiout_check.c"   /* (2026-10-30) multi-out: each Synth's OUTPUT (MAIN, its own pair, both) */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5977,6 +5981,7 @@ int main(int argc, char **argv) {
         bank_bench_all();   /* (2026-10-30) the factory banks' presets: CPU */
         grains_bench();   /* (2026-10-30) */
         lfo_share_bench();   /* (2026-10-30) SHARE */
+        multiout_bench();   /* (2026-10-30) multi-out */
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "defaults")) {   /* (2026-10-30) just the new defaults: offline_check defaults */
@@ -6056,6 +6061,7 @@ int main(int argc, char **argv) {
     }
     if (argc > 2 && !strcmp(argv[1], "multi")) {   /* just the multitimbral checks: offline_check multi <dir>/demo.wav */
         multitimbral();
+        multiout_checks();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -6154,6 +6160,7 @@ int main(int argc, char **argv) {
     grains_checks();   /* (2026-10-30) */
     gen_keys_checks();   /* (2026-10-30) the generators' KEYS, GEN TEMPO */
     lfo_share_checks();   /* (2026-10-30) SHARE (test/lfoshare_check.c) */
+    multiout_checks();   /* (2026-10-30) multi-out (test/multiout_check.c) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

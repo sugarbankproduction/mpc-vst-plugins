@@ -763,6 +763,7 @@ lfo1_share
 lfo2_share
 lfo3_share
 lfo4_share
+syn_out
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1969,3 +1970,5 @@ s2_gen_follow_keys
 s3_gen_tempo_src
 s3_gen_bpm
 s3_gen_follow_keys
+s2_syn_out
+s3_syn_out
