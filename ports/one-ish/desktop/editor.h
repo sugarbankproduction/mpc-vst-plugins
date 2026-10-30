@@ -407,6 +407,8 @@ int master_param(void);                        /* master_level's index (-1: none
 RECT hub_rect(int z);                          /* where hub zone z sits (the page's or the console's) */
 RECT hub_link_rect(int row);                   /* the hub page's KEY (0) / SCALE (1) row: its LINK button */
 RECT hub_value_rect(int row);                  /* ... and its value */
+RECT hub_follow_rect(void);                     /* (2026-10-30) the hub page's FOLLOW TEMPO button */
+void hub_follow_text(ed_t *e, char *out, int n);   /* ... and the text beside it (how much faster) */
 int hub_hit(ed_t *e, POINT pt);                /* the hub page's zones (and KEY, SCALE, their LINKs: params) */
 int hub_hit_console(POINT pt);                 /* the console's third row */
 int hub_press(ed_t *e, int z);                 /* 1: z was the hub's */
