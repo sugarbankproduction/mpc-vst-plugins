@@ -740,7 +740,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      audio path allocates (the filters' states sit in each voice). CPU on the PC (O2, per 128-frame block, a busy patch:
      two saws, sync, the ladder; A/B against the engine before, same machine): Off 8.4-8.6 us a voice (before 8.0-8.7:
      within the noise, about +3%), 2x 14.6-14.7 (1.75x), 4x 24.3-24.8 (2.9x); with the non-linear ladder Off 10.5, 2x
-     19.5, 4x 34 us; 8 voices at 2x 117 us, 16 voices 265 us. WARM-UP on costs about 0.1-0.2 us a voice. On the MPC
+     19.5, 4x 34 us; 8 voices at 2x 117-119 us, 16 voices 235-265 us (4x: 195-217, 391-438 us). WARM-UP on costs about 0.1-0.2 us a voice. On the MPC
      (not measured) a 2x voice should cost about 1.8 voices, so HQ stays optional there (the owner's call). Left: an
      iterative (Newton) solve of the ladder's stages in HQ (audit row "how resonance thins the bass"); not done, as 4x
      already takes the images below -77 dB and costs 3x a voice.
