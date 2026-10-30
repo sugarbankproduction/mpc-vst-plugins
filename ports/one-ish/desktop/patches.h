@@ -18,7 +18,8 @@ enum { SCR_SET = -12, SCR_SETS = -13, SCR_ARRANGE = -14, SCR_SNAPS = -15, SCR_TA
 enum { Z_LIB_TAB = 100320, Z_SNAP_ACT = 100340, Z_TAG_ACT = 100360, Z_ARR_ACT = 100380, Z_SET_BANK = 100400,
        Z_SET_SIDE = 100410, Z_COMPARE = 100430, Z_SNAPSHOT = 100431,
        Z_SNAP_ITEM = 210000, Z_TAG_ITEM = 220000 /* + 1000 * kind + tag */, Z_SET_SLOT = 230000, Z_SETS_ITEM = 240000 };
-enum { PA_SAVE, PA_SAVE_AS, PA_RENAME, PA_DELETE, PA_IMPORT, PA_EXPORT, PA_INTO, PA_SAVE_SYNTH, PA_COUNT };
+/* (2026-10-31) IMPORT .M1P and REPORT: Moog One presets into user patches, the last import's report (m1p_import.c) */
+enum { PA_SAVE, PA_SAVE_AS, PA_RENAME, PA_DELETE, PA_IMPORT, PA_EXPORT, PA_INTO, PA_SAVE_SYNTH, PA_M1P, PA_REPORT, PA_COUNT };
 enum { effGetChunk = 23, effSetChunk = 24 };              /* VST2 opcodes editor.h doesn't name */
 enum { BANK_NONE, BANK_FACTORY, BANK_USER };            /* where the current sound came from */
 /* results of the patch operations (patches.c) */
@@ -28,7 +29,12 @@ enum { PE_OK = 1, PE_FAIL = 0, PE_EXISTS = -1, PE_BADNAME = -2, PE_NOT_USER = -3
  * buffer (a name or a path in, a title or a message out), opt = a number (a step, or 1 to allow overwriting) */
 #define TEST_PATCH 0x4F315054
 enum { PT_SAVE = 1, PT_SAVE_AS, PT_RENAME, PT_DELETE, PT_IMPORT, PT_EXPORT, PT_LOAD, PT_STEP, PT_TITLE, PT_EDITED,
-       PT_COUNT, PT_DIR, PT_MESSAGE, PT_LOAD_POS, PT_POS, PT_INTO_POS, PT_SAVE_SYNTH };
+       PT_COUNT, PT_DIR, PT_MESSAGE, PT_LOAD_POS, PT_POS, PT_INTO_POS, PT_SAVE_SYNTH,
+       /* (2026-10-31, m1p_import.c) PICK: the files ('|' between) the next IMPORT .M1P click takes, no dialog ("" none;
+        * while set, REPORT opens nothing); IMPORT: a .m1p file or a folder of them, opt = DUPLICATE NAMES (parts.h
+        * DUP_), returns how many were imported; REPORT: the report's path, 1 when it is there; OPENED: what REPORT
+        * opened */
+       PT_M1P_PICK, PT_M1P_IMPORT, PT_M1P_REPORT, PT_M1P_OPENED };
 /* ... and the library (library.c): index TEST_LIB, value = LT_ op, ptr = a 1 KB text buffer out, opt = a number in.
  * LT_ZONE: where hit code opt is on the window now, (x | y << 16) in pixels, or -1 */
 #define TEST_LIB 0x4F314C42

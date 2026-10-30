@@ -20,9 +20,11 @@ build() {   # build <objdir> <out> <flags...>: the test (TEST, default offline_c
   done
   g++ "$@" "${objs[@]}" -lm -o "$out"
 }
-build "$P/build/obj_san" "$P/build/offline_check" -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1
+# (2026-10-31) the Moog One preset converter (desktop/m1p.c) is tested inside offline_check (test/m1p_check.c)
+OC="$P/test/offline_check.c $P/desktop/m1p.c"
+TEST="$OC" build "$P/build/obj_san" "$P/build/offline_check" -fsanitize=address,undefined -fno-omit-frame-pointer -g -O1
 "$P/build/offline_check" "$P/test/out/demo.wav"
-build "$P/build/obj_o2" "$P/build/offline_bench" -O2
+TEST="$OC" build "$P/build/obj_o2" "$P/build/offline_bench" -O2
 # old sounds play exactly as before (test/golden_check.c against test/golden_states.txt, made by test/golden_gen.sh)
 TEST="$P/test/golden_check.c $P/test/golden_rng.cc" build "$P/build/obj_o2" "$P/build/golden_check" -O2
 "$P/build/golden_check" check "$P/test/golden_states.txt"

@@ -1,0 +1,4 @@
+# Synthetic test file for Moo Won's .m1p importer: not a preset at all.
+this is not a preset
+name=Something
+[section]

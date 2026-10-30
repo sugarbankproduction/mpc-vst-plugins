@@ -93,6 +93,7 @@ static void midi_out_test(AEffect *fx);   /* (2026-10-30) below */
 int rate_tests(void *entry, void *old_entry);   /* rate_test.c: returns its failures */
 int library_tests(void *fx, HWND child, float s, const char *bmp, int w, int h, const char *patch_dir);   /* library_test.c */
 int parts_tests(void *fx, HWND child, float s, const char *bmp, int w, int h, const char *patch_dir);   /* parts_test.c */
+int m1p_tests(void *fx, HWND child, float s, const char *bmp, int w, int h);   /* m1p_test.c (2026-10-31) IMPORT .M1P */
 
 static int failures;
 static void check(int ok, const char *what) {
@@ -836,7 +837,8 @@ static void click_answered(HWND child, float s, float x, float y, const answer_t
 static void patch_page(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     float sx = ZONE_SCREEN[0], sy = ZONE_SCREEN[1];
     dialog_bmp = bmp;
-    float act_y = sy + 6 + 36 + 20 + 9, act_w = (384 - 4 * (PA_COUNT - 1)) / (float)PA_COUNT + 4;   /* the PATCHES page's buttons (patches.c) */
+    float act_y = sy + 6 + 36 + 20 + 9, act_w = (384 - 4 * (PA_M1P - 1)) / (float)PA_M1P + 4;   /* the PATCHES page's buttons (patches.c; the row's
+                                                                     * 8, IMPORT .M1P and REPORT are elsewhere) */
     click(child, s, sx + 200, sy + 23);   /* the patch name: the list */
     static const answer_t save_as = {"Save as", "UI Lead", IDOK}, yes = {"Moo Won", NULL, IDYES};
     click_answered(child, s, sx + 8 + act_w * PA_SAVE_AS + act_w / 2 - 2, act_y, &save_as);
@@ -1605,6 +1607,7 @@ static void editor(AEffect *fx, const char *bmp) {
         failures += library_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* undo, compare, sets ... */
         failures += parts_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* (2026-10-30) presets,
                                                                                     * names, libraries, DUPLICATE NAMES */
+        failures += m1p_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* (2026-10-31) IMPORT .M1P, REPORT */
         settings_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         panel2_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* TEMPO, GENERATIVE, LINK, MASTER (2026-10-30) */
         learn_shows_test(fx, child, cr.right / (float)BASE_W, w, h);   /* (2026-10-30) a learned CC on the panel */

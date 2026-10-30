@@ -1,0 +1,85 @@
+# Synthetic test file for Moo Won's .m1p importer (test/m1p_check.c, desktop/m1p_test.c): made-up values in the
+# key / value layout of a Moog One preset file. Not a Moog preset, and no part of one.
+/meta/name "Test Brassy"
+/meta/comment "made up for the tests"
+/meta/type "SINGLE"
+/meta/category "BRASS"
+/meta/mood "BRIGHT"
+/meta/synth1name "TESTSYN"
+/p/version 8
+/p/clk/rate 120.0
+/p/part/t/1/en true
+/p/part/t/1/p/g 0.5
+/p/part/t/1/p/pan 0.75
+/p/part/t/1/p/pbup 7.0
+/p/part/t/1/p/pbdn -7.0
+/p/part/t/1/p/o1/m "v"
+/p/part/t/1/p/o1/oct -1
+/p/part/t/1/p/o1/po 3.5
+/p/part/t/1/p/o1/knobs/po 0.5
+/p/part/t/1/p/o1/d 0.25
+/p/part/t/1/p/o2/m "F"
+/p/part/t/1/p/o2/oct 1
+/p/part/t/1/p/o2/sync1 true
+/p/part/t/1/p/p1/d 0.2
+/p/part/t/1/p/mix/o1/g 0.8
+/p/part/t/1/p/mix/o1/fa true
+/p/part/t/1/p/mix/o1/fb false
+/p/part/t/1/p/mix/o2/g 0.4
+/p/part/t/1/p/mix/n/g 0.0 #raw
+/p/part/t/1/p/fb/p 93.0
+/p/part/t/1/p/fb/r 0.3
+/p/part/t/1/p/fb/hp true
+/p/part/t/1/p/fb/tap 2
+/p/part/t/1/p/fa/p 69.0
+/p/part/t/1/p/fa/eg\_p 0.5
+/p/part/t/1/p/fa/1/lp false
+/p/part/t/1/p/fa/1/bp true
+/p/part/t/1/p/e1/a 0.01
+/p/part/t/1/p/e1/s 0.25
+/p/part/t/1/p/e1/knobs/a 0.3
+/p/part/t/1/p/e2/a 0.001
+/p/part/t/1/p/e2/d 1.0
+/p/part/t/1/p/e2/s 1.0
+/p/part/t/1/p/e2/r 0.1
+/p/part/t/1/p/l1/f 5.0
+/p/part/t/1/p/l1/w "s-h"
+/p/part/t/1/p/l2/f 40.0
+/p/part/t/1/p/pt/en true
+/p/part/t/1/p/pt/t 0.1
+/p/part/t/1/p/pt/mode "exp"
+/p/part/t/1/a/unison/en true
+/p/part/t/1/a/unison/max-stack 6
+/p/part/t/1/a/max-voices 8
+/p/part/t/1/a/chord/ofs null
+/p/part/t/1/in/local/note-min 36
+/p/part/t/1/in/local/note-max 96
+/p/part/t/1/p/fx/ins/en true
+/p/part/t/1/p/fx/ins/type "tapeDelay"
+/p/part/t/1/p/modmatrix/entry/0/ctl "MOD WHEEL"
+/p/part/t/1/p/modmatrix/entry/0/ctl_a 0.25
+/p/part/t/1/p/modmatrix/entry/0/dst "/p/part/t/1/p/m/l1_p"
+/p/part/t/1/p/modmatrix/entry/0/mute false
+/p/part/t/1/p/modmatrix/entry/0/src "-"
+/p/part/t/1/p/modmatrix/entry/0/src_a 1
+/p/part/t/1/p/modmatrix/entry/0/tr "-"
+/p/part/t/1/p/modmatrix/entry/1/ctl "VELOCITY"
+/p/part/t/1/p/modmatrix/entry/1/ctl_a 0.5
+/p/part/t/1/p/modmatrix/entry/1/dst "/p/part/t/1/p/fb/p"
+/p/part/t/1/p/modmatrix/entry/1/src "LFO 2"
+/p/part/t/1/p/modmatrix/entry/1/src_a -0.2
+/p/part/t/1/p/modmatrix/entry/1/tr "SQUARED"
+/p/part/t/1/p/modmatrix/entry/1/tr_a 0.4
+/p/part/t/1/p/modmatrix/entry/2/ctl ""
+/p/part/t/1/p/modmatrix/entry/2/dst "/p/part/t/1/p/seq/len"
+/p/part/t/1/p/modmatrix/entry/2/src "LFO 1"
+/p/part/t/1/p/modmatrix/entry/2/src_a 0.5
+/p/part/t/1/p/seq/len 16
+/p/part/t/1/p/seq/made_up_key 3
+/p/part/t/2/en true
+/p/part/t/2/p/mix/o1/g 0.5
+/p/part/t/2/p/fb/p 110.0
+/p/part/t/3/en false
+/p/part/las-fx/2/en true
+/p/part/las-fx/2/type "et_hall"
+/p/part/las-fx/1/type "none"

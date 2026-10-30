@@ -1,0 +1,23 @@
+# Synthetic test file for Moo Won's .m1p importer (made-up values): everything as loud as it goes, to check the
+# importer turns the volume down. Not a Moog preset.
+/meta/name "Test Loud"
+/p/part/t/1/en true
+/p/part/t/1/p/g 1.0
+/p/part/t/1/p/o1/m "F"
+/p/part/t/1/p/o2/m "F"
+/p/part/t/1/p/o3/m "F"
+/p/part/t/1/p/mix/o1/g 1.0
+/p/part/t/1/p/mix/o2/g 1.0
+/p/part/t/1/p/mix/o3/g 1.0
+/p/part/t/1/p/mix/o1/fb true
+/p/part/t/1/p/mix/o2/fb true
+/p/part/t/1/p/mix/o3/fb true
+/p/part/t/1/p/mix/n/g 1.0
+/p/part/t/1/p/mix/n/fb true
+/p/part/t/1/p/fb/p 135.0
+/p/part/t/1/p/fb/r 0.0
+/p/part/t/1/p/e2/a 0.0002
+/p/part/t/1/p/e2/s 1.0
+/p/part/t/1/p/e2/velmod 0.0
+/p/part/t/1/a/unison/en true
+/p/part/t/1/a/unison/max-stack 8

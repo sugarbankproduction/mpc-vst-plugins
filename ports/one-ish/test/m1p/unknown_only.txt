@@ -1,0 +1,5 @@
+# Synthetic test file for Moo Won's .m1p importer: made-up keys none of which Moo Won knows. Not a Moog preset.
+/p/version 8
+/p/clk/rate 99.0
+/p/part/t/1/p/seq/len 12
+/p/part/t/1/p/c/0 0.5
