@@ -7,7 +7,11 @@
  * The audio input (input_tests, 2026-10-29): the DLL declares two inputs; a band-limited pulse fed in at 44.1, 48 and
  * 96 kHz in 64, 512 and 1000-frame blocks (and in place, in == out) comes out of the EXT channel through an open SVF
  * where the input path's delay says (TEST_INPUT, checked against its own formula), its shape intact, the input never
- * running dry; at EXT level 0 nothing of it is heard; and a vocoder (when the type list has one) answers it. */
+ * running dry; at EXT level 0 nothing of it is heard; and a vocoder (when the type list has one) answers it.
+ * Multi-out (multiout_tests, 2026-10-30): eight outputs, named; with every Synth's OUTPUT at Main outputs 3-8 are
+ * silent and 1-2 have everything; a Synth on its own pair is there and not on MAIN (MAIN + the pair = the default's
+ * MAIN), on Main + Own on both (MAIN exactly the default's); the master effects' returns stay on MAIN; at 44.1 and
+ * 48 kHz; and what the extra converters cost. */
 #define TEST_INPUT 0x4F31494E    /* as hostrate.h: the audio input's delay (x 1000), or its dry frames */
 #include <math.h>
 #include <stdint.h>
@@ -99,6 +103,7 @@ static void midi(AEffect *fx, int status, int d1, int d2, int delta) {
 
 enum { MAXN = 96000 * 3 };
 static float L[MAXN], R[MAXN];
+static float PAIR[6][MAXN];   /* (2026-10-30) outputs 3-8: each Synth's own pair (multi-out); a host gives all eight */
 static long nonfinite, subnormal;
 static double block_us;   /* time spent in processReplacing by the last render() */
 /* n frames from `at` in host blocks of `block` (the last one shorter), counting NaN / inf and denormals */
@@ -108,7 +113,7 @@ static void render(AEffect *fx, int at, int n, int block) {
     QueryPerformanceCounter(&t0);
     for (int i = at; i < at + n; i += block) {
         int k = at + n - i < block ? at + n - i : block;
-        float *out[2] = {L + i, R + i};
+        float *out[8] = {L + i, R + i, PAIR[0] + i, PAIR[1] + i, PAIR[2] + i, PAIR[3] + i, PAIR[4] + i, PAIR[5] + i};
         fx->processReplacing(fx, NULL, out, k);
         h_pos += k;
     }
@@ -283,7 +288,8 @@ static float IL[MAXN], IR[MAXN];
 static void render_in(AEffect *fx, int at, int n, int block, int inplace) {
     for (int i = at; i < at + n; i += block) {
         int k = at + n - i < block ? at + n - i : block;
-        float *out[2] = {L + i, R + i}, *in[2] = {IL + i, IR + i};
+        float *out[8] = {L + i, R + i, PAIR[0] + i, PAIR[1] + i, PAIR[2] + i, PAIR[3] + i, PAIR[4] + i, PAIR[5] + i},
+              *in[2] = {IL + i, IR + i};
         if (inplace) {
             memcpy(L + i, IL + i, sizeof(float) * k);
             memcpy(R + i, IR + i, sizeof(float) * k);
@@ -346,7 +352,7 @@ static void input_tests(AEffect *fx) {
     static const int rates[] = {44100, 48000, 96000}, blocks[] = {64, 512, 1000};
     char what[300];
     snprintf(what, sizeof what, "the plugin declares %d audio inputs and %d outputs", fx->numInputs, fx->numOutputs);
-    check(fx->numInputs == 2 && fx->numOutputs == 2, what);
+    check(fx->numInputs == 2 && fx->numOutputs == 8, what);
     /* EXT alone into an open SVF: no oscillators, no effects, the amp envelope full on */
     static const char *const PATCH = "v=1;o1_level=0;mfx_on=0;modfx_on=0;amp_a=0;amp_s=100;volume=100;ext_route=1;"
                                      "flt_mix=0;ext_level=%d";
@@ -412,6 +418,132 @@ static void input_tests(AEffect *fx) {
     }
 }
 
+/* ---- (2026-10-30) multi-out: MAIN on 1-2, each Synth's own pair on 3-4, 5-6, 7-8 (hostrate.h) ---- */
+static double peak_of(const float *x, int n) {
+    double p = 0;
+    for (int i = 0; i < n; i++) p = fmax(p, fabs(x[i]));
+    return p;
+}
+static float ML[MAXN], MR[MAXN];   /* MAIN of the default routing, to compare against */
+/* three Synths on (Synth 1 a saw at 8', Synth 2 at 4', Synth 3 at 16'), the master effects off, quiet enough for the
+ * limiter to stay linear; Synth n's OUTPUT as given (0 Main, 1 Own Pair, 2 Main + Own) */
+static void multi_patch(AEffect *fx, int o1, int o2, int o3, int fx_on) {
+    char st[512];
+    snprintf(st, sizeof st, "v=1;dv=1;mfx_on=%d;mfx_send1=%d;volume=12;amp_a=0;amp_s=100;s2_syn_on=1;s2_o1_oct=3;"
+             "s2_volume=12;s2_amp_a=0;s2_amp_s=100;s3_syn_on=1;s3_o1_oct=1;s3_volume=12;s3_amp_a=0;s3_amp_s=100;"
+             "syn_out=%d;s2_syn_out=%d;s3_syn_out=%d", fx_on, fx_on ? 60 : 0, o1, o2, o3);
+    set_patch(fx, st);
+}
+static void multi_play(AEffect *fx, int fs, int block, int n) {   /* a chord held over n frames, then let go */
+    set_rate(fx, fs, block);
+    for (int k = 0; k < 3; k++) midi(fx, 0x90, 48 + 4 * k, 100, 0);
+    render(fx, 0, n, block);
+    for (int k = 0; k < 3; k++) midi(fx, 0x80, 48 + 4 * k, 0, 0);
+}
+/* the same on a fresh instance (so two routings start alike: free LFOs, drift and voice ages from the start), closed
+ * after; its outputs stay in L, R and PAIR */
+static AEffect *(*mo_entry)(master_t);
+static void multi_fresh(int o1, int o2, int o3, int fs, int block, int n) {
+    AEffect *fx = open_fx(mo_entry);
+    if (!fx) return;
+    set_rate(fx, fs, block);
+    multi_patch(fx, o1, o2, o3, 0);
+    multi_play(fx, fs, block, n);
+    close_fx(fx);
+}
+static void multiout_tests(AEffect *fx) {
+    char what[400];
+    static const char *const want[8] = {"Main L", "Main R", "Synth 1 L", "Synth 1 R", "Synth 2 L", "Synth 2 R",
+                                        "Synth 3 L", "Synth 3 R"};
+    int named = 0;
+    for (int k = 0; k < 8; k++) {
+        struct { char label[64]; int32_t flags, arr; char sl[8]; char fut[48]; } pin;
+        memset(&pin, 0, sizeof pin);
+        named += fx->dispatcher(fx, 34 /* effGetOutputProperties */, k, 0, &pin, 0) == 1 && !strcmp(pin.label, want[k]);
+    }
+    snprintf(what, sizeof what, "multi-out: %d outputs, %d of 8 named for the host (Main L .. Synth 3 R)",
+             fx->numOutputs, named);
+    check(fx->numOutputs == 8 && named == 8, what);
+    static const int rates[] = {44100, 48000}, blocks[] = {512, 1000};
+    for (int a = 0; a < 2; a++) {
+        int fs = rates[a], bl = blocks[a], n = fs / 2;
+        /* the default: every Synth on MAIN; the pairs silent */
+        multi_fresh(0, 0, 0, fs, bl, n);
+        memcpy(ML, L, sizeof(float) * n);
+        memcpy(MR, R, sizeof(float) * n);
+        double pp = 0, pm = peak_of(ML, n);
+        for (int k = 0; k < 6; k++) pp = fmax(pp, peak_of(PAIR[k], n));
+        snprintf(what, sizeof what, "multi-out %d Hz: with every OUTPUT at Main, outputs 1-2 play all three Synths "
+                 "(peak %.3f) and outputs 3-8 are silent (peak %.2g): a host listening to 1-2 hears everything", fs, pm, pp);
+        check(pm > 0.05 && pm < 0.5 && pp == 0.0, what);
+        /* Synth 2 on its own pair: there (5-6) and not on MAIN; MAIN + the pair is the default's MAIN */
+        multi_fresh(0, 1, 0, fs, bl, n);
+        double p12 = fmax(peak_of(PAIR[0], n), peak_of(PAIR[1], n)), p2 = fmax(peak_of(PAIR[2], n), peak_of(PAIR[3], n));
+        double p3 = fmax(peak_of(PAIR[4], n), peak_of(PAIR[5], n)), err = 0;
+        for (int i = 0; i < n; i++) {
+            err = fmax(err, fabs(L[i] + PAIR[2][i] - ML[i]));
+            err = fmax(err, fabs(R[i] + PAIR[3][i] - MR[i]));
+        }
+        snprintf(what, sizeof what, "multi-out %d Hz: Synth 2 on Own Pair plays on outputs 5-6 (peak %.3f), not on "
+                 "3-4 (%.2g) or 7-8 (%.2g); MAIN + its pair = the default MAIN within %.2g", fs, p2, p12, p3, err);
+        check(p2 > 0.02 && p12 == 0.0 && p3 == 0.0 && err < 1e-5, what);
+        /* Synth 3 on Main + Own: MAIN as the default's exactly, and Synth 3 also on 7-8 */
+        multi_fresh(0, 0, 2, fs, bl, n);
+        int same = 1;
+        for (int i = 0; i < n; i++) same &= L[i] == ML[i] && R[i] == MR[i];
+        p3 = fmax(peak_of(PAIR[4], n), peak_of(PAIR[5], n));
+        p2 = fmax(peak_of(PAIR[0], n), peak_of(PAIR[2], n));
+        snprintf(what, sizeof what, "multi-out %d Hz: Synth 3 on Main + Own: MAIN %s the default's, and Synth 3 on "
+                 "outputs 7-8 too (peak %.3f; 3-4 and 5-6 %.2g)", fs, same ? "exactly" : "NOT", p3, p2);
+        check(same && p3 > 0.02 && p2 == 0.0, what);
+        /* all three on their pairs: MAIN silent, each pair its own Synth */
+        multi_fresh(1, 1, 1, fs, bl, n);
+        double pmain = fmax(peak_of(L, n), peak_of(R, n)), q[3];
+        for (int c = 0; c < 3; c++) q[c] = peak_of(PAIR[2 * c], n);
+        snprintf(what, sizeof what, "multi-out %d Hz: all three on their own pairs: MAIN silent (%.2g), outputs 3-4 / "
+                 "5-6 / 7-8 peak %.3f / %.3f / %.3f", fs, pmain, q[0], q[1], q[2]);
+        check(pmain == 0.0 && q[0] > 0.02 && q[1] > 0.02 && q[2] > 0.02, what);
+    }
+    {   /* the master effects stay on MAIN: Synth 1 alone on its pair with SEND 1 up: its echo on MAIN */
+        int fs = 48000, n = fs;
+        set_patch(fx, "v=1;dv=1;mfx_on=1;mfx_send1=80;syn_out=1;s2_syn_on=0;s3_syn_on=0;volume=40;amp_a=0;amp_r=0");
+        set_rate(fx, fs, 512);
+        midi(fx, 0x90, 60, 100, 0);
+        render(fx, 0, fs / 10, 512);
+        midi(fx, 0x80, 60, 0, 0);
+        render(fx, fs / 10, n - fs / 10, 512);
+        double dry_main = peak_of(L, fs / 20), wet_main = peak_of(L + fs / 5, n - fs / 5), pair = peak_of(PAIR[0], fs / 10);
+        double pair_after = peak_of(PAIR[0] + fs / 5, n - fs / 5);
+        snprintf(what, sizeof what, "multi-out: Synth 1 on its own pair with SEND 1 up: dry on 3-4 (peak %.3f, then "
+                 "%.2g after the note), MAIN has no dry sound (%.2g) but the shared delay's echo (%.3f)", pair, pair_after,
+                 dry_main, wet_main);
+        check(pair > 0.02 && pair_after < 1e-3 && dry_main < 1e-3 && wet_main > 0.005, what);
+        render(fx, 0, fs / 2, 512);
+    }
+    set_patch(fx, "v=1;dv=1");
+}
+
+/* (2026-10-30) what the multi-out's converters cost: three Synths, all on MAIN (the pairs silent) or each on its own
+ * pair, at 44.1 and 48 kHz */
+static void multiout_bench(AEffect *fx) {
+    static const int rates[] = {44100, 48000, 96000};
+    for (int a = 0; a < 3; a++)
+        for (int own = 0; own < 2; own++) {
+            int fs = rates[a], n = 512 * (fs / 512);
+            multi_patch(fx, own, own, own, 1);
+            set_rate(fx, fs, 512);
+            for (int k = 0; k < 4; k++) midi(fx, 0x90, 48 + 4 * k, 100, 0);
+            render(fx, 0, 512 * 8, 512);
+            render(fx, 0, n, 512);
+            double per = block_us / (n / 512);
+            printf("     CPU %6d Hz: %.1f us per 512-frame block, 3 Synths x 4 notes, %s\n", fs, per,
+                   own ? "each on its own pair (6 more outputs converted)" : "all on MAIN (outputs 3-8 silent)");
+            for (int k = 0; k < 4; k++) midi(fx, 0x80, 48 + 4 * k, 0, 0);
+            render(fx, 0, fs, 512);
+        }
+    set_patch(fx, "v=1;dv=1");
+}
+
 static void bench(AEffect *fx) {
     static const int rates[] = {44100, 48000, 96000};
     fx->dispatcher(fx, 2, 0, 0, NULL, 0);   /* program 0, a four-note chord */
@@ -439,10 +571,13 @@ int rate_tests(void *entry_fn, void *old_entry_fn) {
     midi_time_test(fx, 44100);
     arp_test(fx);
     input_tests(fx);
+    mo_entry = entry;
+    multiout_tests(fx);   /* (2026-10-30) */
     char what[160];
     snprintf(what, sizeof what, "every sample above was finite (%ld not) and none denormal (%ld)", nonfinite, subnormal);
     check(nonfinite == 0 && subnormal == 0, what);
     bench(fx);
+    multiout_bench(fx);   /* (2026-10-30) */
     close_fx(fx);
     exact_test(entry, NULL);
     if (old_entry_fn) exact_test(entry, (AEffect * (*)(master_t)) old_entry_fn);

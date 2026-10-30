@@ -139,14 +139,37 @@ static void drain_ui_midi(ed_t *e, AEffect *fx) {   /* audio thread, before each
 static void hooked_replacing(AEffect *fx, float **in, float **out, int32_t n) {
     ed_t *e = ed_of(fx);
     drain_ui_midi(e, fx);
-    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, in, out, n, 0);
-    else wrapped_replacing(fx, in, out, n);
+    if (e && e->hr && hr_on(e->hr)) {
+        hr_process(e->hr, fx, wrapped_replacing, in, out, fx->numOutputs, n, 0);
+        return;
+    }
+    wrapped_replacing(fx, in, out, n);
+    for (int k = 2; k < fx->numOutputs; k++)   /* (the old path has MAIN only: the Synths' pairs silent) */
+        if (out && out[k]) memset(out[k], 0, sizeof(float) * (n > 0 ? n : 0));
 }
 static void hooked_process(AEffect *fx, float **in, float **out, int32_t n) {
     ed_t *e = ed_of(fx);
     drain_ui_midi(e, fx);
-    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, in, out, n, 1);
+    if (e && e->hr && hr_on(e->hr)) hr_process(e->hr, fx, wrapped_replacing, in, out, fx->numOutputs, n, 1);
     else wrapped_process(fx, in, out, n);
+}
+
+/* (2026-10-30) the outputs' names for a host that asks (effGetOutputProperties; Carla doesn't: its ports are
+ * output_1 .. output_8): 1-2 MAIN, then each Synth's own pair (hostrate.h) */
+typedef struct { char label[64]; int32_t flags, arrangement; char short_label[8]; char future[48]; } pin_props_t;
+static intptr_t pin_props(AEffect *fx, int output, int idx, void *ptr) {
+    if (!ptr || idx < 0 || idx >= (output ? fx->numOutputs : fx->numInputs)) return 0;
+    pin_props_t *p = ptr;
+    memset(p, 0, sizeof *p);
+    const char *side = idx % 2 ? "R" : "L";
+    if (!output) snprintf(p->label, sizeof p->label, "Audio In %s", side);
+    else if (idx < 2) snprintf(p->label, sizeof p->label, "Main %s", side);
+    else snprintf(p->label, sizeof p->label, "Synth %d %s", (idx - 2) / 2 + 1, side);
+    snprintf(p->short_label, sizeof p->short_label, "%s%s", !output ? "In" : idx < 2 ? "Main" : idx < 4 ? "S1" :
+             idx < 6 ? "S2" : "S3", side);
+    p->flags = 1 | 2;    /* active, the first or second of a stereo pair */
+    p->arrangement = 1;  /* stereo */
+    return 1;
 }
 
 /* ---- layout ---- */
@@ -506,11 +529,11 @@ static void set_focus(ed_t *e, int c, int add) {
 
 /* ---- the SETUP page: the three Synths side by side (and the shared settings) ---- */
 static const char *const SETUP_KEY[] = {"syn_on", "syn_ch", "key_lo", "key_hi", "transpose", "octave_shift", "voices",
-                                        "volume", "pan", "mfx_send1", "mfx_send2", "modfx_on", "midi_ch", "master_level",
-                                        "seq_all", "learn_mode"};
+                                        "volume", "pan", "mfx_send1", "mfx_send2", "modfx_on", "syn_out", "midi_ch",
+                                        "master_level", "seq_all", "learn_mode"};
 const char *const SETUP_LABEL[] = {"ON", "MIDI CHANNEL", "LOWEST KEY", "HIGHEST KEY", "TRANSPOSE", "OCTAVE", "VOICES",
-                                   "LEVEL", "PAN", "SEND 1", "SEND 2", "SYNTH EFFECT", "MIDI IN (ALL)", "MASTER LEVEL",
-                                   "PLAY ALL SEQS", "CHORD LEARN"};
+                                   "LEVEL", "PAN", "SEND 1", "SEND 2", "SYNTH EFFECT", "OUTPUT", "MIDI IN (ALL)",
+                                   "MASTER LEVEL", "PLAY ALL SEQS", "CHORD LEARN"};   /* (OUTPUT: 2026-10-30) */
 int setup_rows(int sub, int *keys) {
     int n = 0;
     for (int r = 0; r < ROWS; r++) {
@@ -756,7 +779,7 @@ int page_items(ed_t *e, int p, int *items) {
 
 int screen_subs(ed_t *e) {
     if (lib_screen(e->screen)) return lib_subs(e);   /* (the patch list and the library's pages) */
-    if (e->screen == SCR_SETUP) return 2;
+    if (e->screen == SCR_SETUP) return (int)(sizeof SETUP_KEY / sizeof SETUP_KEY[0] + ROWS - 1) / ROWS;
     if (e->screen == SCR_SETTINGS) return settings_subs(e);
     if (e->screen == SCR_QMOD) return qm_subs(e);   /* (quickmod.c: MOD FROM, the picked source's connections) */
     int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
@@ -1628,6 +1651,9 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         if (idx == TEST_INPUT && e && e->hr)   /* load_test: the audio input's delay (x 1000), or its dry frames */
             return v ? (intptr_t)hr_input_dry(e->hr) : (intptr_t)llround(hr_input_delay(e->hr) * 1000.0);
         break;
+    case 33: case 34:        /* effGetInputProperties, effGetOutputProperties (2026-10-30: multi-out) */
+        if (e && e->hr) return pin_props(fx, op == 34, idx, ptr);
+        break;
     case effSetSampleRate:   /* the converter follows the host's rate; its latency goes to the host */
         if (e && e->hr) fx->initialDelay = hr_set_rate(e->hr, opt);
         break;
@@ -1715,6 +1741,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         lib_new(e);   /* (before patches_init: it records the saved version) */
         e->idle = make_idle(e);
         if (hr) fx->numInputs = 2;   /* a stereo audio input (hostrate.c): the EXT channel and the vocoders */
+        if (hr) fx->numOutputs = HR_OUTPUTS;   /* (2026-10-30) MAIN and a pair per Synth (hostrate.h: multi-out) */
         patches_init(e);
         seq_init(e);
         settings_init(e);   /* the settings file (once per process) into this instance's engine */

@@ -88,7 +88,8 @@ static void send_midi(AEffect *fx, unsigned char status, unsigned char note, uns
 }
 
 static double play(AEffect *fx, int blocks, int frames) {   /* rms of `blocks` host blocks of `frames` */
-    float l[1024], r[1024], *out[2] = {l, r};
+    static float px[6][1024];   /* (2026-10-30) outputs 3-8 (multi-out): a host gives every output a buffer */
+    float l[1024], r[1024], *out[8] = {l, r, px[0], px[1], px[2], px[3], px[4], px[5]};
     double e = 0;
     for (int b = 0; b < blocks; b++) {
         fx->processReplacing(fx, NULL, out, frames);
@@ -114,7 +115,8 @@ static void wav_header(FILE *f, uint32_t frames) {   /* 16-bit stereo at SR */
 static void audition(AEffect *fx, const char *wav) {
     static int16_t pcm[BLOCK * 2];
     static const unsigned char line[] = {48, 55, 60, 67}, chord[] = {48, 60, 64, 67};
-    float l[BLOCK], r[BLOCK], *out[2] = {l, r};
+    static float px[6][BLOCK];   /* (2026-10-30) outputs 3-8 (multi-out) */
+    float l[BLOCK], r[BLOCK], *out[8] = {l, r, px[0], px[1], px[2], px[3], px[4], px[5]};
     int np = fx->numPrograms;
     uint32_t frames = 0;
     char what[160];
@@ -281,7 +283,7 @@ static volatile LONG audio_stop;
 static volatile LONG audio_blocks, audio_bad;
 static DWORD WINAPI audio_thread(LPVOID arg) {
     AEffect *fx = arg;
-    float l[256], r[256], *out[2] = {l, r};
+    float l[256], r[256], px[6][256], *out[8] = {l, r, px[0], px[1], px[2], px[3], px[4], px[5]};   /* (multi-out) */
     while (!audio_stop) {
         fx->processReplacing(fx, NULL, out, 256);
         for (int i = 0; i < 256; i++)
