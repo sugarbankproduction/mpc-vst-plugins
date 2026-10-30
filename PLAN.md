@@ -456,6 +456,32 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        page is no longer made.
      load_test reads the help line now (`help_line()`, HT_HELP) and checks every console button and controller part has
      help of its own. No engine change, no new params, nothing in the audio path. Left: the MPC page has none of this.
+  27. (2026-10-30) Getting around the screen (owner: "the back and forward buttons at the top change the preset";
+     "click through the generators as tabs"; "a page that shows all the running generators"). Done 2026-10-30 (the
+     desktop window only; `desktop/nav.c`, `more_pics.c` pics_tile, `gen_layout.py` HUB_TAB, load_test `nav_tests`).
+     The top of the centre screen, left to right: BACK, the PRESET box, FWD. The PRESET box is the frame round the
+     patch name, PRESET written on its top edge, with the preset's own < > (solid arrows) inside it: they and the
+     console's PREV / NEXT and the PRESET knob change the sound, as before. BACK and FWD (framed buttons, a hooked arrow
+     over the word, dim when there is nowhere to go) change only the page: BACK shows the page shown before, at the
+     sub-page it was left on, FWD goes forward again; a history of 16 pages each way, the window's own (not saved),
+     taken from whatever changed the page (buttons, triangles, keys, quick assign). Turning a page's own sub-pages is
+     not a step. Shortcuts: Alt+Left / Alt+Right, the mouse's back / forward buttons. The sub-pages' < > (the title
+     line's right end, also on the library's pages) are now small triangles round "n / m" in a thin box: a third look,
+     so the three can't be mixed up. (BACK / FWD went at the preset line's ends, not on the title line, because the
+     step editor's and the library's title lines are full of their own buttons: this way they are in the same place on
+     every page.) The generator tabs: on the GENERATIVE hub page and every generator's page the column-heads line is a
+     row of tabs, HUB, EUC (EUCLID and TURING's page), BALLS, PART, LIFE, ORB, PEND, RAIN, MKV, ALL, one click each;
+     a generator page's tab has a dot, lit while it is on in the Synth in focus. Data-driven (`HUB_TAB`, from the hub's
+     generator list; a new generator page gets a tab named by its id). Those pages' one-line note moves to the help
+     line. The GENERATORS overview (ALL, or ALL RUNNING at the hub page's bottom right): every generator on in one Synth
+     (the one in focus, or SYNTH 1 2 3 at the title line's right end, this page only), each in a tile with its name,
+     moving (the MORE pages' own pictures, drawn small without their text; BALLS and PARTICLES each show only their
+     own), 1 to 12 tiles in a grid that gives each as much room as fits. EUCLID (its ring of hits) and TURING (its
+     register's length and CHANGE) are drawn from their settings and stand still: the engine doesn't tell the window
+     their step. Generators that are off are left out (the room goes to the ones playing; the tabs' dots show the rest).
+     A click on a tile opens its page in that Synth. The tiles repaint every third tick of the rate timer (about 22 a
+     second) and only while the overview shows. No engine change, no new params, nothing in the audio path, no CPU cost
+     there. Left: the MPC page has none of this.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
