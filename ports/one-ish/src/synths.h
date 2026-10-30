@@ -270,6 +270,12 @@ static void set_param(void *inst, const char *key, const char *val) {
             mi_command(in, val + 8);
             return;
         }
+        if (!strncmp(val, "synname", 7)) {   /* (2026-10-30) "synname<n>\n<name>": Synth n's name, from the window */
+            int c = val[7] >= '1' && val[7] <= '9' ? val[7] - '1' : 0;
+            const char *nl = strchr(val, '\n');
+            if (nl && c < NSYN) syn_name_set(in->syn[c], nl + 1);
+            return;
+        }
         if (!strncmp(val, "synthload", 9)) {   /* "synthload<n>\n<state>": a sound's Synth 1 into Synth n only */
             int c = val[9] >= '1' && val[9] <= '9' ? val[9] - '1' : 0;
             const char *nl = strchr(val, '\n');
@@ -411,6 +417,17 @@ static int tun_value(one_t *s, const char *rest, const char *val) {
     return 0;
 }
 
+/* (2026-10-30) its name, when it has one and it fits ("syn_name", "s2_syn_name"; none: nothing written, so a sound
+ * without a name writes the same state as before) */
+static int state_name(one_t *s, char *buf, int n, int used, int prefixed) {
+    char p[8] = "", nm[SYN_NAME_MAX + 1];
+    if (prefixed && s->idx) snprintf(p, sizeof p, "s%d_", s->idx + 1);
+    syn_name_text(s, nm, sizeof nm);
+    if (nm[0] && used + (int)strlen(p) + 11 + (int)strlen(nm) < n)
+        used += snprintf(buf + used, n - used, ";%ssyn_name=%s", p, nm);
+    return used;
+}
+
 static int get_state(inst_t *in, char *buf, int n) {
     char prev[64];
     int used = 0, v2, last = NSYN - 1;
@@ -436,6 +453,7 @@ static int get_state(inst_t *in, char *buf, int n) {
         in->syn[c]->sq.lost = c > last;   /* (a Synth left out: its readout says its sequence wasn't saved) */
         if (c <= last) used = state_seq(in->syn[c], buf, n, used);
         if (c <= last) used = state_tun(in->syn[c], buf, n, used, 1);
+        if (c <= last) used = state_name(in->syn[c], buf, n, used, 1);   /* (2026-10-30) */
     }
     if (last < NSYN - 1) fprintf(stderr, "ONE-ish: the state is too long for the chunk: Synths %d-%d not saved\n",
                                  last + 2, NSYN);
@@ -473,6 +491,7 @@ static void state_value(inst_t *in, int arg, const char *key, const char *val) {
     if (c >= NSYN) return;   /* (a Synth this build doesn't have) */
     if (!strcmp(rest, "seq")) { sq_decode(val, &in->syn[c]->sq.q, MD_COUNT, MS_COUNT); return; }   /* (damaged: none) */
     if (tun_value(in->syn[c], rest, val)) return;   /* its scale, its keyboard map */
+    if (!strcmp(rest, "syn_name")) { syn_name_set(in->syn[c], val); return; }   /* (2026-10-30) its name */
     if (c == 0 && store_retired(in->syn[0], key, val)) return;
     const pkey_t *e = key_find(in, key);
     if (!e || e->slot < 0) return;
@@ -486,6 +505,7 @@ static void set_state(inst_t *in, const char *str) {
         state_absent_load(in->syn[c]);   /* (2026-10-30: or at what it meant then) */
         sq_clear(&in->syn[c]->sq.q);   /* and one saved without a sequence has none, */
         tun_clear(&in->syn[c]->tun);   /* nor a scale */
+        syn_name_set(in->syn[c], "");   /* nor a name (2026-10-30) */
         in->syn[c]->ctrl_seen = 0;
     }
     if (state_dv(str) < 1) legacy_defaults(in);   /* (saved before 2026-10-30: what it leaves out, as then) */
@@ -511,6 +531,7 @@ static void load_value(inst_t *in, int c, const char *key, const char *val) {
     if (!strcmp(key, "ctl")) { s->ctrl_seen = 3; return; }   /* (2026-10-30: fx_auto_compat) */
     if (!strcmp(key, "seq")) { sq_decode(val, &s->sq.q, MD_COUNT, MS_COUNT); return; }
     if (tun_value(s, key, val)) return;   /* the sound's scale and keyboard map */
+    if (!strcmp(key, "syn_name")) { syn_name_set(s, val); return; }   /* (2026-10-30) the sound's name comes with it */
     if (store_retired(s, key, val)) {   /* (an old patch's bend range; dly_pp, a shared one, is put back) */
         for (int k = 0; k < P_COUNT; k++)
             if (engine_global(k)) s->val[k] = in->syn[0]->val[k];
@@ -533,6 +554,7 @@ static void synth_load(inst_t *in, int c, const char *str) {
     if (state_dv(str) < 1) legacy_s1(s);   /* (a sound saved before 2026-10-30: no aftertouch / pad / ribbon rows) */
     sq_clear(&s->sq.q);
     tun_clear(&s->tun);
+    syn_name_set(s, "");   /* (2026-10-30: the sound's own name, if it has one) */
     s->ctrl_seen = 0;
     state_walk(in, str, load_value, c);
     fx_auto_compat(s);   /* (2026-10-30) */
@@ -563,7 +585,8 @@ static int synth_state(inst_t *in, int c, char *buf, int n) {
         int len = sq_encode(&s->sq.q, s->sq_text, sizeof s->sq_text);
         if (used + 5 + len < n) used += snprintf(buf + used, n - used, ";seq=%s", s->sq_text);
     }
-    return state_tun(s, buf, n, used, 0);   /* (as Synth 1's keys: a single-Synth sound) */
+    used = state_tun(s, buf, n, used, 0);   /* (as Synth 1's keys: a single-Synth sound) */
+    return state_name(s, buf, n, used, 0);   /* (2026-10-30) and its name */
 }
 
 static int get_param(void *inst, const char *key, char *buf, int n) {

@@ -609,6 +609,7 @@ typedef struct {
     float hi_amp1;           /* ... and with it, at the control step */
 } voice_t;
 enum { HK_PITCH, HK_O1, HK_O2, HK_O3, HK_LAD, HK_SVF, HK_AMP };   /* semitones (all, each osc), octaves (ladder, SVF), x */
+#define SYN_NAME_MAX 12      /* (2026-10-30) a Synth's name: characters (src/synths.h syn_name_set) */
 
 typedef struct one_s {
     float val[P_COUNT];      /* each value in its own units: option index, semitones, cents, % or a 0..100 knob */
@@ -727,6 +728,10 @@ typedef struct one_s {
     int ctrl_seen;           /* (2026-10-30) the state being loaded is from since Auto's CTRL targets changed */
     struct one_s *syn1;      /* (2026-10-30) Synth 1 of the instance (src/synths.h create): a SHARED LFO's owner */
     int64_t lfo_at[NLFO];    /* (2026-10-30) the sample (now) its free-running LFO n last stepped (-1: not yet) */
+    /* (2026-10-30) the Synth's name (a timbre name, "Bass"; "" none), saved with the sound as "syn_name" (src/synths.h
+     * syn_name_set). nm_seq: a counter, odd while the name is written, so the window reads it without a lock */
+    char syn_name[SYN_NAME_MAX + 1];
+    uint32_t nm_seq;
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
 static int pool_room(one_t *s, const int *idx, int n);   /* src/synths.h */
@@ -2461,8 +2466,43 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
     return 0;
 }
 
+/* (2026-10-30) THE SYNTH'S NAME. Set from a state ("syn_name") or the window ("synname<n>\n<name>", src/synths.h), always
+ * on the thread that holds the wrapper's engine lock, never in render(); read by the window at any time without a lock
+ * ("syn_name" readout): a counter odd while it is written, as the views' (src/physgen_run.h). A name keeps only
+ * printable characters, not ; | \ (the state's own separators), at most SYN_NAME_MAX, no space at either end. */
+static void syn_name_set(one_t *s, const char *v) {
+    char t[SYN_NAME_MAX + 1];
+    int n = 0;
+    for (const char *p = v; *p && n < SYN_NAME_MAX; p++) {
+        unsigned char ch = (unsigned char)*p;
+        if (ch < 32 || ch > 126 || ch == ';' || ch == '|' || ch == '\\') continue;
+        if (ch == ' ' && n == 0) continue;
+        t[n++] = (char)ch;
+    }
+    while (n > 0 && t[n - 1] == ' ') n--;
+    t[n] = 0;
+    uint32_t q = __atomic_load_n(&s->nm_seq, __ATOMIC_RELAXED);
+    __atomic_store_n(&s->nm_seq, q + 1, __ATOMIC_RELAXED);
+    __atomic_thread_fence(__ATOMIC_RELEASE);
+    for (int i = 0; i <= SYN_NAME_MAX; i++) __atomic_store_n(&s->syn_name[i], i <= n ? t[i] : 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&s->nm_seq, q + 2, __ATOMIC_RELEASE);
+}
+static int syn_name_text(one_t *s, char *buf, int n) {   /* safe from any thread (after a few tries: what it has) */
+    char t[SYN_NAME_MAX + 1];
+    for (int tries = 0; tries < 8; tries++) {
+        uint32_t a = __atomic_load_n(&s->nm_seq, __ATOMIC_ACQUIRE);
+        if (a & 1u) continue;
+        for (int i = 0; i <= SYN_NAME_MAX; i++) t[i] = __atomic_load_n(&s->syn_name[i], __ATOMIC_RELAXED);
+        __atomic_thread_fence(__ATOMIC_ACQUIRE);
+        if (__atomic_load_n(&s->nm_seq, __ATOMIC_RELAXED) == a) break;
+    }
+    t[SYN_NAME_MAX] = 0;
+    return snprintf(buf, n, "%s", t);
+}
+
 /* a readout of this Synth (src/synths.h get_param: its key without the "s2_" prefix) */
 static int synth_get(one_t *s, const char *key, char *buf, int n) {
+    if (!strcmp(key, "syn_name")) return syn_name_text(s, buf, n);   /* (2026-10-30) its name ("" none) */
     if (!strcmp(key, "pad_now"))   /* (2026-10-30) a test readout: the X/Y pad as this Synth has it (X, Y, gate) */
         return snprintf(buf, n, "%.4f %.4f %.0f", s->pad_x, s->pad_y, s->pad_gate);
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);
