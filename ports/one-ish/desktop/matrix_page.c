@@ -88,7 +88,9 @@ void mx_edit_mods(ed_t *e, int src) {
 }
 
 /* ---- where things are ---- */
-RECT mx_title_rect(void) { RECT r = L.tabline; r.right = r.left + sc(96); return r; }
+/* (2026-10-30, merge) the title line, left to right: who (Synth 1 ..), SOURCE, DEST, CLEAR, then CABLES (cables.c,
+ * cb_button_rect: 126 .. 72 from the line's right end) and the sub-page arrows: none overlap at any window size */
+RECT mx_title_rect(void) { RECT r = L.tabline; r.right = r.left + sc(52); return r; }
 static RECT setup_btn(int row, int c) {
     RECT cell = setup_cell(row, c), r = {cell.right - sc(32), cell.top + sc(1), cell.right, cell.bottom - sc(1)};
     return r;
@@ -110,7 +112,7 @@ RECT mx_rect(ed_t *e, int z) {
     RECT r = {0, 0, 0, 0}, t = L.tabline;
     if (e->screen == SCR_MATRIX) {
         if (z >= Z_MX_FSRC && z <= Z_MX_CLEAR) {
-            static const short X[3][2] = {{98, 82}, {184, 90}, {278, 36}};
+            static const short X[3][2] = {{54, 78}, {135, 72}, {210, 34}};   /* (left, width): see mx_title_rect */
             int k = z - Z_MX_FSRC;
             if (z == Z_MX_CLEAR && !mx_filtering(e)) return r;
             SetRect(&r, t.left + sc(X[k][0]), t.top + sc(1), t.left + sc(X[k][0] + X[k][1]), t.bottom - sc(1));

@@ -860,7 +860,9 @@ static void draw_matrix(HDC dc, ed_t *e, int subs) {
         int n = 0;
         for (int c = 0; c < NSYNTHS; c++)
             if (e->focus_mask >> c & 1u) n += snprintf(who + n, sizeof who - n, n ? "+%d" : "SYNTH %d", c + 1);
-        snprintf(t, sizeof t, "%s  |  MATRIX", who);
+        /* (2026-10-30, merge) just who: the filters, CLEAR and CABLES share this line (several Synths: S 1+2+3) */
+        snprintf(t, sizeof t, "%s", strchr(who, '+') ? who + 4 : who);
+        if (strchr(who, '+')) t[0] = 'S';
         text(dc, &tr, t, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         int sl = NMATRIX ? MATRIX[0][MX_SRC] : -1, dl = NMATRIX ? MATRIX[0][MX_DST] : -1;
         snprintf(v, sizeof v, "SOURCE: %s", e->mx.fsrc > 0 && sl >= 0 ? PARAMS[sl].opts[e->mx.fsrc] : "ALL");
