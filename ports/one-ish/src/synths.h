@@ -169,9 +169,12 @@ static void midi(void *inst, const uint8_t *m, int len) {
             note = r;
         }
     }
+    /* (2026-10-30) LINK on the X/Y pad (link_pad, shared): the pad's CCs reach every Synth, whatever its channel */
+    int pad_all = st == 0xb0 && len > 2 && in->syn[0]->val[P_LINK_PAD] > 0.5f &&
+                  (note == PAD_X_CC || note == PAD_Y_CC || note == PAD_TOUCH_CC);
     for (int c = 0; c < NSYN; c++) {
         one_t *s = in->syn[c];
-        int ok = chan_ok(in, c, ch);
+        int ok = pad_all || chan_ok(in, c, ch);   /* (pad_all: only the pad's CCs, never a key) */
         uint16_t bit = (uint16_t)(1u << ch);
         if (st == 0x90 && len > 2 && vel) {   /* a key: to the Synths on, whose range has it */
             if (!ok || s->val[P_SYN_ON] < 0.5f || note < s->val[P_KEY_LO] || note > s->val[P_KEY_HI]) continue;
@@ -330,6 +333,9 @@ static void legacy_defaults(inst_t *in) {   /* (after load_defaults) every Synth
     }
 }
 
+/* (2026-10-30) every state says ";ctl=2" after its "v=": CTRL 1/2's Auto targets as they are since 2026-10-30. A
+ * state without it is older: its Auto CTRLs keep the targets they had then (engine.c fx_auto_compat). */
+#define STATE_CTL ";ctl=2"
 static int state_keeps(const one_t *s, int i) {
     if (!KEYS[i][0] || s->val[i] == s->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD ||
         i == P_SYN_SOLO) return 0;
@@ -396,14 +402,14 @@ static int get_state(inst_t *in, char *buf, int n) {
     for (int c = 0; c < NSYN; c++) positions_capture(in->syn[c]);   /* LOAD SAVED POS: the wheel and pad now */
     for (v2 = 0; v2 < 2; v2++) {   /* every Synth in v=1, else in v=2 */
         prev[0] = 0;
-        used = snprintf(buf, n, v2 ? "v=2;dv=%d" : "v=1;dv=%d", STATE_DV);
+        used = snprintf(buf, n, v2 ? "v=2;dv=%d" STATE_CTL : "v=1;dv=%d" STATE_CTL, STATE_DV);
         for (int c = 0; c < NSYN; c++) used = state_synth(in->syn[c], v2, prev, buf, n, used);
         if (used < n) break;
     }
     while (used >= n && last > 0) {   /* too long even so: the last Synths left out */
         last--;
         prev[0] = 0;
-        used = snprintf(buf, n, "v=2;dv=%d", STATE_DV);
+        used = snprintf(buf, n, "v=2;dv=%d" STATE_CTL, STATE_DV);
         for (int c = 0; c <= last; c++) used = state_synth(in->syn[c], 1, prev, buf, n, used);
     }
     if (used >= n) {
@@ -443,6 +449,10 @@ static void state_walk(inst_t *in, const char *str, void (*fn)(inst_t *, int, co
 }
 static void state_value(inst_t *in, int arg, const char *key, const char *val) {   /* one value of a whole state */
     (void)arg;
+    if (!strcmp(key, "ctl")) {   /* (2026-10-30) a state from since Auto's CTRL targets changed */
+        for (int d = 0; d < NSYN; d++) in->syn[d]->ctrl_seen = 3;
+        return;
+    }
     const char *rest;
     int c = key_synth(key, &rest);
     if (c >= NSYN) return;   /* (a Synth this build doesn't have) */
@@ -460,6 +470,7 @@ static void set_state(inst_t *in, const char *str) {
         load_defaults(in->syn[c]);
         sq_clear(&in->syn[c]->sq.q);   /* and one saved without a sequence has none, */
         tun_clear(&in->syn[c]->tun);   /* nor a scale */
+        in->syn[c]->ctrl_seen = 0;
     }
     if (state_dv(str) < 1) legacy_defaults(in);   /* (saved before 2026-10-30: what it leaves out, as then) */
     state_walk(in, str, state_value, 0);
@@ -467,6 +478,7 @@ static void set_state(inst_t *in, const char *str) {
         one_t *s = in->syn[c];
         for (int k = 0; k < P_COUNT && c; k++)
             if (engine_global(k)) s->val[k] = in->syn[0]->val[k];   /* (the retired keys set Synth 1's) */
+        fx_auto_compat(s);   /* (2026-10-30) a state from before Auto's CTRL targets changed sounds as it did */
         s->sq.lost = 0;
         sq_lanes_changed(s);
         synth_after(s, -1);
@@ -480,6 +492,7 @@ static int load_skip(int k) {
 }
 static void load_value(inst_t *in, int c, const char *key, const char *val) {
     one_t *s = in->syn[c];
+    if (!strcmp(key, "ctl")) { s->ctrl_seen = 3; return; }   /* (2026-10-30: fx_auto_compat) */
     if (!strcmp(key, "seq")) { sq_decode(val, &s->sq.q, MD_COUNT, MS_COUNT); return; }
     if (tun_value(s, key, val)) return;   /* the sound's scale and keyboard map */
     if (store_retired(s, key, val)) {   /* (an old patch's bend range; dly_pp, a shared one, is put back) */
@@ -503,7 +516,9 @@ static void synth_load(inst_t *in, int c, const char *str) {
     if (state_dv(str) < 1) legacy_s1(s);   /* (a sound saved before 2026-10-30: no aftertouch / pad / ribbon rows) */
     sq_clear(&s->sq.q);
     tun_clear(&s->tun);
+    s->ctrl_seen = 0;
     state_walk(in, str, load_value, c);
+    fx_auto_compat(s);   /* (2026-10-30) */
     s->sq.lost = 0;
     sq_lanes_changed(s);
     synth_after(s, -1);
@@ -517,7 +532,7 @@ static int synth_state(inst_t *in, int c, char *buf, int n) {
     one_t *s = in->syn[c];
     const one_t *s0 = in->syn[0];
     positions_capture(s);   /* LOAD SAVED POS: the wheel and pad as they are now */
-    int used = snprintf(buf, n, "v=1;dv=%d", STATE_DV);
+    int used = snprintf(buf, n, "v=1;dv=%d" STATE_CTL, STATE_DV);
     for (int i = 0; i < P_COUNT; i++) {
         if (!KEYS[i][0] || load_skip(i) || s->val[i] == s0->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC
             || i == P_SEQ_STEP_MOD)

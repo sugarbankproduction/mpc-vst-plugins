@@ -88,7 +88,8 @@ enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 100
        HT_TOGETHER,           /* 1: TOGETHER is lit */
        HT_HELP,               /* the help line now, into ptr (1 KB); returns its length */
        HT_GEN_ARMED,          /* (2026-10-30) the RESET half waiting for its second click (a Z_GEN_RESET*), else 0 */
-       HT_RND_VOICING };      /* (2026-10-30) the RANDOM page's MONO / POLY / BOTH (RV_*) */
+       HT_RND_VOICING,        /* (2026-10-30) the RANDOM page's MONO / POLY / BOTH (RV_*) */
+       HT_PEEK };             /* (2026-10-30) an engine readout: ptr in, its key; out, its text (1 KB) */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };

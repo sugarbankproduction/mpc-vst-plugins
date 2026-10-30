@@ -82,11 +82,25 @@ static const char *help_for(int i) {
         {"key_center", "Key tracking centre: the note around which key tracking turns cutoffs and envelopes neither up nor down."},
         {"master_tune", "Master tune: the pitch of A, 440 Hz as standard."},
         {"fine_tune", "Fine tune, in cents."},
-        {"modfx_type", "The synth effect: delays, flangers, choruses, phasers, a bit crusher, resonators, granular, tape and console colour. Its MORE page shows its own controls."},
-        {"modfx_ctrl1", "CTRL 1: moves the effect's most useful control (or the one set as its target on the MORE page), plus or minus."},
-        {"modfx_ctrl2", "CTRL 2: moves a second effect control (its target is on the MORE page)."},
-        {"modfx_c1_dst", "CTRL 1 target: the effect control CTRL 1 moves (Auto: the most useful one for the type)."},
-        {"modfx_c2_dst", "CTRL 2 target: the effect control CTRL 2 moves (Auto: a second useful one for the type)."},
+        {"modfx_type", "The synth effect: delays, flangers, choruses, phasers, a bit crusher, resonators, two granular types (GRANULAR, and GRAINS with a 6 s memory, freeze and reverse), vocoders, tape and console colour. Its MORE page shows its own controls."},
+        {"modfx_ctrl1", "CTRL 1: moves the effect's most audible control, plus or minus; its name is written under the knob (set another on the MORE page)."},
+        {"modfx_ctrl2", "CTRL 2: moves the effect's second most audible control; its name is written under the knob (set another on the MORE page)."},
+        {"modfx_c1_dst", "CTRL 1 target: the effect control CTRL 1 moves (Auto: the type's most audible one, never MIX: MIX has its own knob)."},
+        {"modfx_c2_dst", "CTRL 2 target: the effect control CTRL 2 moves (Auto: the type's second most audible one)."},
+        /* (2026-10-30) GRAINS (src/fx/grains.h) and the X/Y pad's LINK */
+        {"modfx_freeze", "Freeze (GRANULAR and GRAINS): holds what the effect has recorded; the grains go on playing it, nothing new goes in. Click again to let go."},
+        {"modfx_spray", "Spray (GRAINS): each grain starts up to this much further back at random (up to 2 s): from a steady echo to a scattered cloud."},
+        {"modfx_prand", "Pitch random (GRAINS): each grain's pitch moves at random by up to 12 semitones either way (with PITCH QUANTISE: in its steps)."},
+        {"modfx_reverse", "Reverse (GRAINS): the chance that a grain plays backwards (0%: none, 100%: all)."},
+        {"modfx_gquant", "Pitch quantise (GRAINS): each grain's pitch (PITCH plus PITCH RANDOM) kept to semitones, octaves, or octaves and fifths (shimmer)."},
+        {"_gpos", "Grain position (GRAINS on a master slot): how far back in its 6 s memory the grains start (0: just now)."},
+        {"_gdens", "Grain density (GRAINS on a master slot): how many grains start a second, 1 to 150."},
+        {"_genv", "Grain envelope (GRAINS on a master slot): 0% nearly square, 50% smooth (Hann), 100% a sharp attack and long fade."},
+        {"_gspray", "Spray (GRAINS on a master slot): each grain starts up to this much further back at random."},
+        {"_gprand", "Pitch random (GRAINS on a master slot): each grain's pitch moves at random by up to 12 semitones either way."},
+        {"_greverse", "Reverse (GRAINS on a master slot): the chance that a grain plays backwards."},
+        {"_gquant", "Pitch quantise (GRAINS on a master slot): grain pitches kept to semitones, octaves, or octaves and fifths."},
+        {"link_pad", "LINK (X/Y pad): lit, moving the pad drives Pad X, Pad Y and the pad's gate in all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"modfx_gain", "Wet gain: the level of the effect's output (50% = as it comes)."},
         {"mfx_series", "FX 1 > FX 2: how much of master effect 1 goes on into effect 2 (Dual Mono)."},
         {"mfx_width", "Width of the master effects: 0% mono, 100% normal, 200% extra wide."},
@@ -537,6 +551,32 @@ void knob_geom(int i, float *cx, float *cy, float *r, int *label_y) {   /* where
     if (label_y) *label_y = top + d + sc(10);
 }
 
+/* (2026-10-30) CTRL 1 / CTRL 2's label: the control it moves now (its value text without the amount, short), so the
+ * panel says what the knob does for the type chosen; 0 for any other knob */
+static int ctrl_label(ed_t *e, int src, char *out, int n) {
+    static const struct { const char *name, *abbr; } AB[] = {
+        {"Delay Time R", "TIME R"}, {"Delay Time", "TIME"}, {"Feedback Left", "FB L"}, {"Feedback Right", "FB R"},
+        {"Feedback R", "FDBK R"}, {"Feedback", "FDBK"}, {"Delay FB", "DLY FB"}, {"Sample Rate", "S RATE"},
+        {"Resonance", "RESO"}, {"Cutoff Low", "CUT LO"}, {"Cutoff Mid", "CUT MID"}, {"Cutoff High", "CUT HI"},
+        {"Structure", "STRUCT"}, {"Position", "POS"}, {"Density", "DENSITY"}, {"Texture", "TEXTURE"},
+        {"Head Bump", "BUMP"}, {"Low Cut", "LOW CUT"}, {"Crossover", "XOVER"}, {"Sibilance", "SIBIL"},
+        {"Sensitivity", "SENS"}, {"Pitch Random", "P RAND"}, {"Vib Rate", "VIB RT"}, {"Vib Depth", "VIB DP"}};
+    const char *k = PARAMS[src].key;
+    size_t kl = strlen(k);
+    if (kl < 11 || strncmp(k + kl - 11, "modfx_ctrl", 10)) return 0;
+    char t[64];
+    param_text(e, src, t, sizeof t);   /* "<target> +20%" */
+    char *sp = strrchr(t, ' ');
+    if (!sp) return 0;
+    *sp = 0;
+    for (unsigned a = 0; a < sizeof AB / sizeof AB[0]; a++)
+        if (!strcmp(t, AB[a].name)) { snprintf(out, n, "%s", AB[a].abbr); return 1; }
+    int j = 0;
+    for (; t[j] && j < n - 1 && j < 8; j++) out[j] = (char)(t[j] >= 'a' && t[j] <= 'z' ? t[j] - 32 : t[j]);
+    out[j] = 0;
+    return j > 0;
+}
+
 static void draw_knob(HDC dc, ed_t *e, int i) {
     const RECT *b = &L.ctl[i];
     int small = L.kind[i] == K_SMALL, lh = sc(12), vh = small ? 0 : sc(11), ly;
@@ -546,7 +586,9 @@ static void draw_knob(HDC dc, ed_t *e, int i) {
     float v = ed_get(e, src);   /* the focused Synth's (Panel Focus) */
     knob(cx, cy, r, v, PARAMS[src].min < 0 && PARAMS[src].max > 0);
     int tw = rw(b) > sc(76) ? rw(b) : sc(76);
-    text_c(dc, (int)cx, ly, tw, lh + 2, src != i ? "MASTER" : L.label[i], font_label,
+    char cl[16];
+    const char *lab = src != i ? "MASTER" : ctrl_label(e, src, cl, sizeof cl) ? cl : L.label[i];
+    text_c(dc, (int)cx, ly, tw, lh + 2, lab, font_label,
            src == e->hover ? (src != i ? RGB(255, 214, 150) : T_HOT) : src != i ? RGB(232, 190, 120) : T_LABEL);
     if (!small) {   /* the value no wider than its cell (and a little), so neighbours' values don't run together */
         char val[64];

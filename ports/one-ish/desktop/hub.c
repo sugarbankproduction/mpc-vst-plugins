@@ -381,6 +381,13 @@ intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt) {
         if (opt > 0.5f) e->pt.msg[0] = e->st.msg[0] = e->qm.msg[0] = e->sq.msg[0] = 0;
         help_line(e, buf, 1024);
         return (intptr_t)strlen(buf);
+    case HT_PEEK: {   /* (2026-10-30) an engine readout: its key in buf, its text back in buf */
+        if (!buf) return -1;
+        char k[64];
+        snprintf(k, sizeof k, "%s", buf);
+        buf[0] = 0;
+        return hr_peek(e->hr, k, buf, 1024);
+    }
     }
     return 0;
 }

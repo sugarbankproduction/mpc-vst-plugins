@@ -6,12 +6,14 @@
  * Each channel runs its own line, so a mono input (both channels equal) and a panned stereo input both work.
  * The open-source types: Mutable Instruments Rings and Clouds (mi_effects.h, C++ behind a C interface) and the
  * Airwindows ToTape6, Density and Console7 (airwindows.h). Only one type runs at a time, so they are built over the
- * delay lines' memory: no memory of their own. The vocoders (vocoder.h, 2026-10-29) likewise. */
+ * delay lines' memory: no memory of their own. The vocoders (vocoder.h, 2026-10-29) and GRAINS (grains.h, 2026-10-30)
+ * likewise (GRAINS' grain pool adds about 3 KB to the union). */
 #pragma once
 #include "common.h"
 #include "mi_effects.h"
 #include "airwindows.h"
 #include "vocoder.h"
+#include "grains.h"
 
 #define SFX_SIZE 131072   /* 2.97 s per channel: delay-type times up to 2 s, plus modulation */
 #define SFX_MASK (SFX_SIZE - 1)
@@ -26,6 +28,7 @@ typedef struct {
         aw_density_t dens;
         aw_console7_t cons;
         voc_t voc;   /* the 10 and 16 band vocoders */
+        gr_t gr;     /* GRAINS (2026-10-30): its 5.9 s buffer over the lines, and its grain pool */
     };
     int w;
     float ph, ph_r, vph, wph;         /* LFO phases: left, right, vibrato/flutter, tape wow */
@@ -367,6 +370,7 @@ static void sfx_process(sfx_t *f, const fxs_params_t *p, const float *inL, const
         break;
     case SFX_SDELAY: case SFX_PINGPONG: sfx_sdelay(f, p, inL, inR, wl, wr, n); break;
     case SFX_VOC10: case SFX_VOC16: voc_process(&f->voc, p, p->voc_mod, inL, inR, wl, wr, n); break;
+    case SFX_GRAINS: gr_process(&f->gr, p, inL, inR, wl, wr, n); break;
     default: sfx_mod_lines(f, p, inL, inR, wl, wr, n); break;
     }
 }
@@ -388,6 +392,7 @@ static void sfx_init(sfx_t *f, const fxs_params_t *p) {
     case SFX_CONSOLE: aw_console7_init(&f->cons); break;
     case SFX_VOC10: voc_init(&f->voc, 10); break;
     case SFX_VOC16: voc_init(&f->voc, 16); break;
+    case SFX_GRAINS: gr_init(&f->gr); break;
     default: break;
     }
 }

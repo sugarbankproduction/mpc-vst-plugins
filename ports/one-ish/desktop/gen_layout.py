@@ -48,6 +48,7 @@ SFX_COMMON = [("modfx_gain", "Wet Gain"), ("modfx_c1_dst", "CTRL 1 Target"),
               ("modfx_c2_dst", "CTRL 2 Target"), ("modfx_on", "On"), ("modfx_mix", "Mix"), ("modfx_ctrl1", "CTRL 1"),
               ("modfx_ctrl2", "CTRL 2")]
 RINGS, CLOUDS = "Modal Resonator", "Granular"   # Mutable Instruments Rings and Clouds (src/fx/mi_effects.*)
+GRAINS = "Grains"   # (2026-10-30) the original granular type (src/fx/grains.h)
 AW_TAPE, AW_DENSITY, AW_CONSOLE = "Tape Color", "Density", "Console"   # Airwindows (src/fx/airwindows.h)
 SFX_USES = [   # key, label, the types that use it
     ("modfx_model", "Resonator Model", [RINGS]),
@@ -57,14 +58,18 @@ SFX_USES = [   # key, label, the types that use it
     ("modfx_dtime_r", "Delay Time R", TWO_TAP),
     ("modfx_time", "Time", LINES),
     ("modfx_time_r", "Time R", ["Stereo Flanger", "Stereo Chorus"]),
-    ("modfx_pitch", "Pitch", [RINGS, CLOUDS]),
+    ("modfx_pitch", "Pitch", [RINGS, CLOUDS, GRAINS]),
     ("modfx_follow", "Key Follow", [RINGS]),
     ("modfx_struct", "Structure", [RINGS]),
-    ("modfx_pos", "Position", [RINGS, CLOUDS]),
-    ("modfx_size", "Grain Size", [CLOUDS]),
-    ("modfx_density", "Density", [CLOUDS]),
-    ("modfx_texture", "Texture", [CLOUDS]),
-    ("modfx_freeze", "Freeze", [CLOUDS]),
+    ("modfx_pos", "Position", [RINGS, CLOUDS, GRAINS]),
+    ("modfx_size", "Grain Size", [CLOUDS, GRAINS]),
+    ("modfx_density", "Density", [CLOUDS, GRAINS]),
+    ("modfx_texture", "Texture / Envelope", [CLOUDS, GRAINS]),   # Grains: its grain ENVELOPE
+    ("modfx_spray", "Spray", [GRAINS]),
+    ("modfx_prand", "Pitch Random", [GRAINS]),
+    ("modfx_gquant", "Pitch Quantise", [GRAINS]),
+    ("modfx_reverse", "Reverse", [GRAINS]),
+    ("modfx_freeze", "Freeze", [CLOUDS, GRAINS]),
     ("modfx_drive", "Drive", [AW_TAPE, AW_DENSITY, AW_CONSOLE]),
     ("modfx_bump", "Head Bump", [AW_TAPE]),
     ("modfx_lowcut", "Low Cut", [AW_DENSITY]),
@@ -74,13 +79,14 @@ SFX_USES = [   # key, label, the types that use it
     ("modfx_depth_r", "Depth R", ["Stereo Delay"]),
     ("modfx_offset", "Offset", ["Ping Pong"]),
     ("modfx_sweep", "Sweep", PHASERS),
-    ("modfx_fb", "Feedback", [*DELAYS, *LINES, *PHASERS, CLOUDS, *TWO_TAP]),
+    ("modfx_fb", "Feedback", [*DELAYS, *LINES, *PHASERS, CLOUDS, *TWO_TAP, GRAINS]),
     ("modfx_fb_r", "Feedback R", ["Stereo Flanger", "Stereo Chorus"]),
     ("modfx_fbl", "Feedback Left", ["Stereo Delay"]),
     ("modfx_fbr", "Feedback Right", ["Stereo Delay"]),
     ("modfx_dfb", "Delay Feedback", ["Time Phaser"]),
     ("modfx_tone", "Tone", [*DELAYS, *LINES, *PHASERS, RINGS, AW_TAPE, *TWO_TAP, *VOCODERS]),
-    ("modfx_spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS, CLOUDS]),
+    ("modfx_spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS, CLOUDS,
+                                GRAINS]),
     ("modfx_vrate", "Vibrato Rate", ["Dual Chorus", "Ensemble"]),
     ("modfx_vdepth", "Vibrato Depth", ["Dual Chorus", "Ensemble"]),
     ("modfx_noise", "Noise", ["BBD Delay", *LINES, *PHASERS, *VOCODERS]),
@@ -113,9 +119,16 @@ MFX_USES = [
     ("time", "Time", [*DELAYS, *LINES, "Time Phaser", *TWO_TAP]),
     ("time_r", "Time R", ["Stereo Flanger", "Stereo Chorus", *TWO_TAP]),
     ("decay", "Decay", ["Plate", "Room", "Hall", "Space", "Shimmer", "Echo"]),
-    ("size", "Size", REVERBS),
+    ("size", "Size", [*REVERBS, GRAINS]),   # (Grains: its grain size)
+    ("gpos", "Grain Position", [GRAINS]),
+    ("gdens", "Grain Density", [GRAINS]),
+    ("genv", "Grain Envelope", [GRAINS]),
+    ("gspray", "Spray", [GRAINS]),
+    ("gprand", "Pitch Random", [GRAINS]),
+    ("gquant", "Pitch Quantise", [GRAINS]),
+    ("greverse", "Reverse", [GRAINS]),
     ("pre", "Pre-delay", [*CLASSIC, "Blackhole"]),
-    ("fb", "Feedback", [*DELAYS, *LINES, *PHASERS, *TWO_TAP, "Blackhole"]),   # (the blackhole's: its decay)
+    ("fb", "Feedback", [*DELAYS, *LINES, *PHASERS, *TWO_TAP, "Blackhole", GRAINS]),   # (the blackhole's: its decay)
     ("fb_r", "Feedback R", ["Stereo Flanger", "Stereo Chorus"]),
     ("fbl", "Feedback Left", ["Stereo Delay"]),
     ("fbr", "Feedback Right", ["Stereo Delay"]),
@@ -138,13 +151,13 @@ MFX_USES = [
     ("llevel", "Low Level", ["Room", "Hall", "Blackhole"]),
     ("ldecay", "Low Decay", ["Hall", "Shimmer"]),
     ("hdecay", "High Decay", ["Hall", "Shimmer"]),
-    ("pitch", "Pitch A", ["Shimmer"]),
+    ("pitch", "Pitch A", ["Shimmer", GRAINS]),   # (Grains: its pitch, in cents)
     ("pitch_b", "Pitch B", ["Shimmer"]),
     ("pdecay", "Pitch Decay", ["Shimmer"]),
     ("gravity", "Gravity", ["Blackhole"]),
     ("reso", "Resonance", ["Blackhole", "Resonator"]),
     ("sweep", "Sweep", PHASERS),
-    ("spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS]),
+    ("spread", "Spread", ["Flanger", "Stereo Flanger", "Chorus", "Ensemble", "Stereo Chorus", *PHASERS, GRAINS]),
     ("vrate", "Vibrato Rate", ["Dual Chorus", "Ensemble"]),
     ("vdepth", "Vibrato Depth", ["Dual Chorus", "Ensemble"]),
     ("noise", "Noise", ["BBD Delay", *LINES, *PHASERS, *VOCODERS]),
@@ -164,7 +177,7 @@ MFX_USES = [
     ("lvl2", "Level Mid", ["Resonator"]),
     ("cut3", "Cutoff High", ["Resonator"]),
     ("lvl3", "Level High", ["Resonator"]),
-    ("freeze", "Hold", REVERBS),
+    ("freeze", "Hold", [*REVERBS, GRAINS]),   # (Grains: any hold freezes its buffer)
     ("sync", "Tempo Sync", [*DELAYS, *LINES, *PHASERS, "Resonator", *TWO_TAP, "Blackhole"]),
 ]
 MFX_COMMON = [("mix", "Mix"), ("gain", "Gain")]
@@ -634,6 +647,8 @@ def build(lay):
     L.cells([("mfx_on", "ON", 40, "toggle"), ("mfx_send1", "SEND 1", 46), ("mfx_send2", "SEND 2", 46),
              ("mfx_series", "SERIES", 50), ("mfx_width", "WIDTH", 50)], X + 1786, 378, 64)
     L.ctl("link_send", "toggle", X + 1832, 446, 90, 14, "LINK SENDS", SIDE)   # (2026-10-30) the sends alike
+    # (2026-10-30) FREEZE: GRANULAR's and GRAINS' buffer held, a plain click on the panel
+    L.ctl("modfx_freeze", "toggle", X + 1548, 446, 70, 14, "FREEZE", SIDE)
     # the two master effect slots, any type each (by default a stereo delay and a plate): TYPE and the two knobs their
     # default types are played by most; every control of the chosen type is on the slot's MORE page
     L.panel(X + 1542, 468, 162, 128, "MASTER FX 1 - SHARED", more="DELAY")
@@ -673,6 +688,8 @@ def build(lay):
                   # the ribbon or the keyboard (quickmod.c); the computer keyboard's hint on the front rail
                   "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14),
                   "PANIC": (236, 691, 54, 13)})   # (2026-10-30) every note off, under glide's ON
+    # (2026-10-30) LINK beside the X/Y pad's name: lit, the pad plays all three Synths (src/synths.h midi)
+    L.ctl("link_pad", "toggle", 256, 822, 48, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     L.ctl("glide", "toggle", 236, 632, 42, 56, "ON")
     L.ctl("glide_type", "leds", 278, 624, 52, 76, "TYPE")
@@ -694,7 +711,8 @@ def build(lay):
         ("glide_type", "Glide Type"), ("glide_legato", "Legato Glide"), ("glide_gated", "Gated Glide"),
         ("glissando", "Glissando"),
         # the X/Y pad and the saved wheel and pad positions (2026-10-29)
-        ("pad_polarity", "Pad Polarity"), ("pad_hold", "Pad X/Y Hold"), ("load_pos", "Load Saved Pos"),
+        ("pad_polarity", "Pad Polarity"), ("pad_hold", "Pad X/Y Hold"), ("link_pad", "Link Pad (3 Synths)"),
+        ("load_pos", "Load Saved Pos"),
         ("wheel_pos", "Saved Mod Wheel"), ("pad_x_pos", "Saved Pad X"), ("pad_y_pos", "Saved Pad Y"),
         ("eg_times", "EG Times (MIN, Syncs)")])   # the envelopes' MIN and 13 synced values (2026-10-29)
     L.page("RIBBON", "RIBBON", "The touch strip over the keys (MIDI CC 16 position, CC 17 touch).", [

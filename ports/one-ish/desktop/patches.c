@@ -290,8 +290,9 @@ static void parse(char *t, char *state, int n, parsed_t *r) {
         trim(val);
         if (!strcmp(key, "name")) { snprintf(r->name, sizeof r->name, "%s", val); continue; }
         const char *base = key[0] == 's' && (key[1] == '2' || key[1] == '3') && key[2] == '_' ? key + 3 : key;
-        if (!strcmp(base, "seq") || !strcmp(base, "tun_scl") || !strcmp(base, "tun_kbm")) {   /* a Synth's steps
-                                                  * (src/stepseq.h) or scale and keyboard map (src/tuning.h): as they are */
+        if (!strcmp(base, "seq") || !strcmp(base, "tun_scl") || !strcmp(base, "tun_kbm") || !strcmp(key, "ctl")) {
+            /* a Synth's steps (src/stepseq.h) or scale and keyboard map (src/tuning.h), or the state's age (ctl,
+             * src/synths.h STATE_CTL: a file without it is from before 2026-10-30): as they are */
             int len = snprintf(NULL, 0, ";%s=%s", key, val);
             if (used + len >= n) { r->bad++; continue; }
             used += snprintf(state + used, n - used, ";%s=%s", key, val);
@@ -442,7 +443,7 @@ static void load_factory(ed_t *e, int prog) {
     } else {   /* the wrapper skips re-picking the current program: put its values back ourselves */
 #ifdef NPRESETS
         static char state[PATCH_STATE_MAX];
-        int used = snprintf(state, sizeof state, "v=1");
+        int used = snprintf(state, sizeof state, "v=1;ctl=2");   /* (ctl=2: src/synths.h STATE_CTL) */
         for (int k = 0; k < PRESETS[prog].n && used < (int)sizeof state; k++)
             used += snprintf(state + used, sizeof state - used, ";%s=%s", PARAMS[PRESETS[prog].values[k].param].key,
                              PRESETS[prog].values[k].value);
@@ -515,7 +516,7 @@ static int into_pos(ed_t *e, int pos) {
     char what[64];
     if (pos < nf) {
 #ifdef NPRESETS
-        int used = snprintf(state, sizeof state, "v=1");
+        int used = snprintf(state, sizeof state, "v=1;ctl=2");   /* (ctl=2: src/synths.h STATE_CTL) */
         for (int k = 0; k < PRESETS[pos].n && used < (int)sizeof state; k++) {
             const char *key = PARAMS[PRESETS[pos].values[k].param].key;
             if (synth_of(PRESETS[pos].values[k].param)) continue;   /* (its Synth 2 and 3: not this) */
@@ -556,7 +557,7 @@ static int synth_sound(ed_t *e, char *out, int n) {
     if (!current_state(e, st, sizeof st)) return 0;
     char pre[8] = "";
     if (e->focus) snprintf(pre, sizeof pre, "s%d_", e->focus + 1);
-    int used = snprintf(out, n, "v=1;dv=1"), pl = (int)strlen(pre);
+    int used = snprintf(out, n, "v=1;dv=1;ctl=2"), pl = (int)strlen(pre);
     static char seen[NPARAMS];   /* (2026-10-30) the focused Synth's keys the state lists */
     memset(seen, 0, sizeof seen);
     for (char *s = st; *s;) {
@@ -1417,7 +1418,7 @@ char *pt_saved_state(ed_t *e) {   /* the current patch's saved version, as a sta
     }
 #ifdef NPRESETS
     if (e->pt.bank == BANK_FACTORY && e->pt.prog >= 0 && e->pt.prog < NPRESETS) {
-        int used = snprintf(state, sizeof state, "v=1");
+        int used = snprintf(state, sizeof state, "v=1;ctl=2");   /* (ctl=2: src/synths.h STATE_CTL) */
         for (int k = 0; k < PRESETS[e->pt.prog].n && used < (int)sizeof state; k++)
             used += snprintf(state + used, sizeof state - used, ";%s=%s", PARAMS[PRESETS[e->pt.prog].values[k].param].key,
                              PRESETS[e->pt.prog].values[k].value);

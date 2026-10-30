@@ -1182,7 +1182,7 @@ static double energy_db(const float *l, const float *r, int from, int to) {
 static const char *const SFX_NAMES[SFX_NTYPES] = {"delay", "bbd", "tape", "echo", "flanger", "stereo_flanger", "chorus",
     "dual_chorus", "ensemble", "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator",
     "modal_resonator", "granular", "tape_color", "density", "console", "stereo_delay", "ping_pong", "vocoder10",
-    "vocoder16"};
+    "vocoder16", "grains"};
 static const char *const REV_NAMES[REV_NTYPES] = {"plate", "room", "hall", "space", "shimmer", "blackhole"};
 
 /* the master delay and reverb, and the routing around them */
@@ -3832,6 +3832,9 @@ static void matrix_wiring(void) {
         for (int i = 0; i < NPARAMS; i++) {
             const param_t *p = &PARAMS[i];
             if (!s1_key(p->key)) continue;
+            /* (2026-10-30) STEP MOD stays off (it is never saved): on, it takes the moves of the knobs after it in this
+             * list into the sequence instead (src/stepseq_run.h sq_step_mod), GRAINS' new ones among them */
+            if (!strcmp(p->key, "seq_step_mod")) continue;
             double def = p->nopts ? round(p->def * (p->nopts - 1)) : p->min + p->def * (p->max - p->min);
             double v = p->nopts ? fmod(def + 1, p->nopts) : p->min + (p->max - p->min) * 0.123457;
             if (!p->nopts && fabs(v - def) < 1e-3) v = p->min + (p->max - p->min) * 0.876543;
@@ -3857,7 +3860,11 @@ static void matrix_wiring(void) {
         for (int i = 0; i < NPARAMS; i++) {
             int skip = 0;
             for (unsigned t = 0; t < sizeof TRANSIENT / sizeof TRANSIENT[0]; t++) skip |= !strcmp(PARAMS[i].key, TRANSIENT[t]);
-            if (!skip) same &= get(a, PARAMS[i].key) == get(b, PARAMS[i].key);
+            if (!skip && get(a, PARAMS[i].key) != get(b, PARAMS[i].key)) {
+                if (same) printf("     (first not restored: %s %g, back as %g)\n", PARAMS[i].key, get(a, PARAMS[i].key),
+                                 get(b, PARAMS[i].key));
+                same = 0;
+            }
         }
         snprintf(what, sizeof what, "a state with %d of %d params off their defaults: %d bytes, restores every value", changed,
                  kept, n);
@@ -5194,6 +5201,7 @@ static void arp_wav(const char *demo_path) {
 #include "defaults_check.c"   /* (2026-10-30) the new defaults, old states, the effects' ONs, the hands, the randomiser */
 #include "robust_check.c"   /* (2026-10-30) robustness: envelopes end, routing, floods, panic, learn */
 #include "bank_check.c"     /* (2026-10-30) the factory banks: peak, loudness and CPU per preset */
+#include "grains_check.c"   /* (2026-10-30) GRAINS, Auto's CTRL targets, the X/Y pad's LINK */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5541,7 +5549,8 @@ static void macro_bench(void) {
  * controls, the shimmer and blackhole reverbs, holds, type switching ---- */
 static const char *const MFX_NAME[MFX_NTYPES] = {"plate", "room", "hall", "space", "shimmer", "blackhole", "stereo_delay",
     "ping_pong", "delay", "bbd", "tape", "echo", "flanger", "stereo_flanger", "chorus", "dual_chorus", "ensemble",
-    "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator", "vocoder10", "vocoder16"};
+    "stereo_chorus", "phaser6", "phaser12", "time_phaser", "bitcrusher", "resonator", "vocoder10", "vocoder16",
+    "grains"};
 
 /* run `p` over `in` (both channels) for n samples from a fresh state, changing nothing on the way */
 static void fx2_run(const fx_params_t *p, const float *in, float *l, float *r, int n) {
@@ -5963,6 +5972,7 @@ int main(int argc, char **argv) {
         gens_a_bench();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
         defaults_bench();   /* (2026-10-30) the new defaults */
         bank_bench_all();   /* (2026-10-30) the factory banks' presets: CPU */
+        grains_bench();   /* (2026-10-30) */
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "defaults")) {   /* (2026-10-30) just the new defaults: offline_check defaults */
@@ -5993,6 +6003,12 @@ int main(int argc, char **argv) {
     if (argc > 1 && !strcmp(argv[1], "gensa")) {   /* (2026-10-30) just LIFE, ORBITS, PENDULUMS: offline_check gensa */
         gens_a_checks();
         gens_a_bench();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "grains")) {   /* (2026-10-30) just GRAINS, Auto's CTRLs, the pad LINK */
+        grains_checks();
+        grains_bench();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -6120,6 +6136,7 @@ int main(int argc, char **argv) {
     defaults_checks();   /* (2026-10-30) */
     robust_checks();   /* (2026-10-30) robustness (test/robust_check.c) */
     bank_checks_all(argc > 1 ? argv[1] : "demo.wav");   /* (2026-10-30) the factory banks' presets (A and B) */
+    grains_checks();   /* (2026-10-30) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

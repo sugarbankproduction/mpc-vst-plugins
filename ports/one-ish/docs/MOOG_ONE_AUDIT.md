@@ -504,7 +504,7 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 | Effects can all be switched off for a pure dry path | p96 | Have | `modfx_on` and `mfx_on` Off; sends at 0 or mix 0 are exactly dry (tested) | - | none |
 | SYNTH EFFECT per Synth: one chosen type, mono in, stereo out, MIX always first | p96 | Have | `modfx_type` (22 types: 17 after the manual's list, 5 open-source), `modfx_mix`; mono in (the voices' sum), the wet at the synth pan, the dry keeps each voice's place | - | none/voice; shared 1.5-73 us per block by type |
 | Synth Effect ON button | on/off (p96) | Have | `modfx_on` | - | none |
-| CTRL 1 and CTRL 2 knobs, re-assignable to any effect parameter | p96-97 | Have | `modfx_ctrl1`/`modfx_ctrl2`: +-100% of the target's range on top of its knob; target `modfx_c1_dst`/`modfx_c2_dst`, Auto = the manual's pre-assignment per type | - | none |
+| CTRL 1 and CTRL 2 knobs, re-assignable to any effect parameter | p96-97 | Have | `modfx_ctrl1`/`modfx_ctrl2`: +-100% of the target's range on top of its knob; target `modfx_c1_dst`/`modfx_c2_dst`, Auto = the type's two most audible controls, never MIX (2026-10-30; the manual's pre-assignment before, kept for older states: see 18b) | - | none |
 | Effect presets per type: load, save, initialise to the type's defaults [UI] | p97-98, p101 | Missing | - | M | none |
 | Up to 5 effects at once (3 synth + 2 master) | p96 | Have | Three synth effects (one per Synth) and the two master effects (2026-10-28, offline and the desktop window) | - | shared medium |
 | MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Have | Each Synth's `mfx_send1` / `mfx_send2` into the shared master effects (their sum, `fx_master_multi`); returns added to the mix (2026-10-28, offline and the desktop window) | - | shared |
@@ -643,6 +643,17 @@ SPREAD, FEEDBACK and ROOM). **Tape Color**, **Density**, **Console**: Airwindows
 Rings 5-42 us by model (modal the most), Clouds 12-73 us by mode (spectral works in bursts of up to about 360 us),
 Tape Color 19-25, Density 10-15, Console 14-16. Their 14 params are on the synth effect's MORE page, each shown only
 for the types that use it (2026-10-29, desktop).
+
+**Grains** (2026-10-30, offline and the desktop DLL; an original design, `src/fx/grains.h`): a synth effect type and a
+master slot type, apart from Granular: a 5.9 s recording with FREEZE holding all of it, POSITION, SIZE (10-500 ms),
+DENSITY (1-150 a second), PITCH, SPRAY, PITCH RANDOM, PITCH QUANTISE (semitones, octaves, octaves and fifths), REVERSE,
+SPREAD, ENVELOPE (TEXTURE), FEEDBACK, MIX; a fixed pool of 64 grains. PC cost per 128-frame block, shared: 17 us at its
+defaults, 77 us at full density (PLAN.md item 30).
+
+**CTRL 1 / CTRL 2 on Auto** (2026-10-30, the owner's request): no longer the manual's pre-assignments in the tables
+above (which put MIX on CTRL 1 for most types, a second MIX knob): each type's two most audible controls, never MIX
+(`src/fx/common.h` FX_AUTO_CTRL; the old table is FX_AUTO_CTRL_V1, kept for older states, which keep their old
+targets). The panel shows the target's name under each knob.
 
 ### 18c. Eventide Master Effects (master bus only, one at a time) [LIC]
 

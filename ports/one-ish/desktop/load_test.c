@@ -2494,7 +2494,73 @@ static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
 static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void nav_tests(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+/* (2026-10-30) the X/Y pad's LINK and the synth effect's FREEZE, plain clicks on the panel. With Per Synth MIDI
+ * channels the pad (CC 2, CC 3, CC 18 on the window's channel) reaches Synth 1 only; LINK lit, all three. Read from the
+ * engine ("pad_now" readouts, TEST_HUB HT_PEEK) after the audio thread passed the pad's MIDI on. */
+static void pad_drag(AEffect *fx, HWND child, float s, float fx0, float fy0, float fx1, float fy1) {
+    float x0 = ZONE_PAD[0] + ZONE_PAD[2] * fx0, y0 = ZONE_PAD[1] + ZONE_PAD[3] * (1 - fy0);
+    float x1 = ZONE_PAD[0] + ZONE_PAD[2] * fx1, y1 = ZONE_PAD[1] + ZONE_PAD[3] * (1 - fy1);
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM((int)lroundf(x0 * s), (int)lroundf(y0 * s)));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM((int)lroundf(x1 * s), (int)lroundf(y1 * s)));
+    play(fx, 2, 512);   /* (the audio thread passes the window's MIDI on) */
+}
+static void pad_up(AEffect *fx, HWND child) { SendMessageA(child, WM_LBUTTONUP, 0, 0); play(fx, 2, 512); }
+static float pad_peek(AEffect *fx, int c, float *gate) {
+    enum { HT_PEEK_OP = 10 };   /* (editor.h HT_PEEK) */
+    static char b[1024];
+    snprintf(b, sizeof b, c ? "s%d_pad_now" : "pad_now", c + 1);
+    fx->dispatcher(fx, 50, TEST_HUB, HT_PEEK_OP, b, 0);
+    float x = -1, y = -1, g = -1;
+    sscanf(b, "%f %f %f", &x, &y, &g);
+    if (gate) *gate = g;
+    return x;
+}
+static void pad_link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    int mc = rnd_key("midi_ch");
+    float mc0 = pv(fx, "midi_ch");
+    if (mc < NPARAMS) fx->setParameter(fx, mc, 17.0f / (PARAMS[mc].nopts - 1));   /* Per Synth (2 and 3 on 2, 3) */
+    setkey(fx, "link_pad", 0);
+    float b2 = pad_peek(fx, 1, NULL), b3 = pad_peek(fx, 2, NULL), g1, g2, g3;
+    pad_drag(fx, child, s, 0.2f, 0.2f, 0.8f, 0.3f);
+    float x1 = pad_peek(fx, 0, &g1), x2 = pad_peek(fx, 1, NULL), x3 = pad_peek(fx, 2, NULL);
+    pad_up(fx, child);
+    int alone = x1 > 0.7f && x1 < 0.9f && g1 > 0.5f && x2 == b2 && x3 == b3;
+    click_ctl(child, s, "link_pad");   /* LINK, beside the pad's name */
+    int lit = pv(fx, "link_pad") > 0.5f;
+    pad_drag(fx, child, s, 0.5f, 0.5f, 0.3f, 0.9f);
+    x1 = pad_peek(fx, 0, &g1); x2 = pad_peek(fx, 1, &g2); x3 = pad_peek(fx, 2, &g3);
+    int all = x1 > 0.2f && x1 < 0.4f && x2 == x1 && x3 == x1 && g1 > 0.5f && g2 > 0.5f && g3 > 0.5f;
+    if (bmp) shot(child, w, h, bmp, "_pad_link");
+    pad_up(fx, child);
+    pad_peek(fx, 0, &g1); pad_peek(fx, 1, &g2); pad_peek(fx, 2, &g3);
+    int let_go = g1 < 0.5f && g2 < 0.5f && g3 < 0.5f;
+    snprintf(what, sizeof what, "X/Y pad LINK: off, the pad moves Synth 1 alone (%d); a click lights LINK (%d), then "
+             "the pad drives Pad X / Y and the gate in all three Synths (X %.3f %.3f %.3f, %d), let go in all three (%d)",
+             alone, lit, x1, x2, x3, all, let_go);
+    check(alone && lit && all && let_go, what);
+    void *chunk = NULL;   /* saved with the sound */
+    intptr_t n = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+    static char saved[300000];
+    if (n > 0 && n <= (intptr_t)sizeof saved) memcpy(saved, chunk, (size_t)n);
+    setkey(fx, "link_pad", 0);
+    if (n > 0 && n <= (intptr_t)sizeof saved) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, saved, 0);
+    check(pv(fx, "link_pad") > 0.5f, "X/Y pad LINK: saved with the sound (lit again after its chunk is loaded)");
+    click_ctl(child, s, "link_pad");
+    check(pv(fx, "link_pad") < 0.5f, "X/Y pad LINK: a second click puts it out");
+    float f0 = pv(fx, "modfx_freeze");
+    click_ctl(child, s, "modfx_freeze");
+    float f1 = pv(fx, "modfx_freeze");
+    click_ctl(child, s, "modfx_freeze");
+    snprintf(what, sizeof what, "FREEZE on the SYNTH EFFECT panel: a plain click switches it on (%.0f > %.0f) and off "
+             "(%.0f)", f0, f1, pv(fx, "modfx_freeze"));
+    check(f0 < 0.5f && f1 > 0.5f && pv(fx, "modfx_freeze") < 0.5f, what);
+    if (mc < NPARAMS) fx->setParameter(fx, mc, mc0);
+}
+
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    pad_link_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
     follow_tempo_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */

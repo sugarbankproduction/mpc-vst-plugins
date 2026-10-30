@@ -265,6 +265,11 @@ enum {
     P_GEN_FOLLOW,    /* (2026-10-30) FOLLOW TEMPO: the free-running generators' speeds follow the BPM (shared) */
     P_SEQ_OUTPUT,    /* (2026-10-30) the sequencer's OUTPUT: the Synths its notes play (src/stepseq_run.h) */
     P_DLY_ON, P_REV_ON,   /* (2026-10-30) MASTER FX 1 and 2 each on or off (shared; under the master ON) */
+    /* (2026-10-30) GRAINS (src/fx/grains.h): the synth effect's own controls, then each master slot's (BANK) */
+    P_MODFX_SPRAY, P_MODFX_PRAND, P_MODFX_REVERSE, P_MODFX_GQUANT,
+    P_DLY_GPOS, P_DLY_GDENS, P_DLY_GENV, P_DLY_GSPRAY, P_DLY_GPRAND, P_DLY_GREV, P_DLY_GQUANT,
+    P_REV_GPOS, P_REV_GDENS, P_REV_GENV, P_REV_GSPRAY, P_REV_GPRAND, P_REV_GREV, P_REV_GQUANT,
+    P_LINK_PAD,      /* (2026-10-30) LINK on the X/Y pad: its CCs reach all three Synths (src/synths.h midi) */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -419,6 +424,10 @@ static const char *const KEYS[P_COUNT] = {
     "gen_follow_tempo",   /* (2026-10-30) */
     "seq_output",   /* (2026-10-30) */
     "dly_on", "rev_on",   /* (2026-10-30) */
+    "modfx_spray", "modfx_prand", "modfx_reverse", "modfx_gquant",   /* (2026-10-30) GRAINS */
+    "dly_gpos", "dly_gdens", "dly_genv", "dly_gspray", "dly_gprand", "dly_greverse", "dly_gquant",
+    "rev_gpos", "rev_gdens", "rev_genv", "rev_gspray", "rev_gprand", "rev_greverse", "rev_gquant",
+    "link_pad",
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -447,6 +456,10 @@ static const short FXMD_SLOT[] = {
     P_REV_DISTANCE, P_REV_HIFREQ, P_REV_HLEVEL, P_REV_MLEVEL, P_REV_LLEVEL, P_REV_LDECAY, P_REV_HDECAY,
     P_REV_PITCH, P_REV_PITCH_B, P_REV_PDECAY, P_REV_GRAVITY, P_REV_XOVER, P_REV_BITS, P_REV_SRATE,
     P_REV_RESO, P_REV_CUT1, P_REV_CUT2, P_REV_CUT3, P_REV_LVL1, P_REV_LVL2, P_REV_LVL3,
+    /* (2026-10-30) GRAINS' (MDF_GR_SPRAY on) */
+    P_MODFX_SPRAY, P_MODFX_PRAND, P_MODFX_REVERSE,
+    P_DLY_GPOS, P_DLY_GDENS, P_DLY_GENV, P_DLY_GSPRAY, P_DLY_GPRAND, P_DLY_GREV,
+    P_REV_GPOS, P_REV_GDENS, P_REV_GENV, P_REV_GSPRAY, P_REV_GPRAND, P_REV_GREV,
 };
 _Static_assert(sizeof FXMD_SLOT / sizeof FXMD_SLOT[0] == MDF_COUNT, "an effect destination per MDF_* entry");
 /* each master effect slot's controls (fx.h; slot 1's were the delay's dly_* params, slot 2's the reverb's rev_*), in
@@ -458,6 +471,7 @@ enum {
     BK_DISTANCE, BK_HIFREQ, BK_HLEVEL, BK_MLEVEL, BK_LLEVEL, BK_LDECAY, BK_HDECAY, BK_PITCH, BK_PITCH_B, BK_PDECAY,
     BK_GRAVITY, BK_XOVER, BK_BITS, BK_SRATE, BK_RESO, BK_CUT1, BK_CUT2, BK_CUT3, BK_LVL1, BK_LVL2, BK_LVL3, BK_FTYPE,
     BK_SIBIL, BK_SENS,   /* the vocoders' (src/fx/vocoder.h) */
+    BK_GPOS, BK_GDENS, BK_GENV, BK_GSPRAY, BK_GPRAND, BK_GREV, BK_GQUANT,   /* (2026-10-30) GRAINS' */
     BK_COUNT };
 static const short BANK[2][BK_COUNT] = {
     {P_DLY_TYPE, P_DLY_MIX, P_DLY_GAIN, P_DLY_SYNC, P_DLY_TIME, P_DLY_TIME_R, P_DLY_FB, P_DLY_FB_R, P_DLY_FBL,
@@ -466,14 +480,16 @@ static const short BANK[2][BK_COUNT] = {
      P_DLY_DECAY, P_DLY_SIZE, P_DLY_PRE, P_DLY_DAMP, P_DLY_LOWDAMP, P_DLY_DIFF, P_DLY_MOD, P_DLY_EARLY, P_DLY_FREEZE,
      P_DLY_DISTANCE, P_DLY_HIFREQ, P_DLY_HLEVEL, P_DLY_MLEVEL, P_DLY_LLEVEL, P_DLY_LDECAY, P_DLY_HDECAY, P_DLY_PITCH,
      P_DLY_PITCH_B, P_DLY_PDECAY, P_DLY_GRAVITY, P_DLY_XOVER, P_DLY_BITS, P_DLY_SRATE, P_DLY_RESO, P_DLY_CUT1,
-     P_DLY_CUT2, P_DLY_CUT3, P_DLY_LVL1, P_DLY_LVL2, P_DLY_LVL3, P_DLY_FTYPE, P_DLY_SIBIL, P_DLY_SENS},
+     P_DLY_CUT2, P_DLY_CUT3, P_DLY_LVL1, P_DLY_LVL2, P_DLY_LVL3, P_DLY_FTYPE, P_DLY_SIBIL, P_DLY_SENS,
+     P_DLY_GPOS, P_DLY_GDENS, P_DLY_GENV, P_DLY_GSPRAY, P_DLY_GPRAND, P_DLY_GREV, P_DLY_GQUANT},
     {P_REV_TYPE, P_REV_MIX, P_REV_GAIN, P_REV_SYNC, P_REV_TIME, P_REV_TIME_R, P_REV_FB, P_REV_FB_R, P_REV_FBL,
      P_REV_FBR, P_REV_RATE, P_REV_RATE_R, P_REV_DEPTH, P_REV_DEPTH_R, P_REV_TONE, P_REV_OFFSET, P_REV_SPREAD,
      P_REV_NOISE, P_REV_SWEEP, P_REV_DFB, P_REV_VRATE, P_REV_VDEPTH, P_REV_FLUTTER, P_REV_WOW, P_REV_BIAS, P_REV_ROOM,
      P_REV_DECAY, P_REV_SIZE, P_REV_PRE, P_REV_DAMP, P_REV_LOWDAMP, P_REV_DIFF, P_REV_MOD, P_REV_EARLY, P_REV_FREEZE,
      P_REV_DISTANCE, P_REV_HIFREQ, P_REV_HLEVEL, P_REV_MLEVEL, P_REV_LLEVEL, P_REV_LDECAY, P_REV_HDECAY, P_REV_PITCH,
      P_REV_PITCH_B, P_REV_PDECAY, P_REV_GRAVITY, P_REV_XOVER, P_REV_BITS, P_REV_SRATE, P_REV_RESO, P_REV_CUT1,
-     P_REV_CUT2, P_REV_CUT3, P_REV_LVL1, P_REV_LVL2, P_REV_LVL3, P_REV_FTYPE, P_REV_SIBIL, P_REV_SENS},
+     P_REV_CUT2, P_REV_CUT3, P_REV_LVL1, P_REV_LVL2, P_REV_LVL3, P_REV_FTYPE, P_REV_SIBIL, P_REV_SENS,
+     P_REV_GPOS, P_REV_GDENS, P_REV_GENV, P_REV_GSPRAY, P_REV_GPRAND, P_REV_GREV, P_REV_GQUANT},
 };
 
 #define OCT_CENTRE 2   /* option index of 8' (no octave shift) in the "oct" lists */
@@ -697,6 +713,7 @@ typedef struct {
     ph_run_t ph;             /* THE BOUNCING BALLS AND PARTICLES (src/physgen_run.h; runtime only, never saved) */
     gb_run_t gb;             /* (2026-10-30) RAIN AND RIPPLES, MARKOV MELODY (src/gens_b_run.h; runtime only, never saved) */
     ga_run_t ga;             /* (2026-10-30) LIFE, ORBITS, PENDULUMS (src/gens_a_run.h; runtime only, never saved) */
+    int ctrl_seen;           /* (2026-10-30) the state being loaded is from since Auto's CTRL targets changed */
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
 static int pool_room(one_t *s, const int *idx, int n);   /* src/synths.h */
@@ -896,12 +913,12 @@ static void apply_matrix(one_t *s) {
     s->mod_lfo = md_lfo(rd);
     s->mod_nenv = md_nenv(rd) || s->sq.nenv_lanes;
     memset(s->fx_dst, 0, sizeof s->fx_dst);
-    if (rd >= MD_FX_FIRST && rd <= MD_FX_END) s->fx_dst[(rd - MD_FX_FIRST) >> 6] |= 1ull << ((rd - MD_FX_FIRST) & 63);
+    if (md_fxk(rd) >= 0) s->fx_dst[md_fxk(rd) >> 6] |= 1ull << (md_fxk(rd) & 63);
     for (int k = 0; k < n; k++) {
-        int d = (int)s->val[P_MOD_BASE + MOD_SLOT_PARAMS * all[k] + 1];
-        if (d >= MD_FX_FIRST && d <= MD_FX_END) {   /* (the MACRO destinations, past the effects, are the voices') */
+        int d = (int)s->val[P_MOD_BASE + MOD_SLOT_PARAMS * all[k] + 1], f = md_fxk(d);
+        if (f >= 0) {   /* (the MACRO destinations, past the effects, are the voices') */
             s->fx_list[s->fx_n++] = all[k];
-            s->fx_dst[(d - MD_FX_FIRST) >> 6] |= 1ull << ((d - MD_FX_FIRST) & 63);
+            s->fx_dst[f >> 6] |= 1ull << (f & 63);
             continue;
         }
         s->mod_list[s->mod_n++] = all[k];
@@ -2190,6 +2207,23 @@ static int fx_ctrl_dst(const one_t *s, int c) {
     return d == FXD_AUTO ? FX_AUTO_CTRL[(int)s->val[P_MODFX_TYPE]][c] : d;
 }
 
+/* (2026-10-30) Auto's targets changed (src/fx/common.h FX_AUTO_CTRL). States say so since (";ctl=2", src/synths.h);
+ * an older one that left a CTRL on Auto gets Auto's old target written in, when the CTRL does something there (its
+ * knob off centre, or a matrix slot, the ribbon or a sequencer lane moving it), so it sounds as it did. Called after a
+ * state's values are in (src/synths.h); s->ctrl_seen: the state was a new one. */
+static void fx_auto_compat(one_t *s) {
+    int type = (int)clampf(s->val[P_MODFX_TYPE], 0, SFX_NTYPES - 1);
+    for (int c = 0; c < 2; c++) {
+        int old = FX_AUTO_CTRL_V1[type][c], d = md_of_fxk(MDF_CTRL1 + c), used = s->val[P_MODFX_CTRL1 + c] != 0.0f;
+        if (s->ctrl_seen >> c & 1 || (int)s->val[P_MODFX_C1_DST + c] != FXD_AUTO || old == FX_AUTO_CTRL[type][c]) continue;
+        for (int k = 0; k < MOD_SLOTS; k++) used |= (int)s->val[P_MOD_BASE + MOD_SLOT_PARAMS * k + 1] == d;
+        used |= (int)s->val[P_RIBBON_DST] == d;
+        for (int l = 0; l < SQ_ML; l++) used |= s->sq.q.m[l].dest == d;
+        if (used) s->val[P_MODFX_C1_DST + c] = (float)old;
+    }
+    s->ctrl_seen = 0;
+}
+
 static int time_text(char *buf, int n, float ms) {
     if (ms < 1.0f) return snprintf(buf, n, "%.2f ms", ms);
     if (ms < 10.0f) return snprintf(buf, n, "%.1f ms", ms);
@@ -2304,6 +2338,8 @@ static int display_text(const one_t *s, int k, char *buf, int n) {
 
 /* a readout of this Synth (src/synths.h get_param: its key without the "s2_" prefix) */
 static int synth_get(one_t *s, const char *key, char *buf, int n) {
+    if (!strcmp(key, "pad_now"))   /* (2026-10-30) a test readout: the X/Y pad as this Synth has it (X, Y, gate) */
+        return snprintf(buf, n, "%.4f %.4f %.0f", s->pad_x, s->pad_y, s->pad_gate);
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);
     if (!strcmp(key, "rain_view")) return gb_view_text(s, 0, buf, n);     /* (2026-10-30) the pond (the window's view) */
     if (!strcmp(key, "markov_view")) return gb_view_text(s, 1, buf, n);   /* ... and the Markov melody's */
@@ -2635,7 +2671,7 @@ static void control_voice(one_t *s, voice_t *v) {
     memset(dm + MD_MAC_HARM, 0, sizeof(float) * (MD_COUNT - MD_MAC_HARM));
     mod_eval_list(&p[P_MOD_BASE], &p[P_MODX_BASE], s->mod_list, s->mod_n, src, s->bipolar, dm, MD_FX_FIRST);
     int rd = (int)p[P_RIBBON_DST];   /* the ribbon's quick assignment, to a voice destination */
-    if (rd > MD_OFF && (rd < MD_FX_FIRST || (rd > MD_FX_END && rd < MD_COUNT)))
+    if (rd > MD_OFF && rd < MD_COUNT && md_fxk(rd) < 0)
         dm[rd] += src[MS_RIBBON] * p[P_RIBBON_AMT] * 0.01f;
     for (int n = 0; n < NENV && s->mod_env; n++) v->multi_mat[n] = dm[MD_FENV_MULTI + MDS_COUNT * n + MDS_MULTI];
     if (s->sq.mod_live) sq_mod_voice(s, src, dm);   /* the sequencer's modulation lanes */
@@ -2982,6 +3018,8 @@ static const struct { short slot; float lo, hi; } FXD_SLOT[FXD_COUNT] = {
     [FXD_OFFSET] = {P_MODFX_OFFSET, 0, 100}, [FXD_FBL] = {P_MODFX_FBL, 0, 100}, [FXD_FBR] = {P_MODFX_FBR, 0, 100},
     [FXD_XOVER] = {P_MODFX_XOVER, 0, 100},
     [FXD_SIBIL] = {P_MODFX_SIBIL, 0, 100}, [FXD_SENS] = {P_MODFX_SENS, 0, 100},
+    [FXD_SPRAY] = {P_MODFX_SPRAY, 0, 100}, [FXD_PRAND] = {P_MODFX_PRAND, 0, 100},
+    [FXD_REVERSE] = {P_MODFX_REVERSE, 0, 100},
 };
 
 static inline int fx_bit(const uint64_t *w, int k) { return (int)(w[k >> 6] >> (k & 63)) & 1; }
@@ -2996,9 +3034,9 @@ static inline int fx_bit(const uint64_t *w, int k) { return (int)(w[k >> 6] >> (
  * modulated now or at the last step, and CTRL 1/2's targets when they are; returns whether there are any. */
 static int fx_mod_step(one_t *s, uint64_t *dirty) {
     if (!s->fx_mod && !s->fx_live) return 0;
-    float dm[MD_COUNT];
-    const float *fx = dm + MD_FX_FIRST;
-    memset(dm + MD_FX_FIRST, 0, sizeof(float) * MDF_COUNT);   /* (the slots here reach no other destination) */
+    float dm[MD_COUNT], fx[MDF_COUNT];   /* fx: the effect destinations' sums, MDF_* order */
+    memset(dm + MD_FX_FIRST, 0, sizeof(float) * MDF_FX1_COUNT);   /* (the slots here reach no other destination) */
+    memset(dm + MD_FX2_FIRST, 0, sizeof(float) * (MDF_COUNT - MDF_FX1_COUNT));
     if (s->fx_mod) {
         const voice_t *nv = NULL;   /* the newest sounding voice */
         for (int i = 0; i < MAX_VOICES; i++) {
@@ -3027,9 +3065,11 @@ static int fx_mod_step(one_t *s, uint64_t *dirty) {
         ga_src(s, src);
         mod_eval_list(&s->val[P_MOD_BASE], &s->val[P_MODX_BASE], s->fx_list, s->fx_n, src, s->bipolar, dm, 0);
         int rd = (int)s->val[P_RIBBON_DST];
-        if (rd >= MD_FX_FIRST && rd <= MD_FX_END) dm[rd] += src[MS_RIBBON] * s->val[P_RIBBON_AMT] * 0.01f;
+        if (md_fxk(rd) >= 0) dm[rd] += src[MS_RIBBON] * s->val[P_RIBBON_AMT] * 0.01f;
         if (s->sq.mod_live) sq_mod_fx(s, src, dm);   /* the sequencer's lanes to an effect (in fx_dst like a slot) */
     }
+    memcpy(fx, dm + MD_FX_FIRST, sizeof(float) * MDF_FX1_COUNT);
+    memcpy(fx + MDF_FX1_COUNT, dm + MD_FX2_FIRST, sizeof(float) * (MDF_COUNT - MDF_FX1_COUNT));
     int live = 0, any = 0;
     for (int w = 0; w < MDF_WORDS; w++) {
         uint64_t now = 0;
@@ -3126,7 +3166,10 @@ static void fx_bank_field(const one_t *s, int b, int f, float v, const int *ctrl
     case BK_WOW: q->wow = v * 0.01f; break;
     case BK_BIAS: q->bias = v * 0.01f; break;
     case BK_ROOM: q->room = v * 0.01f; break;
-    case BK_DECAY: case BK_SIZE: fx_bank_rt(s, b, ctrl, q); break;
+    case BK_DECAY: case BK_SIZE:
+        fx_bank_rt(s, b, ctrl, q);
+        if (f == BK_SIZE) q->size = v * 0.01f;   /* (GRAINS' SIZE) */
+        break;
     case BK_PRE: q->rev_pre_ms = v; break;
     case BK_DAMP: q->rev_damp = v * 0.009f; break;
     case BK_LOWDAMP: q->rev_lowdamp = v * 0.01f; break;
@@ -3140,7 +3183,7 @@ static void fx_bank_field(const one_t *s, int b, int f, float v, const int *ctrl
     case BK_LLEVEL: q->lvl_lo = fx_level(v); break;
     case BK_LDECAY: q->dec_lo = v; break;
     case BK_HDECAY: q->dec_hi = v; break;
-    case BK_PITCH: q->pitch_a = v; break;
+    case BK_PITCH: q->pitch_a = v; q->pitch_st = v * 0.01f; break;   /* (cents; GRAINS' PITCH in semitones) */
     case BK_PITCH_B: q->pitch_b = v; break;
     case BK_PDECAY: q->pdecay = v * 0.01f; break;
     case BK_GRAVITY: q->gravity = v * 0.01f; break;
@@ -3152,6 +3195,12 @@ static void fx_bank_field(const one_t *s, int b, int f, float v, const int *ctrl
     case BK_LVL1: case BK_LVL2: case BK_LVL3: q->lvl[f - BK_LVL1] = v * 0.01f; break;
     case BK_SIBIL: q->sibil = v * 0.01f; break;
     case BK_SENS: q->sens = v * 0.01f; break;
+    case BK_GPOS: q->position = v * 0.01f; break;   /* (2026-10-30) GRAINS: POSITION, DENSITY, ENVELOPE, SPRAY, ... */
+    case BK_GDENS: q->density = v * 0.01f; break;
+    case BK_GENV: q->texture = v * 0.01f; break;
+    case BK_GSPRAY: q->spray = v * 0.01f; break;
+    case BK_GPRAND: q->prand = v * 0.01f; break;
+    case BK_GREV: q->reverse = v * 0.01f; break;
     default: break;   /* the options: fx_params() */
     }
 }
@@ -3208,6 +3257,9 @@ static void fx_field(const one_t *s, int j, const int *ctrl, fx_params_t *f) {
     case P_MODFX_DRIVE: q->drive = v * 0.01f; break;
     case P_MODFX_BUMP: q->bump = v * 0.01f; break;
     case P_MODFX_LOWCUT: q->lowcut = v * 0.01f; break;
+    case P_MODFX_SPRAY: q->spray = v * 0.01f; break;   /* (2026-10-30) GRAINS */
+    case P_MODFX_PRAND: q->prand = v * 0.01f; break;
+    case P_MODFX_REVERSE: q->reverse = v * 0.01f; break;
     case P_MFX_SEND1: f->send1 = v * 0.01f; break;
     case P_MFX_SEND2: f->send2 = v * 0.01f; break;
     case P_MFX_SERIES: f->series = v * 0.01f; break;
@@ -3237,6 +3289,7 @@ static void fx_params(const one_t *s, fx_params_t *f) {
     q->gmode = (int)p[P_MODFX_GMODE];
     q->quality = (int)p[P_MODFX_QUALITY];
     q->freeze = p[P_MODFX_FREEZE] > 0.5f;
+    q->gquant = (int)p[P_MODFX_GQUANT];
     f->mfx_on = p[P_MFX_ON] > 0.5f;
     f->off1 = p[P_DLY_ON] < 0.5f;   /* (2026-10-30) a master slot switched off on its own */
     f->off2 = p[P_REV_ON] < 0.5f;
@@ -3248,6 +3301,8 @@ static void fx_params(const one_t *s, fx_params_t *f) {
         m->type = MFX_SFX[m->mtype] < 0 ? m->mtype : MFX_SFX[m->mtype];
         m->hold = (int)p[BANK[b][BK_FREEZE]];
         m->ftype = (int)p[BANK[b][BK_FTYPE]];
+        m->freeze = m->hold != HOLD_OFF;   /* (GRAINS: any HOLD freezes its buffer) */
+        m->gquant = (int)p[BANK[b][BK_GQUANT]];
     }
     int ctrl[2];
     fx_ctrl_slots(s, ctrl);

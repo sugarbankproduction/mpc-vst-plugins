@@ -933,7 +933,8 @@ static inline int rnd_src_unipolar(int s) {   /* 0..1 sources (an LFO set to Uni
 static inline void rnd_put_wild(rnd_ctx_t *c, int k, float s) {
     int si = rnd_keyf("mod%d_src", k), di = rnd_keyf("mod%d_dst", k);
     if (!rnd_free_i(c, si) || si >= NPARAMS || di >= NPARAMS) return;
-    int nd = PARAMS[di].nopts, d = 0;
+    /* (2026-10-30) the destinations before GRAINS' (MD_FX2_FIRST on: only for that type) keep WILD's draws as they were */
+    int nd = PARAMS[di].nopts < MD_FX2_FIRST ? PARAMS[di].nopts : MD_FX2_FIRST, d = 0;
     for (int t = 0; t < 24 && !d; t++) {   /* the voice's own destinations most, the effects' least */
         int x = 1 + (int)(rnd_u(c) * (nd - 1)) % (nd - 1);
         float acc = x < MD_FENV_DELAY ? 1.0f : x <= MD_LFO_END ? 0.6f : x < MD_FX_FIRST ? 0.7f : x <= MD_FX_END ? 0.35f : 0.5f;
@@ -1761,7 +1762,8 @@ static inline int rnd_seq_lanes(sq_mlane_t *m, int len, const float *norm, int m
         int d = 0;
         for (int t = 0; t < 16 && !d; t++) {
             int k = (int)(rnd_u(&c) * 12) % 12, x;
-            if (w > 0.0f && rnd_chance(&c, w)) x = 1 + (int)(rnd_u(&c) * (PARAMS[d1].nopts - 1)) % (PARAMS[d1].nopts - 1);
+            int nd = PARAMS[d1].nopts < MD_FX2_FIRST ? PARAMS[d1].nopts : MD_FX2_FIRST;   /* (2026-10-30: as above) */
+            if (w > 0.0f && rnd_chance(&c, w)) x = 1 + (int)(rnd_u(&c) * (nd - 1)) % (nd - 1);
             else x = rnd_mod_ok(&c, COND[k]) ? rnd_opt(d1, DST[k]) : 0;
             if (x > 0 && (w <= 0.0f || rnd_wild_dst_ok(&c, x))) d = x;
             for (int j = 0; j < SQ_ML && d; j++)

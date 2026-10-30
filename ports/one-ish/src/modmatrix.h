@@ -78,6 +78,12 @@ enum {
     MDF_F2_DISTANCE, MDF_F2_HIFREQ, MDF_F2_HLEVEL, MDF_F2_MLEVEL, MDF_F2_LLEVEL, MDF_F2_LDECAY, MDF_F2_HDECAY,
     MDF_F2_PITCH, MDF_F2_PITCH_B, MDF_F2_PDECAY, MDF_F2_GRAVITY, MDF_F2_XOVER, MDF_F2_BITS, MDF_F2_SRATE,
     MDF_F2_RESO, MDF_F2_CUT1, MDF_F2_CUT2, MDF_F2_CUT3, MDF_F2_LVL1, MDF_F2_LVL2, MDF_F2_LVL3,
+    MDF_FX1_COUNT,   /* the effect destinations above sit together in the list (MD_FX_FIRST .. MD_FX_END) */
+    /* (2026-10-30) GRAINS' own controls (src/fx/grains.h): the synth effect's, then each master slot's; in the list
+     * they come at its very end (MD_FX2_FIRST .. MD_FX2_END), so no older destination moved */
+    MDF_GR_SPRAY = MDF_FX1_COUNT, MDF_GR_PRAND, MDF_GR_REV,
+    MDF_F1_GPOS, MDF_F1_GDENS, MDF_F1_GENV, MDF_F1_GSPRAY, MDF_F1_GPRAND, MDF_F1_GREV,
+    MDF_F2_GPOS, MDF_F2_GDENS, MDF_F2_GENV, MDF_F2_GSPRAY, MDF_F2_GPRAND, MDF_F2_GREV,
     MDF_COUNT
 };
 #define MDF_WORDS ((MDF_COUNT + 63) / 64)
@@ -94,7 +100,7 @@ enum {
     /* per LFO (1-4), MDL_COUNT apart: rate, rate in semitones, variation, delay, fade in, fade out */
     MD_LFO1_RATE, MD_LFO_END = MD_LFO1_RATE + 4 * 6 - 1,
     MD_PAN, MD_NOISE_MIX, MD_DRIFT, MD_SPREAD,
-    MD_FX_FIRST, MD_FX_END = MD_FX_FIRST + MDF_COUNT - 1,   /* the effects (MDF_* order) */
+    MD_FX_FIRST, MD_FX_END = MD_FX_FIRST + MDF_FX1_COUNT - 1,   /* the effects (MDF_* order, up to MDF_FX1_COUNT) */
     /* the MACRO channel (Plaits), per voice like the ones before the effects: harmonics, timbre, morph and level
      * +-100% of their range */
     MD_MAC_HARM, MD_MAC_TIMBRE, MD_MAC_MORPH, MD_MAC_LEVEL,
@@ -108,8 +114,18 @@ enum {
     MD_O1_OCT, MD_O2_OCT, MD_O3_OCT, MD_NOISE_A, MD_NOISE_SUS, MD_NOISE_R,
     MD_FENV_MULTI, MD_ENVSW_END = MD_FENV_MULTI + 3 * 4 - 1,   /* per envelope, MDS_COUNT apart (MDS_* below) */
     MD_LFO1_WAVE, MD_LFO_WAVE_END = MD_LFO1_WAVE + 3,
+    /* (2026-10-30) the effect destinations from MDF_FX1_COUNT on (GRAINS' controls), MDF_* order */
+    MD_FX2_FIRST, MD_FX2_END = MD_FX2_FIRST + (MDF_COUNT - MDF_FX1_COUNT) - 1,
     MD_COUNT
 };
+/* a destination's effect destination (MDF_*), or -1: the voices' */
+static inline int md_fxk(int d) {
+    if (d >= MD_FX_FIRST && d <= MD_FX_END) return d - MD_FX_FIRST;
+    if (d >= MD_FX2_FIRST && d <= MD_FX2_END) return MDF_FX1_COUNT + d - MD_FX2_FIRST;
+    return -1;
+}
+/* effect destination k's place in the list (MD_*) */
+static inline int md_of_fxk(int k) { return k < MDF_FX1_COUNT ? MD_FX_FIRST + k : MD_FX2_FIRST + k - MDF_FX1_COUNT; }
 enum { MDS_MULTI, MDS_SYNC, MDS_LOOP, MDS_LATCH, MDS_COUNT };
 enum { MDE_DELAY, MDE_ATTACK, MDE_HOLD, MDE_DECAY, MDE_SUSTAIN, MDE_RELEASE, MDE_SCALE, MDE_COUNT };
 enum { MDL_RATE, MDL_SEMIS, MDL_VAR, MDL_DELAY, MDL_FADE_IN, MDL_FADE_OUT, MDL_COUNT };
