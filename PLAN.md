@@ -939,6 +939,38 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      `_cables_repatch`, `_cables_full`. Nothing in the audio path changes. Left: VIA as a second thin cable (VIA shows
      in the box and its list only); dragging a cable to a generator source that no row uses yet (GENERATIVE's DEST
      does it); hover highlighting of a whole cable; the MPC page.
+  43. (2026-10-31) CABLES shortcuts, a cable dragged both ways, LINKs for the controller box (owner, 2026-10-31). Done
+     2026-10-31 (offline and the desktop window; `desktop/cables.c`, `hub.c` hands_link_all, `src/synths.h` midi,
+     `test/links_check.c` (`offline_check links`), load_test `hands_link_test`, `cables_more_test`). The visible ways
+     stay the main ones (the X on a selected cable, a click on a jack then a knob); the new gestures are shortcuts.
+     - REMOVE BY DOUBLE-CLICK: a double-click anywhere on a cable (its wire, its middle knob, an end dot) removes its row,
+       one undo step. The first click only selects (or starts an amount drag that has a 3 px dead zone, so a click or a
+       wobble changes nothing); a grab handle clicked without moving now selects the cable (before, a plain click on a
+       handle could re-patch or remove it).
+     - RIGHT-CLICK MENU on a cable: its row and connection, then Delete, Turn Off / Turn On (its ENABLE), Settings...
+       (the cable selected: its box), Open in Matrix (the MATRIX page at that row, marked; the cables stay on). Each edit
+       one undo step, the host told.
+     - DRAG THE OTHER WAY: in the CABLES view every control the matrix can move has a small "+" dot (a knob's just outside
+       its top right, a switch's in its top right corner), drawn in the cached layer, lit under the mouse. Rule (on the
+       help line): a drag that starts on the "+" dot makes a cable, a drag on the knob turns it as always. From a dot, or
+       from a destination jack in the bay (Pitch and the rest: a click there still selects its cable), a live cable runs
+       from the knob to the mouse; a source lights as it passes (a jack: a ring; an LFO's or envelope's title strip, a
+       wheel, the ribbon: a frame; the pad's X / Y / GATE and the generators by their jacks) and the help line says what
+       letting go does; let go there: the same row as a drag from that source (+25%, the Synths edited TOGETHER, the
+       matrix full said plainly), selected. Elsewhere: nothing. A plain click on a dot changes nothing and says how to
+       use it.
+     - LINKs in the controller box: LINK under PITCH (`link_bend`), under MOD (`link_mod`), at the ribbon's left end on a
+       small plate (`link_ribbon`), under glide's ON (`link_glide`), beside the pad's LINK, and LINK ALL after them (all
+       five on in one undo step, lit when all are, a click then puts them out). The wheels' and the ribbon's work in the
+       engine like `link_pad`: lit, CC 1 / pitch bend / CC 16-17 reach all three Synths whatever their MIDI channels
+       (host and hardware MIDI too). Glide's, and the pitch wheel's for BEND RANGE, are the window's kind (LINK_GROUPS, as
+       the rate LINKs: an edit from the panel goes to all three; switching one on copies nothing). The OCTAVE buttons
+       are the window keyboard's, not a Synth setting: no LINK. Layout: the wheels 14 px shorter (their LINKs under
+       their names), glide's ON button 20 px shorter (same place), the ribbon starts 64 px further right.
+     All shared, default Off, saved with the sound, never randomised (no rule; the randomiser golden leaves them out).
+     Offline: each LINK off, a controller on channel 1 with Per Synth channels reaches Synth 1 alone; on, all three, and
+     only its own controller; golden (61 old sounds) and randomiser golden unchanged. Left: the X/Y pad's POLARITY / HOLD
+     stay per Synth (item 33's choice); dropping on a generator source no row uses yet (it has no jack); the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
