@@ -1748,6 +1748,7 @@ static void sq_forget(one_t *s);   /* src/stepseq_run.h */
 /* stop everything this section started and forget its keys (a change of way, All Notes Off); the step sequencer's
  * notes are generated notes too */
 static void gen_stop(one_t *s) {
+    s->nheld = 0;   /* (2026-10-30) every held key goes too: mono doesn't move on to another of them as each ends */
     s->gen_bypass = 1;
     for (int n = 0; n < 128; n++)
         if (s->ocnt[n]) { s->ocnt[n] = 0; note_off(s, n); }
