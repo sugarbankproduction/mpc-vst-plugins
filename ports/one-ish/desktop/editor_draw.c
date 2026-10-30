@@ -514,8 +514,9 @@ static void draw_panels(HDC dc) {   /* static: drawn once into the static layer 
     }
 }
 
-/* the MORE triangles in the modules' corners: small black wedges with a bevelled edge; lit while their page is on the
- * screen */
+/* the MORE triangles in the modules' corners: red wedges with a bevelled edge and a soft red glow, the red of the
+ * panel's step buttons, so they read as something to click (owner, 2026-10-31: the black ones were easy to miss);
+ * brighter under the mouse, lit while their page is on the screen */
 static void draw_mores(ed_t *e) {
     for (int k = 0; k < NMORES; k++) {
         const RECT *r = &L.more[k];
@@ -524,14 +525,12 @@ static void draw_mores(ed_t *e) {
         gpt_t t[3] = {{(float)r->left, (float)r->top}, {(float)r->right, (float)r->top}, {(float)r->right, (float)r->bottom}};
         gpt_t s[3] = {{t[0].x + 1, t[0].y + 1.5f}, {t[1].x + 1, t[1].y + 1.5f}, {t[2].x + 1, t[2].y + 1.5f}};
         gfx_poly(s, 3, 0x90000000);   /* its shadow */
-        if (open) {
-            gpt_t g[3] = {{t[0].x - 3, t[0].y - 2}, {t[1].x + 2, t[1].y - 2}, {t[2].x + 2, t[2].y + 3}};
-            gfx_poly(g, 3, 0x40FFF0D8);
-        }
-        gfx_poly(t, 3, open ? 0xFFF6F2E8 : hot ? 0xFF2A2A2E : 0xFF0A0A0B);
-        gfx_line(t[0].x, t[0].y, t[1].x, t[1].y, 1.0f, open ? 0xFFFFFFFF : hot ? 0xFFD8D8DC : 0xFF8A8A8E);   /* lit top edge */
-        gfx_line(t[1].x, t[1].y, t[2].x, t[2].y, 1.0f, open ? 0xFFB8B4AA : 0xFF3A3A3E);
-        gfx_line(t[0].x, t[0].y, t[2].x, t[2].y, 1.0f, open ? 0xFFD8D4CA : 0xFF242426);
+        gpt_t g[3] = {{t[0].x - 3, t[0].y - 2}, {t[1].x + 2, t[1].y - 2}, {t[2].x + 2, t[2].y + 3}};
+        gfx_poly(g, 3, open ? 0x70FF5030 : hot ? 0x50FF3820 : 0x30FF2810);   /* its glow, as a red button's */
+        gfx_poly(t, 3, open ? 0xFFFF6A48 : hot ? 0xFFE0301C : 0xFFB81810);
+        gfx_line(t[0].x, t[0].y, t[1].x, t[1].y, 1.0f, open ? 0xFFFFD8C8 : hot ? 0xFFFF9C84 : 0xFFF06A50);   /* lit top edge */
+        gfx_line(t[1].x, t[1].y, t[2].x, t[2].y, 1.0f, open ? 0xFFC83A22 : 0xFF6A0C06);
+        gfx_line(t[0].x, t[0].y, t[2].x, t[2].y, 1.0f, open ? 0xFFE85A3C : 0xFF8A120A);
     }
 }
 
@@ -1245,7 +1244,7 @@ void help_line(ed_t *e, char *out, int n) {
                  PAGES[e->screen].note);
     } else {
         snprintf(help, sizeof help, "Drag a knob up/down or scroll to nudge (Shift: fine; double-click: back to its default). "
-                                    "Click a red button to step, an LED to pick. A corner triangle shows the module's MORE "
+                                    "Click a red button to step, an LED to pick. A red corner triangle shows the module's MORE "
                                     "page here. Modulation: a DEST button, then a knob. UNDO / REDO: on the console.");
     }
     if (e->screen == SCR_SEQ && seq_message(e) && !pm) snprintf(help, sizeof help, "%s", seq_message(e));
