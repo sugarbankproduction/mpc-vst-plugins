@@ -18,6 +18,8 @@
 /* ---- help text: what the control under the mouse does (a key, or "_suffix" for every key ending in it) ---- */
 static const char *help_for(int i) {
     static const struct { const char *key, *text; } H[] = {
+        /* (2026-10-30) */
+        {"_share", "SHARE: lit, this LFO in Synths 2 and 3 is Synth 1's: the same speed, wave and every setting on its page, and the same wobble at the same moment, so one LFO moves all three Synths together. Each Synth keeps its own settings for when SHARE goes off again. Shared, saved with the sound. (LINK only copies the rate.)"},
         {"_fm_src", "Which oscillator frequency-modulates this filter's cutoff (with FM AMT)."},
         {"_src", "Mod source: what moves the destination (envelopes, LFOs, velocity, wheels, aftertouch, the key played, random values, expression pedals, the ribbon, the X/Y pad, a constant)."},
         {"_dst", "Mod destination: what the source moves. Pitch in semitones, cutoffs in octaves, levels and mix in % of their range."},

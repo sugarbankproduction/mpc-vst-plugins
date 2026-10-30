@@ -322,6 +322,7 @@ def build(lay):
         L.ctl(k + "wave", "leds", 106, y + 18, 62, 108, "WAVE")
         L.ctl(k + "sync", "toggle", 44, y + 82, 60, 40, "SYNC")
         L.ctl("link_lfo%d" % n, "toggle", 50, y + 122, 54, 14, "LINK", SIDE)   # RATE the same in all 3 Synths
+        L.ctl(k + "share", "toggle", 110, y + 122, 58, 14, "SHARE", SIDE)   # (2026-10-30) Synth 1's whole LFO, in step
         if k + "rate" in L.index:
             L.rate_led("LFO", n - 1, 50, y + 22)   # top left of the RATE knob, clear of its scale
         L.page("LFO%d" % n, "LFO %d" % n, "Rate, wave and sync are on the panel too.", [
@@ -329,7 +330,7 @@ def build(lay):
             (k + "range", "Range"), (k + "polarity", "Polarity"), (k + "var", "Variation"), (k + "smooth", "Smoothing"),
             (k + "phase", "Start Phase"), (k + "reset", "Note Reset"), (k + "delay", "Delay"),
             (k + "fade_in", "Fade In"), (k + "fade_out", "Fade Out"), (k + "repeats", "Repeats"),
-            ("link_lfo%d" % n, "Link Rate (3 Synths)")], pic=("LFO", k))
+            ("link_lfo%d" % n, "Link Rate (3 Synths)"), (k + "share", "Share (3 Synths)")], pic=("LFO", k))
 
     # ---- oscillators 1-3 ----
     for n in range(1, 4):

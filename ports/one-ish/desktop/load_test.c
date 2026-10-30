@@ -2351,6 +2351,21 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
         check(alone && lit && all && told, what);
         click_ctl(child, s, T[k].link);
     }
+    /* (2026-10-30) SHARE on each LFO panel: a plain click lights it (shared: all three Synths), again: off; LINK stays */
+    for (int n = 1; n <= 4; n++) {
+        char k[24], lk[24];
+        snprintf(k, sizeof k, "lfo%d_share", n);
+        snprintf(lk, sizeof lk, "link_lfo%d", n);
+        setkey(fx, k, 0);
+        float l0 = pv(fx, lk);
+        click_ctl(child, s, k);
+        int on = pv(fx, k) > 0.5f && pv(fx, lk) == l0;
+        if (bmp && n == 1) shot(child, w, h, bmp, "_lfo_share");
+        click_ctl(child, s, k);
+        snprintf(what, sizeof what, "SHARE (LFO %d): a plain click on its button turns it on (%d) and off again (%.0f); "
+                 "LINK untouched", n, on, pv(fx, k));
+        check(on && pv(fx, k) < 0.5f, what);
+    }
     /* ALL 3 over LINK CUTOFF: relative, each Synth's cutoff moves by the same amount */
     {
         static const char *const K[3] = {"flt_cut", "s2_flt_cut", "s3_flt_cut"};
