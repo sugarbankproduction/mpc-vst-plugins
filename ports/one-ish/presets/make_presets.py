@@ -342,10 +342,27 @@ PATCHES += [
 ]
 
 
+def banks():   # (2026-10-30) the factory banks in presets/banks/bank_*.py, each BANK = [(name, values, tags)]
+    import glob
+    import importlib
+    out = []
+    for f in sorted(glob.glob(os.path.join(HERE, "banks", "bank_*.py"))):
+        mod = importlib.import_module("banks." + os.path.splitext(os.path.basename(f))[0])
+        out += list(mod.BANK)
+    return out
+
+
 def main():
     by_key = {p["key"]: p for p in PARAMS}
     presets = []
-    for name, pv in PATCHES:
+    tags = {}
+    entries = list(PATCHES)
+    for name, pv, tg in banks():
+        if any(n == name for n, _ in entries):
+            raise SystemExit("%s: two presets with one name" % name)
+        entries.append((name, pv))
+        tags[name] = tg
+    for name, pv in entries:
         for k in pv:
             if k not in by_key:
                 raise SystemExit("%s: %r is not a parameter" % (name, k))
@@ -365,7 +382,7 @@ def main():
             if "options" in p and isinstance(v, (int, float)):
                 v = p["options"][int(v)]
             values[p["key"]] = v
-        presets.append({"name": name, "values": values})
+        presets.append({"name": name, "values": values, **({"tags": tags[name]} if name in tags else {})})
     out = os.path.join(HERE, "..", "presets.json")
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write('{\n "presets": [\n')
