@@ -28,10 +28,21 @@
  * lead + the input converter's delay (in engine frames) later, plus the output converter's latency:
  * hr_input_delay() = (lead + rs_delay_io(fs, 44100)) * fs / 44100 + rs_delay_for(fs) host samples (128 at 44.1 kHz,
  * about 222.9 at 48 kHz). The reported latency stays the output's alone, so notes play as before; the input arrives
- * that fixed, exactly known amount later than its place on the timeline (about 3 ms at 44.1 kHz, 4.6 ms at 48 kHz). */
+ * that fixed, exactly known amount later than its place on the timeline (about 3 ms at 44.1 kHz, 4.6 ms at 48 kHz).
+ *
+ * Multi-out (2026-10-30, desktop only: the MPC build stays stereo): the plugin declares eight outputs (editor.c): MAIN
+ * (1-2) and a pair for each Synth (3-4 Synth 1, 5-6 Synth 2, 7-8 Synth 3). The engine renders them together
+ * (one_ish_render_multi, src/synths.h): a Synth's OUTPUT (syn_out) puts it on MAIN (the default, as before), on its own
+ * pair only, or on both; the shared master effects' returns stay on MAIN. Each pair has its own converter, fed the same
+ * engine frames as MAIN's, so all eight outputs have the same latency and line up sample for sample. With every OUTPUT
+ * at Main the pairs are silent and outputs 1-2 are exactly what they were, so a host that only listens to the first two
+ * hears everything. */
 #pragma once
 #include <stdint.h>
 #include "engine.h"
+
+#define HR_PAIRS 3   /* (2026-10-30) the Synths' own output pairs after MAIN (the engine's ONEISH_SYNTHS at most) */
+#define HR_OUTPUTS (2 + 2 * HR_PAIRS)
 
 typedef struct hostrate hostrate_t;
 struct AEffect;
@@ -50,9 +61,11 @@ void hr_restart(hostrate_t *h);      /* effMainsChanged on: start clean before t
 int hr_latency(const hostrate_t *h);
 /* effProcessEvents (audio thread): MIDI queued for its engine block; 1 = taken (0: pass to the wrapper as before) */
 int hr_events(hostrate_t *h, struct AEffect *fx, const void *vst_events);
-/* one host block of n frames into out[0], out[1] (added to them when add is set), the host's audio input in in[0],
- * in[1] (NULL: silence; it may be the same buffers as out); `render` is the wrapper's own processReplacing */
-void hr_process(hostrate_t *h, struct AEffect *fx, hr_render_t render, float **in, float **out, int32_t n, int add);
+/* one host block of n frames into out[0], out[1] (MAIN) and the Synths' pairs out[2] .. out[nout - 1] (added to them
+ * when add is set; nout up to HR_OUTPUTS), the host's audio input in in[0], in[1] (NULL: silence; it may be the same
+ * buffers as out); `render` is the wrapper's own processReplacing */
+void hr_process(hostrate_t *h, struct AEffect *fx, hr_render_t render, float **in, float **out, int nout, int32_t n,
+                int add);
 /* the audio input's delay to the output, in host samples (input sample h is heard, through a voice with no delay of
  * its own, at h + this); not part of the reported latency (see the top of this file). -1 on the old path. */
 double hr_input_delay(const hostrate_t *h);

@@ -770,6 +770,7 @@
   {"key": "an_warm", "name": "Warm-Up", "options": ["Off", "On"], "default": "Off"},
   {"key": "an_warm_amt", "name": "Warm-Up Amount", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
   {"key": "an_warm_time", "name": "Warm-Up Time", "min": 1, "max": 20, "unit": "min", "default": 5, "display": "int"},
+  {"key": "syn_out", "name": "Synth Output", "options": ["Main", "Own Pair", "Main + Own"], "default": "Main"},
   {"key": "s2_o1_wave", "name": "S2 Osc 1 Wave", "options": ["Tri", "Saw"], "default": "Saw"},
   {"key": "s2_amp_a", "name": "S2 Amp Attack", "min": 0, "max": 100, "default": 17.5, "dynamic_display": true},
   {"key": "s2_amp_d", "name": "S2 Amp Decay", "min": 0, "max": 100, "default": 61.9, "dynamic_display": true},
@@ -1983,7 +1984,9 @@
   {"key": "s3_an_hq", "name": "S3 HQ Mode", "options": ["Off", "2x", "4x"], "default": "Off"},
   {"key": "s3_an_warm", "name": "S3 Warm-Up", "options": ["Off", "On"], "default": "Off"},
   {"key": "s3_an_warm_amt", "name": "S3 Warm-Up Amount", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
-  {"key": "s3_an_warm_time", "name": "S3 Warm-Up Time", "min": 1, "max": 20, "unit": "min", "default": 5, "display": "int"}
+  {"key": "s3_an_warm_time", "name": "S3 Warm-Up Time", "min": 1, "max": 20, "unit": "min", "default": 5, "display": "int"},
+  {"key": "s2_syn_out", "name": "S2 Synth Output", "options": ["Main", "Own Pair", "Main + Own"], "default": "Main"},
+  {"key": "s3_syn_out", "name": "S3 Synth Output", "options": ["Main", "Own Pair", "Main + Own"], "default": "Main"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -2063,7 +2066,7 @@
   {"label": "MASTER FX 2", "keys": ["rev_type", "rev_mix", "rev_gain", "rev_sync", "rev_time", "rev_time_r", "rev_fb", "rev_fb_r", "rev_fbl", "rev_fbr", "rev_rate", "rev_rate_r", "rev_depth", "rev_depth_r", "rev_tone", "rev_offset", "rev_spread", "rev_noise", "rev_sweep", "rev_dfb", "rev_vrate", "rev_vdepth", "rev_flutter", "rev_wow", "rev_bias", "rev_room", "rev_decay", "rev_size", "rev_pre", "rev_damp", "rev_lowdamp", "rev_diff", "rev_mod", "rev_early", "rev_freeze", "rev_distance", "rev_hifreq", "rev_hlevel", "rev_mlevel", "rev_llevel", "rev_ldecay", "rev_hdecay", "rev_pitch", "rev_pitch_b", "rev_pdecay", "rev_gravity", "rev_xover", "rev_bits", "rev_srate", "rev_reso", "rev_cut1", "rev_cut2", "rev_cut3", "rev_lvl1", "rev_lvl2", "rev_lvl3", "rev_ftype", "rev_sibil", "rev_sens"]},
   {"label": "SEQUENCER", "keys": ["seq_on", "seq_play", "seq_rec", "seq_step_mod", "seq_sync", "seq_rate", "seq_div", "seq_timing", "seq_length", "seq_follow_swing", "clock_swing", "seq_note_trig", "seq_note_reset", "seq_restart_hold", "seq_restart_trig", "seq_transpose", "seq_tr_mode", "seq_one_shot", "seq_rec_mode", "seq_pattern", "seq_pos"]},
   {"label": "SETTINGS", "keys": ["midi_ch", "learn_mode"]},
-  {"label": "SYNTH SETUP", "keys": ["syn_on", "syn_ch", "key_lo", "key_hi", "syn_solo"]},
+  {"label": "SYNTH SETUP", "keys": ["syn_on", "syn_ch", "key_lo", "key_hi", "syn_solo", "syn_out"]},
   {"label": "MASTER", "keys": ["master_level", "seq_all"]},
   {"label": "EXT IN", "keys": ["ext_level", "ext_route"]},
   {"label": "SYNTH FX VOCODER", "keys": ["modfx_sibil", "modfx_sens"]},

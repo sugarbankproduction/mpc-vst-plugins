@@ -671,7 +671,8 @@ def build(lay):
         zones["VOL_MASTER"] = (X + 1880, 572, 60, 14)
     L.page("OUTPUT", "SYNTH OUTPUT", "This Synth's level, place and sends; MASTER: all three Synths' level.", [
         ("volume", "Volume"), ("pan", "Pan"), ("spread", "Spread"), ("mfx_send1", "Send 1 (FX 1)"),
-        ("mfx_send2", "Send 2 (FX 2)"), ("master_level", "Master (All Synths)")])
+        ("mfx_send2", "Send 2 (FX 2)"), ("master_level", "Master (All Synths)"),
+        ("syn_out", "Output (Main 1-2 / Own Pair)")])   # (2026-10-30) multi-out: also on the SETUP page
     L.page("SFX", "SYNTH EFFECT", "The controls of the selected type (TYPE changes the list).", sfx_page(L))
     mac = [("mac_model", "Model"), ("mac_harm", "Harmonics"), ("mac_timbre", "Timbre"), ("mac_morph", "Morph"),
            ("mac_oct", "Octave"), ("mac_freq", "Frequency"), ("mac_aux", "Aux Mix"), ("mac_level", "Level"),

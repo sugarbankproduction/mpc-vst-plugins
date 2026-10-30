@@ -286,6 +286,7 @@ enum {
     /* (2026-10-30) the ANALOG page's HQ MODE (Off, 2x, 4x: the voice runs oversampled, src/hq.h) and WARM-UP (on, how
      * much, how long: a cold instrument's pitch and cutoffs settling over minutes) */
     P_AN_HQ, P_AN_WARM, P_AN_WARM_AMT, P_AN_WARM_TIME,
+    P_SYN_OUT,       /* (2026-10-30) the Synth's output: MAIN, its own pair, or both (src/synths.h; desktop multi-out) */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -448,6 +449,7 @@ static const char *const KEYS[P_COUNT] = {
     "gen_tempo_src", "gen_bpm", "gen_follow_keys",   /* (2026-10-30) */
     "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   /* (2026-10-30) */
     "an_hq", "an_warm", "an_warm_amt", "an_warm_time",   /* (2026-10-30) */
+    "syn_out",   /* (2026-10-30) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */

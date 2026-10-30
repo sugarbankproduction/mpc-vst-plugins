@@ -11,14 +11,17 @@
 #define EVQ 512     /* host MIDI events waiting for their engine block */
 #define IN_FIFO 16384   /* the audio input at 44.1 kHz, waiting for its engine block (a power of two, frames) */
 #define IN_CHUNK 256    /* host input written into the converter at a time (its ring holds 1024 frames) */
+#define HR_CHUNK 512    /* (2026-10-30) host frames converted at a time (the scratch for a missing output pair) */
 
 void one_ish_render_float(void *inst, float *out_lr, int frames);     /* src/engine.c */
+void one_ish_render_multi(void *inst, float *out_lr, float *const *syn_lr, int frames);   /* (2026-10-30) */
 void one_ish_set_input(void *inst, const float *in_lr, int frames);   /* src/engine.c */
 
 struct hostrate {
     const mpc_engine_t *api;   /* the engine's own table (src/engine.c) */
     void *eng;                 /* its instance */
     float tap[2 * BLOCK];      /* the float samples of the engine's last render(), for hr_process() */
+    float syn_tap[HR_PAIRS][2 * BLOCK];   /* (2026-10-30) each Synth's own pair from the same render (multi-out) */
     int tap_n;
     int64_t sp_num, sp_den;    /* the next song_pos(): its engine block starts sp_num / sp_den s after the host block */
     int legacy;
@@ -28,6 +31,8 @@ struct hostrate {
     int nev;
     float out[2][BLOCK];       /* the wrapper's own (int16-resolution) output, not used unless the tap is missing */
     resampler_t rs;
+    resampler_t rs_syn[HR_PAIRS];   /* (2026-10-30) each Synth's pair, converted in step with MAIN (same rate, same frames) */
+    float scratch[2][HR_CHUNK];     /* a pair the host gave no buffers for: converted into here, so it keeps in step */
     /* the audio input (hostrate.h): the host's rate to 44.1 kHz, then a FIFO indexed by engine frame */
     resampler_t in_rs;
     float in_fifo[2 * IN_FIFO];   /* engine frame e at (e & (IN_FIFO - 1)); the first in_lead frames are silence */
@@ -49,6 +54,7 @@ static void *shim_create(const char *data_dir) {
     if (!h->eng) { free(h); return NULL; }
     rs_init();
     rs_reset(&h->rs, RS_RATE);
+    for (int c = 0; c < HR_PAIRS; c++) rs_reset(&h->rs_syn[c], RS_RATE);
     rs_reset_io(&h->in_rs, RS_RATE, RS_RATE);
     memset(h->in_fifo, 0, sizeof h->in_fifo);   /* (calloc'd: written once, so the audio thread never maps its pages) */
     h->in_lead = h->in_w = BLOCK;
@@ -74,7 +80,8 @@ static void shim_render(void *inst, int16_t *out, int frames) {
         if (h->in_live) one_ish_set_input(h->eng, h->in_blk, frames);
         h->in_ready = 0;
     }
-    one_ish_render_float(h->eng, h->tap, frames);
+    float *const pairs[HR_PAIRS] = {h->syn_tap[0], h->syn_tap[1], h->syn_tap[2]};
+    one_ish_render_multi(h->eng, h->tap, pairs, frames);   /* MAIN as one_ish_render_float(), and the Synths' pairs */
     for (int i = 0; i < 2 * frames; i++) out[i] = (int16_t)(h->tap[i] * 32767.0f);   /* exactly the engine's render() */
     h->tap_n = frames;
 }
@@ -202,6 +209,7 @@ int hr_events(hostrate_t *h, AEffect *fx, const void *vst_events) {
 static void restart(hostrate_t *h, AEffect *fx) {
     send_due(h, fx, INT64_MAX);   /* nothing held across a reset (a note-off must not be lost) */
     rs_reset(&h->rs, __atomic_load_n(&h->pending_fs, __ATOMIC_RELAXED));
+    for (int c = 0; c < HR_PAIRS; c++) rs_reset(&h->rs_syn[c], h->rs.fs);
     rs_reset_io(&h->in_rs, h->rs.fs, RS_RATE);
     h->in_lead = in_lead_for(h->rs.fs);
     memset(h->in_fifo, 0, sizeof(float) * 2 * h->in_lead);   /* the lead: silence */
@@ -267,17 +275,32 @@ static void engine_block(hostrate_t *h, AEffect *fx, hr_render_t render) {
     input_take(h);
     float *o[2] = {h->out[0], h->out[1]};
     render(fx, NULL, o, BLOCK);   /* the wrapper's FIFO is empty at every call (whole blocks only): one render() */
-    if (h->tap_n != BLOCK)        /* never expected; the wrapper's own samples rather than a gap */
+    if (h->tap_n != BLOCK) {      /* never expected; the wrapper's own samples rather than a gap (on MAIN) */
         for (int i = 0; i < BLOCK; i++) { h->tap[2 * i] = h->out[0][i]; h->tap[2 * i + 1] = h->out[1][i]; }
+        memset(h->syn_tap, 0, sizeof h->syn_tap);
+    }
     rs_write(&h->rs, h->tap, BLOCK);
+    for (int c = 0; c < HR_PAIRS; c++) rs_write(&h->rs_syn[c], h->syn_tap[c], BLOCK);
 }
 
-void hr_process(hostrate_t *h, AEffect *fx, hr_render_t render, float **in, float **out, int32_t n, int add) {
+/* (2026-10-30) out[0], out[1]: MAIN; out[2 + 2c], out[3 + 2c] (when nout reaches them): Synth c's own pair. Every
+ * pair's converter has the same rate and the same engine frames, so each gives as many samples as MAIN's; a pair the
+ * host gave no buffers for is converted into the scratch, so it stays in step. A pair whose Synth is not on it is
+ * silence, which the converter turns out without filtering (resample.h: quiet), so it costs next to nothing. */
+void hr_process(hostrate_t *h, AEffect *fx, hr_render_t render, float **in, float **out, int nout, int32_t n,
+                int add) {
     if (__atomic_exchange_n(&h->pending, 0, __ATOMIC_ACQUIRE)) restart(h, fx);
     input_block(h, in, n);
     int done = 0;
     while (done < n) {
-        done += rs_out(&h->rs, out[0] + done, out[1] + done, n - done, add);
+        int want = n - done < HR_CHUNK ? (int)(n - done) : HR_CHUNK;
+        int m = rs_out(&h->rs, out[0] + done, out[1] + done, want, add);
+        for (int c = 0; c < HR_PAIRS && m > 0; c++) {
+            int have = nout >= 4 + 2 * c && out[2 + 2 * c] && out[3 + 2 * c];
+            float *l = have ? out[2 + 2 * c] + done : h->scratch[0], *r = have ? out[3 + 2 * c] + done : h->scratch[1];
+            rs_out(&h->rs_syn[c], l, r, m, have && add);
+        }
+        done += m;
         if (done < n) engine_block(h, fx, render);
     }
     h->host_pos += n;

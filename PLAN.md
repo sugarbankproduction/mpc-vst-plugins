@@ -237,7 +237,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      2026-10-29): Synths 2 and 3 off cost nothing measurable (1, 4, 8 voices 9.40, 33.91, 67.20 us against 9.15, 33.69,
      66.07 before: within 3%); 16 voices 135 us (8.4 a voice); 16 voices of a busy patch with a chorus 124 us in Synth 1
      alone, 134 us shared 6/5/5 by three Synths with a chorus each (+8%: two more synth effects).
-     Left (solo and the M | S buttons done 2026-10-29; sequencer OUTPUT 2026-10-30, item 27): per-Synth outputs, the sustain pedal's target, a range set by
+     Left (solo and the M | S buttons done 2026-10-29; sequencer OUTPUT 2026-10-30, item 27; per-Synth outputs 2026-10-30, item 38): the sustain pedal's target, a range set by
      pressing a key, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
   13. The library (audit packages 5, 12a, 12b). Done 2026-10-29 (offline and the desktop window; `desktop/library.c`,
      `docs/PATCHES.md`): UNDO / REDO of any edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, the
@@ -772,6 +772,31 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      (not measured) a 2x voice should cost about 1.8 voices, so HQ stays optional there (the owner's call). Left: an
      iterative (Newton) solve of the ladder's stages in HQ (audit row "how resonance thins the bass"); not done, as 4x
      already takes the images below -77 dB and costs 3x a voice.
+  38. (2026-10-30) Separate outputs per Synth (audit section 11, package 13). Done 2026-10-30 (offline and the desktop
+     DLL; `src/synths.h` `one_ish_render_multi`, `desktop/hostrate.c`, `desktop/editor.c`; `test/multiout_check.c`,
+     load_test's rate tests; `docs/MULTITIMBRAL.md` "OUTPUT"). The desktop plugin declares eight outputs: 1-2 MAIN, 3-4
+     Synth 1, 5-6 Synth 2, 7-8 Synth 3 (named for hosts that ask, effGetOutputProperties). Choice: a pair per Synth
+     rather than the Moog One's single shared SUB pair (each Synth gets its own mixer channel in the host; MAIN plus one
+     Synth on its own pair is the instrument's MAIN / SUB split; SUB VOLUME is the host's fader on the pair). Per Synth
+     `syn_out` ("Synth Output": Main (default), Own Pair, Main + Own), a plain click on the SETUP page's new OUTPUT row
+     (the page now has three sub-pages) or on SYNTH OUTPUT's MORE page, with help text. The shared master effects'
+     returns always go to MAIN; a Synth on its own pair still feeds them through its sends (an aux send: echo and
+     reverb on MAIN, dry on its pair; sends at 0 for a dry pair). The master level and the limiter apply to every
+     pair. OUTPUT is setup, not sound: kept by LOAD INTO SYNTH, left out of SAVE SYNTH, never randomised. The engine API
+     stays: render() and one_ish_render_float() put every Synth on their one output whatever OUTPUT says, so the MPC
+     build (stereo, wrapper unchanged; `tools/test_port.sh` x86 PASSED) and every stereo caller are as before. Each
+     extra pair has its own rate converter fed the same engine frames as MAIN's (same latency, sample-aligned).
+     Default routing: outputs 1-2 exactly as before (offline: MAIN equals one_ish_render_float() bit for bit, master
+     effects on and off; golden check of the old sounds PASSED), outputs 3-8 silent, so a host using only the first two
+     outputs hears everything. Offline and in load_test (44.1 and 48 kHz): Own Pair puts the Synth only on its pair
+     (MAIN + pair = the default MAIN within 3e-8 offline), Main + Own leaves MAIN exactly as the default; all three on
+     their pairs leave MAIN silent; the delay's echo of a Synth on its pair is on MAIN only. CPU: the engine's own routing costs nothing measurable (offline_bench, 128-frame block, 3 Synths x 3 notes, master effects on: stereo render 76.4 us, multi-out all on MAIN 77.6, each on its own pair 75.8: within run-to-run noise). The extra converters (load_test, 512-frame host blocks, the PC busy with other jobs, so roughly): at 44.1 kHz none (a copy); with every Synth on MAIN none either (silent pairs are skipped: 48 kHz 492 us against 536 for the old chord benchmark); with all three on their own pairs about +120-170 us per 512-frame block at 48 kHz (492 to 660 us, about 1.5% of real time more, in the quieter of three runs; 535 to 929 in the busiest) and about +70-120 us at 96 kHz. A pair costs only while its Synth is on it.
+     Nothing in the audio path allocates, locks or touches a file (the converters and buffers live in the instance).
+     In Carla 2.5.10 the owner's Continuous Rack uses a plugin's first two outputs only (Carla's RackGraph sends the
+     rest to a scratch buffer), so `Moo Won.carxp` plays exactly as before; outputs 3-8 need Carla's Patchbay mode
+     (Configure Carla > Engine > Process mode: Patchbay), wiring `output_1` .. `output_8` in the Patchbay tab, saved as
+     a new project (`docs/MULTITIMBRAL.md`). Not tried in Carla by the owner yet. Left: a panel button on SYNTH OUTPUT
+     itself (no room beside VOLUME / PAN / SPREAD), the master effects per pair (they are shared), the MPC (stereo).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

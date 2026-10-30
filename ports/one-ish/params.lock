@@ -767,6 +767,7 @@ an_hq
 an_warm
 an_warm_amt
 an_warm_time
+syn_out
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1981,3 +1982,5 @@ s3_an_hq
 s3_an_warm
 s3_an_warm_amt
 s3_an_warm_time
+s2_syn_out
+s3_syn_out

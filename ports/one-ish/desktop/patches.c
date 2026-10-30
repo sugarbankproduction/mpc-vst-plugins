@@ -498,7 +498,8 @@ static int load_user(ed_t *e, const char *name_in) {
  * patch; the Synth keeps its setup, the others and the shared settings stay), through the engine's "synthload" (the
  * host told of every value that moved). SAVE SYNTH: the focused Synth's sound saved as a single-Synth patch. */
 static int setup_key(const char *k) {   /* a Synth's setup: not part of its sound */
-    return !strcmp(k, "syn_on") || !strcmp(k, "syn_ch") || !strcmp(k, "key_lo") || !strcmp(k, "key_hi");
+    return !strcmp(k, "syn_on") || !strcmp(k, "syn_ch") || !strcmp(k, "key_lo") || !strcmp(k, "key_hi") ||
+           !strcmp(k, "syn_out");   /* (2026-10-30) its OUTPUT */
 }
 static int into_pos(ed_t *e, int pos);
 int patches_into_pos(ed_t *e, int pos) {   /* (autosave and undo as for any load) */

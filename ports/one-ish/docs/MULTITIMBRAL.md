@@ -69,6 +69,30 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
 - **MASTER** (2026-10-30): the small MASTER button in SYNTH OUTPUT turns that section's VOLUME knob into MASTER, the
   shared master level of all three Synths (`master_level`, also on the SETUP page); off, the knob is the focused
   Synth's own VOLUME again. The button is only a view (never saved).
+- **OUTPUT: separate outputs per Synth** (2026-10-30, offline and the desktop DLL; `syn_out`, `src/synths.h`
+  `one_ish_render_multi`, `desktop/hostrate.c`; `test/multiout_check.c`, load_test's rate tests). The desktop plugin
+  has eight outputs: 1-2 MAIN, 3-4 Synth 1, 5-6 Synth 2, 7-8 Synth 3 (named "Main L" .. "Synth 3 R" for hosts that ask).
+  Each Synth's OUTPUT (the SETUP page's OUTPUT row, or SYNTH OUTPUT's MORE page: a plain click) is **Main** (the
+  default: on 1-2 with the others, as always), **Own Pair** (only on its own pair) or **Main + Own** (both). Choice made
+  (instead of the Moog One's one shared SUB pair): a pair per Synth gives each Synth its own mixer channel in the host,
+  and MAIN + one Synth on Own Pair is the instrument's MAIN / SUB split anyway; SUB VOLUME is the host's fader on that
+  pair. The **master effects** (FX 1, FX 2) are shared, so their returns always come out on MAIN: a Synth on its own
+  pair still feeds them through its SEND 1 and SEND 2 (an aux send on a mixer: its echo and reverb on MAIN, its dry
+  sound on its pair); turn its two sends to 0 for a dry pair. The Synth's own synth effect is in its sound, so it goes
+  with it. The master level and the limiter apply to every pair. OUTPUT belongs to the Synth's setup, like its MIDI
+  channel: saved with the sound and the project, kept by LOAD INTO SYNTH, left out of SAVE SYNTH; the randomiser never
+  touches it. With every OUTPUT at Main (every old project and sound) outputs 1-2 are exactly as before and 3-8 are
+  silent, so a host that only listens to the first two hears everything. The MPC build (and any stereo caller) has
+  one output: every Synth is on it whatever its OUTPUT says.
+  **In Carla** (2.5.10): in Continuous Rack mode Carla uses only a plugin's first two outputs (its rack sends outputs
+  3 and up to a scratch buffer: `RackGraph::process` in Carla's `CarlaEngineGraph.cpp`), so there everything must stay
+  on Main, which is the default and plays as before. To use outputs 3-8, switch Carla to Patchbay mode (Configure
+  Carla, Engine, Process mode: Patchbay; Carla restarts its engine), load Moo Won, and in the Patchbay tab connect its
+  ports (`output_1` .. `output_8`: Carla names VST2 ports by number and does not read the plugin's names) to the
+  Audio Output box or to other plugins: `output_1` / `output_2` (MAIN) to the speakers' left and right, and a Synth's
+  pair (e.g. `output_5` / `output_6` for Synth 2) into its own effect or straight to the speakers. Save that as a new
+  project (keep `Moo Won.carxp` as it is). In a DAW: enable the plugin's extra outputs (most show them as "Synth 2 L"
+  etc.) and give each pair a mixer channel.
 - **UNDO / REDO, COMPARE, snapshots and autosaves** (2026-10-29, offline; `docs/PATCHES.md`) work on the whole
   performance: all three Synths, the shared settings and every sequence, whichever Synth is in focus.
 
@@ -86,7 +110,7 @@ follows the focus, would have let automation reach only the focused Synth). 1,52
   `master_level`, `seq_all`, `gen_follow_tempo` (2026-10-30), `lfo1_share` .. `lfo4_share` (2026-10-30) (`engine_global()` in `src/synths.h`; `is_global()` in
   `make_synths.py` keeps the same list).
 - Per Synth, beyond the sound: `syn_on` (all three On since 2026-10-30; before, Synths 2 and 3 started Off), `syn_ch` (1, 2, 3), `key_lo` / `key_hi` (0-127,
-  shown as note names), and its own `transpose`, `octave_shift`, `voices`, `volume`, `pan`, `mfx_send1/2`, the synth
+  shown as note names), `syn_out` (2026-10-30: Main, Own Pair, Main + Own; the desktop's outputs), and its own `transpose`, `octave_shift`, `voices`, `volume`, `pan`, `mfx_send1/2`, the synth
   effect (`modfx_*`), arp, chord memory and sequencer. A Synth's matrix moves its own params, its synth effect
   included; the master effects' matrix destinations follow Synth 1's matrix.
 - The audio input (desktop, 2026-10-29) is one for the instance: every Synth's EXT channel (`ext_level`,

@@ -502,9 +502,10 @@ static void set_state(inst_t *in, const char *str) {
 }
 
 /* LOAD INTO SYNTH n: a sound's own values (a single-Synth patch or preset, or a performance's Synth 1) into Synth c,
- * which keeps its setup (on, channel, key range) ; the shared values and the other Synths stay as they are */
+ * which keeps its setup (on, channel, key range, output) ; the shared values and the other Synths stay as they are */
 static int load_skip(int k) {
-    return engine_global(k) || k == P_SYN_ON || k == P_SYN_CH || k == P_KEY_LO || k == P_KEY_HI || k == P_SYN_SOLO;
+    return engine_global(k) || k == P_SYN_ON || k == P_SYN_CH || k == P_KEY_LO || k == P_KEY_HI || k == P_SYN_SOLO ||
+           k == P_SYN_OUT;   /* (2026-10-30: its OUTPUT too) */
 }
 static void load_value(inst_t *in, int c, const char *key, const char *val) {
     one_t *s = in->syn[c];
@@ -739,7 +740,26 @@ static void solo_gain(inst_t *in, one_t *const *live, int nl, float (*sl)[128], 
     }
 }
 
-static void render_to(void *inst, int16_t *out, float *fout, int frames) {
+/* (2026-10-30) a Synth's OUTPUT (syn_out): MAIN (the default: the mix, as always), its OWN pair only, or both. Only
+ * the desktop's multi-out render (one_ish_render_multi, given the pairs) follows it; render() and
+ * one_ish_render_float() have one stereo output, so there every Synth is on it whatever its OUTPUT says (the MPC, the
+ * tests, any stereo-only caller). The shared master effects' returns are always on MAIN: a Synth on its own pair still
+ * feeds them through its sends (an aux send on a mixer), so its echo and reverb come out on MAIN and its dry sound on
+ * its pair; with both its sends at 0 it is dry. The master level and the limiter apply to every pair, as to MAIN. */
+enum { SO_MAIN, SO_OWN, SO_BOTH };
+static int synth_out(const one_t *s, float *const *sout) {
+    if (!sout || !sout[s->idx]) return SO_MAIN;
+    int o = (int)s->val[P_SYN_OUT];
+    return o == SO_OWN || o == SO_BOTH ? o : SO_MAIN;
+}
+
+/* a sample of a Synth's own pair: the master level, the limiter, never NaN (bad is set: heal() mends what made it) */
+static inline float pair_sample(float x, float level, int *bad) {
+    if (!isfinite(x)) { *bad = 1; return 0.0f; }
+    return soft_limit(level != 1.0f ? x * level : x);
+}
+
+static void render_to(void *inst, int16_t *out, float *fout, float *const *sout, int frames) {
     inst_t *in = inst;
     one_t *live[NSYN], *s0 = in->syn[0];
     float sl[NSYN][128], sr[NSYN][128], ml[128], mr[128];
@@ -769,6 +789,9 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
     float level = s0->val[P_MASTER_LEVEL] * 0.01f;
     const float *ext = in->ext_n == frames ? in->ext : NULL;   /* the audio input for this render, if it was given */
     in->ext_n = 0;
+    if (sout)   /* each Synth's own pair: silent unless that Synth is on it */
+        for (int c = 0; c < NSYN; c++)
+            if (sout[c]) memset(sout[c], 0, sizeof(float) * 2 * frames);
     int done = 0;
     while (done < frames) {
         if (in->heal) heal(in);
@@ -779,20 +802,32 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
         for (int j = 0; j < nl; j++) live[j]->ext = ext ? ext + done : NULL;
         for (int j = 0; j < nl; j++) synth_piece(live[j], n, sl[j], sr[j]);
         solo_gain(in, live, nl, sl, sr, n);
-        float *L = ml, *R = mr;   /* the mix of the Synths (one: its own buffers, as they are) */
-        if (nl == 1) {
+        int bad = 0, on_main[NSYN], nm = 0;
+        for (int j = 0; j < nl; j++) {   /* a Synth on its own pair: its sound there, now (the returns below: MAIN) */
+            int o = synth_out(live[j], sout);
+            on_main[j] = o != SO_OWN;
+            nm += on_main[j];
+            if (o == SO_MAIN) continue;
+            float *d = sout[live[j]->idx] + 2 * done;
+            for (int i = 0; i < n; i++) {
+                d[2 * i] = pair_sample(sl[j][i], level, &bad);
+                d[2 * i + 1] = pair_sample(sr[j][i], level, &bad);
+            }
+        }
+        float *L = ml, *R = mr;   /* the mix of the Synths on MAIN (one: its own buffers, as they are) */
+        if (nl == 1 && nm == 1) {
             L = sl[0];
             R = sr[0];
         } else {
             memset(ml, 0, sizeof(float) * n);
             memset(mr, 0, sizeof(float) * n);
             for (int j = 0; j < nl; j++)
-                for (int i = 0; i < n; i++) { ml[i] += sl[j][i]; mr[i] += sr[j][i]; }
+                if (on_main[j])
+                    for (int i = 0; i < n; i++) { ml[i] += sl[j][i]; mr[i] += sr[j][i]; }
         }
         s0->fxp.ramp = CR - s0->phase;
         s0->fxp.mfx[0].voc_mod = s0->fxp.mfx[1].voc_mod = ext ? ext + done : NULL;   /* a vocoder on a send */
         fx_master_multi(&in->mfx, &s0->fxp, nl, snd, ps, pl, pr, L, R, n);
-        int bad = 0;
         for (int i = 0; i < n; i++) {   /* a last guard: never NaN to the host (and heal what made it: see heal()) */
             int okl = isfinite(L[i]), okr = isfinite(R[i]);
             bad |= !okl || !okr;
@@ -812,7 +847,7 @@ static void render_to(void *inst, int16_t *out, float *fout, int frames) {
     }
 }
 
-static void render(void *inst, int16_t *out, int frames) { render_to(inst, out, NULL, frames); }
+static void render(void *inst, int16_t *out, int frames) { render_to(inst, out, NULL, NULL, frames); }
 
 /* Not in the engine contract either: the desktop build's audio input (desktop/hostrate.c), interleaved L R in -1..1, for
  * the next render() of the same number of frames (up to 128; a render without one hears silence). Kept as its mono
@@ -834,7 +869,16 @@ void one_ish_set_input(void *inst, const float *in_lr, int frames) {
 /* Not in the engine contract (wrapper/engine.h): the desktop build's float output (desktop/hostrate.c). The same as
  * render() before its int16 step: interleaved L R in -1..1, where render() writes (int16_t)(x * 32767). Called under
  * the wrapper's engine lock, in render()'s place; the MPC build never calls it. */
-void one_ish_render_float(void *inst, float *out_lr, int frames) { render_to(inst, NULL, out_lr, frames); }
+void one_ish_render_float(void *inst, float *out_lr, int frames) { render_to(inst, NULL, out_lr, NULL, frames); }
+
+/* (2026-10-30) Not in the engine contract either: the desktop's multi-out (desktop/hostrate.c). As
+ * one_ish_render_float() into out_lr (MAIN); syn_lr[0..2] (interleaved L R, `frames` each; an entry NULL: that Synth
+ * has no pair and stays on MAIN; entries past the build's Synths are not touched) get each Synth's own sound when its
+ * OUTPUT (syn_out) is Own Pair or Main + Own, else silence. With every OUTPUT at Main, out_lr is exactly
+ * one_ish_render_float()'s. Called under the wrapper's engine lock, in render()'s place. */
+void one_ish_render_multi(void *inst, float *out_lr, float *const *syn_lr, int frames) {
+    render_to(inst, NULL, out_lr, syn_lr, frames);
+}
 
 static const mpc_engine_t ENGINE = {create, destroy, midi, set_param, get_param, render, NULL, song_pos};
 const mpc_engine_t *mpc_engine(void) { return &ENGINE; }
