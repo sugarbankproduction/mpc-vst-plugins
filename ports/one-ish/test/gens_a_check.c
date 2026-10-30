@@ -25,6 +25,7 @@ static int ga_opt(const char *key, const char *name) {
     return -1;
 }
 
+static void gen_tempo_checks(void);
 static void gens_a_checks(void) {
     char what[320];
     int16_t ba[256], bb[256];
@@ -337,6 +338,131 @@ static void gens_a_checks(void) {
                  "move a cutoff, all heard and finite", moved);
         check(moved == 5 && heard, what);
     }
+    gen_tempo_checks();   /* (2026-10-30) FOLLOW TEMPO, all five free-running generators */
+}
+
+/* (2026-10-30) FOLLOW TEMPO (gen_follow_tempo, shared): the balls, the particles, the rain, the orbits and LIFE's FREE
+ * rate run at tempo / 120 times their speed. At 120 BPM on and off give the very same notes; at 240 on, about twice
+ * the notes in the same time (off: about the same as at 120); the OWN tempo and the host's song position count; a tempo
+ * change mid-run never makes the balls jump (their places move on smoothly, every value finite). */
+static const char *const GT_ON[5] = {
+    "phys_balls_on=1,phys_balls=4,phys_gravity=0,phys_bounce=100,phys_speed=75,phys_max=30",
+    "phys_parts_on=1,phys_trigger=2,phys_rate=40,phys_max=30",
+    "rain_on=1,rain_echo=0,rain_max=30",
+    "orb_on=1,orb_quant=0,orb_max=30",
+    "life_on=1,life_rate=6,life_mode=1,life_notes=1,life_max=30"};
+static const char *const GT_NAME[5] = {"balls", "particles", "rain", "orbits", "LIFE (free rate)"};
+static int gt_count(const char *on, int follow, const char *bpm, const char *cfg, double secs) {
+    void *a = pg_patch();
+    setkv(a, on);
+    set(a, "gen_follow_tempo", follow);
+    if (cfg) { char b[96]; snprintf(b, sizeof b, "midicfg\n%s", cfg); E->set_param(a, "state", b); }
+    E->set_param(a, "lfo_bpm", bpm);
+    int n = 0;
+    pg_run(a, secs, "gen_log", pg_a, &n);
+    E->destroy(a);
+    return n;
+}
+static void gen_tempo_checks(void) {
+    char what[320];
+    {
+        void *a = E->create(NULL);
+        check(rnd_section_of(pindex("gen_follow_tempo")) == RS_NEVER && get(a, "gen_follow_tempo") == 1,
+              "FOLLOW TEMPO: on by default, and never touched by RANDOMISE / MUTATE");
+        E->destroy(a);
+    }
+    for (int g = 0; g < 5; g++) {
+        /* 120 BPM: on and off, the very same notes */
+        void *a = pg_patch(), *b = pg_patch();
+        setkv(a, GT_ON[g]); setkv(b, GT_ON[g]);
+        set(a, "gen_follow_tempo", 1); set(b, "gen_follow_tempo", 0);
+        int na = 0, nb = 0;
+        pg_run(a, 8.0, "gen_log", pg_a, &na);
+        pg_run(b, 8.0, "gen_log", pg_b, &nb);
+        snprintf(what, sizeof what, "FOLLOW TEMPO, %s at 120 BPM: on and off play the very same %d notes", GT_NAME[g], na);
+        check(na > 5 && pg_same(pg_a, na, pg_b, nb, 0), what);
+        E->destroy(a); E->destroy(b);
+        /* 240 BPM: on, about twice the notes; off, about the same as at 120 */
+        int n120 = gt_count(GT_ON[g], 1, "120", NULL, 12.0), on240 = gt_count(GT_ON[g], 1, "240", NULL, 12.0);
+        int off240 = gt_count(GT_ON[g], 0, "240", NULL, 12.0);
+        double r_on = (double)on240 / n120, r_off = (double)off240 / n120;
+        snprintf(what, sizeof what, "FOLLOW TEMPO, %s at 240 BPM: on %d notes in 12 s against %d at 120 (x %.2f, want "
+                 "about 2), off %d (x %.2f, want about 1)", GT_NAME[g], on240, n120, r_on, off240, r_off);
+        check(n120 > 10 && r_on > 1.6 && r_on < 2.5 && r_off > 0.8 && r_off < 1.25, what);
+    }
+    /* the tempo it follows: the window's OWN tempo (the host at 120), and the host's song position's */
+    {
+        int n120 = gt_count(GT_ON[0], 1, "120", NULL, 12.0);
+        int own = gt_count(GT_ON[0], 1, "120", "rx_clock=0;tempo=240", 12.0);
+        void *a = pg_patch();
+        setkv(a, GT_ON[0]);
+        E->set_param(a, "lfo_bpm", "120");
+        int16_t buf[256];
+        static char lg[8192];
+        int sp = 0;
+        double ppq = 0.0;
+        for (long at = 0; at < (long)(12.0 * SR); at += 128) {   /* the host plays at 60 BPM by its song position */
+            E->song_pos(a, ppq, 60.0, 1, 128);
+            ppq += 128 * 60.0 / 60.0 / SR;
+            E->render(a, buf, 128);
+            if (E->get_param(a, "gen_log", lg, sizeof lg) <= 0) continue;
+            for (char *p = lg; *p;) {   /* (the note-ons, as pg_run counts them) */
+                long long t;
+                int nt, vl, used;
+                if (sscanf(p, "%lld:%d:%d;%n", &t, &nt, &vl, &used) != 3) break;
+                sp += vl > 0;
+                p += used;
+            }
+        }
+        E->destroy(a);
+        double r_own = (double)own / n120, r_sp = (double)sp / n120;
+        snprintf(what, sizeof what, "FOLLOW TEMPO follows the tempo the synced parts use: OWN 240 (host 120) x %.2f, the "
+                 "host's song position at 60 x %.2f (want about 2 and 0.5)", r_own, r_sp);
+        check(r_own > 1.6 && r_own < 2.5 && r_sp > 0.35 && r_sp < 0.65, what);
+    }
+    /* a tempo change mid-run: the ball moves on smoothly (no jump), every place finite, and its speed glides there:
+     * the 8 blocks (23 ms) after the tempo goes x 3.3 at once cover well under twice the way of the 8 blocks before */
+    {
+        enum { BLKS = (int)(6.0 * SR / 128), AT1 = (int)(2.0 * SR / 128), AT2 = (int)(4.0 * SR / 128) };
+        static int16_t bx[BLKS], by[BLKS];
+        void *a = pg_patch();
+        setkv(a, "phys_balls_on=1,phys_balls=1,phys_gravity=0,phys_bounce=100,phys_speed=50");   /* (never slowed) */
+        E->set_param(a, "lfo_bpm", "120");
+        int16_t buf[256];
+        char v[2048];
+        int worst = 0, ok = 1, changes = 0;
+        for (int k = 0; k < 16; k++) E->render(a, buf, 128);   /* (the view's first copy) */
+        for (int blk = 0; blk < BLKS; blk++) {
+            if (blk == AT1) E->set_param(a, "lfo_bpm", "400");    /* x 3.3 at once (the host's highest) */
+            if (blk == AT2) E->set_param(a, "lfo_bpm", "30");     /* x 0.25 at once */
+            E->render(a, buf, 128);
+            int nb, np, wl, x = -1, y = -1, f;
+            if (E->get_param(a, "phys_view", v, sizeof v) <= 0 ||
+                sscanf(v, "%d %d %d;%d,%d,%d;", &nb, &np, &wl, &x, &y, &f) != 6 || nb != 1)
+                ok = 0;
+            ok &= x >= 0 && x <= 1000 && y >= 0 && y <= 1000;
+            bx[blk] = (int16_t)x;
+            by[blk] = (int16_t)y;
+            if (blk) {
+                int d = abs(x - bx[blk - 1]) + abs(y - by[blk - 1]);
+                if (d > worst) worst = d;
+                changes += d > 0;
+            }
+        }
+        E->destroy(a);
+        int before = 0, after = 0, later = 0;
+        for (int k = 0; k < 8; k++) {
+            before += abs(bx[AT1 - 8 + k] - bx[AT1 - 9 + k]) + abs(by[AT1 - 8 + k] - by[AT1 - 9 + k]);
+            after += abs(bx[AT1 + k] - bx[AT1 + k - 1]) + abs(by[AT1 + k] - by[AT1 + k - 1]);
+            later += abs(bx[AT1 + 300 + k] - bx[AT1 + 299 + k]) + abs(by[AT1 + 300 + k] - by[AT1 + 299 + k]);
+        }
+        /* (at 3.3 times its speed a ball crosses about 1.8 box widths a second: 5 units of 1000 a block, never a leap) */
+        snprintf(what, sizeof what, "FOLLOW TEMPO: the tempo jumping 120 -> 400 -> 30 mid-run moves the ball on smoothly "
+                 "(the most in one block %d of 1000; moving in %d blocks), all finite; the speed glides (23 ms: before "
+                 "%d units, just after x 3.3 %d, 0.9 s later %d)", worst, changes, before, after, later);
+        check(ok && worst > 0 && worst < 40 && changes > 600 && before > 4 && after < 2 * before && later > 2.5 * before,
+              what);
+    }
 }
 
 /* the CPU: each world alone (its busiest), and the engine with all three playing */
@@ -397,4 +523,23 @@ static void gens_a_bench(void) {
     }
     printf("bench: engine, 4 held voices %6.2f us; with LIFE playing %6.2f, ORBITS %6.2f, PENDULUMS %6.2f, all three "
            "%6.2f us per 128-frame block (each up to 8 notes/s into the voices)\n", eng[0], eng[1], eng[2], eng[3], eng[4]);
+    /* (2026-10-30) FOLLOW TEMPO: the five free-running generators playing at 120 BPM (the same notes either way), off
+     * and on: its cost alone (a glide and a multiply per generator step) */
+    double ft[2];
+    for (int k = 0; k < 2; k++) {
+        void *e = patch(SAW, 5, 300, 70, 250);
+        set(e, "voices", 7);
+        for (int n = 0; n < 4; n++) note(e, 1, 48 + 3 * n, 100);
+        setkv(e, "phys_balls_on=1,phys_parts_on=1,rain_on=1,orb_on=1,life_on=1,life_rate=6,phys_max=8,rain_max=8,"
+                 "orb_max=8,life_max=8");
+        set(e, "gen_follow_tempo", k);
+        for (int b = 0; b < 2000; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        ft[k] = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        E->destroy(e);
+    }
+    printf("bench: engine, 4 held voices with balls, particles, rain, orbits and LIFE (free) playing at 120 BPM: FOLLOW "
+           "TEMPO off %6.2f us, on %6.2f us per 128-frame block\n", ft[0], ft[1]);
 }
