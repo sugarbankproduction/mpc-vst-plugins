@@ -264,6 +264,7 @@ enum {
     P_LIFE_RESEED,   /* (2026-10-30) LIFE's RESEED button (the engine sets it back to Off) */
     P_GEN_FOLLOW,    /* (2026-10-30) FOLLOW TEMPO: the free-running generators' speeds follow the BPM (shared) */
     P_SEQ_OUTPUT,    /* (2026-10-30) the sequencer's OUTPUT: the Synths its notes play (src/stepseq_run.h) */
+    P_DLY_ON, P_REV_ON,   /* (2026-10-30) MASTER FX 1 and 2 each on or off (shared; under the master ON) */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -417,6 +418,7 @@ static const char *const KEYS[P_COUNT] = {
     "life_reseed",
     "gen_follow_tempo",   /* (2026-10-30) */
     "seq_output",   /* (2026-10-30) */
+    "dly_on", "rev_on",   /* (2026-10-30) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -2081,6 +2083,8 @@ static void synth_midi(one_t *s, const uint8_t *m, int len) {
     int st = m[0] & 0xf0, d1 = m[1] & 0x7f, d2 = len > 2 ? m[2] & 0x7f : 0;
     if (st == 0xd0) { s->aftertouch = d1 / 127.0f; return; }   /* channel pressure: two bytes */
     if (len < 3) return;
+    if (st == 0xa0) { s->aftertouch = d2 / 127.0f; return; }   /* (2026-10-30) poly pressure: as channel pressure,
+                                                                 * the last key's pressure for the whole Synth */
     if (st == 0x90 && d2 && s->tun.on && !s->tun.play[(int)clampf(d1 + s->shift, 0, 127)]) return;   /* a key the
                                                                      * keyboard map leaves out: silent */
     if (st == 0x90 && d2) key_on(s, d1, d2);
@@ -3232,6 +3236,8 @@ static void fx_params(const one_t *s, fx_params_t *f) {
     q->quality = (int)p[P_MODFX_QUALITY];
     q->freeze = p[P_MODFX_FREEZE] > 0.5f;
     f->mfx_on = p[P_MFX_ON] > 0.5f;
+    f->off1 = p[P_DLY_ON] < 0.5f;   /* (2026-10-30) a master slot switched off on its own */
+    f->off2 = p[P_REV_ON] < 0.5f;
     f->buss = (int)p[P_MFX_BUSS];
     f->wet_pan = p[P_PAN] * 0.01f;
     for (int b = 0; b < 2; b++) {   /* each master slot's type and options */

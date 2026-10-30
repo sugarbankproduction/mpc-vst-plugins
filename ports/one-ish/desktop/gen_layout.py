@@ -295,9 +295,10 @@ def mfx_page(lay, pre):
     known_types = {n for _, _, names in MFX_USES for n in names}
     new = [t for t, n in enumerate(opts) if n not in known_types]
     mask = lambda ts: [t for t in ts if 0 <= t < 32]
-    items = [(cond, "Type")]
+    items = [(pre + "on", "On")] if pre + "on" in lay.index else []   # (2026-10-30) the slot's own ON
+    items += [(cond, "Type")]
     items += [(pre + k, lab, cond, mask(lay.types(cond, names) + new)) for k, lab, names in MFX_USES]
-    known = {cond} | {pre + k for k, _, _ in MFX_USES} | {pre + k for k, _ in MFX_COMMON}
+    known = {cond, pre + "on"} | {pre + k for k, _, _ in MFX_USES} | {pre + k for k, _ in MFX_COMMON}
     for p in lay.params:
         if p["key"].startswith(pre) and p["key"] not in known:
             items.append((p["key"], p.get("name", p["key"]), cond, mask(new or range(len(opts)))))
@@ -582,6 +583,8 @@ def build(lay):
     L.ctl("svf_cut", "big", X + 1256, 36, 100, 100, "CUTOFF")
     L.ctl("flt_cut", "big", X + 1410, 36, 100, 100, "CUTOFF")
     L.ctl("link_cut", "toggle", X + 1356, 60, 54, 40, "ALL 3")   # (2026-10-30) both cutoffs in all 3 Synths, relative
+    if "link_cut" in L.index:   # (2026-10-30) SYNC: once, both cutoffs of all three Synths to the focused Synth's (hub.c)
+        zones["SYNC_CUT"] = (X + 1360, 40, 46, 15)
     L.ctl("flt_link", "toggle", X + 1356, 104, 54, 44, "LINK CUTOFF")
     L.ctl("svf_res", "knob", X + 1240, 148, 58, 66, "RESONANCE")
     L.ctl("svf_space", "knob", X + 1298, 148, 56, 66, "SPACING")
@@ -635,9 +638,11 @@ def build(lay):
     # default types are played by most; every control of the chosen type is on the slot's MORE page
     L.panel(X + 1542, 468, 162, 128, "MASTER FX 1 - SHARED", more="DELAY")
     L.cells([("dly_type", "TYPE", 60, "button"), ("dly_time", "TIME", 50), ("dly_fb", "FDBK", 50)], X + 1544, 488, 84)
+    L.ctl("dly_on", "toggle", X + 1548, 578, 60, 14, "ON", SIDE)   # (2026-10-30) this slot on or off (lit: on)
     L.panel(X + 1708, 468, 162, 128, "MASTER FX 2 - SHARED", more="REVERB")
     L.cells([("rev_type", "TYPE", 60, "button"), ("rev_decay", "DECAY", 50), ("rev_size", "SIZE", 50)], X + 1710, 488,
             84)
+    L.ctl("rev_on", "toggle", X + 1714, 578, 60, 14, "ON", SIDE)   # (2026-10-30) this slot on or off (lit: on)
     L.panel(X + 1874, 468, 146, 128, "SYNTH OUTPUT", more="OUTPUT")
     L.ctl("volume", "knob", X + 1876, 490, 54, 78, "VOLUME", 34)
     L.cells([("pan", "PAN", 46), ("spread", "SPREAD", 44)], X + 1930, 490, 78)
@@ -655,7 +660,7 @@ def build(lay):
     L.page("MACRO", "MACRO OSCILLATOR", "A fourth sound source with many models (level: the mixer).",
            mac)
     L.page("MFX", "MASTER EFFECTS", "Two effects on two sends after the synth effects, shared by the Synths.", [
-        ("mfx_on", "On"), ("mfx_buss", "Buss Mode"), ("mfx_send1", "Send 1 (FX 1)"), ("mfx_send2", "Send 2 (FX 2)"),
+        ("mfx_on", "On (both)"), ("dly_on", "FX 1 On"), ("rev_on", "FX 2 On"), ("mfx_buss", "Buss Mode"), ("mfx_send1", "Send 1 (FX 1)"), ("mfx_send2", "Send 2 (FX 2)"),
         ("mfx_series", "FX 1 > FX 2"), ("mfx_width", "Width"), ("link_send", "Link Sends (3 Synths)")])
     L.page("DELAY", "MASTER FX 1", "Its type's controls (TYPE changes the list). Fed by SEND 1.", mfx_page(L, "dly_"))
     L.page("REVERB", "MASTER FX 2", "Its type's controls (TYPE changes the list). Fed by SEND 2.", mfx_page(L, "rev_"))

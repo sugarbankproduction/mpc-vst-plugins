@@ -109,6 +109,7 @@ typedef struct {   /* what the effects read; worked out by the engine (fx_params
     fxs_params_t sfx;                     /* the synth effect: one type at a time, mono or stereo in, stereo out */
     /* the master effects: two slots on two sends, their returns added to the dry signal */
     int mfx_on, buss;                     /* buss: MB_DUAL (slot 1 on SEND 1, slot 2 on SEND 2) or MB_STEREO */
+    int off1, off2;                       /* (2026-10-30) slot 1 / slot 2 switched off on its own (0: on, as before) */
     float send1, send2, series, width;    /* 0..1, 0..1, 0..1 (effect 1 into 2), 0..2 */
     fxs_params_t mfx[2];
     float wet_pan;                        /* the synth pan, -1..1: where the synth effect's wet signal sits */

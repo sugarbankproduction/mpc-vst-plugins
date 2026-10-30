@@ -114,6 +114,10 @@ static uint64_t from_program(int idx) {   /* as the wrapper's set_program: each 
     void *e = fresh();
     for (int i = 0; i < PRESETS[idx].n; i++)
         E->set_param(e, PARAMS[PRESETS[idx].values[i].param].key, PRESETS[idx].values[i].value);
+    if (!strcmp(PRESETS[idx].name, "Init")) {   /* (2026-10-30: Init is all three Synths now, on purpose; its Synth 1 must */
+        E->set_param(e, "s2_syn_on", "0");      /* still be the old Init: the pad / ribbon / aftertouch rows at rest */
+        E->set_param(e, "s3_syn_on", "0");      /* change nothing) */
+    }
     uint64_t h = phrase(e);
     E->destroy(e);
     return h;

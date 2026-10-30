@@ -52,7 +52,9 @@ __attribute__((unused)) static const char *const RND_SECTION[RS_ALL] = {"OSCILLA
 /* the window's further choices: WILD 0..1 (0: exactly the tame randomiser; 1: any source to any destination, every
  * matrix slot, odd routings...), the tick buttons (bit RS_ARP / RS_GEN / RS_SEQ: randomise that section too), and
  * whether the sequence has notes (only then may the keys trigger or transpose it: else they would play nothing) */
-typedef struct { float wild; unsigned also; int seq_notes; } rnd_opts_t;
+typedef struct { float wild; unsigned also; int seq_notes; int voicing; } rnd_opts_t;
+/* (2026-10-30) the RANDOM page's MONO / POLY / BOTH: what RANDOMISE's sounds may be (BOTH, 0: either, as before) */
+enum { RV_BOTH, RV_MONO, RV_POLY, RV_COUNT };
 enum { RA_BASS, RA_LEAD, RA_PAD, RA_PLUCK, RA_POLY, RA_TEXTURE, RA_COUNT };
 __attribute__((unused)) static const char *const RND_ARCH[RA_COUNT] = {"Bass", "Lead", "Pad", "Pluck", "Poly", "Texture"};
 
@@ -179,6 +181,7 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RDEF("modfx_reso", RS_FX, 0.04f), RDEF("modfx_cut*", RS_FX, 0.03f), RDEF("modfx_lvl*", RS_FX, 0),
     RDEF("modfx_ftype", RS_FX, 0), RDEF("modfx_ctrl*", RS_FX, 0), RDEF("modfx_c*_dst", RS_FX, 0),
     RCODE("mfx_on", RS_FX, 0, 0, 0),
+    RDEF("dly_on", RS_FX, 0), RDEF("rev_on", RS_FX, 0),   /* (2026-10-30) each master slot's own ON: back on */
     RCODEZ("mfx_send*", RS_FX, 0, 50, 0, 0.04f), RCODEZ("mfx_series", RS_FX, 0, 50, 0, 0.03f),
     RBELL("mfx_width", RS_FX, 80, 140, 0.6f, 100, 0.02f),
     RCODE("dly_time", RS_FX, 0, 100, 0.02f), RCODE("dly_time_r", RS_FX, 0, 100, 0.02f), RCODE("dly_sync", RS_FX, 0, 0, 0),
@@ -240,6 +243,53 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RCODEW("gen_scale", RS_GEN, "3 0.3 1 1 1 1 1 1 1", 1), ROPT("gen_range", RS_GEN, "3 3 1.5 0.5", 1),
     ROPT("key_root", RS_GEN, NULL, 0),                    /* MUTATE leaves the key and the scale alone */
     ROPT("key_scale", RS_GEN, "4 4 2 1 1 2 0.5 1 0.5 2 2 1 0.3 0.2", 0),
+    /* (2026-10-30) the newer generators (set by rnd_gen_gens; RANDOMISE draws them after everything else, so the rest
+     * of a sound is the same with or without them). Their ONs: never by MUTATE; the buttons that act once (FORGET,
+     * RESEED) and the player's choices (FOLLOW OCTAVE, LEARN, QUANTISE) stay at their defaults. */
+    RCODEW("phys_balls_on", RS_GEN, NULL, 0), RCODEW("phys_parts_on", RS_GEN, NULL, 0), RCODEW("rain_on", RS_GEN, NULL, 0),
+    RCODEW("mkv_on", RS_GEN, NULL, 0), RCODEW("life_on", RS_GEN, NULL, 0), RCODEW("orb_on", RS_GEN, NULL, 0),
+    RCODEW("pend_on", RS_GEN, NULL, 0),
+    RDEF("phys_follow_oct", RS_GEN, 0), RDEF("mkv_learn", RS_GEN, 0), RDEF("mkv_forget", RS_GEN, 0),
+    RDEF("mkv_quant", RS_GEN, 0), RDEF("life_reseed", RS_GEN, 0),
+    RCODE("phys_balls", RS_GEN, 1, 6, 0.06f), RCODE("phys_speed", RS_GEN, 20, 70, 0.06f),
+    RCODE("phys_gravity", RS_GEN, 15, 75, 0.06f), RCODE("phys_size", RS_GEN, 30, 80, 0.05f),
+    RCODE("phys_bounce", RS_GEN, 70, 98, 0.04f), RCODE("phys_rate", RS_GEN, 15, 60, 0.06f),
+    RCODE("phys_spread", RS_GEN, 15, 75, 0.06f), RCODE("phys_life", RS_GEN, 25, 75, 0.06f),
+    RCODE("phys_attract", RS_GEN, 0, 50, 0.05f), RCODEW("phys_trigger", RS_GEN, "3 2 1", 1),
+    RCODEW("phys_keys", RS_GEN, "4 2 1 1", 0), RCODEW("phys_restart", RS_GEN, "4 1", 1),
+    RCODEW("phys_sync", RS_GEN, "4 1 2 2 0.5 1 1", 1), RCODEW("phys_floor", RS_GEN, "6 2 1", 1),
+    RCODEW("phys_ceil", RS_GEN, "6 2 1", 1), RCODEW("phys_left", RS_GEN, "6 2 1", 1), RCODEW("phys_right", RS_GEN, "6 2 1", 1),
+    RCODE("phys_len", RS_GEN, 20, 70, 0.06f), RCODEW("phys_octave", RS_GEN, "0 1 3 3 1 0", 1),
+    RCODEW("phys_range", RS_GEN, "1 3 2 0.5", 1), RCODE("phys_max", RS_GEN, 3, 12, 0.05f),
+    RCODE("phys_dyn", RS_GEN, 30, 85, 0.06f),
+    RCODE("rain_rate", RS_GEN, 20, 60, 0.06f), RCODEW("rain_sync", RS_GEN, "3 1 2 1 0 1 0.5", 1),
+    RCODE("rain_spread", RS_GEN, 30, 85, 0.06f), RCODE("rain_speed", RS_GEN, 25, 70, 0.06f),
+    RCODE("rain_life", RS_GEN, 30, 75, 0.06f), RCODE("rain_echo", RS_GEN, 10, 65, 0.06f),
+    RCODE("rain_stones", RS_GEN, 0, 4, 0.05f), RCODEW("rain_keys", RS_GEN, "2 1", 0),
+    RCODE("rain_len", RS_GEN, 20, 70, 0.06f), RCODEW("rain_octave", RS_GEN, "0 1 3 3 1 0", 1),
+    RCODEW("rain_range", RS_GEN, "1 3 2 0.5", 1), RCODE("rain_max", RS_GEN, 3, 10, 0.05f),
+    RCODEW("mkv_order", RS_GEN, "1 1", 1), RCODE("mkv_creat", RS_GEN, 15, 60, 0.06f),
+    RCODEW("mkv_rhythm", RS_GEN, "3 2 1", 1), RCODEW("mkv_rate", RS_GEN, "1 3 3 0.5 1 1", 1),
+    RCODE("mkv_gate", RS_GEN, 30, 90, 0.06f), RCODEW("mkv_range", RS_GEN, "1 3 2 0.5", 1),
+    RCODEW("mkv_keys", RS_GEN, "2 1", 0), RCODE("mkv_max", RS_GEN, 4, 12, 0.05f),
+    RCODEW("life_keys", RS_GEN, "2 1", 0), RCODEW("life_rate", RS_GEN, "1 3 3 0.5 1 1 1", 1),
+    RCODE("life_speed", RS_GEN, 20, 70, 0.06f), RCODEW("life_mode", RS_GEN, "1 2 1", 1),
+    RCODEW("life_rule", RS_GEN, "4 1 1", 1), RCODE("life_density", RS_GEN, 15, 50, 0.06f),
+    RCODE("life_seed", RS_GEN, 0, 99, 0.1f), RCODEW("life_wrap", RS_GEN, "1 4", 1), RCODE("life_notes", RS_GEN, 1, 4, 0.06f),
+    RCODE("life_len", RS_GEN, 20, 70, 0.06f), RCODEW("life_octave", RS_GEN, "0 1 3 3 1 0", 1),
+    RCODEW("life_range", RS_GEN, "1 3 2 0.5", 1), RCODE("life_max", RS_GEN, 4, 12, 0.05f),
+    RCODEW("orb_keys", RS_GEN, "2 1", 0), RCODE("orb_planets", RS_GEN, 1, 5, 0.06f), RCODE("orb_speed", RS_GEN, 25, 70, 0.06f),
+    RCODE("orb_gravity", RS_GEN, 0, 40, 0.05f), RCODE("orb_ecc", RS_GEN, 0, 50, 0.06f), RCODE("orb_spread", RS_GEN, 30, 85, 0.06f),
+    RCODE("orb_spokes", RS_GEN, 2, 7, 0.06f), RCODEW("orb_planet_to", RS_GEN, "1 1", 1),
+    RCODEW("orb_quant", RS_GEN, "1 1 2 2 0.5 1 1", 1), RCODE("orb_len", RS_GEN, 20, 70, 0.06f),
+    RCODEW("orb_octave", RS_GEN, "0 1 3 3 1 0", 1), RCODEW("orb_range", RS_GEN, "1 3 2 0.5", 1),
+    RCODE("orb_max", RS_GEN, 4, 12, 0.05f),
+    RCODEW("pend_keys", RS_GEN, "2 1", 0), RCODE("pend_count", RS_GEN, 3, 9, 0.06f),
+    RCODEW("pend_cycle", RS_GEN, "1 2 3 3 1 0.5", 1), RCODE("pend_speed", RS_GEN, 1, 8, 0.06f),
+    RCODE("pend_spread", RS_GEN, 1, 3, 0.06f), RCODE("pend_damp", RS_GEN, 0, 30, 0.05f),
+    RCODEW("pend_trigger", RS_GEN, "3 1 1", 1), RDEF("pend_restart", RS_GEN, 0), RCODE("pend_len", RS_GEN, 20, 70, 0.06f),
+    RCODEW("pend_octave", RS_GEN, "0 1 3 3 1 0", 1), RCODE("pend_max", RS_GEN, 4, 12, 0.05f),
+    RCODE("pend_dyn", RS_GEN, 30, 85, 0.06f),
 
     /* ---- SEQUENCER (its tick button): its own settings (the steps' notes are not made here: rnd_seq_lanes and the
      * window do the modulation lanes; the transport, recording and the factory sequences are never touched) ---- */
@@ -255,6 +305,7 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RCODEW("seq_transpose", RS_SEQ, "2 1", 1), ROPT("seq_tr_mode", RS_SEQ, "1 1", 1), ROPT("seq_one_shot", RS_SEQ, "8 1", 1),
 };
 #define RND_NRULES ((int)(sizeof RND_RULES / sizeof RND_RULES[0]))
+#define RND_NONE 0xFFFF   /* no rule: never touched */
 
 /* tried matrix pairings: source, destination, amount range (%), a condition (the destination is heard) and a weight;
  * bip: either sign. No pitch row here except the gentle ones: pitch moves by matrix only as vibrato (slot 1, the
@@ -280,12 +331,13 @@ __attribute__((unused)) static const rnd_mod_t RND_MODS[] = {
 /* ---- small helpers ---- */
 typedef struct {
     float w[NPARAMS + 1];          /* working values in each param's own units; [NPARAMS] takes writes to unknown keys */
-    unsigned char rule[NPARAMS];   /* each param's rule (255: none, never touched) */
+    unsigned short rule[NPARAMS];  /* each param's rule (RND_NONE: none, never touched; 2026-10-30: past 255 rules) */
     unsigned locks;
     uint32_t *seed;
     int arch;
     float wild;                    /* rnd_opts_t.wild (0: every step below exactly as without WILD) */
     int seq_notes;                 /* rnd_opts_t.seq_notes */
+    int voicing;                   /* rnd_opts_t.voicing (RV_*) */
 } rnd_ctx_t;
 
 static inline float rnd_u(rnd_ctx_t *c) {   /* xorshift32: 0..1 */
@@ -341,15 +393,15 @@ static inline int rnd_match(const char *pat, const char *key) {
 }
 static inline int rnd_rule_of(int i) {
     const char *k = PARAMS[i].key;
-    if (k[0] == 's' && k[1] >= '2' && k[1] <= '9' && k[2] == '_') return 255;   /* another Synth's copy: never */
+    if (k[0] == 's' && k[1] >= '2' && k[1] <= '9' && k[2] == '_') return RND_NONE;   /* another Synth's copy: never */
     for (int r = 0; r < RND_NRULES; r++)
         if (rnd_match(RND_RULES[r].pat, PARAMS[i].key)) return r;
-    return 255;
+    return RND_NONE;
 }
 /* param i's lock section, or RS_NEVER (never touched) */
 static inline int rnd_section_of(int i) {
-    int r = i >= 0 && i < NPARAMS ? rnd_rule_of(i) : 255;
-    return r == 255 ? RS_NEVER : RND_RULES[r].sec;
+    int r = i >= 0 && i < NPARAMS ? rnd_rule_of(i) : RND_NONE;
+    return r == RND_NONE ? RS_NEVER : RND_RULES[r].sec;
 }
 static inline int rnd_key(const char *key) {   /* a param's index; NPARAMS (the scratch slot) if there is none */
     for (int i = 0; i < NPARAMS; i++)
@@ -374,7 +426,7 @@ static inline float rnd_real(int i, float n) {   /* normalized to the param's un
     return p->min + n * (p->max - p->min);
 }
 static inline int rnd_free_i(const rnd_ctx_t *c, int i) {   /* may this call change param i? */
-    if (i < 0 || i >= NPARAMS || c->rule[i] == 255) return 0;
+    if (i < 0 || i >= NPARAMS || c->rule[i] == RND_NONE) return 0;
     int s = RND_RULES[c->rule[i]].sec;
     return s != RS_NEVER && !(c->locks >> s & 1u);
 }
@@ -401,8 +453,9 @@ static inline void rnd_init(rnd_ctx_t *c, const float *cur, unsigned locks, uint
     c->arch = RA_POLY;
     c->wild = o ? rnd_clamp(o->wild, 0.0f, 1.0f) : 0.0f;
     c->seq_notes = o ? o->seq_notes : 0;
+    c->voicing = o ? o->voicing : RV_BOTH;
     for (int i = 0; i < NPARAMS; i++) {
-        c->rule[i] = (unsigned char)rnd_rule_of(i);
+        c->rule[i] = (unsigned short)rnd_rule_of(i);
         c->w[i] = rnd_real(i, cur[i]);
     }
     c->w[NPARAMS] = 0.0f;
@@ -747,6 +800,15 @@ static inline void rnd_put_mod(rnd_ctx_t *c, int k, const rnd_mod_t *m, float sc
 static inline int rnd_row_active(const rnd_ctx_t *c, int k) {
     return c->w[rnd_keyf("mod%d_src", k)] > 0.5f && c->w[rnd_keyf("mod%d_dst", k)] > 0.5f;
 }
+/* (2026-10-30) the hands' rows (rnd_gen_hands): 13-16 from aftertouch, the pad's X and Y, the ribbon */
+#define RND_HANDS_ROW 13
+__attribute__((unused)) static const char *const RND_HANDS_SRC[4] = {"Aftertouch", "Pad X (CC 2)", "Pad Y (CC 3)",
+                                                                       "Ribbon"};
+static inline int rnd_hands_row(const rnd_ctx_t *c, int k) {   /* row k is one of the hands' rows, as wired */
+    if (k < RND_HANDS_ROW || k > 16) return 0;
+    int si = rnd_keyf("mod%d_src", k);
+    return si < NPARAMS && rnd_row_active(c, k) && (int)c->w[si] == rnd_opt(si, RND_HANDS_SRC[k - RND_HANDS_ROW]);
+}
 /* a pairing that fits and whose destination no active row already moves; -1 if none */
 static inline int rnd_pick_mod(rnd_ctx_t *c) {
     float wt[RND_NMODS], sum = 0.0f;
@@ -1015,6 +1077,7 @@ static inline void rnd_gen_wild(rnd_ctx_t *c, float s) {
         if (rnd_chance(c, 0.2f * s)) rnd_set(c, "pitch_env", (rnd_chance(c, 0.5f) ? 1.0f : -1.0f) * rnd_range(c, 5, 20));
         int want = (int)roundf(s * rnd_range(c, 0.35f, 1.0f) * 15.0f);   /* more rows: at WILD 100%, often every slot */
         for (int k = 2; k <= 16 && want > 0; k++) {
+            if (rnd_hands_row(c, k)) continue;   /* (2026-10-30: MUTATE leaves the hands' rows alone) */
             if (rnd_row_active(c, k)) {   /* a row already there: a controller or a transform now and then */
                 if (rnd_chance(c, 0.3f * s)) rnd_seti(c, rnd_keyf("mod%d_via", k), (float)(1 + rnd_pickw(c, RND_WILD_SRC + 2, 25)));
                 if (rnd_chance(c, 0.2f * s)) {
@@ -1110,6 +1173,181 @@ static inline void rnd_gen_seq(rnd_ctx_t *c) {   /* the sequencer's settings; th
     rnd_seto(c, "seq_transpose", c->seq_notes && rnd_chance(c, 0.35f) ? "On" : "Off");
     if (rnd_chance(c, 0.4f * w)) rnd_set(c, "seq_timing", (float)((int)(rnd_u(c) * 3) % 3));
     if (rnd_chance(c, 0.5f * w)) rnd_set(c, "clock_swing", rnd_range(c, 50, 75));
+}
+
+/* ---- (2026-10-30) the generators beyond Euclid and Turing: the balls and particles, rain, Markov, LIFE, orbits,
+ * pendulums (GENERATIVE lit, or the GENERATIVE page's RANDOMISE). Each gets settings from its rule's range (RCODE:
+ * lo..hi, RCODEW: options by weight), then one generator is switched on, or two (at WILD now and then three); the
+ * choice includes Euclid and Turing, so it replaces rnd_gen_gen's. Enough to hear, not so many that they crowd the
+ * 16 voices. ---- */
+__attribute__((unused)) static const char *const RND_GEN_ON[] = {
+    "gen_euclid_on", "gen_tm_on", "phys_balls_on", "phys_parts_on", "life_on", "orb_on", "pend_on", "rain_on", "mkv_on"};
+#define RND_NGEN ((int)(sizeof RND_GEN_ON / sizeof RND_GEN_ON[0]))
+static inline int rnd_newer_gen(const char *k) {   /* a key of the newer generators */
+    return !strncmp(k, "phys_", 5) || !strncmp(k, "rain_", 5) || !strncmp(k, "mkv_", 4) || !strncmp(k, "life_", 5) ||
+           !strncmp(k, "orb_", 4) || !strncmp(k, "pend_", 5);
+}
+static inline void rnd_gen_gens(rnd_ctx_t *c) {
+    if (!rnd_open(c, RS_GEN)) return;
+    for (int i = 0; i < NPARAMS; i++) {
+        if (!rnd_free_i(c, i) || !rnd_newer_gen(PARAMS[i].key)) continue;
+        const rnd_rule_t *r = &RND_RULES[c->rule[i]];
+        if (r->kind != RK_CODE) continue;
+        if (PARAMS[i].nopts > 1) {
+            if (r->w) c->w[i] = (float)rnd_pickw(c, r->w, PARAMS[i].nopts);   /* (no weights: an ON, below) */
+        } else {
+            c->w[i] = roundf(rnd_range(c, r->lo, r->hi));
+        }
+    }
+    if (rnd_chance(c, 0.5f)) rnd_set(c, "phys_attract", 0.0f);   /* (often none: they fall straight) */
+    if (rnd_chance(c, 0.5f)) rnd_set(c, "orb_gravity", 0.0f);
+    if (rnd_chance(c, 0.5f)) rnd_set(c, "pend_damp", 0.0f);
+    int n = rnd_chance(c, 0.6f) ? 1 : 2, pick[3] = {-1, -1, -1};
+    if (c->wild > 0.0f && rnd_chance(c, 0.4f * c->wild)) n = 3;
+    for (int g = 0; g < RND_NGEN; g++) rnd_seto(c, RND_GEN_ON[g], "Off");
+    for (int k = 0; k < n; k++) {
+        int g = rnd_pickw(c, "1 1 1.3 1 1 1 1 1.3 0.8", RND_NGEN);
+        for (int t = 0; t < 8 && (g == pick[0] || g == pick[1]); t++) g = (g + 1) % RND_NGEN;
+        pick[k] = g;
+        rnd_seto(c, RND_GEN_ON[g], "On");
+    }
+}
+
+/* ---- (2026-10-30) RANDOMISE makes the effects heard: a synth effect that is on gets a mix of 35% or more, and the
+ * master sends (whatever rnd_gen_fx made) are raised to a level you hear, or one is added (the reverb mostly) when
+ * there is none: most sounds have some echo or space, nine in ten. Within the safety pass's caps (45% / 55%, mix 70%;
+ * feedback capped there too). Drawn from the hands' generator (see rnd_generate_x). ---- */
+static inline void rnd_fx_heard(rnd_ctx_t *c) {
+    if (!rnd_open(c, RS_FX)) return;
+    if (rnd_on(c, "modfx_on") && rnd_get(c, "modfx_mix") < 35.0f) rnd_set(c, "modfx_mix", rnd_range(c, 35, 60));
+    if (!rnd_on(c, "mfx_on")) return;
+    int stereo = rnd_is(c, "mfx_buss", "Stereo");
+    float s1 = rnd_get(c, "mfx_send1"), s2 = stereo ? 0.0f : rnd_get(c, "mfx_send2");
+    if (s1 > 0.5f && s1 < 22.0f) rnd_set(c, "mfx_send1", rnd_range(c, 22, 40));
+    if (s2 > 0.5f && s2 < 25.0f) rnd_set(c, "mfx_send2", rnd_range(c, 25, 48));
+    if (s1 <= 0.5f && s2 <= 0.5f && rnd_chance(c, 0.9f)) {
+        if (!stereo && rnd_chance(c, 0.7f)) rnd_set(c, "mfx_send2", rnd_range(c, 25, 48));
+        else rnd_set(c, "mfx_send1", rnd_range(c, 22, 40));
+    }
+}
+
+/* ---- (2026-10-30) the RANDOM page's MONO / POLY (BOTH: as the archetype chose). MONO: one voice, now and then a
+ * short glide (legato, so it slides only between held notes); POLY: a mono archetype gets 4 to 8 voices ---- */
+static inline void rnd_voicing(rnd_ctx_t *c) {
+    if (c->voicing == RV_BOTH || !rnd_open(c, RS_PERF)) return;
+    if (c->voicing == RV_MONO) {
+        rnd_set(c, "voices", 0.0f);
+        if (!rnd_on(c, "glide") && rnd_chance(c, 0.4f)) {
+            rnd_seto(c, "glide", "On");
+            rnd_set(c, "glide_time", rnd_ms(rnd_logr(c, 30, 150)));
+            rnd_seto(c, "glide_legato", "On");
+        }
+    } else if (rnd_get(c, "voices") < 0.5f) {
+        rnd_set(c, "voices", (float)rnd_pickw(c, "0 0 0 1 0.5 2 1 4", 8));
+        rnd_seto(c, "glide", "Off");
+    }
+}
+
+/* ---- (2026-10-30) the player's hands, wired on every RANDOMISE: matrix rows 13-16 from AFTERTOUCH, the X/Y PAD's
+ * X and Y and the RIBBON (the defaults' rows), each to a destination that is heard in this sound, from a list made
+ * for that controller (the pad: the cutoffs, resonance, the effects' mix and sends, the wave shape, FM; the ribbon:
+ * pitch mostly; aftertouch: vibrato depth, a cutoff, the level), no two rows on the same destination. Amounts are
+ * musical (bigger at WILD). At rest (pad at 0, ribbon centred, no pressure) they change nothing. The rows take the
+ * last four slots: anything a WILD sound put there gives way (those come last, so they matter least). The
+ * MODULATION lock keeps the matrix as it is (no rows then). MUTATE never adds, moves or removes them (nor nudges
+ * their amounts: the player's controls stay as wired). ---- */
+enum { HK_CUT, HK_RES, HK_VIB, HK_PITCH, HK_SFX, HK_SEND1, HK_SEND2, HK_PW, HK_ANGLE, HK_FM, HK_AMP, HK_PAN };
+typedef struct { const char *dst; unsigned char kind; const char *knob; float w[4]; } rnd_hand_t;   /* w: AT X Y RIB */
+__attribute__((unused)) static const rnd_hand_t RND_HANDS[] = {
+    {"Ladder Cutoff", HK_CUT, "flt_cut", {2, 4, 1, 1.5f}},     {"SVF Cutoff", HK_CUT, "svf_cut", {1.5f, 3, 1, 1}},
+    {"Ladder Res", HK_RES, "flt_res", {0.5f, 0.5f, 3, 0.3f}},  {"SVF Res", HK_RES, "svf_res", {0.3f, 0.5f, 2, 0.3f}},
+    {"Pitch LFO1 Amt", HK_VIB, NULL, {3, 0, 0.5f, 0}},         {"Pitch", HK_PITCH, NULL, {0, 0, 0, 4}},
+    {"Synth FX Mix", HK_SFX, "modfx_mix", {0.5f, 1, 1.5f, 0.5f}}, {"Send 1 (FX1)", HK_SEND1, "mfx_send1", {0.2f, 0.8f, 1.2f, 0.3f}},
+    {"Send 2 (FX2)", HK_SEND2, "mfx_send2", {0.3f, 0.8f, 1.5f, 0.3f}}, {"Osc 1 PW", HK_PW, NULL, {0.3f, 1.2f, 0.8f, 0.5f}},
+    {"Osc 1 Angle", HK_ANGLE, NULL, {0.3f, 1.2f, 0.8f, 0.5f}}, {"FM Amount", HK_FM, NULL, {0.5f, 1, 1, 0.3f}},
+    {"Amp Level", HK_AMP, NULL, {1, 0, 0, 0}},                 {"Pan", HK_PAN, NULL, {0, 0, 0, 0.8f}},
+};
+#define RND_NHANDS ((int)(sizeof RND_HANDS / sizeof RND_HANDS[0]))
+static inline void rnd_clear_row(rnd_ctx_t *c, int k) {   /* an empty row, as the defaults had before 2026-10-30 */
+    rnd_seti(c, rnd_keyf("mod%d_src", k), 0.0f);
+    rnd_seti(c, rnd_keyf("mod%d_dst", k), 0.0f);
+    rnd_seti(c, rnd_keyf("mod%d_amt", k), 0.0f);
+    rnd_seti(c, rnd_keyf("mod%d_via", k), 0.0f);
+    rnd_seti(c, rnd_keyf("mod%d_via_amt", k), 100.0f);
+    rnd_seti(c, rnd_keyf("mod%d_xf", k), 0.0f);
+    rnd_seti(c, rnd_keyf("mod%d_xf_amt", k), 0.0f);
+    rnd_seti(c, rnd_keyf("mod%d_on", k), 1.0f);
+}
+static inline int rnd_hand_ok(const rnd_ctx_t *c, const rnd_hand_t *h) {   /* heard in this sound */
+    int mfx = rnd_on(c, "mfx_on");
+    switch (h->kind) {
+    case HK_CUT: case HK_RES: return rnd_mod_ok(c, !strncmp(h->dst, "SVF", 3) ? MC_SVF : MC_LAD);
+    case HK_SFX: return rnd_mod_ok(c, MC_SFX);
+    case HK_SEND1: return mfx && rnd_on(c, "dly_on");
+    case HK_SEND2: return mfx && rnd_on(c, "rev_on") && !rnd_is(c, "mfx_buss", "Stereo");
+    case HK_PW: return rnd_mod_ok(c, MC_PW1);
+    case HK_ANGLE: return rnd_mod_ok(c, MC_ANGLE1);
+    case HK_FM: return rnd_mod_ok(c, MC_FM);
+    default: return 1;
+    }
+}
+static inline int rnd_dst_used(const rnd_ctx_t *c, int dst) {
+    for (int k = 1; k <= 16; k++)
+        if (rnd_row_active(c, k) && (int)c->w[rnd_keyf("mod%d_dst", k)] == dst) return 1;
+    return 0;
+}
+static inline void rnd_gen_hands(rnd_ctx_t *c) {
+    if (!rnd_open(c, RS_MOD)) return;
+    float s = c->wild, m = 1.0f + s;
+    int d1 = rnd_key("mod1_dst"), s1 = rnd_key("mod1_src");
+    for (int h = 0; h < 4; h++) {
+        int k = RND_HANDS_ROW + h;
+        rnd_clear_row(c, k);
+        float wt[RND_NHANDS], sum = 0.0f;
+        for (int pass = 0; pass < 2 && sum <= 0.0f; pass++)   /* a destination no row moves yet; else any heard one */
+            for (int j = 0; j < RND_NHANDS; j++) {
+                int dst = rnd_opt(d1, RND_HANDS[j].dst);
+                wt[j] = dst > 0 && rnd_hand_ok(c, &RND_HANDS[j]) && (pass || !rnd_dst_used(c, dst)) ? RND_HANDS[j].w[h] : 0.0f;
+                sum += wt[j];
+            }
+        if (sum <= 0.0f) continue;
+        float r = rnd_u(c) * sum;
+        int j = 0;
+        for (; j < RND_NHANDS - 1; j++)
+            if (wt[j] > 0.0f && (r -= wt[j]) < 0.0f) break;
+        while (wt[j] <= 0.0f && j > 0) j--;
+        const rnd_hand_t *hd = &RND_HANDS[j];
+        float knob = hd->knob ? rnd_get(c, hd->knob) : 0.0f, amt = 0.0f;
+        switch (hd->kind) {
+        case HK_CUT:   /* up from a closed filter, down from an open one */
+            amt = (h == 0 ? rnd_range(c, 20, 40) : rnd_range(c, 35, 60)) * m * (knob > 70.0f ? -1.0f : 1.0f);
+            break;
+        case HK_RES: amt = fminf(rnd_range(c, 25, 50) * m, fmaxf(10.0f, 92.0f - knob)); break;
+        case HK_VIB: amt = rnd_range(c, 2, 5) * m; break;
+        case HK_PITCH: {   /* a whole tone mostly, a semitone, now and then an octave */
+            int st = rnd_pickw(c, s > 0.3f ? "2 5 1.5" : "2 5 0.3", 3);
+            amt = st == 0 ? 4.1667f : st == 1 ? 8.3333f : 50.0f;
+            break;
+        }
+        case HK_SFX: amt = fminf(rnd_range(c, 25, 50) * m, 100.0f - knob); break;
+        case HK_SEND1: case HK_SEND2: amt = fminf(rnd_range(c, 20, 45) * m, fmaxf(10.0f, 70.0f - knob)); break;
+        case HK_PW: amt = rnd_range(c, 20, 35) * (rnd_chance(c, 0.5f) ? 1.0f : -1.0f); break;
+        case HK_ANGLE: amt = rnd_range(c, 30, 60); break;
+        case HK_FM: amt = rnd_range(c, 15, 35) * m; break;
+        case HK_AMP: amt = rnd_range(c, 15, 30); break;
+        case HK_PAN: amt = rnd_range(c, 40, 80) * (rnd_chance(c, 0.5f) ? 1.0f : -1.0f); break;
+        }
+        rnd_seti(c, rnd_keyf("mod%d_src", k), (float)rnd_opt(s1, RND_HANDS_SRC[h]));
+        rnd_seti(c, rnd_keyf("mod%d_dst", k), (float)rnd_opt(d1, hd->dst));
+        rnd_seti(c, rnd_keyf("mod%d_amt", k), rnd_clamp(amt, -100.0f, 100.0f));
+    }
+}
+
+/* the ANALOG page (drift and the voices' spreads) and SPREAD: the player's, never changed by RANDOMISE or MUTATE
+ * (2026-10-30). Their numbers are still drawn (and dropped), so every other choice stays as it was. */
+static inline int rnd_kept(int i) {
+    const char *k = PARAMS[i].key;
+    return !strcmp(k, "drift") || !strcmp(k, "spread") || !strncmp(k, "an_", 3);
 }
 
 /* WILD's loudness on top of the mixer levels' estimate: unison, and matrix rows that turn levels up */
@@ -1286,7 +1524,7 @@ static inline void rnd_safety(rnd_ctx_t *c) {
     int env_src[3] = {rnd_opt(s1, "Filter Env"), rnd_opt(s1, "Amp Env"), rnd_opt(s1, "Mod Env")};
     for (int k = 1; k <= 16; k++) {
         int ai = rnd_keyf("mod%d_amt", k);
-        if (!rnd_free_i(c, ai)) continue;
+        if (!rnd_free_i(c, ai) || rnd_hands_row(c, k)) continue;   /* (the hands' rows: as wired) */
         int src = (int)c->w[rnd_keyf("mod%d_src", k)], dst = (int)c->w[rnd_keyf("mod%d_dst", k)];
         const char *dn = dst >= 0 && d1 < NPARAMS && dst < PARAMS[d1].nopts ? PARAMS[d1].opts[dst] : "";
         float cap = 100.0f;
@@ -1322,7 +1560,7 @@ static inline int rnd_finish(const rnd_ctx_t *c, const float *cur, float *out) {
     for (int i = 0; i < NPARAMS; i++) {
         const param_t *p = &PARAMS[i];
         out[i] = cur[i];
-        if (!rnd_free_i(c, i)) continue;
+        if (!rnd_free_i(c, i) || rnd_kept(i)) continue;   /* (the ANALOG page and SPREAD: never, 2026-10-30) */
         if (p->nopts > 1) {
             int o = (int)rnd_clamp(roundf(c->w[i]), 0.0f, (float)(p->nopts - 1));
             if (o != (int)lroundf(rnd_clamp(cur[i], 0.0f, 1.0f) * (p->nopts - 1))) { out[i] = (float)o / (p->nopts - 1); changed++; }
@@ -1342,6 +1580,7 @@ static inline int rnd_generate_x(const float *cur, float *out, unsigned locks, u
     rnd_init(&c, cur, locks, seed, o);
     for (int i = 0; i < NPARAMS; i++)   /* every free param from its default first */
         if (rnd_free_i(&c, i)) c.w[i] = rnd_real(i, PARAMS[i].def);
+    for (int k = RND_HANDS_ROW; k <= 16; k++) rnd_clear_row(&c, k);   /* (the hands' rows: made last, below) */
     c.arch = rnd_pickw(&c, "18 16 20 18 16 12", RA_COUNT);
     for (int i = 0; i < NPARAMS; i++)
         if (rnd_free_i(&c, i) && RND_RULES[c.rule[i]].sec < RS_COUNT) rnd_sample(&c, i);
@@ -1356,7 +1595,18 @@ static inline int rnd_generate_x(const float *cur, float *out, unsigned locks, u
     rnd_gen_arp(&c);
     rnd_gen_gen(&c);
     rnd_gen_seq(&c);
+    rnd_gen_gens(&c);   /* (2026-10-30: GENERATIVE lit only) */
+    /* (2026-10-30) what came after: MONO / POLY, effects that are heard, the hands' rows. Drawn from a generator of
+     * their own, seeded from this sound's, so the caller's seed and every choice above are as they were before them
+     * (test/rnd_golden.c) */
+    uint32_t *seed_was = c.seed, extra = *seed ^ 0x6a09e667u;
+    if (!extra) extra = 1;
+    c.seed = &extra;
+    rnd_voicing(&c);
+    rnd_fx_heard(&c);
     rnd_safety(&c);
+    rnd_gen_hands(&c);
+    c.seed = seed_was;
     rnd_finish(&c, cur, out);
     return c.arch;
 }
@@ -1379,6 +1629,13 @@ static inline int rnd_relevant(const rnd_ctx_t *c, int i) {
     if (!strncmp(k, "noise_", 6) && strcmp(k, "noise_level")) return rnd_get(c, "noise_level") > 0.0f;
     if (!strncmp(k, "glide_", 6) || !strcmp(k, "glissando")) return rnd_on(c, "glide");
     if (!strncmp(k, "uni_", 4)) return rnd_on(c, "unison");
+    /* (2026-10-30) the newer generators: their settings only while they are on */
+    if (!strncmp(k, "phys_", 5)) return rnd_on(c, "phys_balls_on") || rnd_on(c, "phys_parts_on");
+    if (!strncmp(k, "rain_", 5)) return rnd_on(c, "rain_on");
+    if (!strncmp(k, "mkv_", 4)) return rnd_on(c, "mkv_on");
+    if (!strncmp(k, "life_", 5)) return rnd_on(c, "life_on");
+    if (!strncmp(k, "orb_", 4)) return rnd_on(c, "orb_on");
+    if (!strncmp(k, "pend_", 5)) return rnd_on(c, "pend_on");
     /* the tick buttons' sections: a setting matters only while what it belongs to is on */
     if (strncmp(k, "arp_", 4) && strncmp(k, "gen_", 4) && strncmp(k, "seq_", 4) && strcmp(k, "clock_swing")) return 1;
     int arp = rnd_on(c, "arp_on"), eu = rnd_on(c, "gen_euclid_on"), tm = rnd_on(c, "gen_tm_on");
@@ -1398,6 +1655,7 @@ static inline void rnd_mutate_matrix(rnd_ctx_t *c, float amount) {
     float w = c->wild;
     for (int k = 1; k <= 16; k++) {
         int ai = rnd_keyf("mod%d_amt", k);
+        if (rnd_hands_row(c, k)) continue;   /* (2026-10-30) the hands' rows stay as wired */
         if (rnd_row_active(c, k) && rnd_chance(c, fmaxf(0.05f, amount)))   /* slot 1 is the vibrato: tiny steps */
             c->w[ai] += rnd_gauss(c) * amount * (k == 1 ? 1.0f : 12.0f) * (1.0f + 2.0f * w);
         if (w > 0.0f && k > 1 && rnd_row_active(c, k) && rnd_chance(c, 0.3f * amount * w))   /* another controller */
@@ -1413,7 +1671,7 @@ static inline void rnd_mutate_matrix(rnd_ctx_t *c, float amount) {
             }
     if (rnd_chance(c, amount * 0.06f)) {   /* a row goes */
         int k = 2 + (int)(rnd_u(c) * 15) % 15;
-        if (rnd_row_active(c, k)) {
+        if (rnd_row_active(c, k) && !rnd_hands_row(c, k)) {
             rnd_seti(c, rnd_keyf("mod%d_src", k), 0.0f);
             rnd_seti(c, rnd_keyf("mod%d_dst", k), 0.0f);
             rnd_seti(c, rnd_keyf("mod%d_amt", k), 0.0f);

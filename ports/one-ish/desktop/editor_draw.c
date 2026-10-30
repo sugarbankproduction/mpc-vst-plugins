@@ -355,10 +355,14 @@ static const char *zone_help(ed_t *e, int z) {
                              "transpose, octave, voices, level, pan, sends; then MIDI, master level, PLAY ALL.";
     case Z_TAB_SEQ: return "SEQ: the step sequencer's step editor (64 steps in four pages, note lanes and modulation lanes). "
                            "Click again for its other view.";
-    case Z_RND_GO: return "RANDOMISE: a new sound, made to be playable (heard, not harsh, in tune). WILD sets how strange. "
-                          "Locked sections stay as they are; volume, tuning, bend and keyboard settings are never changed.";
-    case Z_RND_MUTATE: return "MUTATE: a variation of the sound playing now. AMOUNT sets how far: 10-20% a nudge, 100% a lot; "
-                              "WILD makes the moves bigger and stranger. Click again for another variation.";
+    case Z_RND_GO: return "RANDOMISE: a new sound for the Synth in focus (ALL beside it: all three), made to be playable "
+                          "(heard, effects you can hear, not harsh, in tune) and always with aftertouch, the X/Y pad (X and "
+                          "Y) and the ribbon wired to something you hear (matrix rows 13-16). WILD sets how strange; BOTH / "
+                          "MONO / POLY the voices. Locked sections stay; volume, tuning, bend, keyboard and ANALOG settings "
+                          "are never changed.";
+    case Z_RND_MUTATE: return "MUTATE: a variation of the Synth in focus's sound (ALL beside it: all three). AMOUNT sets how "
+                              "far: 10-20% a nudge, 100% a lot; WILD makes the moves bigger and stranger. It leaves the "
+                              "aftertouch, pad and ribbon rows, the voices and the ANALOG settings as they are.";
     case Z_RND_AMOUNT: return "AMOUNT: how far MUTATE moves the sound (drag or scroll). Default 20%.";
     case Z_RND_WILD: return "WILD: how strange RANDOMISE and MUTATE get (drag or scroll). 0% the tame, playable sounds; higher: "
                             "more matrix rows (often every slot), any source to any destination with controllers and "
@@ -373,8 +377,15 @@ static const char *zone_help(ed_t *e, int z) {
                                 "steps' notes stay. The console's UNDO takes the lanes back too; the randomiser's UNDO only the settings.";
     case Z_RND_UNDO: return "UNDO: back to the sound before (the last 32 are kept, your own edits in between too).";
     case Z_RND_REDO: return "REDO: forward again after UNDO.";
-    case Z_RND_ALL: return "ALL 3 SYNTHS: lit, RANDOMISE and MUTATE give all three Synths a new sound (each its own; ON, "
-                           "channels and key ranges stay). Keys: R randomise, M mutate, Shift+R / Shift+M all three.";
+    case Z_RND_GO_ALL: return "ALL (RANDOMISE's right half): a new sound for each of the three Synths (each its own; ON, "
+                              "channels, key ranges and levels stay). One undo step. Keys: R the Synth in focus, Shift+R all three.";
+    case Z_RND_MUT_ALL: return "ALL (MUTATE's right half): a variation of each of the three Synths' sounds. One undo step. "
+                               "Keys: M the Synth in focus, Shift+M all three.";
+    case Z_RND_VOICE: return "BOTH: RANDOMISE makes mono and poly sounds, as the kind of sound suits (a bass or lead often "
+                             "mono). MONO and POLY choose for it. MUTATE keeps the voices as they are.";
+    case Z_RND_VOICE + 1: return "MONO: every RANDOMISE sound plays one note at a time (now and then with a short glide "
+                                 "between held notes). MUTATE keeps the voices as they are.";
+    case Z_RND_VOICE + 2: return "POLY: every RANDOMISE sound plays chords (4 to 8 voices). MUTATE keeps the voices as they are.";
     case Z_SUB_PREV: case Z_SUB_NEXT: return "PAGE < >: the previous / next part of this page (the number says which). "
                                              "Keys: Left / Right. The sound and the page stay the same.";
     case Z_EUCLID: return "The Euclidean pattern (STEPS, HITS, ROTATE): one dot per step, step 1 at the top, lit = the step "
@@ -899,7 +910,7 @@ static void draw_setup(HDC dc, ed_t *e, int subs) {
 }
 
 /* a button on the screen: framed, filled when lit */
-static void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f) {
+void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f) {   /* (also hub_gens.c) */
     gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), lit ? 0xFF96D7E8 : 0xFF0F2230);
     gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f, hot ? 0xFFFFFFFF : lit ? 0xFF96D7E8 : 0xFF3E6273);
     text(dc, &r, label, f, lit ? RGB(11, 22, 33) : hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -961,6 +972,7 @@ static void draw_hub(HDC dc, ed_t *e) {
     RECT sr = {a.right + sc(8), a.top, L.row[0].right - sc(108), a.bottom};
     text(dc, &sr, st, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     foreign(dc, e, nav_hub_draw);   /* ALL RUNNING: the overview (nav.c) */
+    gens_draw(dc, e);   /* (2026-10-30) RANDOMISE, MUTATE, RESET (hub_gens.c) */
 }
 
 /* the randomiser page: which sound of the history is playing, what it is, the buttons, the amount and the locks */
@@ -1008,7 +1020,13 @@ static void draw_random(HDC dc, ed_t *e) {
         gfx_frame(bx, by, bs, bs, 1.0f, lit ? 0xFF0B1621 : 0xFF3E6273);
         if (lit) gfx_rect(bx + 2.0f * L.s, by + 2.0f * L.s, bs - 4.0f * L.s, bs - 4.0f * L.s, 0xFF0B1621);
     }
-    if (NSYNTHS > 1) screen_button(dc, rnd_rect(Z_RND_ALL), "ALL 3 SYNTHS", e->rnd_all, e->hover == Z_RND_ALL, font_cell);
+    static const char *const VOICE[RV_COUNT] = {"BOTH", "MONO", "POLY"};   /* (2026-10-30) what RANDOMISE makes */
+    for (int k = 0; k < RV_COUNT; k++)
+        screen_button(dc, rnd_rect(Z_RND_VOICE + k), VOICE[k], e->rnd_voicing == k, e->hover == Z_RND_VOICE + k, font_cell);
+    if (NSYNTHS > 1) {   /* RANDOMISE's and MUTATE's ALL halves */
+        screen_button(dc, rnd_rect(Z_RND_GO_ALL), "ALL", 0, e->hover == Z_RND_GO_ALL, font_cell);
+        screen_button(dc, rnd_rect(Z_RND_MUT_ALL), "ALL", 0, e->hover == Z_RND_MUT_ALL, font_cell);
+    }
 }
 
 /* the screen's glass, bezel, stripes and rules: static */
@@ -1162,7 +1180,7 @@ static void draw_screen(HDC dc, ed_t *e) {
     skin_glare(L.screen.left, L.screen.top, rw(&L.screen), rh(&L.screen));
 }
 
-static void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot) {   /* console buttons */
+void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot) {   /* console buttons (also hub_gens.c) */
     if (!vis(r, sc(8))) return;
     int bw = sc(30), bh = sc(13), cx = (r->left + r->right) / 2;
     float x = cx - bw / 2.0f, y = (float)(r->top + sc(6));
@@ -1220,6 +1238,8 @@ static void draw_console(HDC dc, ed_t *e) {
         RECT tr = {r->left + bw + sc(5), r->top, r->right + sc(10), r->bottom};
         text(dc, &tr, "MASTER", font_label, h ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
+    if (vis(&L.sync_cut, sc(4)) && !IsRectEmpty(&L.sync_cut))   /* (2026-10-30) the filters' SYNC (hub_gens.c) */
+        panel_button(dc, &L.sync_cut, "SYNC", 0, e->hover == Z_SYNC_CUT);
     /* the third row (hub.c): GENERATIVE, GEN OFF (GEN BACK while it can bring them back), TEMPO with HOST / OWN */
     panel_button(dc, &L.tab_gen, "GENERATIVE", e->screen == SCR_GEN, e->hover == Z_TAB_GEN);
     panel_button(dc, &L.gen_off, hub_restore_n(e) ? "GEN BACK" : "GEN OFF", 0, e->hover == Z_GEN_OFF);

@@ -140,6 +140,26 @@
 
 static const mpc_engine_t *E;
 static int failures;
+/* (2026-10-30) a new instance now starts with all three Synths on (each its own Init) and the aftertouch, X/Y pad and
+ * ribbon rows in matrix rows 13-16. The checks here were written for one Synth at the old defaults, so E->create gives
+ * them that (Synths 2 and 3 off, rows 13-16 empty: the old defaults); defaults_check.c checks the new instance itself
+ * through mpc_engine() (E_REAL). */
+static const mpc_engine_t *E_REAL;
+static mpc_engine_t E_ONE;
+static void *create_one(const char *data_dir) {
+    void *e = E_REAL->create(data_dir);
+    if (!e) return NULL;
+    E_REAL->set_param(e, "s2_syn_on", "0");
+    E_REAL->set_param(e, "s3_syn_on", "0");
+    static const char *const F[] = {"src", "dst", "amt"};
+    for (int r = 13; r <= 16; r++)
+        for (int f = 0; f < 3; f++) {
+            char k[24];
+            snprintf(k, sizeof k, "mod%d_%s", r, F[f]);
+            E_REAL->set_param(e, k, "0");
+        }
+    return e;
+}
 /* a key of Synth 1 (or a shared one): not a Synth 2 or 3 copy (multitimbral, test/multi_check.c) */
 static int s1_key(const char *k) { return strncmp(k, "s2_", 3) && strncmp(k, "s3_", 3); }
 
@@ -3884,7 +3904,11 @@ static void rnd_apply_norm(void *e, const float *n) {   /* a normalized param ar
         set(e, p->key, v);
     }
 }
-static void rnd_defaults(float *n) { for (int i = 0; i < NPARAMS; i++) n[i] = PARAMS[i].def; }
+static void rnd_defaults(float *n) {   /* (2026-10-30: Synths 2 and 3 off, as these checks play one Synth's sounds) */
+    for (int i = 0; i < NPARAMS; i++) n[i] = PARAMS[i].def;
+    for (int i = 0; i < NPARAMS; i++)
+        if (!strcmp(PARAMS[i].key, "s2_syn_on") || !strcmp(PARAMS[i].key, "s3_syn_on")) n[i] = 0.0f;
+}
 
 typedef struct { double rms, peak, over, note_rms[3], note_peak; int zero_run; } rnd_stats_t;
 /* a chord (C3 G3 C4 E4) held 1.5 s then 0.5 s of release, then C2, C4 and C6 alone (0.4 s held, 0.2 s released) */
@@ -4092,7 +4116,7 @@ static void randomiser_wild(void) {
     /* WILD 0 is the randomiser as it was: the same sounds and mutations for the same seeds */
     int same = 1;
     for (int s = 0; s < 40 && same; s++) {
-        rnd_opts_t o = {0.0f, 0, 0};
+        rnd_opts_t o = {0.0f, 0, 0, RV_BOTH};
         uint32_t a = 3000 + s, b = 3000 + s;
         rnd_generate(def, out, 0, &a);
         rnd_generate_x(def, out2, 0, &b, &o);
@@ -4107,7 +4131,7 @@ static void randomiser_wild(void) {
         int safe = 0, finite = 1, untouched = 1, all16 = 0;
         double max_peak = 0, sum_over = 0, max_over = 0, min_rms = 1, max_rms = 0;
         for (int s = 0; s < SOUNDS; s++) {
-            rnd_opts_t o = {WILD[k], 0, 0};
+            rnd_opts_t o = {WILD[k], 0, 0, RV_BOTH};
             uint32_t seed = 20000 + s * 7919;
             rnd_generate_x(def, out, 0, &seed, &o);
             int rows = rnd_rows_of(out);
@@ -4157,7 +4181,7 @@ static void randomiser_wild(void) {
     /* MUTATE at WILD 100%: once at 50%, and five in a row at 30% */
     int m_safe = 0, m_changed = 0, m_tame = 0;
     for (int s = 0; s < MUT; s++) {
-        rnd_opts_t o = {1.0f, 0, 0};
+        rnd_opts_t o = {1.0f, 0, 0, RV_BOTH};
         uint32_t seed = 40000 + s, tame;
         rnd_generate(def, cur, 0, &seed);
         tame = seed;
@@ -4188,7 +4212,7 @@ static void randomiser_wild(void) {
     int fin = 1, safe = 0, arp = 0, eu = 0, tm = 0, seq = 0, trig = 0, locked_ok = 1;
     double peak = 0;
     for (int s = 0; s < ALSO; s++) {
-        rnd_opts_t o = {s % 3 * 0.5f, 1u << RS_ARP | 1u << RS_GEN | 1u << RS_SEQ, 0};
+        rnd_opts_t o = {s % 3 * 0.5f, 1u << RS_ARP | 1u << RS_GEN | 1u << RS_SEQ, 0, RV_BOTH};
         uint32_t seed = 60000 + s * 31;
         unsigned locks = s % 4 == 3 ? 1u << RS_ENV : 0;
         rnd_generate_x(def, out, locks, &seed, &o);
@@ -4222,7 +4246,7 @@ static void randomiser_wild(void) {
     sq_seq_t q;
     int lanes0 = 0, lanes1 = 0, valid = 1, kept = 1;
     for (int s = 0; s < 40; s++) {
-        rnd_opts_t o = {s < 20 ? 0.0f : 1.0f, 1u << RS_SEQ, 1};
+        rnd_opts_t o = {s < 20 ? 0.0f : 1.0f, 1u << RS_SEQ, 1, RV_BOTH};
         uint32_t seed = 70000 + s;
         sq_clear(&q);
         rnd_generate(def, out, 0, &seed);
@@ -5163,6 +5187,7 @@ static void arp_wav(const char *demo_path) {
 #include "physgen_check.c"   /* the bouncing balls and particles (2026-10-29) */
 #include "gens_b_check.c"    /* (2026-10-30) rain and ripples, the Markov melody */
 #include "gens_a_check.c"   /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
+#include "defaults_check.c"   /* (2026-10-30) the new defaults, old states, the effects' ONs, the hands, the randomiser */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5922,12 +5947,21 @@ static void fx2_wavs(const char *demo_path) {
 }
 
 int main(int argc, char **argv) {
-    E = mpc_engine();
+    E_REAL = mpc_engine();
+    E_ONE = *E_REAL;
+    E_ONE.create = create_one;
+    E = &E_ONE;
     if (argc > 1 && !strcmp(argv[1], "bench")) {
         bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench(); tuning_bench(); lfoenv_bench(); physgen_bench();
         gens_b_bench();   /* (2026-10-30) */
         gens_a_bench();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
+        defaults_bench();   /* (2026-10-30) the new defaults */
         return 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "defaults")) {   /* (2026-10-30) just the new defaults: offline_check defaults */
+        defaults_checks();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
     }
     if (argc > 1 && !strcmp(argv[1], "gensa")) {   /* (2026-10-30) just LIFE, ORBITS, PENDULUMS: offline_check gensa */
         gens_a_checks();
@@ -6056,6 +6090,7 @@ int main(int argc, char **argv) {
     physgen_checks();
     gens_b_checks();   /* (2026-10-30) */
     gens_a_checks();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
+    defaults_checks();   /* (2026-10-30) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

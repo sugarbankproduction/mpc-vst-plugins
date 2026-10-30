@@ -297,6 +297,10 @@ static void parse(char *t, char *state, int n, parsed_t *r) {
             r->values++;
             continue;
         }
+        if (!strcmp(key, "dv")) {   /* (2026-10-30) the defaults it was saved with (none: the ones before that day) */
+            used += snprintf(state + used, used < n ? n - used : 0, ";dv=%d", atoi(val));
+            continue;
+        }
         if (!strcmp(key, "author") || !strcmp(key, "category") || !strcmp(key, "type") || !strcmp(key, "mood") ||
             !strcmp(key, "group") || !strcmp(key, "notes") || !strcmp(key, "v") || !strcmp(key, "ui_patch"))
             continue;
@@ -551,7 +555,9 @@ static int synth_sound(ed_t *e, char *out, int n) {
     if (!current_state(e, st, sizeof st)) return 0;
     char pre[8] = "";
     if (e->focus) snprintf(pre, sizeof pre, "s%d_", e->focus + 1);
-    int used = snprintf(out, n, "v=1"), pl = (int)strlen(pre);
+    int used = snprintf(out, n, "v=1;dv=1"), pl = (int)strlen(pre);
+    static char seen[NPARAMS];   /* (2026-10-30) the focused Synth's keys the state lists */
+    memset(seen, 0, sizeof seen);
     for (char *s = st; *s;) {
         char *end = strchr(s, ';');
         int len = end ? (int)(end - s) : (int)strlen(s);
@@ -568,8 +574,22 @@ static int synth_sound(ed_t *e, char *out, int n) {
         if (strcmp(key, "seq")) {
             int i = param_of(key);
             if (i < 0 || shared_param(i)) continue;   /* the shared settings are the performance's */
+            seen[i] = 1;
         }
         used += snprintf(out + used, used < n ? n - used : 0, ";%s=%s", key, eq + 1);
+    }
+    /* (2026-10-30) Synths 2 and 3 have an Init of their own (an octave, a wave, a level): the state leaves those values
+     * out where this Synth is at its own default, but the sound is written against Synth 1's defaults, so they go in */
+    for (int i = 0; e->focus && i < NPARAMS; i++) {
+        int c = synth_param(i, e->focus);
+        if (synth_of(i) || shared_param(i) || c == i || seen[i] || setup_key(PARAMS[i].key)) continue;
+        if (fabsf(PARAMS[c].def - PARAMS[i].def) < 1e-6f || fabsf(e->fx->getParameter(e->fx, c) - PARAMS[c].def) > 1e-6f)
+            continue;
+        const param_t *p = &PARAMS[c];
+        if (p->nopts) used += snprintf(out + used, used < n ? n - used : 0, ";%s=%d", PARAMS[i].key,
+                                       (int)lroundf(p->def * (p->nopts > 1 ? p->nopts - 1 : 0)));
+        else used += snprintf(out + used, used < n ? n - used : 0, ";%s=%g", PARAMS[i].key,
+                              p->min + p->def * (p->max - p->min));
     }
     return used < n;
 }

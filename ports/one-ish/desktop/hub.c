@@ -6,7 +6,8 @@
  * is on in (1 2 3), and a click on its name opens its MORE page. Under them KEY and SCALE (what they all play in) with
  * their LINKs, and ALL OFF. (2026-10-30) FOLLOW TEMPO (the right column's last row): the shared gen_follow_tempo,
  * a plain click toggles it; lit, the balls, particles, rain, orbits and LIFE's FREE rate run faster or slower with the
- * tempo (tempo / 120 times their own speed); the text beside it says how much.
+ * tempo (tempo / 120 times their own speed); the text beside it says how much. (2026-10-30) RANDOMISE | ALL,
+ * MUTATE | ALL and RESET | ALL under the right column's generators, and the filters' SYNC: desktop/hub_gens.c.
  *
  * GEN OFF (beside GENERATIVE) and ALL OFF (on the page) switch every generator's ON off in all three Synths: one undo
  * step, the host told of each. Pressed again while they are all still off (and the same sound loaded), it brings back
@@ -138,6 +139,8 @@ static int key_ix(const char *k) {
 }
 
 int hub_hit(ed_t *e, POINT pt) {   /* the hub page (the screen shows it) */
+    int g = gens_hit(e, pt);   /* (2026-10-30) RANDOMISE, MUTATE, RESET (hub_gens.c) */
+    if (g >= 0) return g;
     for (int k = 0; k < NHUB; k++) {
         RECT on = hub_rect(Z_HUB_ON + k), op = hub_rect(Z_HUB_OPEN + k);
         if (HUB[k].on >= 0 && PtInRect(&on, pt)) return Z_HUB_ON + k;
@@ -162,7 +165,8 @@ int hub_hit_console(POINT pt) {
         RECT r = hub_rect(Z[k]);
         if (PtInRect(&r, pt)) return Z[k];
     }
-    return -1;
+    RECT s = gens_rect(Z_SYNC_CUT);   /* (2026-10-30) the filters' SYNC (hub_gens.c) */
+    return PtInRect(&s, pt) ? Z_SYNC_CUT : -1;
 }
 
 /* ---- the generators: on, all off, back on ---- */
@@ -260,6 +264,8 @@ int tempo_wheel(ed_t *e, int z, int dir, int fine) {
 
 int hub_press(ed_t *e, int z) {
     if (z < Z_HUB_ON || z >= Z_HUB_END) return 0;
+    if (gens_press(e, z)) return 1;   /* (2026-10-30, hub_gens.c) */
+    e->gens_arm = 0;   /* (anything else: RESET asks again) */
     float own;
     if (z == Z_TAB_GEN) {   /* the hub page (Shift: GEN OFF) */
         if (GetKeyState(VK_SHIFT) < 0) hub_all_off(e);
@@ -294,6 +300,8 @@ int hub_press(ed_t *e, int z) {
 const char *hub_zone_help(ed_t *e, int z) {
     static char t[200];
     lib_t *lb = e->lib;
+    const char *g = gens_help(e, z);   /* (2026-10-30, hub_gens.c) */
+    if (g) return g;
     if (z == Z_TOGETHER)
         return e->together ? "TOGETHER (lit): click SYNTH 1 / 2 / 3 to add a Synth to the ones edited together, or to take "
                              "it out again; every knob then moves all of them. Click TOGETHER to go back to one Synth."
@@ -335,7 +343,8 @@ void hub_help(ed_t *e, char *out, int n) {
     snprintf(out, n, "The generators play notes by themselves in the Synth's KEY and SCALE. ON switches one in the Synth "
                      "in focus; a name opens its page. LINK lit: KEY or SCALE the same in all three Synths. FOLLOW "
                      "TEMPO lit: balls, particles, rain, orbits and Life's free rate speed up and slow down with the "
-                     "BPM. ALL OFF: silence them all (again: back on).");
+                     "BPM. ALL OFF: silence them all (again: back on). RANDOMISE / MUTATE: new or nudged generator "
+                     "settings (ALL: all three Synths); RESET: every generator back to its defaults (click twice).");
 }
 
 /* ---- load_test (effVendorSpecific TEST_HUB) ---- */
@@ -351,6 +360,8 @@ intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case HT_VOL_MASTER: return e->vol_master;
     case HT_SUB: return e->sub;
     case HT_TOGETHER: return e->together;
+    case HT_GEN_ARMED: return e->gens_arm;   /* (2026-10-30) */
+    case HT_RND_VOICING: return e->rnd_voicing;
     case HT_HELP:   /* (opt 1: the last actions' messages go first, so the help of what is under the mouse shows) */
         if (!buf) return -1;
         if (opt > 0.5f) e->pt.msg[0] = e->st.msg[0] = e->qm.msg[0] = e->sq.msg[0] = 0;
