@@ -1470,11 +1470,11 @@ static void draw_controller(HDC dc, ed_t *e) {
     }
     if (vis(&L.link_all, sc(4)) && !IsRectEmpty(&L.link_all)) {   /* (2026-10-31) LINK ALL: lit when every LINK is */
         const RECT *r = &L.link_all;
-        int bh = sc(10), bw = sc(18), hot = e->hover == Z_LINK_ALL;
-        skin_button((float)r->left + 1, (r->top + r->bottom - bh) / 2.0f, (float)bw, (float)bh, SK_BLACK,
-                    hands_linked(e) ? SK_ON : hot ? SK_HOT : SK_UP);
-        RECT tr = {r->left + bw + sc(5), r->top, r->right + sc(6), r->bottom};
-        text(dc, &tr, "LINK ALL", font_label, hot ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        int hot = e->hover == Z_LINK_ALL, lit = hands_linked(e);   /* (its name on the cap: it fits the box) */
+        skin_button((float)r->left + 1, (float)r->top + 1, (float)rw(r) - 2, (float)rh(r) - 2, SK_BLACK,
+                    lit ? SK_ON : hot ? SK_HOT : SK_UP);
+        text(dc, r, "LINK ALL", font_label, lit ? RGB(24, 24, 26) : hot ? T_HOT : T_LABEL,
+             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     wheel(dc, &L.pitch, e->bend, "PITCH", e->hover == Z_PITCH);
     wheel(dc, &L.modw, e->wheel * 2 - 1, "MOD", e->hover == Z_MODW);

@@ -693,8 +693,8 @@ def build(lay):
     zones.update({"OCT_LEDS": (50, 632, 116, 26), "OCT_DOWN": (64, 662, 36, 16), "OCT_UP": (118, 662, 36, 16),
                   # (2026-10-31) the wheels 14 px shorter: their LINKs under their names
                   "PITCH": (56, 706, 36, 98), "MODW": (110, 706, 36, 98), "PAD": (166, 706, 126, 112),
-                  # (2026-10-31) the ribbon starts 60 px in: its LINK at its left end (shorter with a MORE page)
-                  "KEYS": (384, 640, 1744, 200), "RIBBON": (444, 612, 1684, 20),
+                  # (2026-10-31) the ribbon starts 64 px in: its LINK at its left end (shorter with a MORE page)
+                  "KEYS": (384, 640, 1744, 200), "RIBBON": (448, 612, 1680, 20),
                   # (2026-10-30) the controller's DEST button, top left: modulate from the wheels, the X/Y pad,
                   # the ribbon or the keyboard (quickmod.c); the computer keyboard's hint on the front rail
                   "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14),
@@ -708,8 +708,8 @@ def build(lay):
     # the ribbon's at the ribbon's left end, on a small plate of its own
     L.ctl("link_bend", "toggle", 52, 822, 44, 14, "LINK", SIDE)
     L.ctl("link_mod", "toggle", 106, 822, 44, 14, "LINK", SIDE)
-    L.panel(384, 612, 56, 20, "", style="frame", keys=["link_ribbon"])
-    L.ctl("link_ribbon", "toggle", 388, 615, 50, 14, "LINK", SIDE)
+    L.panel(384, 612, 60, 20, "", style="frame", keys=["link_ribbon"])
+    L.ctl("link_ribbon", "toggle", 387, 615, 54, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     L.ctl("glide", "toggle", 236, 640, 42, 36, "ON")   # (2026-10-31: 20 px shorter, the button where it was)
     L.ctl("link_glide", "toggle", 236, 676, 42, 14, "LINK", SIDE)

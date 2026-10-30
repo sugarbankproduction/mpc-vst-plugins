@@ -293,6 +293,7 @@ enum {
     /* (2026-10-31) LINK on the mod wheel (CC 1), the pitch wheel (pitch bend) and the ribbon (CC 16, 17): shared; lit,
      * that controller reaches all three Synths whatever their MIDI channels (src/synths.h midi), as link_pad */
     P_LINK_MOD, P_LINK_BEND, P_LINK_RIBBON,
+    P_LINK_GLIDE,    /* (2026-10-31) the window's glide LINK (gen_layout.py LINK_GROUPS): stored, as the other LINKs */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -458,6 +459,7 @@ static const char *const KEYS[P_COUNT] = {
     "syn_out",   /* (2026-10-30) */
     "mout_on", "mout_send", "mout_ch", "sus_pedal",   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH */
     "link_mod", "link_bend", "link_ribbon",   /* (2026-10-31) the wheels' and the ribbon's LINKs */
+    "link_glide",   /* (2026-10-31) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
