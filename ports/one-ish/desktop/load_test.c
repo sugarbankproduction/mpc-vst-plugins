@@ -1484,6 +1484,7 @@ static void quickmod_test(AEffect *fx, HWND child, float s, const char *bmp, int
 static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void learn_shows_test(AEffect *fx, HWND child, float s, int w, int h);   /* (2026-10-30) */
+static void matrix_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-10-30) */
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
     check(fx->flags & 1, "the plugin says it has an editor window");
@@ -1584,6 +1585,7 @@ static void editor(AEffect *fx, const char *bmp) {
         settings_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         panel2_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* TEMPO, GENERATIVE, LINK, MASTER (2026-10-30) */
         learn_shows_test(fx, child, cr.right / (float)BASE_W, w, h);   /* (2026-10-30) a learned CC on the panel */
+        matrix_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* (2026-10-30) DELETE, filters, LOW / HIGH */
     }
     fx->dispatcher(fx, 15 /* effEditClose */, 0, 0, NULL, 0);
     check(!IsWindow(child), "the editor window closes");
@@ -3535,4 +3537,221 @@ static void learn_shows_test(AEffect *fx, HWND child, float s, int w, int h) {
     st(fx, STT_MAP_CLEAR, NULL, NULL, 0);
     setkey(fx, "flt_slope", 0.0f);
     setkey(fx, "svf_mode", 0.0f);
+}
+
+/* ---- (2026-10-30) the MATRIX page's DELETE, filters, EDIT MODULATIONS and two-step DESTINATION; SETUP's LOW / HIGH ----
+ * Plain clicks only; a popup's item is picked with the keyboard by its text (menu_path), a sub-menu with Right. */
+#define TEST_MX 0x4F314D58   /* as editor.h */
+enum { Z_MX_FSRC = 690001, Z_MX_FDST, Z_MX_CLEAR, Z_MX_DEL = 690010, Z_MX_KEY = 690030 };
+enum { MXT_XY = 1, MXT_VIEW, MXT_FSRC, MXT_FDST, MXT_WAIT, MXT_CELL_XY, MXT_SECTION };
+static char mxbuf[1024];
+static intptr_t mxt(AEffect *fx, int op, float opt) { mxbuf[0] = 0; return fx->dispatcher(fx, 50, TEST_MX, op, mxbuf, opt); }
+static int opt_named(const char *key, const char *name) {   /* option `name` of param key, or -1 */
+    int k = rnd_key(key);
+    for (int o = 0; k < NPARAMS && o < PARAMS[k].nopts; o++)
+        if (!strcmp(PARAMS[k].opts[o], name)) return o;
+    return -1;
+}
+static void mset(AEffect *fx, int m, const char *col, float real) {   /* Synth 1's row m (0-15): an option or a value */
+    int i = mk(m, 0, col);
+    float v = PARAMS[i].nopts ? real / (PARAMS[i].nopts - 1) : (real - PARAMS[i].min) / (PARAMS[i].max - PARAMS[i].min);
+    fx->setParameter(fx, i, v);
+}
+typedef struct { const char *item[2]; int n; } menu_path_t;
+static HWND menu_window(HMENU not_this) {   /* a popup menu window shown now (not the one with not_this) */
+    for (HWND w = NULL; (w = FindWindowExA(NULL, w, "#32768", NULL));)
+        if (IsWindowVisible(w) && (HMENU)SendMessageA(w, 0x01E1 /* MN_GETHMENU */, 0, 0) != not_this) return w;
+    return NULL;
+}
+static int menu_lit(HWND m, char *txt, int n) {   /* the lit item's text */
+    HMENU hm = (HMENU)SendMessageA(m, 0x01E1, 0, 0);
+    txt[0] = 0;
+    for (int i = 0, k = hm ? GetMenuItemCount(hm) : 0; i < k; i++)
+        if (GetMenuState(hm, (UINT)i, MF_BYPOSITION) & MF_HILITE) { GetMenuStringA(hm, (UINT)i, txt, n, MF_BYPOSITION); return 1; }
+    return 0;
+}
+static DWORD WINAPI menu_path(void *arg) {   /* each level: Down until the item whose text starts with item[l]; Right / Return */
+    const menu_path_t *a = arg;
+    HWND m = NULL;
+    for (int t = 0; t < 500 && !m; t++, Sleep(10)) m = menu_window(NULL);
+    if (!m) return 0;
+    Sleep(200);
+    HMENU top = (HMENU)SendMessageA(m, 0x01E1, 0, 0);
+    for (int l = 0; l < a->n; l++) {
+        if (l) {
+            m = NULL;
+            for (int t = 0; t < 200 && !m; t++, Sleep(10)) m = menu_window(top);
+            if (!m) break;
+            Sleep(150);
+        }
+        char txt[128];
+        int found = 0;
+        for (int tries = 0; tries < 120 && !found; tries++) {
+            menu_lit(m, txt, sizeof txt);
+            if (txt[0] && !strncmp(txt, a->item[l], strlen(a->item[l]))) { found = 1; break; }
+            PostMessageA(m, WM_KEYDOWN, VK_DOWN, 0);
+            Sleep(30);
+        }
+        if (!found) break;
+        PostMessageA(m, WM_KEYDOWN, l + 1 < a->n ? VK_RIGHT : VK_RETURN, 0);
+        if (l + 1 == a->n) return 1;
+        Sleep(150);
+    }
+    for (int k = 0; k < 3; k++, Sleep(50)) if ((m = menu_window(NULL))) PostMessageA(m, WM_KEYDOWN, VK_ESCAPE, 0);
+    return 0;
+}
+static int click_path(HWND child, intptr_t xy, const char *a, const char *b) {   /* a click at xy (pixels), then the menu */
+    menu_path_t p = {{a, b}, b ? 2 : 1};
+    HANDLE th = CreateThread(NULL, 0, menu_path, &p, 0, NULL);
+    qm_click_xy(child, xy);
+    WaitForSingleObject(th, 8000);
+    DWORD found = 0;
+    GetExitCodeThread(th, &found);
+    CloseHandle(th);
+    return (int)found;
+}
+static void matrix_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    static float saved[NPARAMS];
+    snapshot(fx, saved);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone in focus */
+    mclear(fx);
+    int lfo1 = opt_named("mod1_src", "LFO 1"), lfo2 = opt_named("mod1_src", "LFO 2"), vel = opt_named("mod1_src", "Velocity"),
+        rib = opt_named("mod1_src", "Ribbon"), d_lad = opt_named("mod1_dst", "Ladder Cutoff"),
+        d_pitch = opt_named("mod1_dst", "Pitch"), d_svf = opt_named("mod1_dst", "SVF Cutoff"), d_pan = opt_named("mod1_dst", "Pan"),
+        d_res = opt_named("mod1_dst", "Ladder Res");
+    mset(fx, 0, "src", lfo1); mset(fx, 0, "dst", d_lad); mset(fx, 0, "amt", 20);
+    mset(fx, 1, "src", lfo2); mset(fx, 1, "dst", d_pitch); mset(fx, 1, "amt", 10);
+    mset(fx, 2, "src", vel); mset(fx, 2, "dst", d_svf); mset(fx, 2, "amt", 30); mset(fx, 2, "via", lfo1);
+    mset(fx, 15, "src", rib); mset(fx, 15, "dst", d_pan); mset(fx, 15, "amt", 40);
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, qbuf, 0);
+    click_zone(child, s, ZONE_TAB_SETUP);
+    click_zone(child, s, ZONE_TAB_MATRIX);   /* (rows 1-8) */
+    SendMessageA(child, WM_TIMER, 1, 0);
+    /* DELETE row 2: rows 3-16 move up one, the last row empty; one undo step; UNDO brings it back */
+    int st0 = qm_steps(fx);
+    hover_at(child, s, 0, 0);
+    intptr_t del = mxt(fx, MXT_XY, Z_MX_DEL + 1);
+    SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)(del & 0xFFFF), (int)(del >> 16)));
+    help_fresh(fx);
+    int del_help = strstr(hbuf, "DELETE row 2") != NULL;
+    if (bmp) shot(child, w, h, bmp, "_matrix_filters0");
+    qm_click_xy(child, del);
+    int st1 = qm_steps(fx);
+    int moved = mopt(fx, 1, 0, "src") == vel && mopt(fx, 1, 0, "dst") == d_svf && mopt(fx, 1, 0, "via") == lfo1 &&
+                fabsf(mamt(fx, 1, 0) - 30) < 0.5f && mopt(fx, 14, 0, "src") == rib && mopt(fx, 14, 0, "dst") == d_pan &&
+                mopt(fx, 15, 0, "src") == 0 && mopt(fx, 15, 0, "dst") == 0 && fabsf(mamt(fx, 15, 0)) < 0.5f;
+    snprintf(what, sizeof what, "MATRIX DELETE (a plain click on row 2's X, its help %s): the rows below move up (row 2 "
+             "now Velocity > SVF Cutoff via LFO 1, row 15 Ribbon > Pan, row 16 empty: %s), one undo step (%d -> %d)",
+             del_help ? "shown" : "MISSING", moved ? "yes" : "NO", st0, st1);
+    check(del >= 0 && del_help && moved && st1 == st0 + 1, what);
+    click_zone(child, s, ZONE_UNDO);
+    snprintf(what, sizeof what, "UNDO after DELETE: row 2 is LFO 2 > Pitch again (%d > %d), row 16 Ribbon > Pan (%d > %d)",
+             mopt(fx, 1, 0, "src"), mopt(fx, 1, 0, "dst"), mopt(fx, 15, 0, "src"), mopt(fx, 15, 0, "dst"));
+    check(mopt(fx, 1, 0, "src") == lfo2 && mopt(fx, 1, 0, "dst") == d_pitch && mopt(fx, 15, 0, "src") == rib, what);
+    /* the filters: SOURCE LFO 1 (as SOURCE or VIA): rows 1 and 3; and DEST Ladder Cutoff: row 1; CLEAR: all 16 */
+    int m1 = click_path(child, mxt(fx, MXT_XY, Z_MX_FSRC), "LFO 1  (", NULL);
+    int n1 = (int)mxt(fx, MXT_VIEW, 0);
+    char v1[64];
+    snprintf(v1, sizeof v1, "%s", mxbuf);
+    if (bmp) shot(child, w, h, bmp, "_matrix_filter_src");
+    int m2 = click_path(child, mxt(fx, MXT_XY, Z_MX_FDST), "Ladder Cutoff  (", NULL);
+    int n2 = (int)mxt(fx, MXT_VIEW, 0);
+    char v2[64];
+    snprintf(v2, sizeof v2, "%s", mxbuf);
+    intptr_t clr = mxt(fx, MXT_XY, Z_MX_CLEAR);
+    qm_click_xy(child, clr);
+    int n3 = (int)mxt(fx, MXT_VIEW, 0);
+    snprintf(what, sizeof what, "MATRIX filters by plain clicks: SOURCE LFO 1 (%s) shows rows %s; then DEST Ladder Cutoff "
+             "(%s) rows %s; CLEAR (%s) all %d", m1 ? "picked" : "NOT picked", v1, m2 ? "picked" : "NOT picked", v2,
+             clr >= 0 ? "shown" : "MISSING", n3);
+    check(m1 && m2 && n1 == 2 && !strcmp(v1, "1 3") && n2 == 1 && !strcmp(v2, "1") && clr >= 0 && n3 == 16 &&
+          mxt(fx, MXT_FSRC, 0) == 0 && mxt(fx, MXT_FDST, 0) == 0 && mxt(fx, MXT_XY, Z_MX_CLEAR) == -1, what);
+    /* EDIT MODULATIONS: LFO 1's DEST, then the MOD FROM page's EDIT MODULATIONS: the matrix filtered by LFO 1 */
+    qm_click_xy(child, qmt(fx, QMT_DEST_XY, QA_LFO1));
+    intptr_t em = qmt(fx, QMT_PAGE_XY, 201 /* QP_ALL */);
+    qm_click_xy(child, em);
+    int scr = screen_now(fx), ne = (int)mxt(fx, MXT_VIEW, 0);
+    char ve[64];
+    snprintf(ve, sizeof ve, "%s", mxbuf);
+    snprintf(what, sizeof what, "EDIT MODULATIONS (LFO 1's DEST, then the button): the MATRIX page (screen %d) with LFO 1's "
+             "rows %s (filter %d = %d), quick assign ended (source %d)", scr, ve, (int)mxt(fx, MXT_FSRC, 0), lfo1,
+             (int)qmt(fx, QMT_SOURCE, 0));
+    check(em >= 0 && scr == -1 && ne == 2 && mxt(fx, MXT_FSRC, 0) == lfo1 && qmt(fx, QMT_SOURCE, 0) == 0, what);
+    if (bmp) shot(child, w, h, bmp, "_matrix_editmods");
+    qm_click_xy(child, mxt(fx, MXT_XY, Z_MX_CLEAR));
+    /* DESTINATION in two steps: row 4's DESTINATION, then Filters, then Ladder Res */
+    int st2 = qm_steps(fx);
+    int m4 = click_path(child, mxt(fx, MXT_CELL_XY, 3 * 16 + 1 /* MX_DST */), "Filters", "Ladder Res");
+    int other = 0;
+    for (int d = 1; d < PARAMS[rnd_key("mod1_dst")].nopts; d++) other += mxt(fx, MXT_SECTION, (float)d) == 10;
+    snprintf(what, sizeof what, "DESTINATION in two steps: a plain click on row 4's, Filters, then Ladder Res (%s): row 4's "
+             "destination %d (want %d), one undo step (%d -> %d); every destination in a named section (%d in Other); the "
+             "vocoder's SIBILANCE in Synth effect (%d)", m4 ? "picked" : "NOT picked", mopt(fx, 3, 0, "dst"), d_res, st2,
+             qm_steps(fx), other, (int)mxt(fx, MXT_SECTION, (float)opt_named("mod1_dst", "Synth FX Sibilance")));
+    check(m4 && mopt(fx, 3, 0, "dst") == d_res && qm_steps(fx) == st2 + 1 && other == 0 &&
+          mxt(fx, MXT_SECTION, (float)opt_named("mod1_dst", "Synth FX Sibilance")) == 6, what);
+    if (bmp) shot(child, w, h, bmp, "_matrix_twostep");
+    /* KEY RANGE by a key on the SETUP page: LOW for Synth 2, then a key of the window's keyboard; HIGH, then a computer
+     * key an octave above; LOW for Synth 3, then a MIDI note; HIGH below it (LOW follows); Esc and a second click cancel */
+    click_zone(child, s, ZONE_TAB_SETUP);
+    if (mxt(fx, MXT_XY, Z_MX_KEY) < 0) click_zone(child, s, ZONE_TAB_SETUP);   /* (its first page) */
+    intptr_t lo2 = mxt(fx, MXT_XY, Z_MX_KEY + 2), hi2 = mxt(fx, MXT_XY, Z_MX_KEY + 3), lo3 = mxt(fx, MXT_XY, Z_MX_KEY + 4),
+             hi3 = mxt(fx, MXT_XY, Z_MX_KEY + 5), lo1 = mxt(fx, MXT_XY, Z_MX_KEY);
+    int k2lo = rnd_key("s2_key_lo"), k2hi = rnd_key("s2_key_hi"), k3lo = rnd_key("s3_key_lo"), k3hi = rnd_key("s3_key_hi"),
+        k1lo = rnd_key("key_lo");
+    qm_click_xy(child, lo2);
+    int waiting = (int)mxt(fx, MXT_WAIT, 0);
+    help_fresh(fx);
+    int hint = strstr(hbuf, "PRESS A KEY for Synth 2's LOWEST KEY") != NULL;
+    if (bmp) shot(child, w, h, bmp, "_setup_keywait");
+    st2 = qm_steps(fx);
+    click_white(fx, child, s, 14);   /* C, two octaves above the keyboard's lowest */
+    SendMessageA(child, WM_TIMER, 1, 0);
+    int n_lo = (int)lroundf(fx->getParameter(fx, k2lo) * 127);
+    snprintf(what, sizeof what, "SETUP LOW (Synth 2; waiting %d, hint %s), then a key of the window's keyboard: LOWEST KEY "
+             "%d, no longer waiting (%d), one undo step (%d -> %d)", waiting, hint ? "shown" : "MISSING", n_lo,
+             (int)mxt(fx, MXT_WAIT, 0), st2, qm_steps(fx));
+    check(lo2 >= 0 && waiting == 3 && hint && n_lo % 12 == 0 && n_lo >= 24 && n_lo <= 96 && mxt(fx, MXT_WAIT, 0) == 0 &&
+          qm_steps(fx) == st2 + 1, what);
+    qm_click_xy(child, hi2);
+    SendMessageA(child, WM_KEYDOWN, 'K', 0);   /* the computer keyboard: K is the C above A's */
+    SendMessageA(child, WM_KEYUP, 'K', 0xC0000000);
+    play(fx, 2, 512);
+    int n_hi = (int)lroundf(fx->getParameter(fx, k2hi) * 127);
+    snprintf(what, sizeof what, "SETUP HIGH (Synth 2), then the computer key K: HIGHEST KEY %d, an octave above LOWEST %d",
+             n_hi, n_lo);
+    check(hi2 >= 0 && n_hi == n_lo + 12 && mxt(fx, MXT_WAIT, 0) == 0, what);
+    qm_click_xy(child, lo3);
+    send_midi(fx, 0x90, 64, 100);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    send_midi(fx, 0x80, 64, 0);
+    int n3lo = (int)lroundf(fx->getParameter(fx, k3lo) * 127);
+    qm_click_xy(child, hi3);
+    send_midi(fx, 0x90, 50, 100);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    send_midi(fx, 0x80, 50, 0);
+    int n3hi = (int)lroundf(fx->getParameter(fx, k3hi) * 127), n3lo2 = (int)lroundf(fx->getParameter(fx, k3lo) * 127);
+    snprintf(what, sizeof what, "SETUP LOW (Synth 3), then MIDI note 64: LOWEST KEY %d; HIGH, then note 50: HIGHEST %d, and "
+             "LOWEST came down to it (%d)", n3lo, n3hi, n3lo2);
+    check(lo3 >= 0 && hi3 >= 0 && n3lo == 64 && n3hi == 50 && n3lo2 == 50, what);
+    float k1 = fx->getParameter(fx, k1lo);
+    qm_click_xy(child, lo1);
+    int w1 = (int)mxt(fx, MXT_WAIT, 0);
+    SendMessageA(child, WM_KEYDOWN, VK_ESCAPE, 0);
+    int w2 = (int)mxt(fx, MXT_WAIT, 0);
+    qm_click_xy(child, lo1);
+    qm_click_xy(child, lo1);
+    int w3 = (int)mxt(fx, MXT_WAIT, 0);
+    send_midi(fx, 0x90, 70, 100);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    send_midi(fx, 0x80, 70, 0);
+    snprintf(what, sizeof what, "SETUP LOW cancelled by Esc (waiting %d -> %d) and by a second click (%d); Synth 1's LOWEST "
+             "KEY unchanged by a later note (%s)", w1, w2, w3, fx->getParameter(fx, k1lo) == k1 ? "yes" : "NO");
+    check(w1 == 1 && w2 == 0 && w3 == 0 && fx->getParameter(fx, k1lo) == k1, what);
+    if (bmp) shot(child, w, h, bmp, "_setup_keys");
+    for (int i = 0; i < NPARAMS; i++)
+        if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    SendMessageA(child, WM_TIMER, 1, 0);
 }

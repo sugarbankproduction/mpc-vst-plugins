@@ -25,7 +25,10 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   do the SEND 1 and SEND 2 knobs in the MASTER EFFECTS panel: how much of the Synth in focus goes into each.
 - **SETUP** (next to the SYNTH buttons): the three Synths side by side: ON, MIDI CHANNEL, LOWEST KEY, HIGHEST KEY,
   TRANSPOSE, OCTAVE, VOICES, LEVEL, PAN, SEND 1, SEND 2, SYNTH EFFECT, and the shared MIDI IN (ALL), MASTER LEVEL,
-  PLAY ALL SEQS, CHORD LEARN mode.
+  PLAY ALL SEQS, CHORD LEARN mode. (2026-10-30, the desktop window) Each Synth's LOWEST KEY and HIGHEST KEY cell has
+  a LOW / HIGH button: click it (it reads PRESS, the help line says what to do), then press a key on the window's
+  keyboard, the computer keyboard or a MIDI keyboard, and that key is the end of the range; if the other end would
+  cross, it moves to the same key. One undo step; Esc, a second click or leaving the page cancels.
 - **Split:** Synth 1 HIGHEST KEY B3, Synth 2 ON with LOWEST KEY C4. **Layer:** both on, full range. Factory
   performances: "Split Bass + Lead", "Layer Pad + Pluck", "Split Bass, Pad + Bells".
 - **PATCHES page:** INTO S1/2/3 loads the picked preset or patch into the Synth in focus only (that Synth keeps its
@@ -172,7 +175,6 @@ gets three Synths (and how its page shows them) is the owner's later call.
 ## Not built
 
 - Per-Synth outputs (MAIN / SUB as extra VST2 output pairs), SUB VOLUME.
-- Setting a key range by pressing LOW RANGE and then a key (the range is set as a value).
 - The master effects' matrix destinations follow Synth 1's matrix only.
 - Sequencer OUTPUT to another Synth or all of them; the sustain pedal's target Synth.
 - Timbre names on the home line. (NRPN for Synths 2 and 3 came with MIDI learn, 2026-10-29: `docs/SETTINGS.md`.)

@@ -238,7 +238,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      66.07 before: within 3%); 16 voices 135 us (8.4 a voice); 16 voices of a busy patch with a chorus 124 us in Synth 1
      alone, 134 us shared 6/5/5 by three Synths with a chorus each (+8%: two more synth effects).
      Left (solo and the M | S buttons done 2026-10-29; sequencer OUTPUT 2026-10-30, item 27): per-Synth outputs, the sustain pedal's target, a range set by
-     pressing a key, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
+     NRPN (a range set by pressing a key: item 36); three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
   13. The library (audit packages 5, 12a, 12b). Done 2026-10-29 (offline and the desktop window; `desktop/library.c`,
      `docs/PATCHES.md`): UNDO / REDO of any edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, the
      randomiser, loads; a drag or a wheel burst is one step; 100 steps; Ctrl+Z / Ctrl+Y), COMPARE and SNAPSHOT on the
@@ -362,8 +362,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      GENERATIVE STEPS, HITS, ROTATE, CHANCE, unison DETUNE, sequencer LENGTH, the cutoffs' KEY TRK, the envelopes' A, D,
      R CURVE and VEL AMT, GLIDE RATE, BEND UP and DOWN; the rest are on/off switches and option lists with no
      destination (waves of the oscillators, sync, routes, modes, types, the arp, chord and sequencer buttons). Matrix
-     destinations with no knob of their own: Pitch (all oscillators) and each LFO's Rate (st). Left: EDIT MODULATIONS
-     (the matrix filtered by a source); rings on the MORE pages' items; the MPC page.
+     destinations with no knob of their own: Pitch (all oscillators) and each LFO's Rate (st). Left: rings on the MORE
+     pages' items; the MPC page. (EDIT MODULATIONS, the matrix filtered by a source: item 36.)
   23. Rain and ripples, Markov melody (the GENERATIVE section, beyond the Moog One). Done 2026-10-30 (offline and the
      desktop window; `src/gens_b.h`, `src/gens_b_run.h`, `test/gens_b_check.c`, load_test): per Synth. RAIN: drops fall
      on a pond at a RATE (0.2-10 a second, uneven like rain; SYNC puts the notes on the tempo grid); each landing plays
@@ -716,6 +716,39 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      step, is not measurable); with their own settings 84.35 off, 87.34 on (the difference is running Synth 1's LFOs,
      here a High-range one per sample, in place of their own). Nothing in the audio path allocates, locks or touches a
      file. Left: the MPC page.
+  36. (2026-10-30) The MATRIX page's tools, a key range by pressing a key, the vocoders' matrix destinations (audit
+     packages 6, 11 and 13). Done 2026-10-30 (offline and the desktop window; `desktop/matrix_page.c`, load_test
+     `matrix_page_test`, `test/ext_check.c` voc_matrix). Every feature is a plain click.
+     - DELETE: an X at the right end of every matrix row (the columns are a little narrower for it). The row goes, the
+       rows below move up one, the last row is empty (Off, 0%, no VIA, no XFORM, enabled); in every Synth in focus;
+       one undo step. Nothing else points at a row by its number (the sequencer's lanes and STEP MOD name
+       destinations), but a MIDI learn or host automation of a row's own param stays on that row number, and the
+       randomiser's hands rows (13-16) are found by position, so after a delete above them they sit one row higher.
+     - FILTERS: SOURCE: ALL and DEST: ALL on the MATRIX title line. A click lists the sources (destinations) the rows of
+       the Synth in focus use, with how many rows each; one picked, only those rows show (a source also matches as a
+       row's VIA), the button lit with its name; CLEAR (shown while a filter is on) or "Show every row" brings back all
+       16. Window state, never saved. A row changed so it no longer matches leaves the view at once.
+     - EDIT MODULATIONS: the MOD FROM page's middle button (was ALL IN MATRIX): quick assign ends and the MATRIX page
+       shows only that source's rows. So: a DEST button, then EDIT MODULATIONS. OPEN IN MATRIX and MATRIX on a line
+       clear a filter that would hide the row.
+     - DESTINATION in two steps: a click on a row's DESTINATION (or the ribbon's DEST on its MORE page) lists Off and 10
+       sections (Oscillators, Mixer and noise, Filters, Envelopes, LFOs, Amp and output, Synth effect, Master sends,
+       Master FX 1, Master FX 2), each opening its parameters (sorted by their names; a section "Other" catches any
+       destination added later that fits none, and load_test checks none falls there). The old single list: a
+       right-click.
+     - KEY RANGE: LOW / HIGH beside each Synth's LOWEST KEY and HIGHEST KEY on the SETUP page; click, then press a key
+       on the window's keyboard, the computer keyboard or a MIDI keyboard (the host's MIDI is noted lock-free on its
+       thread and applied by the window's timer); the button reads PRESS and the help line says what to do; the other
+       end moves along if it would cross; one undo step; Esc, a second click or leaving the page cancels. The key
+       still plays.
+     - The vocoders' SIBILANCE and SENSITIVITY (the synth effect's and each master slot's) as six matrix destinations at
+       the very end of the list (296 now), so saved sounds point where they did and WILD's random rows never pick them
+       (as with GRAINS'). Offline: a Constant slot at +100% over the knob at 0 plays the knob at 100% sample for sample,
+       for all six. Found and fixed on the way: a modulated CTRL 1 / 2 targeting SIBILANCE or SENSITIVITY marked
+       `dirty[-1]` in the effect pass (their slot had no effect destination); now it has one.
+     Old sounds unchanged (golden check), the randomiser as before (randomiser golden). No engine change but the six
+     destinations; nothing new in the audio path (no CPU cost to measure). Not done: shift-click shortcuts on DEST /
+     MORE for the filters (the buttons are the way), matrix presets (another helper's), the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

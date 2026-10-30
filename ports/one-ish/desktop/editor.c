@@ -59,7 +59,8 @@
 
 layout_t L;
 HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
-const short MXC[MX_COLS + 2] = {0, 14, 70, 144, 194, 252, 294, 344, 384};   /* #, src .. xf_amt, the end */
+/* #, src .. xf_amt, the end (2026-10-30: a little narrower, for each row's DELETE at the right, matrix_page.c) */
+const short MXC[MX_COLS + 2] = {0, 14, 68, 140, 190, 242, 282, 330, 366};
 /* Instances' editor state. A static pool, never freed: each audio thread looks its instance up here (ed_of, before
  * every block), and another instance closing must not free memory that scan might be reading. */
 static ed_t pool[MAX_INSTANCES];
@@ -104,6 +105,7 @@ static void ui_midi(ed_t *e, int status, int d1, int d2) {   /* on the window's 
     ui_midi_on(e, status < 0xF0 ? status | ui_channel(e) : status, d1, d2);
 }
 static void ui_midi_on(ed_t *e, int status, int d1, int d2) {   /* on the channel in status */
+    if ((status & 0xF0) == 0x90 && d2 > 0) mx_key_heard(e, d1);   /* (2026-10-30) the SETUP page's LOW / HIGH waiting */
     unsigned w = e->mq_w, r = __atomic_load_n(&e->mq_r, __ATOMIC_ACQUIRE);
     if (w - r >= MQ) return;   /* full (the host isn't processing): drop */
     e->mq[w % MQ][0] = (unsigned char)status;
@@ -323,10 +325,11 @@ static void invalidate(ed_t *e, const RECT *r) {
     if (e->wnd) InvalidateRect(e->wnd, r, FALSE);
 }
 static int on_screen(ed_t *e, int i) {   /* does the centre screen's current page show param i (or depend on it)? */
-    if (e->screen == SCR_MATRIX) {
-        for (int m = e->sub * ROWS; m < (e->sub + 1) * ROWS && m < NMATRIX; m++)
+    if (e->screen == SCR_MATRIX) {   /* (filtered, any row's change may show or hide rows) */
+        int rows[NMATRIX], n = mx_view(e, rows), f = mx_filtering(e);
+        for (int j = f ? 0 : e->sub * ROWS; j < (f ? n : (e->sub + 1) * ROWS) && j < n; j++)
             for (int k = 0; k < MX_COLS; k++)
-                if (MATRIX[m][k] == i || MATRIX_ON[m] == i) return 1;
+                if (MATRIX[rows[j]][k] == i || MATRIX_ON[rows[j]] == i) return 1;
         return 0;
     }
     if (nav_tabs_shown(e) && nav_gen_param(i)) return 1;   /* a generator's ON: its tab's dot (nav.c) */
@@ -759,7 +762,7 @@ int screen_subs(ed_t *e) {
     if (e->screen == SCR_SETUP) return 2;
     if (e->screen == SCR_SETTINGS) return settings_subs(e);
     if (e->screen == SCR_QMOD) return qm_subs(e);   /* (quickmod.c: MOD FROM, the picked source's connections) */
-    int items[512], n = e->screen == SCR_MATRIX ? NMATRIX : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
+    int items[512], n = e->screen == SCR_MATRIX ? mx_view(e, items) : e->screen == SCR_INDEX ? NPAGES : page_items(e, e->screen, items);
     int per = e->screen == SCR_MATRIX ? ROWS : e->screen == SCR_INDEX ? SLOTS : page_slots(e->screen);
     return n > per ? (n + per - 1) / per : 1;
 }
@@ -813,13 +816,16 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
             if (PtInRect(&r, pt)) return Z_RND_LOCK + k;
         }
     } else if (e->screen == SCR_MATRIX) {
-        for (int r = 0; r < ROWS && e->sub * ROWS + r < NMATRIX; r++) {
+        int z = mx_hit(e, pt), rows[NMATRIX], nv = mx_view(e, rows);   /* (2026-10-30) DELETE, the filters (matrix_page.c) */
+        if (z >= 0) return z;
+        for (int r = 0; r < ROWS && e->sub * ROWS + r < nv; r++) {
+            int m = rows[e->sub * ROWS + r];   /* (the rows the filters leave, in order) */
             RECT nc = matrix_cell(r, 0);   /* the row's number: its ENABLE (2026-10-29) */
-            int on = MATRIX_ON[e->sub * ROWS + r];
+            int on = MATRIX_ON[m];
             if (on >= 0 && PtInRect(&nc, pt)) { e->hit_screen = 1; e->hit_rect = nc; return on; }
             for (int k = 0; k < MX_COLS; k++) {
                 RECT c = matrix_cell(r, k + 1);
-                int i = MATRIX[e->sub * ROWS + r][k];
+                int i = MATRIX[m][k];
                 if (i >= 0 && PtInRect(&c, pt)) { e->hit_screen = 1; e->hit_rect = c; return i; }
             }
         }
@@ -830,7 +836,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     } else if (e->screen == SCR_SETTINGS) {
         return settings_hit(e, pt);
     } else if (e->screen == SCR_SETUP) {   /* a cell: a param's own index (Synth 1, 2 or 3's, or a shared one) */
-        int keys[ROWS];
+        int z = mx_hit(e, pt), keys[ROWS];   /* (2026-10-30) LOW / HIGH: a key range by a key (matrix_page.c) */
+        if (z >= 0) return z;
         setup_rows(e->sub, keys);
         for (int r = 0; r < ROWS; r++) {
             if (keys[r] < 0) continue;
@@ -1097,6 +1104,7 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
     if (settings_press(e, z)) return;   /* the SETTINGS page's */
     if (hub_press(e, z)) return;        /* the GENERATIVE hub page and the console's third row (hub.c) */
     if (nav_press(e, z)) return;        /* BACK / FWD, the generator tabs, the overview (nav.c) */
+    if (mx_press(e, z)) return;         /* (2026-10-30) the MATRIX page's DELETE and filters, SETUP's LOW / HIGH */
     if (z == Z_TAB_SETTINGS) { settings_open(e); return; }
     int subs = screen_subs(e);
     if (z >= Z_PAGE && z < Z_PAGE + NPAGES) {   /* again on an open page: its next sub-page */
@@ -1222,6 +1230,8 @@ static void press(ed_t *e, int x, int y) {
         leds_geom(i, &x0, &y0, &row, &bt);
         if (k == K_LEDS && y >= y0 && y < y0 + n * row) o = (y - y0) / row;
         edit_value(e, i, option_norm(i, o));
+    } else if (!absolute && mx_is_dst_list(i)) {   /* (2026-10-30) a destination: its section, then the parameter */
+        mx_pick_dst(e, i, r);
     } else {
         pick_option(e, i, r);
     }
@@ -1264,6 +1274,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         lib_tick(e);   /* an undo step after a pause, a set's number held, a MIDI program change, the tempo */
         qm_tick(e);   /* quick assign's message runs out */
         settings_tick(e);   /* MIDI LEARN: a CC heard */
+        mx_tick(e);   /* (2026-10-30) LOW / HIGH: a host note heard (matrix_page.c) */
         int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
             float v = e->fx->getParameter(e->fx, i);
@@ -1313,6 +1324,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_KEYDOWN:   /* 1-3 or Shift+F5/F6/F7: the Synth in focus (Shift+1-3, Ctrl+Shift+F5-F7: added); the step editor: arrows, Delete */
         if (e && qm_key(e, (int)wp)) return 0;   /* Esc: quick assign done */
+        if (e && mx_key(e, (int)wp)) return 0;   /* Esc: the SETUP page's wait for a key cancelled */
         if (e && GetKeyState(VK_CONTROL) < 0 && (wp == 'Z' || wp == 'Y')) {   /* undo, redo (Ctrl+Shift+Z: redo) */
             if (wp == 'Y' || GetKeyState(VK_SHIFT) < 0) lib_redo(e);
             else lib_undo(e);
@@ -1618,6 +1630,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         if (idx == TEST_QM && e && ptr) return qm_test(e, v, ptr, opt);   /* load_test: quick assign */
         if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
         if (idx == TEST_SETTINGS && e && ptr) return settings_test(e, v, ptr, opt);   /* load_test: the settings */
+        if (idx == TEST_MX && e) return mx_test(e, v, ptr, opt);   /* load_test: the MATRIX page, LOW / HIGH */
         if (idx == TEST_HUB && e) return hub_test(e, v, ptr, opt);   /* load_test: TEMPO, GEN OFF, LINK (hub.c) */
         if (idx == TEST_NAV && e) return nav_test(e, v, ptr, opt);   /* load_test: BACK / FWD, tabs, overview (nav.c) */
         if (idx == TEST_LEGACY && e && e->hr) {   /* load_test: the old 44.1 kHz int16 path, to compare against */
@@ -1637,6 +1650,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
     case effProcessEvents:   /* host MIDI waits for the engine block nearest its time (hostrate.c) */
         if (e && ptr) lib_midi_events(e, ptr);   /* a program change for a user patch: noted, loaded on the UI thread */
         if (e && ptr) settings_midi_seen(e, ptr);   /* (MIDI LEARN listens: the last CC, lock-free) */
+        if (e && ptr) mx_midi_seen(e, ptr);   /* (the SETUP page's LOW / HIGH: the last note, lock-free) */
         if (e && e->hr && ptr && hr_events(e->hr, fx, ptr)) return 1;
         break;
     case effSetProgram:   /* the host's or the browser's: the patch shown follows (patches.c) */

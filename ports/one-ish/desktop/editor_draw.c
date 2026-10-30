@@ -321,6 +321,7 @@ static const char *zone_help(ed_t *e, int z) {
     if (z >= Z_HUB_ON && z < Z_HUB_END) return hub_zone_help(e, z);   /* the hub page, the console's third row */
     if (z >= Z_NAV_BACK && z < Z_NAV_END) return nav_zone_help(e, z);   /* BACK / FWD, the tabs, the overview (nav.c) */
     if (z >= Z_SET_BASE && z < Z_SET_END) return settings_zone_help(e, z);   /* the SETTINGS page */
+    if (z >= Z_MX && z < Z_MX_END) return mx_zone_help(e, z);   /* (2026-10-30) the MATRIX page's, SETUP's LOW / HIGH */
     if (z == Z_TAB_SETTINGS) return "SETTINGS: the instrument's own settings, kept apart from the sounds: preset "
                                     "autoload, MIDI clock and channels, pedals, MIDI learn, the library and tuning.";
     if (z >= Z_PATCH_ACT) return patches_zone_help(z);   /* the PATCHES page */
@@ -843,17 +844,54 @@ void sub_pager_draw(HDC dc, ed_t *e, const char *n) {
 }
 
 static void draw_matrix(HDC dc, ed_t *e, int subs) {
-    title_line(dc, e, "MOD MATRIX:  SOURCE moves DESTINATION by AMOUNT x VIA", subs);
+    /* (2026-10-30) the title line: who and MATRIX, then the filters SOURCE / DEST (CLEAR while one is on; matrix_page.c) */
+    {
+        RECT tr = mx_title_rect();
+        char who[16] = "", t[48], v[64];
+        int n = 0;
+        for (int c = 0; c < NSYNTHS; c++)
+            if (e->focus_mask >> c & 1u) n += snprintf(who + n, sizeof who - n, n ? "+%d" : "SYNTH %d", c + 1);
+        snprintf(t, sizeof t, "%s  |  MATRIX", who);
+        text(dc, &tr, t, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        int sl = NMATRIX ? MATRIX[0][MX_SRC] : -1, dl = NMATRIX ? MATRIX[0][MX_DST] : -1;
+        snprintf(v, sizeof v, "SOURCE: %s", e->mx.fsrc > 0 && sl >= 0 ? PARAMS[sl].opts[e->mx.fsrc] : "ALL");
+        RECT b = mx_rect(e, Z_MX_FSRC);
+        screen_button(dc, b, v, e->mx.fsrc > 0, e->hover == Z_MX_FSRC, font_tiny);
+        snprintf(v, sizeof v, "DEST: %s", e->mx.fdst > 0 && dl >= 0 ? PARAMS[dl].opts[e->mx.fdst] : "ALL");
+        b = mx_rect(e, Z_MX_FDST);
+        screen_button(dc, b, v, e->mx.fdst > 0, e->hover == Z_MX_FDST, font_tiny);
+        if (mx_filtering(e)) screen_button(dc, mx_rect(e, Z_MX_CLEAR), "CLEAR", 0, e->hover == Z_MX_CLEAR, font_tiny);
+        if (subs > 1) {
+            char pn[16];
+            snprintf(pn, sizeof pn, "%d / %d", e->sub + 1, subs);
+            sub_pager_draw(dc, e, mx_filtering(e) ? pn : e->sub ? "9-16" : "1-8");
+        }
+    }
     static const char *const head[] = {"#", "SOURCE", "DESTINATION", "AMOUNT", "VIA", "V.AMT", "XFORM", "X.AMT"};
     for (int c = 0; c < MX_COLS + 1; c++) {
         RECT h = {L.head.left + sc(MXC[c]), L.head.top, L.head.left + sc(MXC[c + 1]) - sc(4), L.head.bottom};
         int right = c == 1 + MX_AMT || c == 1 + MX_VIA_AMT || c == 1 + MX_XF_AMT;
         text(dc, &h, head[c], font_tiny, T_LCD_DIM, (right ? DT_RIGHT : DT_LEFT) | DT_VCENTER | DT_SINGLELINE);
     }
+    int rows[NMATRIX], nv = mx_view(e, rows);
+    if (!nv) {
+        RECT r = {L.row[0].left + sc(4), L.row[0].top, L.row[0].right, L.row[1].bottom};
+        text(dc, &r, "No row matches the filter. CLEAR shows all 16 rows.", font_cell, T_LCD,
+             DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    }
     for (int r = 0; r < ROWS; r++) {
-        int m = e->sub * ROWS + r;
-        if (m >= NMATRIX) break;
+        if (e->sub * ROWS + r >= nv) break;
+        int m = rows[e->sub * ROWS + r];
         const short *row = MATRIX[m];
+        {   /* its DELETE: a small X */
+            RECT d = mx_rect(e, Z_MX_DEL + r);
+            int hot = e->hover == Z_MX_DEL + r;
+            screen_button(dc, d, "", 0, hot, font_tiny);
+            float cx = (d.left + d.right) / 2.0f, cy = (d.top + d.bottom) / 2.0f, a = 3.0f * L.s;
+            DWORD col = hot ? 0xFFFFFFFF : 0xFFD66054;
+            gfx_line(cx - a, cy - a, cx + a, cy + a, 1.3f * L.s, col);
+            gfx_line(cx - a, cy + a, cx + a, cy - a, 1.3f * L.s, col);
+        }
         int enabled = MATRIX_ON[m] < 0 || option_of(e, MATRIX_ON[m]) > 0;   /* the number toggles it (2026-10-29) */
         int active = enabled && option_of(e, row[MX_SRC]) > 0 && option_of(e, row[MX_DST]) > 0;
         char num[8];
@@ -949,6 +987,7 @@ static void draw_setup(HDC dc, ed_t *e, int subs) {
         int shared = shared_param(keys[r]);
         for (int c = 0; c < (shared ? 1 : NSYNTHS); c++) {
             RECT cell = setup_cell(r, shared ? NSYNTHS : c);
+            if (!shared && mx_setup_key(keys[r]) >= 0) cell = mx_setup_value(r, c);   /* (its LOW / HIGH beside it) */
             int i = synth_param(keys[r], c);   /* this Synth's own copy (a shared one: itself) */
             int on = shared || e->sub || keys[0] < 0 || e->fx->getParameter(e->fx, synth_param(keys[0], c)) > 0.5f;
             if (PARAMS[i].nopts) screen_menu(dc, e, i, cell, on, font_cell);
@@ -956,6 +995,7 @@ static void draw_setup(HDC dc, ed_t *e, int subs) {
             if (e->hover == Z_ABS + i)
                 gfx_frame((float)cell.left - 1, (float)cell.top, (float)rw(&cell) + 2, (float)rh(&cell), 1.0f, 0xFF96D7E8);
         }
+        mx_setup_draw(dc, e, r, keys[r]);   /* (2026-10-30) LOWEST / HIGHEST KEY: LOW / HIGH, then a key (matrix_page.c) */
     }
     e->abs = was;
 }
@@ -1125,6 +1165,7 @@ void help_line(ed_t *e, char *out, int n) {
     const char *zh = zone_help(e, e->hover), *pm = patches_message(e), *sm = settings_message(e);
     if (sm && (!pm || e->screen == SCR_SETTINGS)) pm = sm;   /* (the SETTINGS page's own first, on that page) */
     if (qm_help(e, help, sizeof help)) {   /* QUICK ASSIGN: picking, connecting, the amount (quickmod.c) */
+    } else if (mx_help(e, help, sizeof help)) {   /* (2026-10-30) waiting for a key (SETUP), what DELETE did (matrix_page.c) */
     } else if (pm) {   /* what the last patch operation did (or why it couldn't) */
         snprintf(help, sizeof help, "%s", pm);
     } else if ((e->hover >= 0 && e->hover < NPARAMS) || (e->hover >= Z_ABS && e->hover < Z_ABS + NPARAMS)) {
@@ -1167,7 +1208,8 @@ void help_line(ed_t *e, char *out, int n) {
     } else if (e->screen == SCR_MATRIX) {
         snprintf(help, sizeof help, "Each row: SOURCE x AMOUNT moves DESTINATION. VIA scales it by a second source "
                                     "(V.AMT: how much); XFORM reshapes the source (X.AMT: how strongly). Click a value "
-                                    "for its list, drag an amount sideways. MATRIX again: rows 9-16.");
+                                    "for its list (DESTINATION: a section, then the parameter), drag an amount sideways. "
+                                    "X: delete the row. SOURCE / DEST above: show only some rows. MATRIX again: rows 9-16.");
     } else if (e->screen >= 0 && e->screen < NPAGES && nav_tabs_shown(e)) {   /* a generator's page: its note first */
         snprintf(help, sizeof help, "%s Drag a value sideways or scroll over it; click a list for its options. The tabs "
                                     "above: the other generators (a lit dot: on). BACK: the page before.",

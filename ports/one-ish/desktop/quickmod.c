@@ -15,7 +15,7 @@
  *   (its title strip: the generators' sources) and the controller panel's top left (the wheels, the X/Y pad, the
  *   ribbon, the keyboard and pedals: a list). While a source is picked the centre screen shows MOD FROM <source>: each
  *   of its connections in the Synth in focus with - / + (5% a click), REMOVE and MATRIX (that row, marked), CHANGE
- *   SOURCE (a list of every source), ALL IN MATRIX and DONE (as Esc). Dragging a knob it already moves changes that
+ *   SOURCE (a list of every source), EDIT MODULATIONS (the MATRIX page with only its rows) and DONE (as Esc). Dragging a knob it already moves changes that
  *   connection's amount. Alt-click, right-click, Ctrl-drag and Esc stay as shortcuts.
  *   See it: a thin arc around each modulated knob from its value by the amount (both ways for a source that swings both
  *   ways), coloured by the source's family (envelopes amber, LFOs blue, the hands' controllers green, random violet,
@@ -40,7 +40,7 @@
 #define SRC_KEY "mod1_src"
 enum { MSG_MS = 5000, MAX_LINKS = MOD_SLOTS };
 /* (2026-10-30) the MOD FROM page: PAGE_LINKS connections a sub-page (the screen's rows 0..6), each with - + REMOVE
- * MATRIX (Z_QP_ROW + line * 4 + k), then CHANGE SOURCE, ALL IN MATRIX and DONE on the last row */
+ * MATRIX (Z_QP_ROW + line * 4 + k), then CHANGE SOURCE, EDIT MODULATIONS and DONE on the last row */
 enum { PAGE_LINKS = ROWS - 1, QP_MINUS = 0, QP_PLUS, QP_REMOVE, QP_MATRIX, QP_PER, AMT_STEP = 5 };
 #define Z_QP_ROW (Z_QM + 100)
 #define Z_QP_PICK (Z_QM + 200)
@@ -402,7 +402,7 @@ static int connect(ed_t *e, int i, int y) {   /* the source picked -> control i:
     }
     drag_start(e, i, d, y, what);
     lib_hold(e, -1);   /* (drag_start holds it until the mouse lets go) */
-    if (e->screen == SCR_MATRIX) e->sub = e->qm.row[e->focus] / ROWS;   /* (the MATRIX page shows the row) */
+    if (e->screen == SCR_MATRIX) e->sub = mx_sub_of(e, e->qm.row[e->focus]);   /* (the MATRIX page shows the row) */
     if (e->screen == SCR_QMOD) e->sub = page_index_of(e, e->qm.row[e->focus]) / PAGE_LINKS;   /* (and MOD FROM its line) */
     focus_names(e, who, sizeof who);
     if (full) {
@@ -587,7 +587,7 @@ static void amount_step(ed_t *e, int row, int d) {   /* a connection's amount by
 static void open_matrix(ed_t *e, int row) {   /* quick assign done; the MATRIX page at that row (marked), or row 1 */
     e->qm.src = 0;
     e->qm.mark = row;
-    ed_show(e, SCR_MATRIX, row >= 0 ? row / ROWS : 0);
+    ed_show(e, SCR_MATRIX, row >= 0 ? mx_sub_of(e, row) : 0);
     repaint_all(e);
 }
 static void pick_any(ed_t *e) {   /* CHANGE SOURCE: every source of the matrix, in columns */
@@ -601,7 +601,14 @@ static void pick_any(ed_t *e) {   /* CHANGE SOURCE: every source of the matrix, 
 }
 static void page_press(ed_t *e, int z) {
     if (z == Z_QP_PICK) { pick_any(e); return; }
-    if (z == Z_QP_ALL) { open_matrix(e, -1); return; }
+    if (z == Z_QP_ALL) {   /* (2026-10-30) EDIT MODULATIONS: the MATRIX page filtered by this source (matrix_page.c) */
+        int s = e->qm.src;
+        e->qm.src = 0;
+        e->qm.mark = -1;
+        mx_edit_mods(e, s);
+        repaint_all(e);
+        return;
+    }
     if (z == Z_QP_DONE) {
         char t[48];
         snprintf(t, sizeof t, "%s", src_name(e->qm.src));
@@ -624,8 +631,8 @@ static const char *page_help(ed_t *e, int z) {
     (void)e;
     if (z == Z_QP_PICK) return "CHANGE SOURCE: a list of every modulation source (LFOs, envelopes, noise, the wheels, the pad, "
                                "the ribbon, the keyboard, the pedals, the generators): the next knobs you click connect to it.";
-    if (z == Z_QP_ALL) return "ALL IN MATRIX: the MATRIX page, where every connection's source, amount, VIA and XFORM can be "
-                              "changed (quick assign ends).";
+    if (z == Z_QP_ALL) return "EDIT MODULATIONS: the MATRIX page with only this source's rows, where each one's amount, VIA "
+                              "and XFORM can be changed (quick assign ends; CLEAR there shows every row).";
     if (z == Z_QP_DONE) return "DONE: quick assign ends; the screen goes back to the page it showed (as Esc, or the DEST "
                                "button again).";
     switch ((z - Z_QP_ROW) % QP_PER) {
@@ -680,7 +687,7 @@ void qm_page_draw(HDC dc, ed_t *e) {   /* under the title line (editor_draw.c dr
             pbutton(dc, page_rect(e, z), B[b], e->hover == z);
         }
     }
-    static const char *const NB[3] = {"CHANGE SOURCE", "ALL IN MATRIX", "DONE"};
+    static const char *const NB[3] = {"CHANGE SOURCE", "EDIT MODULATIONS", "DONE"};
     for (int b = 0; b < 3; b++) pbutton(dc, page_rect(e, Z_QP_PICK + b), NB[b], e->hover == Z_QP_PICK + b);
     gfx_end();
     skin_bind(NULL);
@@ -711,7 +718,7 @@ int qm_right(ed_t *e, int i, int x, int y) {
         if (c >= 100 && c < 100 + NMATRIX) remove_link(e, c - 100);
         else if (c >= 200 && c < 200 + NMATRIX) {   /* the MATRIX page at that row, marked */
             e->screen = SCR_MATRIX;
-            e->sub = (c - 200) / ROWS;
+            e->sub = mx_sub_of(e, c - 200);
             e->qm.mark = c - 200;
             repaint_all(e);
         } else if (c == 300) return 2;
