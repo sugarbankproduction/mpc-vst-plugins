@@ -221,6 +221,7 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     ROPT("glide_legato", RS_PERF, "1 1", 1), ROPT("glide_gated", RS_PERF, "4 1", 1), ROPT("glissando", RS_PERF, "15 1", 1),
     RCODEW("unison", RS_PERF, NULL, 0), RCODEW("uni_count", RS_PERF, NULL, 0),
     RBELL("uni_detune", RS_PERF, 10, 40, 0, 0, 0.05f), RUNI("pitch_var", RS_PERF, 1, 8, 0.8f, 0, 0.02f),
+    RNEVER("an_hq"), RNEVER("an_warm*"),   /* (2026-10-30) HQ MODE and WARM-UP: the player's, never drawn */
     RCODEZ("an_*", RS_PERF, 0, 70, 0, 0.05f), RCODEZ("drift", RS_PERF, 0, 70, 0, 0.05f),
     RCODEZ("spread", RS_PERF, 0, 90, 0, 0.06f), RDEF("pan", RS_PERF, 0),
 

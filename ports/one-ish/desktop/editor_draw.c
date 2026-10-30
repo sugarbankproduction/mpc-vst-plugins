@@ -114,6 +114,10 @@ static const char *help_for(int i) {
         {"pan", "Pan: where the sound sits between left and right."},
         {"spread", "Spread: spreads the voices across the stereo field."},
         {"drift", "Analog drift: slow, slight wandering of pitch and tone, different on every voice."},
+        {"an_hq", "HQ MODE (a click opens its list: Off, 2x, 4x): the voice runs at 2 or 4 times the sample rate, for a cleaner top end with hard sync, FM and a driven ladder. Costs about 1.8x (2x) or 3x (4x) the voice's CPU. Off: exactly as before."},
+        {"an_warm", "WARM-UP (a click turns it on): like a cold analog synth, the pitch and cutoffs sit a little off and wander more, then settle to the normal drift over WARM-UP TIME. Starts again each time it is turned on, or the plugin is loaded."},
+        {"an_warm_amt", "Warm-Up Amount: how cold the start is (100%: up to about 25 cents off and three times the drift's wander)."},
+        {"an_warm_time", "Warm-Up Time: minutes until the Synth has settled (5% of the cold offsets left)."},
         {"ribbon_dst", "What the ribbon moves (its own destination, apart from the mod matrix)."},
         {"ribbon_amt", "How far the ribbon moves its destination."},
         {"ribbon_mode", "Spring: lets go back to the origin when released. Hold: stays where you left it."},
@@ -305,9 +309,10 @@ static const char *help_for(int i) {
                                          "on all three Synths: one undo step, the host told of each. Off, each Synth "
                                          "keeps its own. Saved with the sound.";
     size_t kl = strlen(key);
-    if (!strncmp(key, "an_", 3)) return "Analog character: how much the voices differ from each other in this respect (0 = all exactly alike).";
     for (unsigned h = 0; h < sizeof H / sizeof H[0]; h++)   /* the key itself first, then the first matching ending */
         if (H[h].key[0] != '_' && !strcmp(key, H[h].key)) return H[h].text;
+    /* (the spreads; HQ MODE and WARM-UP have their own above, 2026-10-30) */
+    if (!strncmp(key, "an_", 3)) return "Analog character: how much the voices differ from each other in this respect (0 = all exactly alike).";
     for (unsigned h = 0; h < sizeof H / sizeof H[0]; h++) {
         size_t hl = strlen(H[h].key);
         if (H[h].key[0] == '_' && kl > hl && !strcmp(key + kl - hl, H[h].key)) return H[h].text;

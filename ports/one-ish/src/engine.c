@@ -75,6 +75,7 @@
 #include "stepseq.h"
 #include "macro.h"
 #include "tuning.h"
+#include "hq.h"   /* (2026-10-30) HQ MODE's decimation filters */
 
 #define SR 44100.0f
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
@@ -126,6 +127,13 @@
 #define AN_LVL_DB 1.5f          /* its level: +-1.5 dB */
 #define AN_TUNE_ST 0.08f        /* each of its oscillators: +-8 cents */
 #define AN_RES 0.05f            /* its resonances: +-5% of the knob's range */
+/* (2026-10-30) WARM-UP at 100%, just after the start: how far off a cold instrument sits, and how much more it wanders.
+ * All of it fades as exp(-3 t / WARM-UP TIME) (5% left at that time), to the normal drift. */
+#define WARM_COMMON_ST 0.10f    /* every voice of the Synth together: +-10 cents (the same way for all) */
+#define WARM_TUNE_ST 0.15f      /* each oscillator of each voice on its own: +-15 cents */
+#define WARM_CUT_OCT 0.12f      /* each voice's cutoffs: +-0.12 octave */
+#define WARM_WANDER 2.0f        /* the drift's wander, at up to 3 times its 100% depth (+-12 cents) */
+#define WARM_SEED 0x7f4a7c15u   /* the cold offsets' fixed seed: every instance, every session the same (tests) */
 #define RIBBON_CC 16       /* the ribbon's position, 0..127 (64: the middle) */
 #define RIBBON_TOUCH_CC 17 /* 127 (>= 64) as a finger lands on it, 0 as it lifts */
 #define RIBBON_RETURN_MS 50.0f   /* SPRING: back to the origin over about this long after the finger lifts */
@@ -275,6 +283,9 @@ enum {
     P_GEN_FOLLOW_KEYS,   /* (2026-10-30) FOLLOW KEYS: the notes a generator plays from the keys, in the key played */
     P_LFO1_SHARE,    /* (2026-10-30) SHARE: LFO n of Synths 2 and 3 is Synth 1's (shared; lfo_owner), 4 of them */
     P_LFO4_SHARE = P_LFO1_SHARE + 3,
+    /* (2026-10-30) the ANALOG page's HQ MODE (Off, 2x, 4x: the voice runs oversampled, src/hq.h) and WARM-UP (on, how
+     * much, how long: a cold instrument's pitch and cutoffs settling over minutes) */
+    P_AN_HQ, P_AN_WARM, P_AN_WARM_AMT, P_AN_WARM_TIME,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -436,6 +447,7 @@ static const char *const KEYS[P_COUNT] = {
     "gen_keys", "gen_octave", "gen_eu_notes",   /* (2026-10-30) */
     "gen_tempo_src", "gen_bpm", "gen_follow_keys",   /* (2026-10-30) */
     "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   /* (2026-10-30) */
+    "an_hq", "an_warm", "an_warm_amt", "an_warm_time",   /* (2026-10-30) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -607,6 +619,11 @@ typedef struct {
     float hi_k[NLFO][7];     /* how far it moves (per unit): HK_* below */
     float hi_amp0;           /* the amp level's modulation without the High LFOs' share (1: none) ... */
     float hi_amp1;           /* ... and with it, at the control step */
+    /* (2026-10-30) HQ MODE: the oversampling the voice runs at (1, 2, 4; latched each control step, so the pitch, the
+     * filters and render_voice agree) and its decimation filters' states */
+    int os;
+    hq_dec_t dec;
+    float warm_off[NDRIFT];  /* (2026-10-30) WARM-UP: this voice's cold offsets, -1..1 per oscillator and its cutoffs */
 } voice_t;
 enum { HK_PITCH, HK_O1, HK_O2, HK_O3, HK_LAD, HK_SVF, HK_AMP };   /* semitones (all, each osc), octaves (ladder, SVF), x */
 
@@ -727,6 +744,11 @@ typedef struct one_s {
     int ctrl_seen;           /* (2026-10-30) the state being loaded is from since Auto's CTRL targets changed */
     struct one_s *syn1;      /* (2026-10-30) Synth 1 of the instance (src/synths.h create): a SHARED LFO's owner */
     int64_t lfo_at[NLFO];    /* (2026-10-30) the sample (now) its free-running LFO n last stepped (-1: not yet) */
+    /* (2026-10-30) WARM-UP: on at the last piece; samples since it went on (or the instance started with it on); how
+     * cold the Synth is now (the amount times the fade, 0 when off); the offset all its voices share (-1..1) */
+    int warm_on;
+    int64_t warm_t;
+    float warm_w, warm_common;
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
 static int pool_room(one_t *s, const int *idx, int n);   /* src/synths.h */
@@ -1111,7 +1133,7 @@ static void set_targets(const one_t *s, voice_t *v, const float *dm, float lfo3)
         const float *o = &p[P_O1_WAVE + OSC_STRIDE * n];
         v->tgt_shape[n] = osc_shape((int)o[O_WAVE], clampf(o[O_ANGLE] * 0.01f + dm[MD_O1_ANGLE + n] + angle_lfo, 0.0f, 1.0f),
                                     o[O_PW] * 0.01f + dm[MD_O1_PW + n] * 0.9f + pw_lfo, o[O_MIX] * 0.01f + dm[MD_O1_MIX + n],
-                                    v->inc0[n]);
+                                    v->os > 1 ? v->inc0[n] * (float)v->os : v->inc0[n]);   /* (per 44.1 kHz sample) */
     }
     v->tgt_fm = clampf(p[P_FM_AMT] * 0.01f + dm[MD_FM_AMT], 0.0f, 1.0f) * FM_DEPTH;
     v->lad_fm = clampf(p[P_LAD_FM] * 0.01f + dm[MD_LAD_FM], 0.0f, 1.0f);
@@ -1153,7 +1175,7 @@ static void set_pitch(const one_t *s, voice_t *v, float semis, const float *osc_
         float track = from_centre * s->track[n];
         float hz = v->note_hz * s->ratio[n] * exp2f((semis + osc_semis[n] + track) / 12.0f) + s->val[P_O1_BEAT + OSC_STRIDE * n]
                    + v->beat_mod[n];
-        osc_set_freq(&v->osc[n], hz, SR);
+        osc_set_freq(&v->osc[n], hz, SR * (float)v->os);   /* (HQ MODE: at its rate) */
         v->inc0[n] = v->osc[n].inc;
     }
 }
@@ -1191,6 +1213,16 @@ static void pan_targets(const one_t *s, voice_t *v, float pan_mod, int snap) {
     if (snap) { v->pl = v->tgt_pl; v->pr = v->tgt_pr; }
 }
 
+/* (2026-10-30) HQ MODE: the oversampling a voice runs at (Off 1, 2x, 4x), latched; a change (or a voice starting
+ * from silence, fresh) starts its decimation filters clean */
+static void voice_os(const one_t *s, voice_t *v, int fresh) {
+    static const int OS[3] = {1, 2, 4};
+    int o = (int)s->val[P_AN_HQ];
+    o = OS[o < 0 ? 0 : o > 2 ? 2 : o];
+    if (o != v->os || (fresh && o > 1)) hq_reset(&v->dec);
+    v->os = o;
+}
+
 /* ANALOG DRIFT, once per control step while it is up: each wander eases (a one-pole, DRIFT_TAU_S) towards a random
  * target in -1..1 and picks a new one every 0.3-1.5 s, so it stays within -1..1. out: the wanders times the amount
  * (0..1: the knob with the matrix's drift modulation). */
@@ -1204,6 +1236,36 @@ static void drift_step(const one_t *s, voice_t *v, float *out, float amt) {
         v->drift[k] += (v->drift_tgt[k] - v->drift[k]) * s->drift_coef;
         out[k] = v->drift[k] * amt;
     }
+}
+
+/* (2026-10-30) WARM-UP, while the Synth is still cold (warm_w > 0: the amount times the fade): the drift's wander runs
+ * deeper (whatever DRIFT is set to), and the pitch and cutoffs sit off by the voice's cold offsets, all fading as the
+ * Synth warms up. Written in drift's units (out[k] x DRIFT_ST semitones, x DRIFT_CUT_OCT octaves), so everything drift
+ * reaches (the MACRO channel too) follows. */
+static void warm_drift(const one_t *s, voice_t *v, float *out, float drift) {
+    float w = s->warm_w;
+    drift_step(s, v, out, drift + WARM_WANDER * w);
+    float common = WARM_COMMON_ST * s->warm_common;
+    for (int k = 0; k < NOSC; k++) out[k] += (common + WARM_TUNE_ST * v->warm_off[k]) * w * (1.0f / DRIFT_ST);
+    out[NOSC] += WARM_CUT_OCT * v->warm_off[NOSC] * w * (1.0f / DRIFT_CUT_OCT);
+}
+
+/* (2026-10-30) WARM-UP's clock, once per piece of n samples: on, it counts from the moment it went on (or the instance
+ * started with it on) and works out how cold the Synth is (warm_w, at each control step); off, nothing (warm_w 0) */
+static void warm_tick(one_t *s, int n, int first) {
+    if (s->val[P_AN_WARM] < 0.5f) {
+        s->warm_on = 0;
+        s->warm_w = 0.0f;
+        return;
+    }
+    if (!s->warm_on) { s->warm_on = 1; s->warm_t = 0; first = 1; }
+    if (first) {
+        float tau = s->val[P_AN_WARM_TIME] * (60.0f / 3.0f) * SR;   /* 5% left at WARM-UP TIME */
+        float w = s->val[P_AN_WARM_AMT] * 0.01f * expf(-(float)s->warm_t / (tau > 1.0f ? tau : 1.0f));
+        s->warm_w = w > 1e-4f ? w : 0.0f;   /* (settled: exactly the normal drift from here on) */
+        if (s->warm_w == 0.0f) s->warm_t = INT64_MAX / 2;   /* (and stays so) */
+    }
+    if (s->warm_t < INT64_MAX / 2) s->warm_t += n;
 }
 
 /* THE RIBBON. Its position arrives as CC 16 (0..127, 64 the middle) and is smoothed at control rate (about 10 ms), so
@@ -1296,6 +1358,14 @@ static one_t *synth_create(struct inst *in, int idx, const short *pidx) {
                     half ? (2.0f * order[i] + 1.0f) / CARD_SET - 1.0f : 2.0f * order[i] / (CARD_SET - 1) - 1.0f;
         }
     }
+    {   /* (2026-10-30) WARM-UP's cold offsets: fixed numbers per Synth and voice from WARM_SEED */
+        uint32_t w = WARM_SEED + 0x9e3779b9u * (uint32_t)(idx + 1);
+        s->warm_common = white(&w);
+        for (int i = 0; i < MAX_VOICES; i++) {
+            s->voice[i].os = 1;
+            for (int k = 0; k < NDRIFT; k++) s->voice[i].warm_off[k] = white(&w);
+        }
+    }
     for (int n = 0; n < NLFO; n++) lfo_init(&s->lfo[n], 0x2545f491u * (n + 1));
     for (int n = 0; n < NLFO; n++) s->lfo_at[n] = -1;
     s->syn1 = s;   /* (Synths 2 and 3: create() points it at Synth 1) */
@@ -1346,6 +1416,7 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
     v->gliding = glide && v->glide_span > 0.0f;
     v->note = note;
     update_note_hz(s, v);
+    voice_os(s, v, v->env[ENV_AMP].stage == ENV_IDLE);   /* (2026-10-30) HQ MODE, before the pitch */
     set_pitch(s, v, 0.0f, v->an_tune);   /* pitch at once (the voice card's tuning); the next control step adds the modulation */
     v->mac_note = mac_pitch(s, v, v->an_tune[0]);   /* so a drum model's hit (the trigger) lands on the new note */
     if (v->env[ENV_AMP].stage == ENV_IDLE) {   /* from silence every note starts the same way */
@@ -1371,11 +1442,11 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
         /* the filters' unmodulated settings, for the samples before the next control step works out the rest */
         ladder_set(&v->lad, cut_hz(v->cut) * exp2f(v->an_cut[0]),
                    clampf(s->val[P_FLT_RES] * 0.01f + v->an_res[0], 0.0f, 1.0f), s->val[P_FLT_DRIVE] * 0.01f,
-                   (int)s->val[P_FLT_MODE], (int)s->val[P_FLT_SLOPE], SR);
+                   (int)s->val[P_FLT_MODE], (int)s->val[P_FLT_SLOPE], SR * (float)v->os);
         v->lad.nl = s->val[P_AN_LADDER] * 0.01f;
         svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(v->an_cut[1]), s->val[P_SVF_SPACE] * 0.01f,
                  clampf(s->val[P_SVF_RES] * 0.01f + v->an_res[1], 0.0f, 1.0f), (int)s->val[P_SVF_MODE],
-                 (int)s->val[P_SVF_PAIR], SR);
+                 (int)s->val[P_SVF_PAIR], SR * (float)v->os);
     }
 }
 
@@ -2767,6 +2838,7 @@ static void hi_coefs(const one_t *s, voice_t *v, const float *src, const float *
 /* one voice's modulation for the next control step: its LFOs, the matrix, pitch, both cutoffs and filter settings,
  * envelope settings, levels */
 static void control_voice(one_t *s, voice_t *v) {
+    voice_os(s, v, 0);   /* (2026-10-30) HQ MODE, latched before the pitch and the filters are worked out */
     const float *p = s->val;
     float *src = v->src, dm[MD_COUNT];
     glide_step(s, v);
@@ -2825,7 +2897,8 @@ static void control_voice(one_t *s, voice_t *v) {
                   + bend_semis(s, -1) + dm[MD_PITCH] * MOD_PITCH_ST;
     float dr[NDRIFT] = {0};   /* analog drift, -1..1 x the amount per oscillator and for the cutoffs; off: none at all */
     float drift = clampf(p[P_DRIFT] * 0.01f + dm[MD_DRIFT], 0.0f, 1.0f);
-    if (drift > 0.0f) drift_step(s, v, dr, drift);
+    if (s->warm_w > 0.0f) warm_drift(s, v, dr, drift);   /* (2026-10-30) WARM-UP: still cold */
+    else if (drift > 0.0f) drift_step(s, v, dr, drift);
     float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST + v->an_tune[0],
                              dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST + v->an_tune[1],
                              dm[MD_O3_PITCH] * MOD_PITCH_ST + bend_semis(s, 2) + dr[2] * DRIFT_ST + v->an_tune[2]};
@@ -2851,11 +2924,12 @@ static void control_voice(one_t *s, voice_t *v) {
                     + v->an_cut[1];
     ladder_set(&v->lad, cut_hz(v->cut) * exp2f(lad_oct),
                clampf(p[P_FLT_RES] * 0.01f + dm[MD_LAD_RES] + v->an_res[0], 0.0f, 1.0f),
-               clampf(p[P_FLT_DRIVE] * 0.01f + dm[MD_LAD_DRIVE], 0.0f, 1.0f), (int)p[P_FLT_MODE], (int)p[P_FLT_SLOPE], SR);
+               clampf(p[P_FLT_DRIVE] * 0.01f + dm[MD_LAD_DRIVE], 0.0f, 1.0f), (int)p[P_FLT_MODE], (int)p[P_FLT_SLOPE],
+               SR * (float)v->os);
     v->lad.nl = p[P_AN_LADDER] * 0.01f;
     svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), clampf(p[P_SVF_SPACE] * 0.01f + dm[MD_SVF_SPACE], -1.0f, 1.0f),
              clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES] + v->an_res[1], 0.0f, 1.0f), (int)p[P_SVF_MODE],
-             (int)p[P_SVF_PAIR], SR);
+             (int)p[P_SVF_PAIR], SR * (float)v->os);
     set_targets(s, v, dm, v->lfo_out[2]);
     if (v->hi_reach) v->amp_mod = clampf(v->hi_amp0, 0.0f, 2.0f);   /* (the High LFOs move it per sample) */
     if (mac_heard(v)) v->mac_note = mac_pitch(s, v, semis + dr[0] * DRIFT_ST + v->an_tune[0]);
@@ -2986,7 +3060,8 @@ __attribute__((noinline)) static int hi_lfo_block(const one_t *s, voice_t *v, in
  * depth, the filter mix, the noise colours and the pan gains ramp from the last control step's values to this one's.
  * ext: the audio input for these n samples (the EXT channel), or NULL while it is silent: then EXT is not heard and
  * nothing it routes to runs on its account (no input connected changes nothing). */
-static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, float *xl, float *xr, int n, int first) {
+static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice_t *v, const float *ext, float *acc,
+                                                                  float *xl, float *xr, int n, int first, const int os) {
     const float *p = s->val;
     float inv = 1.0f / (float)n, out[CR], wn[CR], cn[CR];   /* the voice's output; white noise; the noise channel */
     const float *ncp = noise_channel(s, v, first, inv, n, wn, cn);
@@ -3066,50 +3141,57 @@ static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, floa
             if (hf & 2) o2->inc = clampf(v->inc0[1] * hp[1][i], 0.0f, 0.49f);
             if (hf & 4) o3->inc = clampf(v->inc0[2] * hp[2][i], 0.0f, 0.49f);
         }
-        /* linear FM: the carrier's frequency moves with the modulator's output (3 > 1 uses osc 3's last sample) */
-        if (fm_on && route == FM_3TO1)
-            o1->inc = clampf((hf & 1 ? v->inc0[0] * hp[0][i] : v->inc0[0]) * (1.0f + fm * v->fm_prev), 0.0f, 0.49f);
-        float a = osc_next(o1, &sh[0], -1.0f), wrap = o1->wrap_d;
-        if (fm_on && route == FM_1TO2) o2->inc = clampf((hf & 2 ? v->inc0[1] * hp[1][i] : v->inc0[1]) * (1.0f + fm * a), 0.0f, 0.49f);
-        if (fm_on && route == FM_1TO3) o3->inc = clampf((hf & 4 ? v->inc0[2] * hp[2][i] : v->inc0[2]) * (1.0f + fm * a), 0.0f, 0.49f);
-        /* hard sync: osc 2 from osc 3 looks ahead to osc 3's wrap; osc 3 from osc 2 takes osc 2's wrap this sample
-         * (its last one when the two sync to each other) */
-        float m3 = sync3_2 ? o2->wrap_d : wrap;
-        float b = run2 ? osc_next(o2, &sh[1], sync2 ? (sync2_3 ? osc_wrap_ahead(o3, sync3 ? m3 : -1.0f) : wrap) : -1.0f)
-                       : 0.0f;
-        float c = run3 ? osc_next(o3, &sh[2], sync3 ? (sync3_2 && !sync2_3 ? o2->wrap_d : m3) : -1.0f) : 0.0f;
-        v->fm_prev = c;
-        float rm = heard[RING] ? o2->tri_out * (ring23 ? o3->tri_out : o1->tri_out) : 0.0f;
-        float nz = wn[i], nc = ncp[i], mc = mac_on ? mb[i] : 0.0f;
-        float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nc * lad[NOISE] + rm * lad[RING];
-        if (mac_on) lad_in += mc * lad[MACRO];
-        if (ext_on) lad_in += ext[i] * lad[EXT];
-        float svf_out = 0.0f, lad_out = 0.0f;
-        if (any_svf) {
-            float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
-            if (mac_on) in += mc * svf[MACRO];
-            if (ext_on) in += ext[i] * svf[EXT];
-            if (hf & HF_SVF)   /* a High LFO on its cutoff (with filter FM, if any) */
-                svf_out = svf2_next_fm(&v->svf, in, (svf_fm > 0.0f ? exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c))
-                                                                   : 1.0f) * hs[i]);
-            else
-                svf_out = svf_fm > 0.0f ? svf2_next_fm(&v->svf, in, exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)))
-                                        : svf2_next(&v->svf, in);
-            if (series) lad_in += svf_out;
+        /* HQ MODE (2026-10-30): the oscillators and filters run os times a sample (os 1: once, exactly as before), at
+         * os times the rate (their pitch and coefficients are set for it), each sample's inputs held for them all;
+         * src/hq.h's half-bands bring the filters' mix back to 44.1 kHz before the amp */
+        float fs[4];
+        for (int u = 0; u < os; u++) {
+            /* linear FM: the carrier's frequency moves with the modulator's output (3 > 1 uses osc 3's last sample) */
+            if (fm_on && route == FM_3TO1)
+                o1->inc = clampf((hf & 1 ? v->inc0[0] * hp[0][i] : v->inc0[0]) * (1.0f + fm * v->fm_prev), 0.0f, 0.49f);
+            float a = osc_next(o1, &sh[0], -1.0f), wrap = o1->wrap_d;
+            if (fm_on && route == FM_1TO2) o2->inc = clampf((hf & 2 ? v->inc0[1] * hp[1][i] : v->inc0[1]) * (1.0f + fm * a), 0.0f, 0.49f);
+            if (fm_on && route == FM_1TO3) o3->inc = clampf((hf & 4 ? v->inc0[2] * hp[2][i] : v->inc0[2]) * (1.0f + fm * a), 0.0f, 0.49f);
+            /* hard sync: osc 2 from osc 3 looks ahead to osc 3's wrap; osc 3 from osc 2 takes osc 2's wrap this sample
+             * (its last one when the two sync to each other) */
+            float m3 = sync3_2 ? o2->wrap_d : wrap;
+            float b = run2 ? osc_next(o2, &sh[1], sync2 ? (sync2_3 ? osc_wrap_ahead(o3, sync3 ? m3 : -1.0f) : wrap) : -1.0f)
+                           : 0.0f;
+            float c = run3 ? osc_next(o3, &sh[2], sync3 ? (sync3_2 && !sync2_3 ? o2->wrap_d : m3) : -1.0f) : 0.0f;
+            v->fm_prev = c;
+            float rm = heard[RING] ? o2->tri_out * (ring23 ? o3->tri_out : o1->tri_out) : 0.0f;
+            float nz = wn[i], nc = ncp[i], mc = mac_on ? mb[i] : 0.0f;
+            float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nc * lad[NOISE] + rm * lad[RING];
+            if (mac_on) lad_in += mc * lad[MACRO];
+            if (ext_on) lad_in += ext[i] * lad[EXT];
+            float svf_out = 0.0f, lad_out = 0.0f;
+            if (any_svf) {
+                float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
+                if (mac_on) in += mc * svf[MACRO];
+                if (ext_on) in += ext[i] * svf[EXT];
+                if (hf & HF_SVF)   /* a High LFO on its cutoff (with filter FM, if any) */
+                    svf_out = svf2_next_fm(&v->svf, in, (svf_fm > 0.0f ? exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c))
+                                                                       : 1.0f) * hs[i]);
+                else
+                    svf_out = svf_fm > 0.0f ? svf2_next_fm(&v->svf, in, exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)))
+                                            : svf2_next(&v->svf, in);
+                if (series) lad_in += svf_out;
+            }
+            if (run_lad) {
+                float in = lad_in + nz * NOISE_FLOOR;
+                if (hf & HF_LAD) {   /* a High LFO on its cutoff (with filter FM, if any) */
+                    float e = (lad_fm > 0.0f ? exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)) : 1.0f) * hl[i];
+                    lad_out = lad_nl ? ladder_next_nl_fm(&v->lad, in, e) : ladder_next_fm(&v->lad, in, e);
+                } else if (lad_nl)   /* NON-LINEAR LADDER (analog character) */
+                    lad_out = lad_fm > 0.0f ? ladder_next_nl_fm(&v->lad, in, exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
+                                            : ladder_next_nl(&v->lad, in);
+                else
+                    lad_out = lad_fm > 0.0f ? ladder_next_fm(&v->lad, in, exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
+                                            : ladder_next(&v->lad, in);
+            }
+            fs[u] = lad_out * ml + svf_out * (1.0f - ml);
         }
-        if (run_lad) {
-            float in = lad_in + nz * NOISE_FLOOR;
-            if (hf & HF_LAD) {   /* a High LFO on its cutoff (with filter FM, if any) */
-                float e = (lad_fm > 0.0f ? exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)) : 1.0f) * hl[i];
-                lad_out = lad_nl ? ladder_next_nl_fm(&v->lad, in, e) : ladder_next_fm(&v->lad, in, e);
-            } else if (lad_nl)   /* NON-LINEAR LADDER (analog character) */
-                lad_out = lad_fm > 0.0f ? ladder_next_nl_fm(&v->lad, in, exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
-                                        : ladder_next_nl(&v->lad, in);
-            else
-                lad_out = lad_fm > 0.0f ? ladder_next_fm(&v->lad, in, exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)))
-                                        : ladder_next(&v->lad, in);
-        }
-        float f = lad_out * ml + svf_out * (1.0f - ml);
+        float f = os == 1 ? fs[0] : os == 2 ? hq_dec2(&v->dec, fs) : hq_dec4(&v->dec, fs);
         v->gain += (target - v->gain) * s->gain_coef;
         if (fabsf(v->gain - target) < 1e-7f) v->gain = target;   /* settle exactly: no denormal tail */
         float y = f * env_next(&v->env[ENV_AMP]) * v->gain;
@@ -3134,6 +3216,14 @@ static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, floa
         xr[i] += out[i] * (pr + dpr * (float)i);
     }
     return 1;
+}
+
+/* (2026-10-30) the voice at its HQ MODE: render_voice_os made once per oversampling, so Off (1) is the loop as it was,
+ * with no sub-sample loop or decimation in it */
+static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, float *xl, float *xr, int n, int first) {
+    if (v->os == 2) return render_voice_os(s, v, ext, acc, xl, xr, n, first, 2);
+    if (v->os == 4) return render_voice_os(s, v, ext, acc, xl, xr, n, first, 4);
+    return render_voice_os(s, v, ext, acc, xl, xr, n, first, 1);
 }
 
 /* what CTRL 1/2 can move (fx.h's FXD_* order): each target's slot and its knob's range */
@@ -3510,6 +3600,7 @@ static void synth_piece(one_t *s, int n, float *l, float *r) {
     float acc[128], xl[128], xr[128];   /* the voices: mono sum, panned voices' offsets */
     fx_params_t *fxp = &s->fxp;
     int first = s->phase == 0;
+    warm_tick(s, n, first);   /* (2026-10-30) WARM-UP */
     if (first) { control_lfos(s); ribbon_step(s); ph_mod_step(s); }   /* (2026-10-30: the generators' sources) */
     memset(acc, 0, sizeof(float) * n);
     memset(xl, 0, sizeof(float) * n);

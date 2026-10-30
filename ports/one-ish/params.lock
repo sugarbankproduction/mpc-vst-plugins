@@ -763,6 +763,10 @@ lfo1_share
 lfo2_share
 lfo3_share
 lfo4_share
+an_hq
+an_warm
+an_warm_amt
+an_warm_time
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1969,3 +1973,11 @@ s2_gen_follow_keys
 s3_gen_tempo_src
 s3_gen_bpm
 s3_gen_follow_keys
+s2_an_hq
+s2_an_warm
+s2_an_warm_amt
+s2_an_warm_time
+s3_an_hq
+s3_an_warm
+s3_an_warm_amt
+s3_an_warm_time

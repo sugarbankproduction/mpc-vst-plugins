@@ -2577,6 +2577,7 @@ static void pad_link_test(AEffect *fx, HWND child, float s, const char *bmp, int
     if (mc < NPARAMS) fx->setParameter(fx, mc, mc0);
 }
 
+static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-10-30) */
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     pad_link_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     tempo_test(fx, child, s, bmp, w, h);
@@ -2589,6 +2590,7 @@ static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     nav_tests(fx, child, s, bmp, w, h);    /* (2026-10-30) BACK / FWD, the generator tabs, the overview */
     defaults_ui_test(fx, child, s, bmp, w, h);   /* (2026-10-30) effect ONs, SYNC, the generators' buttons, voices */
     cables_test(fx, child, s, bmp, w, h);        /* (2026-10-30) the CABLES view */
+    analog_test(fx, child, s, bmp, w, h);   /* (2026-10-30) HQ MODE and WARM-UP on the ANALOG page */
 }
 
 /* ---- (2026-10-30) the plain-click pass: what a modifier key, a double-click, a right-click or a keyboard key did,
@@ -2633,6 +2635,56 @@ static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp,
     snprintf(what, sizeof what, "FOLLOW TEMPO on the BALLS, PARTICLES, RAIN, ORBITS and LIFE pages (%d of 5; LIFE's only "
              "with its FREE rate: %d)", pages, life_hid);
     check(pages == 5 && life_hid, what);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+/* (2026-10-30) the ANALOG page's HQ MODE and WARM-UP: the ANALOG button opens the page; a plain click on HQ MODE opens
+ * its list (Off, 2x, 4x: picked 2x, 4x, Off in turn), one on WARM-UP turns it on and off; each has its help; both are Synth 1's own (the
+ * Synth in focus), not Synth 2's */
+static int click_menu(HWND child, float s, const short z[4], int downs);
+static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone */
+    click_zone(child, s, ZONE_TAB_ANALOG);
+    float sx0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
+    static const char *const K[] = {"an_hq", "an_warm"};
+    float x[2] = {0}, y[2] = {0};
+    int found = 0;
+    for (int j = 0; j < 2 && PG_ANALOG >= 0; j++)
+        for (int k = PAGES[PG_ANALOG].first; k < PAGES[PG_ANALOG].first + PAGES[PG_ANALOG].count; k++)
+            if (ITEMS[k].param == rnd_key(K[j])) {
+                int slot = k - PAGES[PG_ANALOG].first, r = slot % PT_ROWS, col = slot / PT_ROWS;
+                x[j] = sx0 + col * (half + 8.0f) + half * 0.75f;
+                y[j] = ZONE_SCREEN[1] + 80.0f + 22.0f * r + 11.0f;
+                found++;
+            }
+    float hq[4], wu[3], s2hq = getkey(fx, "s2_an_hq");
+    hover_at(child, s, x[0], y[0]);
+    char hq_help[120];
+    snprintf(hq_help, sizeof hq_help, "%s", help_fresh(fx));
+    int help_hq = strstr(hq_help, "HQ MODE") != NULL;
+    hq[0] = getkey(fx, "an_hq");
+    static const int PICK[3] = {2, 3, 1};   /* its list: 2x, 4x, Off */
+    short z[4] = {(short)lroundf(x[0]) - 1, (short)lroundf(y[0]) - 1, 2, 2};
+    for (int k = 1; k < 4; k++) {
+        click_menu(child, s, z, PICK[k - 1]);
+        hq[k] = getkey(fx, "an_hq");
+        if (k == 1 && bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_analog_hq"); }
+    }
+    hover_at(child, s, x[1], y[1]);
+    int help_wu = strstr(help_fresh(fx), "WARM-UP") != NULL;
+    wu[0] = getkey(fx, "an_warm");
+    click(child, s, x[1], y[1]);
+    wu[1] = getkey(fx, "an_warm");
+    click(child, s, x[1], y[1]);
+    wu[2] = getkey(fx, "an_warm");
+    snprintf(what, sizeof what, "the ANALOG page: HQ MODE and WARM-UP on it (%d of 2); a plain click on HQ MODE and its list "
+             "set %.1f > %.1f > %.1f > %.1f (Off, 2x, 4x, Off), on WARM-UP %.0f > %.0f > %.0f; help for both (%d, %d); Synth "
+             "2's HQ untouched (%.1f)", found, hq[0], hq[1], hq[2], hq[3], wu[0], wu[1], wu[2], help_hq, help_wu,
+             getkey(fx, "s2_an_hq"));
+    if (!help_hq) printf("     (help shown: %s)\n", hq_help);
+    check(found == 2 && hq[0] == 0.0f && hq[1] == 0.5f && hq[2] == 1.0f && hq[3] == 0.0f && wu[0] == 0.0f &&
+          wu[1] == 1.0f && wu[2] == 0.0f && help_hq && help_wu && getkey(fx, "s2_an_hq") == s2hq, what);
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
@@ -3079,10 +3131,27 @@ static void zone_help_test(AEffect *fx, HWND child, float s) {
 /* (2026-10-30) a popup menu's item picked with the keyboard (up to 5 s for the menu to show): `downs` presses of Down
  * (the first selects the first item), then Return */
 typedef struct { int downs; } menu_answer_t;
+/* (2026-10-30) this process's own popup menu: another test run on the same desktop (a parallel build) may have one
+ * open too, and FindWindow would hand back that one */
+static BOOL CALLBACK own_menu_cb(HWND w, LPARAM out) {
+    char cls[16];
+    DWORD pid = 0;
+    GetWindowThreadProcessId(w, &pid);
+    if (pid == GetCurrentProcessId() && GetClassNameA(w, cls, sizeof cls) && !strcmp(cls, "#32768") && IsWindowVisible(w)) {
+        *(HWND *)out = w;
+        return FALSE;
+    }
+    return TRUE;
+}
+static HWND own_menu(void) {
+    HWND m = NULL;
+    EnumWindows(own_menu_cb, (LPARAM)&m);
+    return m;
+}
 static DWORD WINAPI menu_answer(void *arg) {
     const menu_answer_t *a = arg;
     for (int t = 0; t < 500; t++, Sleep(10)) {
-        HWND m = FindWindowA("#32768", NULL);
+        HWND m = own_menu();
         if (!m || !IsWindowVisible(m)) continue;
         Sleep(200);   /* (the menu settles first; keys posted at once to a busy PC's menu were lost now and then) */
         for (int k = 0; k < a->downs; k++, Sleep(15)) PostMessageA(m, WM_KEYDOWN, VK_DOWN, 0);

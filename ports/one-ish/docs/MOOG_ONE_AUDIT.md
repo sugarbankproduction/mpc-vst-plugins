@@ -59,7 +59,7 @@ user patch files (2026-10-27, offline).
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
-| All-analog voice path; digital FX can be bypassed for a 100% analog path [ANALOG] | p8, p96, p140 | Partial | Virtual-analog models: PolyBLEP oscillators, zero-delay-feedback ladder (optionally per-stage tanh, `an_ladder`), TPT SVF pair; no oversampling. The effects bypass exactly (`modfx_on`, `mfx_on` Off) | L (to deepen the models) | medium-high |
+| All-analog voice path; digital FX can be bypassed for a 100% analog path [ANALOG] | p8, p96, p140 | Partial | Virtual-analog models: PolyBLEP oscillators, zero-delay-feedback ladder (optionally per-stage tanh, `an_ladder`), TPT SVF pair; HQ MODE (`an_hq` Off / 2x / 4x, per Synth, the ANALOG page) runs the voice's oscillators and filters oversampled with half-band decimation (`src/hq.h`, 2026-10-30, offline and the desktop window). The effects bypass exactly (`modfx_on`, `mfx_on` Off) | L (to deepen the models) | medium-high (HQ: 1.8x / 3x a voice) |
 | Polyphony | 8 or 16 voices (p8, p140) | Have | `voices` Mono, 2-16 (MAX_VOICES 16; the voice cards 1-8 as before, 9-16 between them); an instance's three Synths share one 16-voice pool (2026-10-28, offline and the desktop window) | - | high (each voice) |
 | Three-part multitimbral: up to 3 Synths per Preset, split, layered or zoned [MULTI] | p8-9 | Have | Three Synths per instance (`src/synths.h`, `docs/MULTITIMBRAL.md`): Synth 1's keys as before, Synths 2 and 3 as `s2_` / `s3_` copies; split and layer by key range, three factory performances (2026-10-28, offline and the desktop window) | - | high (voices are shared) |
 | Per-Synth Timbre: own sound, note range, voice count, MIDI channel, arp, sequencer [MULTI] | p9 | Have | Each Synth has every sound setting, `key_lo`/`key_hi`, `voices`, `syn_ch`, its own arp, chord memory, generative steps and sequencer (2026-10-28, offline and the desktop window) | - | none |
@@ -124,8 +124,8 @@ user patch files (2026-10-27, offline).
 | BEND UP OFFSET per oscillator | -24 to +24 st (p26) | Have | `oN_bend_up_off`, whole semitones, added to `bend_up` (2026-10-27, offline) | - | none |
 | BEND DOWN OFFSET per oscillator | -24 to +24 st (p26) | Have | `oN_bend_dn_off`, added to `bend_down` (2026-10-27, offline) | - | none |
 | MORE page wave image and values [UI] | p25 | Have | The wave is drawn on the oscillator's panel (see 1); its MORE page lists the values | - | none |
-| Analog VCO character: slight drift and warm-up instability [ANALOG] | p7 (warm-up note) | Partial | `drift` 0-100%: each oscillator wanders at random within +-4 cents (and each voice's cutoffs within +-0.04 octave), a new target every 0.3-1.5 s, at control rate; 0 is exactly off (2026-10-27, offline). No warm-up. Fixed per-voice tuning, cutoff, resonance, envelope-time and level spreads and a non-linear ladder in the ANALOG section (`an_*`, 2026-10-27, offline) | - | low |
-| Clean top end under sync and FM | implied (analog) | Partial | PolyBLEP; no oversampling | M-L | medium-high (2x oversampling) |
+| Analog VCO character: slight drift and warm-up instability [ANALOG] | p7 (warm-up note) | Have | `drift` 0-100%: each oscillator wanders at random within +-4 cents (and each voice's cutoffs within +-0.04 octave), a new target every 0.3-1.5 s, at control rate; 0 is exactly off (2026-10-27, offline). WARM-UP (2026-10-30, offline and the desktop window): `an_warm` On, `an_warm_amt`, `an_warm_time` 1-20 min (default 5): after the plugin starts or the switch goes on, each voice's oscillators sit off (up to about +-25 cents at 100%: one offset for the Synth, one per oscillator, fixed seed) and the cutoffs (+-0.12 octave), and the drift wanders up to 3 times deeper; all of it fades as exp(-3t / time) to the normal `drift` (offline: 5.8 cents off on average at the start, within 0.5 cent and still after 90 s at a 1-minute time). Off: the old samples. Fixed per-voice tuning, cutoff, resonance, envelope-time and level spreads and a non-linear ladder in the ANALOG section (`an_*`, 2026-10-27, offline) | - | low |
+| Clean top end under sync and FM | implied (analog) | Have | PolyBLEP, and HQ MODE (`an_hq`, 2026-10-30, offline): 2x or 4x oversampled oscillators and filters with IIR half-band decimators (flat to 20 kHz, 106 dB down from 24.1 kHz). Offline, the power that is not a harmonic: hard sync (notes 84-103) -33..-40 dB Off, -61..-67 dB 2x, -71..-82 dB 4x; linear FM 40% (notes 84-96) -43..-51, -63..-73, -81..-87 dB; the note's level within 0.25 dB, its pitch within 0.01 cent | - | medium-high when on (PC: 1.8x a voice at 2x, 3x at 4x); none when Off |
 
 ## 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28)
 
@@ -183,7 +183,7 @@ user patch files (2026-10-27, offline).
 | LADDER RESONANCE, self-oscillates to a sine | 0 to 10 (p34) | Have | `flt_res` (feedback up to 4.4) | - | - |
 | LADDER MODE | HP, LP (p35) | Have | `flt_mode` | - | - |
 | LADDER SLOPE | 24, 18, 12, 6 dB (p35) | Have | `flt_slope` | - | - |
-| Transistor-ladder character: per-stage non-linearity, how resonance thins the bass [ANALOG] | p34 | Partial | `an_ladder` blends the ladder towards per-stage tanh saturation (zero-delay, state-evaluated; +21% a voice on the PC); default linear ZDF ladder with one input saturator, half bass compensation; no oversampling | L (iterative solve or 2x oversampling) | medium-high |
+| Transistor-ladder character: per-stage non-linearity, how resonance thins the bass [ANALOG] | p34 | Partial | `an_ladder` blends the ladder towards per-stage tanh saturation (zero-delay, state-evaluated; +21% a voice on the PC); default linear ZDF ladder with one input saturator, half bass compensation. HQ MODE (2026-10-30, offline) runs the ladder oversampled: a triangle through it at 100% drive and `an_ladder` 100% (notes 91-100) has its images at -24..-45 dB Off, -41..-64 dB at 2x, -78..-87 dB at 4x, and the state-evaluated stages track the circuit better at the higher rate (about 1 dB more compression). Left: an iterative (Newton) solve of the stages for HQ; not done, as 4x already takes the images below -77 dB | L (iterative solve) | medium-high (HQ: 1.8x / 3x a voice) |
 | LINK CUTOFF: either knob moves both, offset kept, clamps recover | on/off (p35) | Have | `flt_link` (in set_param; a state restores both knobs as saved; presets set it Off first, see make_presets.py) | - | none |
 | ROUTE: SVF and ladder side by side, or SVF into ladder | PAR, SER (p36) | Have | `flt_route` | - | - |
 | MIX between filter outputs | SVF to ladder (p36) | Have | `flt_mix` | - | - |
@@ -854,7 +854,7 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 0. Architecture and overview (p8-10) | 9 | 1 | 0 | 0 | 0 |
 | 1. Front panel, centre console, keyboard (p10-18) | 12 | 3 | 1 | 1 | 0 |
 | 2. Rear panel (p19-21) | 1 | 2 | 3 | 3 | 0 |
-| 3. Oscillators (p22-26) | 18 | 2 | 0 | 0 | 0 |
+| 3. Oscillators (p22-26) | 20 | 0 | 0 | 0 | 0 |
 | 4. Oscillator common: pitch mod, ring mod, wave mod, FM (p27-28) | 8 | 0 | 0 | 0 | 0 |
 | 5. Noise (p29-30) | 9 | 0 | 0 | 0 | 0 |
 | 6. Mixer (p31-32) | 8 | 0 | 1 | 1 | 0 |
@@ -875,7 +875,7 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
 | 22. Settings (p124-139) | 15 | 2 | 14 | 11 | 1 |
 | 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
-| **Total** | **424** | **15** | **36** | **27** | **4** |
+| **Total** | **426** | **13** | **36** | **27** | **4** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -900,7 +900,9 @@ has far more headroom; these limits decide the MPC build's defaults, not the des
 - **16-voice polyphony** and **large unison stacks**: each voice is a full voice; stay at the benched voice count and
   let unison spend it.
 - **Audio-rate filter FM** on both filters: about +35% a voice on the PC.
-- **Oversampling** (for clean FM, sync and a driven ladder): 2x roughly doubles the voice cost.
+- **Oversampling** (HQ MODE, `an_hq`, 2026-10-30): on the PC 2x costs 1.8x a voice (8.5 to 14.7 us per voice per
+  block), 4x 2.9x (24.5 us); with the non-linear ladder 10.5 to 19.5 / 34 us. Off by default; estimated on the MPC as
+  1.8 / 3 voices' worth per HQ voice.
 - **Per-stage non-linear ladder** (`an_ladder`): +21% a voice on the PC.
 - **The MACRO channel** (Plaits): adds 0.5-2x a voice's cost to each voice; the **Rings / Clouds** effect types:
   5-73 us a block, shared.
@@ -1148,6 +1150,10 @@ doubles a voice).
   warm-up drift after loading. A desktop-only quality switch; the MPC keeps today's models.
 - Depends on: package 1 (sample-rate handling).
 - Files: `src/osc.h`, `src/ladder.h`, `src/svf.h`, the voice loop in `src/engine.c`.
+- Done 2026-10-30 (offline and the desktop window; `src/hq.h`, `test/hq_check.c`): HQ MODE (Off, 2x, 4x) and WARM-UP
+  on the ANALOG page, per Synth, Off by default and exactly the old samples when off (sections 0, 3, 7 above). Not
+  limited to the desktop in the engine: on the MPC it is the owner's call (a voice at 2x costs about 1.8 voices). Left:
+  an iterative ladder solve for HQ.
 
 **16. Optional: microtuning** (beyond the manual). Effort M. CPU: none (a table lookup per note).
 - Done 2026-10-29 (offline and the desktop window; `docs/SETTINGS.md`): per Synth, in the sound's state, loaded on

@@ -5205,6 +5205,7 @@ static void arp_wav(const char *demo_path) {
 #include "grains_check.c"   /* (2026-10-30) GRAINS, Auto's CTRL targets, the X/Y pad's LINK */
 #include "gen_keys_check.c"   /* (2026-10-30) every generator's KEYS (FREE, HELD, LAUNCH, EMIT) and GEN TEMPO */
 #include "lfoshare_check.c"   /* (2026-10-30) SHARE: Synth 1's LFOs in all three Synths, in step */
+#include "hq_check.c"   /* (2026-10-30) HQ MODE and WARM-UP (the ANALOG page) */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5977,6 +5978,7 @@ int main(int argc, char **argv) {
         bank_bench_all();   /* (2026-10-30) the factory banks' presets: CPU */
         grains_bench();   /* (2026-10-30) */
         lfo_share_bench();   /* (2026-10-30) SHARE */
+        hq_bench();   /* (2026-10-30) HQ MODE, WARM-UP */
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "defaults")) {   /* (2026-10-30) just the new defaults: offline_check defaults */
@@ -5990,6 +5992,12 @@ int main(int argc, char **argv) {
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "hq")) {   /* (2026-10-30) just HQ MODE and WARM-UP: offline_check hq */
+        hq_checks();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "hqbench")) { hq_bench(); return 0; }
     if (argc > 1 && !strcmp(argv[1], "robust")) {   /* (2026-10-30) just the robustness checks: offline_check robust */
         robust_checks();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
@@ -6154,6 +6162,7 @@ int main(int argc, char **argv) {
     grains_checks();   /* (2026-10-30) */
     gen_keys_checks();   /* (2026-10-30) the generators' KEYS, GEN TEMPO */
     lfo_share_checks();   /* (2026-10-30) SHARE (test/lfoshare_check.c) */
+    hq_checks();   /* (2026-10-30) HQ MODE and WARM-UP (test/hq_check.c) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");
