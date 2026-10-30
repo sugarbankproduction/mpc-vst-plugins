@@ -1,11 +1,11 @@
 /* The GENERATIVE page's own buttons and the filters' SYNC (2026-10-30), the window's side only (no engine change):
  *
- * RANDOMISE | ALL and MUTATE | ALL (the right column, under the generators): the randomiser on the GENERATIVE
+ * RANDOMISE | ALL and MUTATE | ALL (the right column's last row): the randomiser on the GENERATIVE
  * section alone (src/randomize.h rnd_gen_gen and rnd_gen_gens): every generator's settings in musical ranges, one
  * generator switched on (or two), KEY and SCALE; MUTATE nudges the settings of those that are on. The big part acts on
  * the Synth in focus, ALL on each of the three (each its own). The sound itself never changes. One undo step each.
  *
- * RESET | ALL (the row under them): every generator's settings back to their defaults, and so off (Euclid, Turing,
+ * RESET | ALL (beside ALL OFF, the page's bottom row): every generator's settings back to their defaults, and so off (Euclid, Turing,
  * balls, particles, LIFE, orbits, pendulums, rain, Markov), in the Synth in focus or (ALL) all three. KEY and SCALE
  * stay (the arpeggiator and sequencer play in them too), and FOLLOW TEMPO (shared). As it undoes work, it asks once:
  * the first click turns it red ("CLICK AGAIN"), a second click within 4 s resets; anything else leaves it. One undo
@@ -22,7 +22,7 @@
 #include "library.h"
 
 enum { HUB_ROWS = 6, GENS_ARM_MS = 4000 };
-_Static_assert(NHUB <= HUB_ROWS + 3, "the hub page's RANDOMISE / RESET rows sit under the right column's generators");
+_Static_assert(NHUB <= HUB_ROWS + 3, "the hub page's RANDOMISE row sits under GEN TEMPO and FOLLOW KEYS (hub.c)");
 
 static int key_of(const char *k) {
     for (int i = 0; i < NPARAMS; i++)
@@ -40,11 +40,17 @@ int gen_param(int i) {
     return 0;
 }
 
-/* ---- where they sit: the right column's rows after its generators (row 3 and 4 with nine generators) ---- */
-static RECT row_rect(int n) {   /* n: 0 the RANDOMISE / MUTATE row, 1 the RESET row */
+/* ---- where they sit (2026-10-30, with the generators' GEN TEMPO and FOLLOW KEYS rows): RANDOMISE | ALL and
+ * MUTATE | ALL the right column's last row (under FOLLOW KEYS | FOLLOW TEMPO), RESET | ALL beside ALL OFF ---- */
+static RECT row_rect(int n) {   /* n: 0 the RANDOMISE / MUTATE row, 1 the bottom row's left half (ALL OFF, RESET) */
     RECT nm, c;
-    slot_rects(ROWS + (NHUB - HUB_ROWS) + n, &nm, &c);
-    RECT r = {nm.left, nm.top + sc(2), c.right, nm.bottom - sc(2)};
+    if (n == 0) {
+        slot_rects(ROWS + HUB_ROWS - 1, &nm, &c);
+        RECT r = {nm.left, nm.top + sc(2), c.right, nm.bottom - sc(2)};
+        return r;
+    }
+    int half = (rw(&L.row[0]) - sc(8)) / 2;
+    RECT r = {L.row[0].left, L.row[ROWS - 1].top + sc(2), L.row[0].left + half, L.row[ROWS - 1].bottom - sc(2)};
     return r;
 }
 /* half 0 / 1 of the row (-1: the whole row); all: its ALL part, else the big part */
@@ -53,13 +59,13 @@ static RECT split(RECT r, int half, int all) {
     RECT o = {all ? x1 - sc(30) : x0, r.top, all ? x1 : x1 - sc(33), r.bottom};
     return o;
 }
-RECT gens_rect(int z) {   /* RANDOMISE | ALL the first row; MUTATE | ALL and RESET | ALL the second */
+RECT gens_rect(int z) {   /* RANDOMISE | ALL and MUTATE | ALL one row; RESET | ALL beside ALL OFF */
     RECT r = {0, 0, 0, 0};
     switch (z) {
-    case Z_GEN_RND: return split(row_rect(0), -1, 0);
-    case Z_GEN_RND_ALL: return split(row_rect(0), -1, 1);
-    case Z_GEN_MUT: return split(row_rect(1), 0, 0);
-    case Z_GEN_MUT_ALL: return split(row_rect(1), 0, 1);
+    case Z_GEN_RND: return split(row_rect(0), 0, 0);
+    case Z_GEN_RND_ALL: return split(row_rect(0), 0, 1);
+    case Z_GEN_MUT: return split(row_rect(0), 1, 0);
+    case Z_GEN_MUT_ALL: return split(row_rect(0), 1, 1);
     case Z_GEN_RESET: return split(row_rect(1), 1, 0);
     case Z_GEN_RESET_ALL: return split(row_rect(1), 1, 1);
     case Z_SYNC_CUT: return L.sync_cut;

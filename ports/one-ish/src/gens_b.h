@@ -85,6 +85,18 @@ static void rn_spawn(rn_world_t *w, const rn_cfg_t *c) {
     }   /* (all falling: none this time) */
 }
 
+/* (2026-10-30) KEY LAUNCH's shower: n drops at once (as many as are free), landing over `over` seconds, their sizes
+ * times `loud` (0 .. 1) */
+static inline void rn_shower(rn_world_t *w, const rn_cfg_t *c, int n, float over, float loud) {
+    for (int i = 0; i < RN_DROPS && n > 0; i++) {
+        rn_drop_t *d = &w->d[i];
+        if (d->live) continue;
+        float x = 0.06f + 0.88f * rn_rand(w), y = 0.06f + 0.88f * rn_rand(w), sz = 1.0f - c->spread * rn_rand(w);
+        *d = (rn_drop_t){x, y, sz * loud, RN_FALL + over * rn_rand(w), 1};
+        n--;
+    }
+}
+
 static void rn_ring(rn_world_t *w, const rn_cfg_t *c, float x, float y, float size) {
     int j = 0;
     for (int i = 0; i < RN_RIPS; i++) {   /* a free place, else the oldest ring's */
@@ -262,7 +274,7 @@ typedef struct {
     int follow;
     int64_t t_next;          /* the sample of the next step */
     int ticks;
-    struct { int64_t at; int32_t len; uint8_t note, vel; } q[GB_Q];   /* notes waiting for their sample */
+    struct { int64_t at; int32_t len; uint8_t note, vel, who; } q[GB_Q];   /* notes waiting (who: 0 rain, 1 Markov) */
     int nq;
     float src[GBS_COUNT];    /* the modulation sources, updated each step */
     /* RAIN AND RIPPLES */
@@ -295,4 +307,7 @@ typedef struct {
     int16_t vmh[MK_HIST], vmspan, vmbar[MK_IV], vmchoice;   /* the melody: heights 0 .. span, the bars 0 .. 1000 */
     int32_t vmage[MK_HIST], vmlearned;   /* each note's age (ms), the notes learned */
     float tf;                /* (2026-10-30) FOLLOW TEMPO: the pond's speed factor less 1, gliding */
+    /* (2026-10-30) KEYS (seq.h GK_*): each one's way, whether it takes the keys, KEY LAUNCH's key (-1: none yet); the
+     * Markov phrase's velocity and notes still to play */
+    int rn_mode, rn_takes, rn_key, mk_mode, mk_takes, mk_key, mk_vel, mk_left;
 } gb_run_t;

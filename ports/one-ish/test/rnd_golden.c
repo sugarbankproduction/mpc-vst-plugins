@@ -13,7 +13,11 @@
  *   - params added that day (NEWER), and the Synth 2 / 3 copies (never touched)
  * Every other param, and the seed after each call, must be the same: nothing else drifted.
  * The inputs are the defaults with rows 13-16 as an empty row (row 12's defaults: the same before and after).
- * Build and run: test/run.sh (check against test/rnd_golden.txt). */
+ * Build and run: test/run.sh (check against test/rnd_golden.txt).
+ * (2026-10-30, the merge with GRAINS) the fixture was made again: GRAINS joined the three effect TYPE lists, and
+ * WILD's any-type pick draws over the longer list, so 51 of the 240 calls (WILD 50 / 100% only) pick another type
+ * (and what follows from it). Checked before remaking it: against the old randomiser (4f1c1b0) param by param, every
+ * call that differed had an effect type change; none differed without one. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,7 +25,13 @@
 #include "params.h"
 #include "randomize.h"
 
-static const char *const NEWER[] = {"dly_on", "rev_on"};   /* (2026-10-30) the master effect slots' own ON */
+static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the master effect slots' own ON */
+    /* (2026-10-30) GRAINS' controls and the X/Y pad's LINK (no randomiser rule: left at their defaults) */
+    "modfx_spray", "modfx_prand", "modfx_reverse", "modfx_gquant", "dly_gpos", "dly_gdens", "dly_genv", "dly_gspray",
+    "dly_gprand", "dly_greverse", "dly_gquant", "rev_gpos", "rev_gdens", "rev_genv", "rev_gspray", "rev_gprand",
+    "rev_greverse", "rev_gquant", "link_pad",
+    /* (2026-10-30) the generators' KEYS, LOW OCTAVE, EUCLID NOTES, GEN TEMPO, FOLLOW KEYS */
+    "gen_keys", "gen_octave", "gen_eu_notes", "gen_tempo_src", "gen_bpm", "gen_follow_keys"};
 static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
                                       "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
 

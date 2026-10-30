@@ -32,6 +32,9 @@ SYNTH_DEFAULTS = {"s2_": {"syn_on": "On", "syn_ch": "2", "o1_oct": "16'", "volum
 # Ribbon -> Pitch). Synths 2 and 3 had Synth 1's (old) defaults but for their channel, and were off. (LINK SENDS and
 # the master slots' own ON are On for every sound, old ones too: no engine effect / today's sound.)
 OLD_S1 = {"mod%d_%s" % (r, f): v for r in (13, 14, 15, 16) for f, v in (("src", "Off"), ("dst", "Off"), ("amt", 0))}
+# (2026-10-30) the generators' KEYS and FOLLOW KEYS: Euclid / Turing played from the held keys, in the Synth's KEY
+# (src/synths.h state_absent reads an old state's missing keys the same way, whatever its dv=)
+OLD_S1.update({"gen_keys": "Held Keys", "gen_follow_keys": "Off"})
 OLD_SYNTH = {"s2_": {"syn_on": "Off", "syn_ch": "2"}, "s3_": {"syn_on": "Off", "syn_ch": "3"}}
 
 

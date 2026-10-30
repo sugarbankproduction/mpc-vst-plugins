@@ -637,6 +637,63 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        midi) so a hardware pad and the MPC follow it too. The LINK button sits beside the pad's name (a plain click);
        also on the CONTROLLERS page. Offline and load_test: off, Synth 1 alone; lit, all three, let go in all three.
      Left: an MPC page for GRAINS' controls; an on-device bench.
+  34. (2026-10-30) The generators' KEYS, GEN TEMPO and FOLLOW KEYS (owner: "when I put Euclid on, it is waiting for
+     me to hold a note ... a button so I can set it to play when I play or hold a note, the same for all generators";
+     "each Synth's generators at their own BPM"; "notes related to the notes played"). Done 2026-10-30 (offline and the
+     desktop window; `src/seq.h` GK_*, engine.c `clk_go` / `fire_step` / `gen_bpm` / `gen_root_of`, the three
+     `*_run.h`, `src/synths.h` `state_absent`, `test/gen_keys_check.c`, load_test `gen_keys_ui_test`).
+     - One meaning for every generator's KEYS list (options in this order everywhere, new ones appended at the end):
+       FREE (plays by itself while the Synth is ON; the keys play as usual), HELD KEYS (only while keys are held or
+       latched, from the lowest; nothing new starts after the last key is let go: the notes waiting for a SYNC grid
+       line are dropped too, a fix for the balls, rain, LIFE, orbits and pendulums), KEY LAUNCH (each key starts it
+       from that key, and it plays on after the key is let go), KEY EMIT (only while keys are held, more the harder).
+       Per generator: EUCLID and TURING (`gen_keys`, new, one for both since Turing plays on Euclid's hits: Free,
+       Held, Launch = one pattern, or one Turing loop, from the key; no Emit: Held already plays only while held and
+       Euclid's density is HITS); balls and particles (`phys_keys`, unchanged: it had all four); RAIN (Launch: a
+       shower of 3-12 drops by velocity; Emit: rain while held at RATE x velocity / 64); MARKOV (Launch: a phrase of 8
+       notes from the key, ending on it; no Emit: a melody plays one note at a time, Held already stops it); LIFE
+       (Launch: a new grid seeded from the key, playing until it dies out or settles into a loop); ORBITS (Launch: the
+       planets launched again in step, from the key); PENDULUMS (Launch: they start together from the key, with no new
+       push each cycle, so DAMPING lets them die away). LIFE, ORBITS and PENDULUMS have no Emit: they do not send
+       anything out, and Held already plays only while held.
+     - FREE Euclid and Turing play in the Synth's KEY and SCALE from a new LOW OCTAVE (`gen_octave`, C3) over the
+       Turing OCTAVES; Euclid's hits play EUCLID NOTES (`gen_eu_notes`: Root, Scale Up, Scale Up/Down, Scale Random);
+       Turing's SCALE "Held Notes" means the Synth's own scale there, another scale is played from the KEY's root.
+       With the ARP on (and Turing off) the arp plays the held keys whatever KEYS says.
+     - The default for a NEW sound is FREE. A sound saved before keeps playing from the held keys: a state lists only
+       the values off their defaults, so `src/synths.h` has a small table (`state_absent`) of what a MISSING key meant
+       when the sound was saved (gen_keys: Held Keys; gen_follow_keys: Off), used when a state is read and when one is
+       written (a new sound at FREE writes `gen_keys=0`, about 12 bytes a Synth). It is the minimal form of a state
+       version: a version number would hold the same table for many params at once and can absorb it. The factory
+       preset "Euclid Turing Bells" says Held Keys itself.
+     - GEN TEMPO (`gen_tempo_src` Global / Own, `gen_bpm` 20-300, per Synth): Own, every generator of that Synth uses
+       that BPM wherever it used the tempo: the synced rates and grids (LIFE's RATE, Markov's RATE, the pendulums'
+       CYCLE, the SYNC grids of the balls, particles, rain and orbits), FOLLOW TEMPO's speed (BPM / 120) and the step
+       clock when Euclid or Turing play without the arp. The arp and the step sequencer stay on the global tempo (they
+       are the Synth's own playing, not a generator). Own runs free from where each clock is (it no longer follows the
+       host's song position); a change of BPM or of the way carries every clock on from the beat it is at, and FOLLOW
+       TEMPO's speed glides, so nothing jumps. Global: exactly as before.
+     - FOLLOW KEYS (`gen_follow_keys`, per Synth, On for new sounds, Off for those saved before): a generator playing
+       from the keys plays in the key you play. One key: the Synth's SCALE with that key as its root (D held in a
+       minor Synth: D minor). A chord held: every note goes to the nearest of the chord's own notes (C E G held: only
+       Cs, Es and Gs), so the generator follows the harmony. Off: the Synth's KEY and SCALE stay, the key only says
+       where to start (as before). Euclid and Turing on Held Keys already play the held notes themselves.
+     - The window: on the GENERATIVE page each generator's row has its KEYS button at the right end (FREE / HELD /
+       LAUNCH / EMIT, lit unless FREE; a plain click opens the list), and two new rows above FOLLOW TEMPO: GEN TEMPO
+       (GLOBAL / OWN BPM, a click toggles; its BPM: < > a click each, which also switch to OWN, a sideways drag or the
+       wheel on the number) and FOLLOW KEYS (a click toggles). Every generator's MORE page lists Keys, Follow Keys, Gen
+       Tempo and (while Own) Own BPM; the GENERATIVE page also Euclid Notes and Low Octave. The rows' names are short
+       now (BALLS, LIFE, ORBITS, RAIN, MARKOV) to fit beside the button. The balls and particles share phys_keys (one
+       world), Euclid and Turing gen_keys; FOLLOW KEYS and GEN TEMPO are one setting per Synth for all its generators.
+     - Behaviour note: a RANDOMISE with GENERATIVE lit now makes sounds whose Euclid / Turing play by themselves (KEYS
+       is never randomised and new sounds are FREE). load_test's keyboard check reloads the first preset for that.
+     Old sounds unchanged (golden check, 61 sounds). No allocation, lock or file in the audio path; a few comparisons
+     per step. Left: the MPC page; the hub's two new rows use the last free slots (another generator on the page needs
+     a new layout). Merged with item 30's RANDOMISE | MUTATE | RESET (2026-10-30): the right column under its three
+     generators is GEN TEMPO; FOLLOW KEYS | FOLLOW TEMPO (lit, FOLLOW TEMPO shows its speed, "FOLLOW x 1.25");
+     RANDOMISE | ALL and MUTATE | ALL; RESET | ALL sits beside ALL OFF (now "ALL OFF" / "BRING BACK", all three Synths
+     as before). The factory presets (the first 40 and both banks) are filled with the old Held Keys / Follow Keys Off
+     (`make_synths.py` OLD_S1), so they play as they were designed.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

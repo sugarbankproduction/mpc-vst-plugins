@@ -6,8 +6,13 @@
  * is on in (1 2 3), and a click on its name opens its MORE page. Under them KEY and SCALE (what they all play in) with
  * their LINKs, and ALL OFF. (2026-10-30) FOLLOW TEMPO (the right column's last row): the shared gen_follow_tempo,
  * a plain click toggles it; lit, the balls, particles, rain, orbits and LIFE's FREE rate run faster or slower with the
- * tempo (tempo / 120 times their own speed); the text beside it says how much. (2026-10-30) RANDOMISE | ALL,
- * MUTATE | ALL and RESET | ALL under the right column's generators, and the filters' SYNC: desktop/hub_gens.c.
+ * tempo (tempo / 120 times their own speed); the text beside it says how much.
+ * (2026-10-30) Each generator row's right end: its KEYS (FREE / HELD / LAUNCH / EMIT; Euclid and Turing share
+ * gen_keys, the balls and particles phys_keys), a plain click opens the list. Two rows above FOLLOW TEMPO: GEN TEMPO
+ * (GLOBAL / OWN, the Synth in focus's gen_tempo_src) with its BPM (gen_bpm: < > a click each, a sideways drag or the
+ * wheel on the number; < > also switch to OWN), and FOLLOW KEYS (gen_follow_keys). All params of the Synth in focus.
+ * (2026-10-30) RANDOMISE | ALL, MUTATE | ALL and RESET | ALL under the right column's generators, and the filters'
+ * SYNC: desktop/hub_gens.c.
  *
  * GEN OFF (beside GENERATIVE) and ALL OFF (on the page) switch every generator's ON off in all three Synths: one undo
  * step, the host told of each. Pressed again while they are all still off (and the same sound loaded), it brings back
@@ -42,6 +47,9 @@
 
 enum { HUB_ROWS = 6 };   /* generator rows per column (two columns) */
 _Static_assert(NHUB < 2 * HUB_ROWS, "FOLLOW TEMPO takes the hub page's last generator row");
+/* (2026-10-30) GEN TEMPO and FOLLOW KEYS take the two rows before FOLLOW TEMPO's */
+enum { HUB_GTEMPO = 2 * HUB_ROWS - 3, HUB_FKEYS = 2 * HUB_ROWS - 2 };
+_Static_assert(NHUB <= HUB_GTEMPO, "GEN TEMPO and FOLLOW KEYS take the hub page's rows 10 and 11");
 
 /* ---- LINK ---- */
 static int key_ix(const char *k);
@@ -102,9 +110,33 @@ RECT hub_link_rect(int row) {
     r.left = r.right - sc(40);
     return r;
 }
-RECT hub_follow_rect(void) {   /* (2026-10-30) FOLLOW TEMPO's button: the right column's last row */
-    RECT r = hub_entry(2 * HUB_ROWS - 1);
-    r.right = r.left + sc(104);
+/* (2026-10-30, the merge of the generators' KEYS with the hub's RANDOMISE / MUTATE / RESET) the right column under its
+ * three generators: GEN TEMPO; FOLLOW KEYS | FOLLOW TEMPO; RANDOMISE | MUTATE (hub_gens.c); RESET beside ALL OFF */
+static RECT row_half(RECT r, int right) {   /* half of a row, 6 apart */
+    int w = (rw(&r) - sc(6)) / 2;
+    if (right) r.left += w + sc(6);
+    else r.right = r.left + w;
+    return r;
+}
+RECT hub_follow_rect(void) {   /* (2026-10-30) FOLLOW TEMPO's button: FOLLOW KEYS' row, its right half */
+    return row_half(hub_entry(HUB_FKEYS), 1);
+}
+/* (2026-10-30) generator k's KEYS button (FREE / HELD / LAUNCH / EMIT): its row's right end */
+RECT hub_keys_rect(int k) {
+    RECT r = hub_entry(k);
+    r.left = r.right - sc(38);
+    return r;
+}
+/* (2026-10-30) GEN TEMPO's row: GLOBAL / OWN (part 0), its BPM's < (1), the readout (2), > (3); FOLLOW KEYS (4) */
+RECT hub_gen_rect(int part) {
+    RECT r = hub_entry(part == 4 ? HUB_FKEYS : HUB_GTEMPO);
+    if (part == 4) return row_half(r, 0);   /* (FOLLOW TEMPO the other half) */
+    if (part == 0) { r.right = r.left + sc(66); return r; }
+    int x = r.left + sc(70), w = r.right - x;
+    if (part == 1) r.right = x + sc(14);
+    else if (part == 3) r.left = r.right - sc(14);
+    else { r.left = x + sc(16); r.right = x + w - sc(16); }
+    if (part == 1) r.left = x;
     return r;
 }
 RECT hub_rect(int z) {
@@ -115,8 +147,11 @@ RECT hub_rect(int z) {
     } else if (z >= Z_HUB_OPEN && z < Z_HUB_OPEN + NHUB) {
         r = hub_entry(z - Z_HUB_OPEN);
         r.left += sc(38);
+        if (HUB[z - Z_HUB_OPEN].keys >= 0) r.right -= sc(42);   /* (2026-10-30: its KEYS beside it) */
+    } else if (z == Z_HUB_BPM_DOWN || z == Z_HUB_BPM_UP) {
+        r = hub_gen_rect(z == Z_HUB_BPM_DOWN ? 1 : 3);
     } else if (z == Z_HUB_ALLOFF) {
-        r = half_row(ROWS - 1, 0);
+        r = row_half(half_row(ROWS - 1, 0), 0);   /* (RESET | ALL the other half: hub_gens.c) */
     } else if (z == Z_TAB_GEN) r = L.tab_gen;
     else if (z == Z_GEN_OFF) r = L.gen_off;
     else if (z == Z_TEMPO) r = L.tempo;
@@ -142,9 +177,19 @@ int hub_hit(ed_t *e, POINT pt) {   /* the hub page (the screen shows it) */
     int g = gens_hit(e, pt);   /* (2026-10-30) RANDOMISE, MUTATE, RESET (hub_gens.c) */
     if (g >= 0) return g;
     for (int k = 0; k < NHUB; k++) {
-        RECT on = hub_rect(Z_HUB_ON + k), op = hub_rect(Z_HUB_OPEN + k);
+        RECT on = hub_rect(Z_HUB_ON + k), op = hub_rect(Z_HUB_OPEN + k), ks = hub_keys_rect(k);
         if (HUB[k].on >= 0 && PtInRect(&on, pt)) return Z_HUB_ON + k;
         if (HUB[k].page >= 0 && PtInRect(&op, pt)) return Z_HUB_OPEN + k;
+        /* (2026-10-30) its KEYS: the param itself (a plain click opens its list; two options: a toggle) */
+        if (HUB[k].keys >= 0 && PtInRect(&ks, pt)) { e->hit_screen = 1; e->hit_rect = ks; return HUB[k].keys; }
+    }
+    static const char *const GP[5] = {"gen_tempo_src", NULL, "gen_bpm", NULL, "gen_follow_keys"};   /* (2026-10-30) */
+    for (int part = 0; part < 5; part++) {   /* GEN TEMPO, its BPM (a drag, the wheel, or < >), FOLLOW KEYS */
+        RECT r = hub_gen_rect(part);
+        if (!PtInRect(&r, pt)) continue;
+        if (part == 1 || part == 3) return key_ix("gen_bpm") >= 0 ? (part == 1 ? Z_HUB_BPM_DOWN : Z_HUB_BPM_UP) : -1;
+        int i = key_ix(GP[part]);
+        if (i >= 0) { e->hit_screen = 1; e->hit_rect = r; return i; }
     }
     for (int row = 0; row < 2; row++) {   /* KEY and SCALE, their LINKs: the params themselves (a list, a toggle) */
         RECT v = hub_value_rect(row), l = hub_link_rect(row);
@@ -300,6 +345,17 @@ int hub_press(ed_t *e, int z) {
     } else if (z == Z_TEMPO_HOST || z == Z_TEMPO_OWN) {
         settings_tempo(&own);
         settings_tempo_set(e, z == Z_TEMPO_OWN, own, 1);
+    } else if (z == Z_HUB_BPM_DOWN || z == Z_HUB_BPM_UP) {   /* (2026-10-30) GEN TEMPO's < >: 1 BPM (Shift 0.1), OWN */
+        int b = key_ix("gen_bpm"), src = key_ix("gen_tempo_src");
+        float step = (z == Z_HUB_BPM_UP ? 1.0f : -1.0f) * (GetKeyState(VK_SHIFT) < 0 ? 0.1f : 1.0f) / 280.0f, v;
+        if (b >= 0) {
+            v = ed_get(e, b) + step;
+            lib_hold(e, 1);   /* one undo step */
+            lib_touch(e, "Gen tempo");
+            ed_edit(e, b, v < 0.0f ? 0.0f : v > 1.0f ? 1.0f : v);
+            if (src >= 0 && ed_get(e, src) < 0.5f) ed_edit(e, src, 1.0f);
+            lib_hold(e, -1);
+        }
     } else if (z >= Z_HUB_ON && z < Z_HUB_ON + NHUB && HUB[z - Z_HUB_ON].on >= 0) {
         int i = HUB[z - Z_HUB_ON].on;   /* the Synth in focus (and those edited with it, or LINKed) */
         ed_edit(e, i, hub_on(e, z - Z_HUB_ON, e->focus) ? 0.0f : 1.0f);
@@ -350,6 +406,8 @@ const char *hub_zone_help(ed_t *e, int z) {
     if (z >= Z_HUB_ON && z < Z_HUB_ON + NHUB) return "ON: this generator in the Synth in focus (LINKed Synths, and those "
                                                      "edited TOGETHER, follow). The digits show which Synths have it on.";
     if (z >= Z_HUB_OPEN && z < Z_HUB_OPEN + NHUB) return "Opens this generator's page.";
+    if (z == Z_HUB_BPM_DOWN || z == Z_HUB_BPM_UP) return "< >: this Synth's generators' own BPM 1 down / up (Shift: 0.1), "
+                                                         "and GEN TEMPO to OWN. Or drag the number sideways, or scroll.";
     return NULL;
 }
 void hub_help(ed_t *e, char *out, int n) {
@@ -358,7 +416,10 @@ void hub_help(ed_t *e, char *out, int n) {
                      "in focus; a name opens its page. LINK lit: KEY or SCALE the same in all three Synths. FOLLOW "
                      "TEMPO lit: balls, particles, rain, orbits and Life's free rate speed up and slow down with the "
                      "BPM. ALL OFF: silence them all (again: back on). RANDOMISE / MUTATE: new or nudged generator "
-                     "settings (ALL: all three Synths); RESET: every generator back to its defaults (click twice).");
+                     "settings (ALL: all three Synths); RESET: every generator back to its defaults (click twice). "
+                     "The button at a row's right end is its KEYS: FREE plays on its own, HELD while you hold keys, "
+                     "LAUNCH starts at each key, EMIT streams while held. GEN TEMPO: this Synth's generators at the "
+                     "global tempo or their OWN BPM. FOLLOW KEYS: what they play from the keys is in the key you play.");
 }
 
 /* ---- load_test (effVendorSpecific TEST_HUB) ---- */

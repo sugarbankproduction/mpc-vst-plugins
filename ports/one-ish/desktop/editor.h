@@ -76,6 +76,7 @@ enum { Z_HUB_ON = 670000,        /* + row: a generator's ON (HUB[row]) */
        /* (2026-10-30, hub_gens.c) the GENERATIVE page's RANDOMISE, MUTATE and RESET (each: the Synth in focus, and
         * its ALL half: all three Synths); SYNC over the filters' ALL 3 (both cutoffs of every Synth to the focus's) */
        Z_GEN_RND = 670250, Z_GEN_RND_ALL, Z_GEN_MUT, Z_GEN_MUT_ALL, Z_GEN_RESET, Z_GEN_RESET_ALL, Z_SYNC_CUT,
+       Z_HUB_BPM_DOWN, Z_HUB_BPM_UP,   /* (2026-10-30) the hub page's GEN TEMPO < and > (the Synth's own BPM) */
        Z_HUB_END = 670300 };
 #define TEST_HUB 0x4F314842   /* VENDOR_SPECIFIC index: value = HT_ op (hub.c) */
 enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 1000) */
@@ -434,6 +435,8 @@ RECT hub_rect(int z);                          /* where hub zone z sits (the pag
 RECT hub_link_rect(int row);                   /* the hub page's KEY (0) / SCALE (1) row: its LINK button */
 RECT hub_value_rect(int row);                  /* ... and its value */
 RECT hub_follow_rect(void);                     /* (2026-10-30) the hub page's FOLLOW TEMPO button */
+RECT hub_keys_rect(int k);                      /* (2026-10-30) generator k's KEYS button on the hub page */
+RECT hub_gen_rect(int part);                    /* ... GEN TEMPO (0), its < (1), BPM (2), > (3); FOLLOW KEYS (4) */
 void hub_follow_text(ed_t *e, char *out, int n);   /* ... and the text beside it (how much faster) */
 int hub_hit(ed_t *e, POINT pt);                /* the hub page's zones (and KEY, SCALE, their LINKs: params) */
 int hub_hit_console(POINT pt);                 /* the console's third row */

@@ -352,9 +352,9 @@ static void rb_routing(void) {
 /* ---- All Notes Off, All Sound Off, PANIC ---- */
 static void rb_panic_checks(void) {
     char what[512];
-    /* nothing playing: never a note, whatever the way the keys go */
+    /* nothing playing: never a note, whatever the way the keys go (Euclid on Held Keys: a FREE one plays by itself) */
     static const char *const WAYS[] = {"", "voices=0", "chord_on=1", "arp_on=1", "arp_on=1,arp_latch=1", "hold=1",
-                                       "voices=0,hold=1", "gen_euclid_on=1", "seq_on=1", "chord_learn=1"};
+                                       "voices=0,hold=1", "gen_euclid_on=1,gen_keys=1", "seq_on=1", "chord_learn=1"};
     int started = 0;
     for (unsigned w = 0; w < sizeof WAYS / sizeof WAYS[0]; w++) {
         void *e = patch(SAW, 1, 100, 100, 60);

@@ -339,6 +339,7 @@ static void physgen2_checks(void) {
     {
         void *a = pg_patch();
         setkv(a, "phys_balls_on=1,phys_balls=3,phys_keys=2,key_root=2,key_scale=1,phys_max=12");
+        set(a, "gen_follow_keys", 0);   /* (2026-10-30: in the Synth's KEY, FOLLOW KEYS off) */
         int na = 0, n1, n4, low = 127, quiet;
         pg_run(a, 2.0, "gen_log", pg_a, &na);
         quiet = na == 0 && pg_view(a, NULL) == 0;
