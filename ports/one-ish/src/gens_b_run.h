@@ -118,7 +118,7 @@ static void rn_hit_note(const one_t *s, const rn_hit_t *h, int *note, int *vel) 
     *vel = (int)clampf(roundf(h->kind == RN_DROP ? 40.0f + 72.0f * a : 20.0f + 70.0f * a), 1.0f, 127.0f);
 }
 
-static void rn_tick(one_t *s, int64_t t, float dt) {
+static void rn_tick(one_t *s, int64_t t, float dt, float tf) {   /* tf: FOLLOW TEMPO's factor (the pond's time) */
     gb_run_t *g = &s->gb;
     const float *p = s->val;
     int sync = (int)p[P_RAIN_SYNC] > 0;
@@ -127,7 +127,7 @@ static void rn_tick(one_t *s, int64_t t, float dt) {
     if (!gb_keys_ok(s, g->rn_held)) return;   /* HELD KEYS with none held: it waits where it is */
     g->rn_tokens = fminf(g->rn_tokens + clampf(p[P_RAIN_MAX], 1.0f, 30.0f) * dt, GB_BURST);
     rn_hit_t h[RN_HITS];
-    int nh = rn_step(&g->rw, &g->rc, dt, h);
+    int nh = rn_step(&g->rw, &g->rc, dt * tf, h);
     int32_t len = (int32_t)(rn_len_ms(p) * 0.001f * SR);
     for (int i = 0; i < nh; i++) {
         if (h[i].kind == RN_DROP) g->src[GBS_DROP] = fmaxf(g->src[GBS_DROP], h[i].amp);
@@ -422,7 +422,7 @@ static void gb_tick(one_t *s, int64_t t) {
     g->src[GBS_DROP] *= GB_FALL;
     g->src[GBS_MK_STEP] *= GB_FALL;
     gb_beat(s, t);
-    if (g->rn_on) rn_tick(s, t, dt);
+    if (g->rn_on) rn_tick(s, t, dt, gen_tempo_factor(s, &g->tf, dt));   /* (2026-10-30: FOLLOW TEMPO) */
     if (g->mk_on) mk_tick(s, t, dt);
     if (++g->ticks % GB_VIEW_EVERY == 0) gb_view_write(s);
 }

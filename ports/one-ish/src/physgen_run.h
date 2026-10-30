@@ -42,6 +42,26 @@ static float ph_rate(const float *p) { return 0.2f * powf(100.0f, p[P_PH_RATE] *
 static float ph_life(const float *p) { return 0.3f * powf(30.0f, p[P_PH_LIFE] * 0.01f); }       /* 0.3 .. 9 s */
 static float ph_len_ms(const float *p) { return 20.0f * powf(100.0f, p[P_PH_LEN] * 0.01f); }    /* 20 ms .. 2 s */
 
+/* (2026-10-30) FOLLOW TEMPO ("gen_follow_tempo", shared by the three Synths): the generators that run at their own
+ * speed (the balls' and particles' world: their motion and the emitter; the rain's pond: its drops and rings; the
+ * orbits; LIFE's FREE rate) run at tempo / 120 times it, 0.25 .. 4 times. The tempo is the one the synced parts use
+ * (the host's song position's, else the host's or the window's OWN tempo; 120 when there is none). The factor glides
+ * (about 0.1 s), so a tempo change never makes the motion jump; at 120 BPM it is exactly 1 (every sound as before),
+ * and turned off it glides back to 1. *g keeps the factor less 1 (0 from the start: as fast as ever); dt the step's
+ * seconds. MAX NOTES/S stays notes a real second. A few multiplies a step; nothing else. */
+#define GEN_TF_GLIDE 0.1f   /* seconds */
+static float gen_tempo_factor(const one_t *s, float *g, float dt) {
+    float tgt = 0.0f;
+    if (s->val[P_GEN_FOLLOW] > 0.5f) {
+        double bpm = s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm;
+        if (!(bpm > 0.0)) bpm = 120.0;
+        tgt = clampf((float)(bpm / 120.0), 0.25f, 4.0f) - 1.0f;
+    }
+    float y = *g + (tgt - *g) * (dt / (GEN_TF_GLIDE + dt));
+    *g = fabsf(tgt - y) < 1e-5f ? tgt : y;
+    return 1.0f + *g;
+}
+
 static uint32_t ph_seed(const one_t *s, int key) {
     return (0x2545f491u * (uint32_t)(s->idx + 1)) ^ (0x9e3779b1u * (uint32_t)(key + 1));
 }
@@ -331,15 +351,16 @@ static void ph_tick(one_t *s, int64_t t) {
     ph_run_t *r = &s->ph;
     const float *p = s->val;
     const float dt = (float)PH_STEP / SR;
+    const float wdt = dt * gen_tempo_factor(s, &r->tf, dt);   /* (2026-10-30) the world's time: FOLLOW TEMPO */
     int sync = (int)p[P_PH_SYNC] > 0;
     for (int i = 0; i < PH_VIEW; i++) if (r->flash[i]) r->flash[i]--;
     for (int k = 0; k < 5; k++) if (r->wall[k]) r->wall[k]--;
     if (sync) ph_beat(s, t);
-    if (r->mode == PHK_EMIT) ph_keys_emit(s, dt);
+    if (r->mode == PHK_EMIT) ph_keys_emit(s, wdt);
     if (!r->held || (s->running && s->keys.n)) {   /* (HELD KEYS with none held: it waits where it is) */
         r->tokens = fminf(r->tokens + clampf(p[P_PH_MAX], 1.0f, 30.0f) * dt, PH_BURST);
         ph_hit_t h[PH_HITS];
-        int nh = ph_step(&r->w, &r->cfg, dt, h);
+        int nh = ph_step(&r->w, &r->cfg, wdt, h);
         for (int i = 0; i < nh; i++) {
             if (h[i].kind <= PH_RIGHT) r->m_hb = 1.0f;   /* (2026-10-30) the matrix's BALL HIT and PARTICLE HIT */
             else r->m_hp = 1.0f;

@@ -263,4 +263,5 @@ typedef struct {
     int16_t vox[OB_PLANETS], voy[OB_PLANETS];
     uint8_t vpn, vpf[PD_MAX];
     int16_t vpx[PD_MAX];
+    float tf;                /* (2026-10-30) FOLLOW TEMPO: LIFE FREE's and the orbits' speed factor less 1, gliding */
 } ga_run_t;

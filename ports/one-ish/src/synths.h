@@ -48,7 +48,8 @@ typedef struct inst {
 /* the shared params: one copy, in Synth 1's values (presets/make_synths.py GLOBAL keeps the same list) */
 static int engine_global(int k) {
     static const char *const SHARED[] = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune",
-                                         "fine_tune", "midi_ch", "learn_mode", "master_level", "seq_all"};
+                                         "fine_tune", "midi_ch", "learn_mode", "master_level", "seq_all",
+                                         "gen_follow_tempo"};   /* (2026-10-30: the generators follow the tempo) */
     const char *key = KEYS[k];
     if (!strncmp(key, "dly_", 4) || !strncmp(key, "rev_", 4)) return 1;   /* the master effect slots' controls */
     if (!strncmp(key, "link_", 5)) return 1;   /* the window's LINKs across the Synths (2026-10-30) */

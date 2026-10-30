@@ -261,5 +261,6 @@ typedef struct {
     float m_raw[4];          /* the first ball's height and place, the balls' speed, the pool's fill, as the world has them */
     float m_hb, m_hp, m_eu, m_tm;   /* the pulses (1 at a hit, then falling) and the Turing machine's value */
     float m_out[8];          /* the sources, smoothed at control rate (MS_BALL_Y .. MS_EUCLID) */
+    float tf;                /* (2026-10-30) FOLLOW TEMPO: the world's speed factor less 1, gliding (0: as fast as ever) */
 } ph_run_t;
 enum { PHK_FREE, PHK_HELD, PHK_LAUNCH, PHK_EMIT };   /* "phys_keys" (2026-10-30: LAUNCH and EMIT appended) */

@@ -3,7 +3,8 @@
 
 Every parameter of one Synth (its sound, its arpeggiator and sequencer, its setup) gets a copy for Synth 2 and one for
 Synth 3, keyed "s2_<key>" and "s3_<key>" and named "S2 <name>" / "S3 <name>"; the shared ones (GLOBAL below: the master
-effects, master swing and tuning, the MIDI and chord-learn settings, master level, PLAY ALL) have no copies. The
+effects, master swing and tuning, the MIDI and chord-learn settings, master level, PLAY ALL, the generators' FOLLOW
+TEMPO) have no copies. The
 unprefixed keys are Synth 1's, so every project, patch and preset made before stays Synth 1's sound.
 Order (the VST index, which saved projects and automation rely on): Synth 1 and the shared params as written in
 params.json, then every s2_ copy, then every s3_ copy. Run again after adding a param to Synth 1: copies already there
@@ -19,7 +20,7 @@ PATH = os.path.join(HERE, "..", "params.json")
 PREFIXES = ("s2_", "s3_")
 GLOBAL_PREFIX = ("dly_", "rev_", "link_")   # the master effect slots' controls; the window's LINKs (2026-10-30)
 GLOBAL = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune", "fine_tune", "midi_ch",
-          "learn_mode", "master_level", "seq_all"}
+          "learn_mode", "master_level", "seq_all", "gen_follow_tempo"}
 SYNTH_DEFAULTS = {"s2_": {"syn_on": "Off", "syn_ch": "2"}, "s3_": {"syn_on": "Off", "syn_ch": "3"}}
 
 

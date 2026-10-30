@@ -14,7 +14,8 @@
 
 static int key_shared(const char *k) {   /* presets/make_synths.py's GLOBAL */
     static const char *const G[] = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune",
-                                    "fine_tune", "midi_ch", "learn_mode", "master_level", "seq_all"};
+                                    "fine_tune", "midi_ch", "learn_mode", "master_level", "seq_all",
+                                    "gen_follow_tempo"};
     if (!strncmp(k, "dly_", 4) || !strncmp(k, "rev_", 4)) return 1;
     if (!strncmp(k, "link_", 5)) return 1;   /* the window's LINKs across the Synths (2026-10-30) */
     for (unsigned i = 0; i < sizeof G / sizeof G[0]; i++)
