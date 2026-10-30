@@ -19,7 +19,8 @@
  *   makes each swing smaller (and softer) until the next cycle pushes them again; RESTART ON KEY starts the swing at the
  *   key. Velocity from the swing's size (and its speed), DYNAMICS.
  * Shared: KEYS (Free plays whenever it is on and the Synth is ON; Held Keys takes the keys the arpeggiator's way and
- * plays only while some are held, from the lowest), MAX NOTES/S (a bucket of two, refilled at that rate), NOTE LENGTH.
+ * plays only while some are held, from the lowest; (2026-10-30) Key Launch: each key starts it from that key, see
+ * ga_key_on; FOLLOW KEYS: engine.c gen_root_of), MAX NOTES/S (a bucket of two, refilled at that rate), NOTE LENGTH.
  * Deterministic: each Synth's worlds have their own seed. The worlds move every GA_STEP samples, only while one is on
  * (off: no work); positions are never saved. The window's views ("life_view", "orbit_view", "pend_view") are written by
  * the audio thread into small fixed copies guarded by counters (seqlocks) and read without any lock. Each generator
@@ -47,8 +48,8 @@ static double ga_beat_at(const ga_run_t *r, int64_t t) { return r->b0 + (double)
 /* the beat clock (the host's song position while it plays, else free at its tempo): src/physgen_run.h's ph_beat */
 static void ga_beat(one_t *s, int64_t t) {
     ga_run_t *r = &s->ga;
-    double bpm = s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm, bps = bpm / 60.0 / SR;
-    if (s->sp_playing && s->sp_ppq >= 0.0) {
+    double bpm = gen_bpm(s), bps = bpm / 60.0 / SR;   /* (2026-10-30: GEN TEMPO) */
+    if (!gen_own(s) && s->sp_playing && s->sp_ppq >= 0.0) {   /* (OWN: free from where it is) */
         r->b0 = s->sp_ppq;
         r->t0 = r->sp_at;
         r->bps0 = bps;
@@ -86,11 +87,16 @@ static int ga_queue(ga_out_t *o, int64_t at, int note, int vel) {
 /* scale degree d (0: the root at LOW OCTAVE, or at the lowest held key) as a note in the key */
 static int ga_note(const one_t *s, int bit, int oct_slot, int d) {
     const float *p = s->val;
-    int root = (int)clampf(p[P_KEY_ROOT], 0, 11), sc = ks_clamp_scale((int)p[P_KEY_SCALE]), note;
+    int root = (int)clampf(p[P_KEY_ROOT], 0, 11), sc = ks_clamp_scale((int)p[P_KEY_SCALE]), note, key = -1;
     if ((s->ga.held & bit) && s->keys.n) {
-        int low = s->keys.note[0];
-        for (int i = 1; i < s->keys.n; i++) if (s->keys.note[i] < low) low = s->keys.note[i];
-        note = low + ks_degree(root, sc, 0, d) - root;
+        key = s->keys.note[0];
+        for (int i = 1; i < s->keys.n; i++) if (s->keys.note[i] < key) key = s->keys.note[i];
+    } else if (s->ga.launch & bit) {   /* (2026-10-30) KEY LAUNCH: from the key that launched it */
+        key = s->ga.lkey[bit >> 1];
+    }
+    if (key >= 0) {   /* (2026-10-30) FOLLOW KEYS: in the key played */
+        root = gen_root_of(s, key);
+        return gen_follow_snap(s, ks_quantize(key + ks_degree(root, sc, 0, d) - root, root, sc));
     } else {
         note = ks_degree(root, sc, (int)clampf(p[oct_slot], 0, 5) + 2, d);   /* C1 = 24 (middle C is C4) */
     }
@@ -120,7 +126,17 @@ static void ga_apply(one_t *s) {
     int on = p[P_SYN_ON] > 0.5f ? (p[P_LIFE_ON] > 0.5f) * GA_LIFE | (p[P_ORB_ON] > 0.5f) * GA_ORB |
                                        (p[P_PEND_ON] > 0.5f) * GA_PEND : 0;
     int fresh = on & ~r->on;
-    r->held = on & ((p[P_LIFE_KEYS] > 0.5f) * GA_LIFE | (p[P_ORB_KEYS] > 0.5f) * GA_ORB | (p[P_PEND_KEYS] > 0.5f) * GA_PEND);
+    static const short KEYS_OF[3] = {P_LIFE_KEYS, P_ORB_KEYS, P_PEND_KEYS};   /* (2026-10-30) FREE, HELD, LAUNCH */
+    int held = 0, launch = 0;
+    for (int g = 0; g < 3; g++) {
+        int m = (int)clampf(p[KEYS_OF[g]], GK_FREE, GK_LAUNCH);
+        held |= (m == GK_HELD) << g;
+        launch |= (m == GK_LAUNCH) << g;
+    }
+    r->held = on & held;
+    r->lgo &= on & launch & r->launch;   /* (switched off, or another way: waits for a key again) */
+    r->launch = on & launch;
+    r->takes = r->held | r->launch;
     if (on && !r->on) { r->t_next = s->now; r->ticks = 0; }
     /* LIFE: seeded when switched on, when SEED turns and at RESEED (a new grid each press; the button goes back off) */
     int press = p[P_LIFE_RESEED] > 0.5f;
@@ -161,9 +177,33 @@ static void ga_apply(one_t *s) {
 }
 
 /* RESTART ON KEY */
+/* (2026-10-30) KEY LAUNCH: LIFE seeded again from the key (the same key, the same grid; it plays until the grid dies
+ * out or settles into a loop), the orbits launched again in step from their start, the pendulums started together (a
+ * push that DAMPING lets die away; no new push each cycle); each plays from that key */
 static void ga_key_on(one_t *s, int note) {
-    (void)note;
-    if ((s->ga.on & GA_PEND) && s->val[P_PEND_RESTART] > 0.5f) ga_pend_start(s, ga_beat_at(&s->ga, s->now));
+    ga_run_t *r = &s->ga;
+    if ((r->on & GA_PEND) && s->val[P_PEND_RESTART] > 0.5f) ga_pend_start(s, ga_beat_at(r, s->now));
+    if (r->launch & GA_LIFE) {
+        r->lkey[0] = note;
+        lf_seed(&r->lf, ga_seed(s, 0x4c494645u ^ 0x4b455953u, note), clampf(s->val[P_LIFE_DENSITY] * 0.01f, 0.05f, 0.8f));
+        memcpy(r->lf.born, r->lf.c, sizeof r->lf.c);
+        r->lhead = 0;
+        r->lgrid = INT64_MIN;
+        r->lacc = 0.0f;
+        r->lo.tokens = GA_BURST;
+        r->lgo |= GA_LIFE;
+    }
+    if (r->launch & GA_ORB) {
+        r->lkey[1] = note;
+        ob_restart(&r->ob, &r->oc, ga_seed(s, 0x4f524254u, 0));
+        r->oo.tokens = GA_BURST;
+        r->lgo |= GA_ORB;
+    }
+    if (r->launch & GA_PEND) {
+        r->lkey[2] = note;
+        ga_pend_start(s, ga_beat_at(r, s->now));
+        r->lgo |= GA_PEND;
+    }
 }
 
 /* the matrix sources, 0 .. 1 (each control step, per voice and for the effect pass) */
@@ -186,6 +226,11 @@ static void lf_play(one_t *s, int64_t at, int64_t step_len) {
     memset(r->llit, 0, sizeof r->llit);
     if (mode == LFM_BIRTHS) {   /* the grid moves on, then its births play */
         lf_step(&r->lf, rule, wrap);
+        if ((r->launch & GA_LIFE) && (!lf_pop(&r->lf) || r->lf.loops >= LF_LOOP_GENS)) {   /* (2026-10-30) KEY */
+            r->lgo &= ~GA_LIFE;                                                             /* LAUNCH: it is over */
+            r->lpop = lf_pop(&r->lf) / (float)(LF_ROWS * LF_COLS);
+            return;
+        }
         if (!lf_pop(&r->lf) || r->lf.loops >= LF_LOOP_GENS) {
             lf_fill(&r->lf, dens);
             memcpy(r->lf.born, r->lf.c, sizeof r->lf.c);
@@ -222,7 +267,8 @@ static void lf_play(one_t *s, int64_t at, int64_t step_len) {
     if (mode != LFM_BIRTHS && ++r->lhead >= (mode == LFM_COLUMN ? LF_COLS : LF_ROWS)) {   /* came round: moves on */
         r->lhead = 0;
         lf_step(&r->lf, rule, wrap);
-        if (!lf_pop(&r->lf) || r->lf.loops >= LF_LOOP_GENS) lf_fill(&r->lf, dens);
+        if ((r->launch & GA_LIFE) && (!lf_pop(&r->lf) || r->lf.loops >= LF_LOOP_GENS)) r->lgo &= ~GA_LIFE;   /* (over) */
+        else if (!lf_pop(&r->lf) || r->lf.loops >= LF_LOOP_GENS) lf_fill(&r->lf, dens);
     }
     r->lpop = lf_pop(&r->lf) / (float)(LF_ROWS * LF_COLS);
 }
@@ -285,7 +331,7 @@ static void pd_tick(one_t *s, int64_t t, int go) {
     double cyc = 4.0 * PD_BARS[(int)clampf(p[P_PEND_CYCLE], 0, 5)];
     double c0 = (ga_beat_at(r, t) - r->pstart) / cyc, c1 = (ga_beat_at(r, t + GA_STEP) - r->pstart) / cyc;
     float damp = clampf(p[P_PEND_DAMP] * 0.01f, 0.0f, 1.0f);
-    if (floor(c1) > floor(c0)) r->pamp = 1.0f;   /* a new cycle: pushed again */
+    if (floor(c1) > floor(c0) && !(r->launch & GA_PEND)) r->pamp = 1.0f;   /* a new cycle: pushed again (LAUNCH: the key) */
     else if (damp > 0.0f) r->pamp *= expf(-1.5f * damp * damp * dt);
     float dyn = clampf(p[P_PEND_DYN] * 0.01f, 0.0f, 1.0f), re = 0.0f, im = 0.0f;
     for (int i = 0; i < n; i++) {
@@ -434,27 +480,31 @@ static void ga_tick(one_t *s, int64_t t) {
     float tf = gen_tempo_factor(s, &r->tf, dt);   /* (2026-10-30) FOLLOW TEMPO: LIFE FREE and the orbits */
     ga_beat(s, t);
     if (r->lflash) r->lflash--;
+    /* (HELD KEYS with none held: it waits where it is; KEY LAUNCH: until a key launches it) */
+    int go = (~r->held | (keys ? GA_LIFE | GA_ORB | GA_PEND : 0)) & (~r->launch | r->lgo);
     if (r->on & GA_LIFE) {
         r->lo.tokens = fminf(r->lo.tokens + clampf(p[P_LIFE_MAX], 1.0f, 30.0f) * dt, GA_BURST);
-        lf_tick(s, t, !(r->held & GA_LIFE) || keys, tf);   /* (HELD KEYS with none held: it waits where it is) */
+        lf_tick(s, t, (go & GA_LIFE) != 0, tf);
     }
     if (r->on & GA_ORB) {
         r->oo.tokens = fminf(r->oo.tokens + clampf(p[P_ORB_MAX], 1.0f, 30.0f) * dt, GA_BURST);
-        ob_tick(s, t, !(r->held & GA_ORB) || keys, tf);
+        ob_tick(s, t, (go & GA_ORB) != 0, tf);
     }
     if (r->on & GA_PEND) {
         r->po.tokens = fminf(r->po.tokens + clampf(p[P_PEND_MAX], 1.0f, 30.0f) * dt, GA_BURST);
-        pd_tick(s, t, !(r->held & GA_PEND) || keys);
+        pd_tick(s, t, (go & GA_PEND) != 0);
+        if ((r->launch & GA_PEND) && r->pamp < 0.03f) r->lgo &= ~GA_PEND;   /* (KEY LAUNCH: swung out) */
     }
     if (++r->ticks % GA_VIEW_EVERY == 0) ga_view_write(r, (int)clampf(roundf(p[P_PEND_COUNT]), 2, PD_MAX));
 }
 
 /* a generator's notes due at this sample; returns the samples to its next one (or d) */
-static int64_t ga_play_due(one_t *s, ga_out_t *o, float len_knob, int64_t d) {
+static int64_t ga_play_due(one_t *s, ga_out_t *o, float len_knob, int64_t d, int bit) {
     int64_t len = (int64_t)(ga_len_ms(len_knob) * 0.001f * SR);
+    int gone = (s->ga.held & bit) && !(s->running && s->keys.n);   /* (2026-10-30) HELD KEYS let go: the waiting go */
     for (int i = 0; i < o->nq;) {
-        if (o->q[i].at <= s->now) {
-            play_step(s, o->q[i].note, o->q[i].vel, s->now + (len > 1 ? len : 1));
+        if (o->q[i].at <= s->now || gone) {
+            if (!gone) play_step(s, o->q[i].note, o->q[i].vel, s->now + (len > 1 ? len : 1));
             o->q[i] = o->q[--o->nq];
         } else {
             if (o->q[i].at - s->now < d) d = o->q[i].at - s->now;
@@ -473,9 +523,9 @@ static void ga_due(one_t *s, int *n) {
         r->t_next += GA_STEP;
     }
     int64_t d = r->t_next - s->now;
-    d = ga_play_due(s, &r->lo, s->val[P_LIFE_LEN], d);
-    d = ga_play_due(s, &r->oo, s->val[P_ORB_LEN], d);
-    d = ga_play_due(s, &r->po, s->val[P_PEND_LEN], d);
+    d = ga_play_due(s, &r->lo, s->val[P_LIFE_LEN], d, GA_LIFE);
+    d = ga_play_due(s, &r->oo, s->val[P_ORB_LEN], d, GA_ORB);
+    d = ga_play_due(s, &r->po, s->val[P_PEND_LEN], d, GA_PEND);
     if (d < 1) d = 1;
     if (d < *n) *n = (int)d;
 }

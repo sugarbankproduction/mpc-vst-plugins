@@ -264,4 +264,8 @@ typedef struct {
     uint8_t vpn, vpf[PD_MAX];
     int16_t vpx[PD_MAX];
     float tf;                /* (2026-10-30) FOLLOW TEMPO: LIFE FREE's and the orbits' speed factor less 1, gliding */
+    /* (2026-10-30) KEY LAUNCH: GA_* bits of those set to it, of those that take the keys (HELD or LAUNCH), of those a
+     * key has launched and that still play; each one's key (LIFE, ORBITS, PENDULUMS) */
+    int launch, takes, lgo;
+    int lkey[3];
 } ga_run_t;

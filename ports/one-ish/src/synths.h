@@ -279,8 +279,22 @@ static void set_param(void *inst, const char *key, const char *val) {
  * prefixes); still too long, the Synths past the first are dropped from the end (Synth 3 first), then the sequences are
  * left out (each Synth's readout says so). Synth 1 and the shared values never: should they alone not fit, nothing is
  * saved (0, and stderr says so). */
+/* (2026-10-30) A STATE'S MISSING KEYS. A state lists only the values off their defaults, so a param whose default
+ * changes would change every sound saved before. For those params a missing key means the OLD value, not today's
+ * default: state_absent() gives it, set_state / synth_load start from it, and state_keeps compares with it (so a value
+ * equal to it is the one left out, and a new sound at today's default writes its key). One today:
+ *   gen_keys: Euclid and Turing played only from the held keys until 2026-10-30 (Held Keys); new sounds start Free;
+ *   gen_follow_keys: until 2026-10-30 the notes from the keys stayed in the Synth's KEY (Off); new sounds follow (On).
+ * (A version number in the state would do the same for many params at once; this table is what it would hold.) */
+static float state_absent(const one_t *s, int i) {
+    return i == P_GEN_KEYS ? (float)GK_HELD : i == P_GEN_FOLLOW_KEYS ? 0.0f : s->def[i];
+}
+static void state_absent_load(one_t *s) {
+    s->val[P_GEN_KEYS] = state_absent(s, P_GEN_KEYS);
+    s->val[P_GEN_FOLLOW_KEYS] = state_absent(s, P_GEN_FOLLOW_KEYS);
+}
 static int state_keeps(const one_t *s, int i) {
-    if (!KEYS[i][0] || s->val[i] == s->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD ||
+    if (!KEYS[i][0] || s->val[i] == state_absent(s, i) || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD ||
         i == P_SYN_SOLO) return 0;
     return i != P_SEQ_ALL && !(s->idx > 0 && engine_global(i));
 }
@@ -407,6 +421,7 @@ static void set_state(inst_t *in, const char *str) {
     if (strlen(str) >= sizeof in->state_buf) return;   /* never restore half a state */
     for (int c = 0; c < NSYN; c++) {   /* a state saved before a param (or a Synth) existed leaves it at its default */
         load_defaults(in->syn[c]);
+        state_absent_load(in->syn[c]);   /* (2026-10-30: or at what it meant then) */
         sq_clear(&in->syn[c]->sq.q);   /* and one saved without a sequence has none, */
         tun_clear(&in->syn[c]->tun);   /* nor a scale */
     }
@@ -446,6 +461,7 @@ static void synth_load(inst_t *in, int c, const char *str) {
     float keep[P_COUNT];
     memcpy(keep, s->val, sizeof keep);
     load_defaults(s);
+    state_absent_load(s);   /* (2026-10-30) a key the sound leaves out: what it meant when it was saved */
     for (int k = 0; k < P_COUNT; k++)
         if (load_skip(k)) s->val[k] = keep[k];
     sq_clear(&s->sq.q);
@@ -466,7 +482,7 @@ static int synth_state(inst_t *in, int c, char *buf, int n) {
     positions_capture(s);   /* LOAD SAVED POS: the wheel and pad as they are now */
     int used = snprintf(buf, n, "v=1");
     for (int i = 0; i < P_COUNT; i++) {
-        if (!KEYS[i][0] || load_skip(i) || s->val[i] == s0->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC
+        if (!KEYS[i][0] || load_skip(i) || s->val[i] == state_absent(s0, i) || i == P_SEQ_PLAY || i == P_SEQ_REC
             || i == P_SEQ_STEP_MOD)
             continue;
         used = state_put(buf, n, used, ";%s=%g", KEYS[i], s->val[i]);

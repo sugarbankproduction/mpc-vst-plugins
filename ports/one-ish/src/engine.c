@@ -264,6 +264,9 @@ enum {
     P_LIFE_RESEED,   /* (2026-10-30) LIFE's RESEED button (the engine sets it back to Off) */
     P_GEN_FOLLOW,    /* (2026-10-30) FOLLOW TEMPO: the free-running generators' speeds follow the BPM (shared) */
     P_SEQ_OUTPUT,    /* (2026-10-30) the sequencer's OUTPUT: the Synths its notes play (src/stepseq_run.h) */
+    P_GEN_KEYS, P_GEN_OCT, P_GEN_EU_NOTES,   /* (2026-10-30) Euclid / Turing KEYS (FREE etc.), LOW OCTAVE, EUCLID NOTES */
+    P_GEN_TEMPO_SRC, P_GEN_BPM,   /* (2026-10-30) the generators' tempo: GLOBAL (the host's or OWN TEMPO) or this Synth's BPM */
+    P_GEN_FOLLOW_KEYS,   /* (2026-10-30) FOLLOW KEYS: the notes a generator plays from the keys, in the key played */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -417,6 +420,8 @@ static const char *const KEYS[P_COUNT] = {
     "life_reseed",
     "gen_follow_tempo",   /* (2026-10-30) */
     "seq_output",   /* (2026-10-30) */
+    "gen_keys", "gen_octave", "gen_eu_notes",   /* (2026-10-30) */
+    "gen_tempo_src", "gen_bpm", "gen_follow_keys",   /* (2026-10-30) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -660,6 +665,9 @@ typedef struct {
     int eu_n;
     uint8_t tm_reg[TM_MAX];  /* the Turing machine's loop */
     int tm_pos;
+    /* (2026-10-30) Euclid / Turing KEYS: the way in use (GK_*; HELD whenever the arp plays the keys), FREE playing now
+     * (the Synth ON), KEY LAUNCH's phrase (its key, velocity, steps left), EUCLID NOTES' count of hits */
+    int gk, gfree, gl_key, gl_vel, gl_left, eu_hit;
     uint32_t grng;           /* the generative choices' random numbers */
     struct { int64_t at; int note; } pend[128];  /* generated notes' releases, by sample */
     int npend;
@@ -939,7 +947,14 @@ static void apply_analog(one_t *s) {
 static void apply_perf(one_t *s) {
     const float *p = s->val;
     s->seq_on = p[P_ARP_ON] > 0.5f || p[P_GEN_EUCLID] > 0.5f || p[P_GEN_TM] > 0.5f;
-    int n = (int)clampf(roundf(p[P_GEN_STEPS]), 1, EU_MAX), hits = (int)clampf(roundf(p[P_GEN_HITS]), 0, (float)n);
+    /* (2026-10-30) Euclid / Turing KEYS. With the arp on (and Turing off) the arp plays the held keys: HELD whatever
+     * the setting says. FREE runs while the Synth is ON; when it stops, its phrase does too (its keys were never taken) */
+    int gk = (int)clampf(p[P_GEN_KEYS], GK_FREE, GK_LAUNCH), was_free = s->gfree;
+    if ((p[P_ARP_ON] > 0.5f && p[P_GEN_TM] < 0.5f) || (p[P_GEN_EUCLID] < 0.5f && p[P_GEN_TM] < 0.5f)) gk = GK_HELD;
+    s->gk = gk;
+    s->gfree = s->seq_on && gk == GK_FREE && p[P_SYN_ON] > 0.5f;
+    if (was_free && !s->gfree) s->running = 0;
+    int n =(int)clampf(roundf(p[P_GEN_STEPS]), 1, EU_MAX), hits = (int)clampf(roundf(p[P_GEN_HITS]), 0, (float)n);
     int rot = (int)clampf(roundf(p[P_GEN_ROT]), 0, EU_MAX - 1) % n;
     uint8_t e[EU_MAX];
     euclid(n, hits, e);
@@ -1698,7 +1713,7 @@ static const int CHANGED_SLOT[CHORD_MAX + 4] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CH
 
 static int route_of(const one_t *s) {
     if (s->val[P_CHORD_LEARN] > 0.5f) return ROUTE_LEARN;
-    if (s->seq_on || s->ph.takes || s->gb.rn_held || s->gb.mk_held || s->ga.held) return ROUTE_SEQ;   /* (the balls' HELD KEYS, LAUNCH, EMIT and the rain's / Markov's HELD KEYS take the keys the same way) */
+    if ((s->seq_on && s->gk != GK_FREE) || s->ph.takes || s->gb.rn_takes || s->gb.mk_takes || s->ga.takes) return ROUTE_SEQ;   /* (the balls' HELD KEYS, LAUNCH, EMIT and the rain's / Markov's HELD KEYS take the keys the same way) */
     return s->val[P_CHORD_ON] > 0.5f ? ROUTE_CHORD : ROUTE_PLAIN;
 }
 
@@ -1799,11 +1814,44 @@ static int64_t until(const one_t *s, double t) {   /* samples from now to beat p
     return (int64_t)ceil((t - s->pos0) / s->bps - 1e-6) - s->clk;
 }
 
+/* (2026-10-30) GEN TEMPO: the tempo this Synth's generators follow. GLOBAL (the default): the host's song position's,
+ * else the host's or the window's OWN TEMPO (s->bpm; 120 when there is none). OWN: gen_bpm, and the generators' beat
+ * clocks run free from where they are (they no longer follow the host's song position; a change of tempo, or of the
+ * way, carries each clock on from the beat it is at, so nothing jumps). The arpeggiator and the step sequencer stay
+ * on the global tempo; the step clock is the generators' (and follows OWN) while Euclid or Turing plays without the
+ * arp. Returns 1 for OWN. */
+static int gen_own(const one_t *s) { return s->val[P_GEN_TEMPO_SRC] > 0.5f; }
+static double gen_bpm(const one_t *s) {
+    if (gen_own(s)) return (double)clampf(s->val[P_GEN_BPM], 20.0f, 300.0f);
+    return s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm;
+}
+
+/* (2026-10-30) FOLLOW KEYS (gen_follow_keys, per Synth; On for new sounds, Off for those saved before): a generator
+ * playing from the keys (HELD, KEY LAUNCH, KEY EMIT) plays in the key played instead of the Synth's KEY. One key: the
+ * Synth's SCALE with that key as its root (D held in a Minor Synth: D minor). Two or more keys held (a chord): each
+ * note goes to the nearest note of the chord's own notes in any octave (C E G held: only Cs, Es and Gs). Off: the
+ * Synth's KEY and SCALE stay, the key only says where to start. gen_root_of: the root for notes from `key`;
+ * gen_follow_snap: a note from the keys, to the chord's notes when one is held. */
+static int gen_root_of(const one_t *s, int key) {
+    return s->val[P_GEN_FOLLOW_KEYS] > 0.5f && key >= 0 ? key % 12 : (int)clampf(s->val[P_KEY_ROOT], 0, 11);
+}
+static int gen_follow_snap(const one_t *s, int note) {
+    if (s->val[P_GEN_FOLLOW_KEYS] < 0.5f || !s->running || s->keys.n < 2) return note;
+    unsigned pcs = 0;
+    for (int i = 0; i < s->keys.n; i++) pcs |= 1u << (s->keys.note[i] % 12);
+    for (int d = 0; d <= 6; d++) {   /* the nearest held pitch class (ties: down), kept in 0 .. 127 */
+        if (note - d >= 0 && (pcs >> ((note - d) % 12) & 1)) return note - d;
+        if (note + d <= 127 && (pcs >> ((note + d) % 12) & 1)) return note + d;
+    }
+    return note;
+}
+
 /* once per render while the clock plays: tempo, step length and swing, the host's song position, a new phrase's start */
 static void clock_block(one_t *s) {
     const float *p = s->val;
-    int sync = p[P_ARP_SYNC] > 0.5f;
-    double bpm = sync ? (s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm) : (double)clampf(p[P_ARP_RATE], 10.0f, 280.0f);
+    int own = gen_own(s) && p[P_ARP_ON] < 0.5f;   /* (2026-10-30) GEN TEMPO OWN: Euclid / Turing at its BPM */
+    int sync = p[P_ARP_SYNC] > 0.5f || own;
+    double bpm = own ? gen_bpm(s) : sync ? (s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm) : (double)clampf(p[P_ARP_RATE], 10.0f, 280.0f);
     double bps = bpm / 60.0 / SR, now_pos = clock_pos(s);
     double step = ARP_DIV_BEATS[(int)clampf(p[P_ARP_DIV], 0, 7)] * ARP_TIMING[(int)clampf(p[P_ARP_TIMING], 0, 2)];
     /* SWING: the on-step's share of each pair of steps (50%: none), so odd steps come later (or earlier) */
@@ -1813,7 +1861,7 @@ static void clock_block(one_t *s) {
     int restep = step != s->step || swoff != s->swoff, jump = 0;
     s->step = step;
     s->swoff = swoff;
-    int follow = sync && s->sp_playing && s->sp_ppq >= 0.0;
+    int follow = sync && !own && s->sp_playing && s->sp_ppq >= 0.0;
     if (follow && s->sp_new) {   /* the song position at this block: on the song's grid, steps counted from its start */
         jump = !s->follow || fabs(now_pos - s->sp_ppq) > JUMP_BEATS;
         clock_anchor(s, s->sp_ppq);
@@ -1839,7 +1887,7 @@ static void clock_block(one_t *s) {
     int64_t k = first_step_from(s, at);
     if (at - step_t(s, k - 1) < LATE_FRAC * (step_t(s, k) - step_t(s, k - 1))) k--;
     s->next_k = k;
-    s->k0 = follow ? 0 : k;
+    s->k0 = follow && s->gk != GK_LAUNCH ? 0 : k;   /* (KEY LAUNCH: each phrase from the pattern's first step) */
 }
 
 static void pend_add(one_t *s, int note, int64_t at) {
@@ -1906,6 +1954,39 @@ static int arp_next(one_t *s, int *vel) {
     return note;
 }
 
+/* (2026-10-30) FREE and KEY LAUNCH, where there is no held chord to play from: degree d of the Synth's KEY and SCALE
+ * (Turing's own SCALE when it names one, from the KEY's root) from LOW OCTAVE, or from the key that launched the phrase */
+#define GEN_FREE_VEL 100
+static int gen_key_note(const one_t *s, int d, int tm_scale) {
+    const float *p = s->val;
+    int launch = s->gk == GK_LAUNCH, root = gen_root_of(s, launch ? s->gl_key : -1);   /* (FOLLOW KEYS) */
+    int base = launch ? s->gl_key : 12 * ((int)clampf(p[P_GEN_OCT], 0, 5) + 2) + root;   /* C1 = 24 */
+    if (tm_scale > 0 && tm_scale < SCALES) {
+        int m = SCALE_SIZE[tm_scale], n = base + 12 * (d / m) + SCALE[tm_scale][d % m];
+        while (n > 127) n -= 12;
+        return launch ? gen_follow_snap(s, n) : n;
+    }
+    int sc = ks_clamp_scale((int)p[P_KEY_SCALE]);
+    int n = ks_quantize(base - root + ks_degree(root, sc, 0, d), root, sc);
+    return launch ? gen_follow_snap(s, n) : n;
+}
+/* the Turing machine's value (0..255) as a degree over its OCTAVES */
+static int gen_tm_note(const one_t *s, int v) {
+    int scale = (int)s->val[P_GEN_SCALE], range = (int)clampf(s->val[P_GEN_RANGE], 0, 3) + 1;
+    int m = scale > 0 && scale < SCALES ? SCALE_SIZE[scale] : KS_SIZE[ks_clamp_scale((int)s->val[P_KEY_SCALE])];
+    return gen_key_note(s, v * m * range / 256, scale);
+}
+/* EUCLID NOTES: each hit the root, or the next degree up (then from the root again), up and down, or one at random,
+ * over the Turing OCTAVES */
+static int gen_eu_note(one_t *s) {
+    int mode = (int)clampf(s->val[P_GEN_EU_NOTES], EUN_ROOT, EUN_RANDOM), h = s->eu_hit++, d = 0;
+    int top = KS_SIZE[ks_clamp_scale((int)s->val[P_KEY_SCALE])] * ((int)clampf(s->val[P_GEN_RANGE], 0, 3) + 1);
+    if (mode == EUN_UP) d = h % top;
+    else if (mode == EUN_UPDOWN) { d = h % (2 * top); if (d > top) d = 2 * top - d; }
+    else if (mode == EUN_RANDOM) d = (int)(seq_rand(&s->grng) % (uint32_t)(top + 1));
+    return gen_key_note(s, d, 0);
+}
+
 /* step k: the Euclidean rhythm and PROBABILITY decide whether it plays; then its note(s), each held for GATE of the
  * step (its own length: swing makes pairs uneven) */
 static void fire_step(one_t *s, int64_t k) {
@@ -1921,7 +2002,12 @@ static void fire_step(one_t *s, int64_t k) {
     if (p[P_GEN_TM] > 0.5f) {
         int v = tm_step(s->tm_reg, (int)roundf(p[P_GEN_TM_LEN]), &s->tm_pos, p[P_GEN_TM_CHANGE] * 0.01f, &s->grng);
         s->ph.m_tm = v * (1.0f / 255.0f);   /* (2026-10-30) the matrix's TURING VALUE */
-        play_step(s, tm_note(v, (int)p[P_GEN_SCALE], (int)p[P_GEN_RANGE] + 1, &s->keys), s->keys.vel[s->keys.n - 1], off);
+        if (s->gk == GK_HELD)
+            play_step(s, tm_note(v, (int)p[P_GEN_SCALE], (int)p[P_GEN_RANGE] + 1, &s->keys), s->keys.vel[s->keys.n - 1], off);
+        else
+            play_step(s, gen_tm_note(s, v), s->gk == GK_LAUNCH ? s->gl_vel : GEN_FREE_VEL, off);
+    } else if (s->gk != GK_HELD) {   /* (2026-10-30) FREE and KEY LAUNCH: EUCLID NOTES in the KEY and SCALE */
+        play_step(s, gen_eu_note(s), s->gk == GK_LAUNCH ? s->gl_vel : GEN_FREE_VEL, off);
     } else if (p[P_ARP_ON] > 0.5f) {
         int vel, note = arp_next(s, &vel);
         if (note >= 0) play_step(s, note, vel, off);
@@ -1931,12 +2017,21 @@ static void fire_step(one_t *s, int64_t k) {
 }
 
 /* everything due at this sample: earlier ends, the steps, then the ends at this very sample */
+/* (2026-10-30) whether the step clock plays now: HELD KEYS while keys are held (or latched), FREE whenever it runs
+ * (the Synth ON), KEY LAUNCH while the phrase a key started has steps left */
+static int clk_go(const one_t *s) {
+    if (!s->seq_on || !s->running) return 0;
+    if (s->gk == GK_FREE) return s->gfree;
+    if (s->gk == GK_LAUNCH) return s->gl_left > 0;
+    return s->keys.n > 0;
+}
 static void seq_due(one_t *s) {
     pend_release(s, 0);
-    for (int guard = 0; s->seq_on && s->running && s->keys.n && until(s, step_t(s, s->next_k)) <= 0; guard++) {
+    for (int guard = 0; clk_go(s) && until(s, step_t(s, s->next_k)) <= 0; guard++) {
         if (guard == 16) { s->next_k = first_step_from(s, clock_pos(s)); break; }   /* a huge jump: no burst of notes */
         fire_step(s, s->next_k);
         s->next_k++;
+        if (s->gk == GK_LAUNCH) s->gl_left--;
     }
     pend_release(s, 1);
 }
@@ -1944,7 +2039,7 @@ static void seq_due(one_t *s) {
 /* samples until the next thing the clock does (at least 1) */
 static int64_t seq_next(const one_t *s) {
     int64_t d = INT64_MAX;
-    if (s->seq_on && s->running && s->keys.n) d = until(s, step_t(s, s->next_k));
+    if (clk_go(s)) d = until(s, step_t(s, s->next_k));
     for (int i = 0; i < s->npend; i++)
         if (s->pend[i].at - s->now < d) d = s->pend[i].at - s->now;
     return d < 1 ? 1 : d;
@@ -1964,11 +2059,23 @@ static void seq_key_on(one_t *s, int note, int vel) {
     k->down[k->n++] = 1;
     s->phys++;
     s->adirty = 1;
+    if (s->seq_on && s->gk == GK_LAUNCH) {   /* (2026-10-30) KEY LAUNCH: each key a phrase of its own, from that key */
+        start = 1;
+        s->gl_key = note;
+        s->gl_vel = vel;
+        s->gl_left = s->val[P_GEN_EUCLID] > 0.5f ? s->eu_n : (int)clampf(roundf(s->val[P_GEN_TM_LEN]), 2, TM_MAX);
+    }
     if (start) {   /* a new phrase: the pattern and the Turing machine from their start */
         s->running = s->start_pending = 1;
-        s->apos = s->tm_pos = 0;
+        s->apos = s->tm_pos = s->eu_hit = 0;
         s->alast = -1;
     }
+}
+/* (2026-10-30) FREE: the clock starts by itself (the next render), from the pattern's start */
+static void gen_free_start(one_t *s) {
+    s->running = s->start_pending = 1;
+    s->apos = s->tm_pos = s->eu_hit = 0;
+    s->alast = -1;
 }
 static void seq_key_off(one_t *s, int note) {
     seq_keys_t *k = &s->keys;
@@ -1978,7 +2085,7 @@ static void seq_key_off(one_t *s, int note) {
     s->phys--;
     if (!seq_latched(s) && !s->sustain) seq_remove(k, i);
     s->adirty = 1;
-    if (k->n == 0) s->running = 0;
+    if (k->n == 0 && !(s->seq_on && s->gk == GK_LAUNCH)) s->running = 0;   /* (a launched phrase plays on) */
 }
 static void seq_unlatch(one_t *s) {   /* latch or the pedal let go: the keys no longer down leave */
     if (seq_latched(s) || s->sustain) return;
@@ -1987,7 +2094,7 @@ static void seq_unlatch(one_t *s) {   /* latch or the pedal let go: the keys no 
         else seq_remove(&s->keys, i);
     }
     s->adirty = 1;
-    if (s->keys.n == 0) s->running = 0;
+    if (s->keys.n == 0 && !(s->seq_on && s->gk == GK_LAUNCH)) s->running = 0;
 }
 
 #include "stepseq_run.h"   /* THE STEP SEQUENCER: part of this file */
@@ -3280,6 +3387,7 @@ static void synth_block(one_t *s) {
         s->fx_stale = 0;
         fx_params(s, &s->fxp);
     }
+    if (s->gfree && !s->running) gen_free_start(s);   /* (2026-10-30) Euclid / Turing FREE: no key needed */
     if (s->seq_on) clock_block(s);
     if (sq_live(s) || s->sq.start_pending) sq_block(s);   /* the step sequencer's clock */
 }

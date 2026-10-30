@@ -3262,7 +3262,7 @@ static void bench(void) {
             set(e, "arp_on", 1); set(e, "arp_div", 5); set(e, "arp_gate", 100); set(e, "arp_oct", 1);
             set(e, "chord_on", 1); set(e, "chord_shape", 7); set(e, "gen_euclid_on", 1); set(e, "gen_steps", 16);
             set(e, "gen_hits", 13); set(e, "gen_prob", 90); set(e, "gen_vel_rand", 40); set(e, "gen_tm_on", 1);
-            set(e, "gen_tm_change", 30); set(e, "gen_scale", 7); set(e, "gen_range", 1);
+            set(e, "gen_tm_change", 30); set(e, "gen_scale", 7); set(e, "gen_range", 1); set(e, "gen_keys", 1);
             for (int j = 0; j < 4; j++) note(e, 1, 48 + 3 * j, 100);
         } else {
             for (int j = 0; j < 8; j++) note(e, 1, 48 + 3 * j, 100);
@@ -4692,6 +4692,7 @@ static void setkv(void *e, const char *kv) {
 static void *arp_patch(void) {
     void *e = patch(SAW, 1, 100, 80, 20);
     set(e, "voices", 7);
+    set(e, "gen_keys", 1);   /* (2026-10-30) Euclid / Turing from the held keys, as these checks play them */
     E->set_param(e, "lfo_bpm", "120");
     return e;
 }
@@ -5117,7 +5118,7 @@ static void arp_wav(const char *demo_path) {
     setkv(bass, "arp_on=1,arp_pattern=2,gen_euclid_on=1,gen_steps=16,gen_hits=5,gen_vel_rand=30,arp_gate=60");
     set(stab, "o1_mix", 100); set(stab, "o2_level", 80); set(stab, "o2_freq", 0.1); set(stab, "flt_cut", knob_for_hz(2500));
     set(stab, "voices", 7); set(stab, "volume", 45); set(stab, "mfx_send2", 35);
-    setkv(stab, "gen_euclid_on=1,gen_steps=8,gen_hits=3,gen_rot=2,arp_div=3,arp_gate=40,chord_on=1,chord_shape=8");
+    setkv(stab, "gen_keys=1,gen_euclid_on=1,gen_steps=8,gen_hits=3,gen_rot=2,arp_div=3,arp_gate=40,chord_on=1,chord_shape=8");
     E->set_param(bass, "lfo_bpm", "122"); E->set_param(stab, "lfo_bpm", "122");
     static const int line[3] = {36, 43, 46};
     for (int k = 0; k < 3; k++) note(bass, 1, line[k], 110);
@@ -5135,7 +5136,7 @@ static void arp_wav(const char *demo_path) {
     set(e, "o2_level", 50); set(e, "o2_oct", 3); set(e, "flt_cut", knob_for_hz(3000)); set(e, "voices", 7);
     set(e, "mfx_send1", 30); set(e, "dly_sync", 1); set(e, "dly_time", 70); set(e, "dly_fb", 45); set(e, "mfx_send2", 30);
     E->set_param(e, "lfo_bpm", "110");
-    setkv(e, "gen_tm_on=1,gen_tm_len=8,gen_tm_change=15,gen_scale=7,gen_range=1,gen_prob=85,gen_vel_rand=25,arp_gate=70,arp_latch=1");
+    setkv(e, "gen_keys=1,gen_tm_on=1,gen_tm_len=8,gen_tm_change=15,gen_scale=7,gen_range=1,gen_prob=85,gen_vel_rand=25,arp_gate=70,arp_latch=1");
     note(e, 1, 57, 100); note(e, 0, 57, 0);
     o = rest(e, o, 6 * SEC / 128);
     set(e, "gen_tm_change", 0);   /* locked: the last 8 steps loop */
@@ -5163,6 +5164,7 @@ static void arp_wav(const char *demo_path) {
 #include "physgen_check.c"   /* the bouncing balls and particles (2026-10-29) */
 #include "gens_b_check.c"    /* (2026-10-30) rain and ripples, the Markov melody */
 #include "gens_a_check.c"   /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
+#include "gen_keys_check.c"   /* (2026-10-30) every generator's KEYS (FREE, HELD, LAUNCH, EMIT) and GEN TEMPO */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5941,6 +5943,11 @@ int main(int argc, char **argv) {
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "genkeys")) {   /* (2026-10-30) just the generators' KEYS and GEN TEMPO */
+        gen_keys_checks();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "gensb")) {   /* (2026-10-30) just the rain and the Markov melody */
         gens_b_checks();
         gens_b_bench();
@@ -6056,6 +6063,7 @@ int main(int argc, char **argv) {
     physgen_checks();
     gens_b_checks();   /* (2026-10-30) */
     gens_a_checks();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
+    gen_keys_checks();   /* (2026-10-30) the generators' KEYS, GEN TEMPO */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

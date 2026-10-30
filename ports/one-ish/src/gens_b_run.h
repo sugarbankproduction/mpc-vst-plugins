@@ -7,7 +7,9 @@
  * right high, over OCTAVES octaves from LOW OCTAVE), its size its velocity (SIZE SPREAD 0: every drop the same); a
  * ring then spreads from it, and where two rings first meet, or a ring first reaches a stone, an echo plays (softer,
  * ECHO times as likely; ECHO 0: none). MAX NOTES/S caps the notes a second, SYNC puts each note on the next tempo grid
- * line, NOTE LENGTH sets how long each lasts, FREE or HELD KEYS as the balls (HELD: from the lowest key held).
+ * line, NOTE LENGTH sets how long each lasts, FREE or HELD KEYS as the balls (HELD: from the lowest key held);
+ * (2026-10-30) KEY LAUNCH: each key a shower (gb_key_on); KEY EMIT: rain only while keys are held, RATE x velocity /
+ * 64 (rn_tick). MARKOV's KEY LAUNCH: each key a phrase of MK_PHRASE notes from it, ending on it.
  *
  * MARKOV: it learns from the keys played into this Synth (LEARN on; whether it plays or not, and not while HELD KEYS
  * gives it the keys): each note's degree in the KEY and SCALE (IN KEY off: in semitones), the step from the note before
@@ -58,8 +60,8 @@ static int mk_note(const one_t *s, int d) {
 /* ---- the beat clock (SYNC), as the balls' ---- */
 static void gb_beat(one_t *s, int64_t t) {
     gb_run_t *g = &s->gb;
-    double bpm = s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm, bps = bpm / 60.0 / SR;
-    if (s->sp_playing && s->sp_ppq >= 0.0) {
+    double bpm = gen_bpm(s), bps = bpm / 60.0 / SR;   /* (2026-10-30: GEN TEMPO) */
+    if (!gen_own(s) && s->sp_playing && s->sp_ppq >= 0.0) {   /* (OWN: free from where it is) */
         g->b0 = s->sp_ppq;
         g->t0 = g->sp_at;
         g->bps0 = bps;
@@ -79,7 +81,7 @@ static int64_t gb_on_grid(const one_t *s, int64_t at, double grid) {   /* the fi
     return q < at ? at : q;
 }
 
-static void gb_queue(one_t *s, int64_t at, int note, int vel, int32_t len, int dedupe) {
+static void gb_queue(one_t *s, int64_t at, int note, int vel, int32_t len, int dedupe, int who) {
     gb_run_t *g = &s->gb;
     if (dedupe)   /* the same note on the same grid line plays once (the louder) */
         for (int i = 0; i < g->nq; i++)
@@ -91,6 +93,7 @@ static void gb_queue(one_t *s, int64_t at, int note, int vel, int32_t len, int d
     g->q[g->nq].at = at;
     g->q[g->nq].len = len > 1 ? len : 1;
     g->q[g->nq].note = (uint8_t)note;
+    g->q[g->nq].who = (uint8_t)who;
     g->q[g->nq++].vel = (uint8_t)vel;
 }
 
@@ -110,10 +113,15 @@ static void rn_hit_note(const one_t *s, const rn_hit_t *h, int *note, int *vel) 
     int root = gb_root(s), sc = ks_clamp_scale((int)p[P_KEY_SCALE]), size = KS_SIZE[sc];
     int steps = size * ((int)clampf(p[P_RAIN_RANGE], 0, 3) + 1) + 1, d = (int)(h->x * steps);
     d = d < 0 ? 0 : d >= steps ? steps - 1 : d;
-    int n;
-    if (s->gb.rn_held && s->keys.n) n = gb_lowest_key(s) + ks_degree(root, sc, 0, d) - root;
-    else n = ks_degree(root, sc, (int)clampf(p[P_RAIN_OCT], 0, 5) + 2, d);   /* C1 = 24 */
-    *note = ks_quantize(n, root, sc);
+    int mode = s->gb.rn_mode, key = -1;
+    if ((mode == GK_HELD || mode == GK_EMIT) && s->keys.n) key = gb_lowest_key(s);
+    else if (mode == GK_LAUNCH && s->gb.rn_key >= 0) key = s->gb.rn_key;   /* (2026-10-30) */
+    if (key >= 0) {   /* (2026-10-30) FOLLOW KEYS: in the key played */
+        root = gen_root_of(s, key);
+        *note = gen_follow_snap(s, ks_quantize(key + ks_degree(root, sc, 0, d) - root, root, sc));
+    } else {
+        *note = ks_quantize(ks_degree(root, sc, (int)clampf(p[P_RAIN_OCT], 0, 5) + 2, d), root, sc);   /* C1 = 24 */
+    }
     float a = clampf(h->amp, 0.0f, 1.0f);
     *vel = (int)clampf(roundf(h->kind == RN_DROP ? 40.0f + 72.0f * a : 20.0f + 70.0f * a), 1.0f, 127.0f);
 }
@@ -126,8 +134,16 @@ static void rn_tick(one_t *s, int64_t t, float dt, float tf) {   /* tf: FOLLOW T
     for (int k = 0; k < RN_STONES; k++) if (g->sflash[k]) g->sflash[k]--;
     if (!gb_keys_ok(s, g->rn_held)) return;   /* HELD KEYS with none held: it waits where it is */
     g->rn_tokens = fminf(g->rn_tokens + clampf(p[P_RAIN_MAX], 1.0f, 30.0f) * dt, GB_BURST);
+    rn_cfg_t c = g->rc;   /* (2026-10-30) KEY LAUNCH: only the showers' drops; KEY EMIT: rain while keys are held, */
+    if (g->rn_mode == GK_LAUNCH) c.rate = 0.0f;   /* RATE x the hardest key's velocity / 64 */
+    if (g->rn_mode == GK_EMIT) {
+        int v = 0;
+        for (int i = 0; s->running && i < s->keys.n; i++) if (s->keys.vel[i] > v) v = s->keys.vel[i];
+        c.rate *= v * (1.0f / 64.0f);
+        if (!v) g->rw.next = fminf(g->rw.next, 0.02f);   /* (none held: the first drop soon after the next key) */
+    }
     rn_hit_t h[RN_HITS];
-    int nh = rn_step(&g->rw, &g->rc, dt * tf, h);
+    int nh = rn_step(&g->rw, &c, dt * tf, h);
     int32_t len = (int32_t)(rn_len_ms(p) * 0.001f * SR);
     for (int i = 0; i < nh; i++) {
         if (h[i].kind == RN_DROP) g->src[GBS_DROP] = fmaxf(g->src[GBS_DROP], h[i].amp);
@@ -136,7 +152,7 @@ static void rn_tick(one_t *s, int64_t t, float dt, float tf) {   /* tf: FOLLOW T
         int note, vel;
         rn_hit_note(s, &h[i], &note, &vel);
         int64_t at = t + (int64_t)(h[i].frac * GB_STEP);
-        gb_queue(s, sync ? gb_on_grid(s, at, GB_SYNC_BEATS[(int)clampf(p[P_RAIN_SYNC], 0, 6)]) : at, note, vel, len, sync);
+        gb_queue(s, sync ? gb_on_grid(s, at, GB_SYNC_BEATS[(int)clampf(p[P_RAIN_SYNC], 0, 6)]) : at, note, vel, len, sync, 0);
         if (h[i].kind == RN_STONE) g->sflash[h[i].who] = GB_FLASH;
     }
     for (int i = 0; i < RN_RIPS; i++)
@@ -158,6 +174,7 @@ static void mk_window(one_t *s) {
     gb_run_t *g = &s->gb;
     int sc = mk_scale(s), span = KS_SIZE[sc] * ((int)clampf(s->val[P_MKV_RANGE], 0, 3) + 1);
     int lo = g->mk_held && s->keys.n ? mk_deg(gb_lowest_key(s), gb_root(s), sc) : (int)lroundf(g->centre) - span / 2;
+    if (g->mk_mode == GK_LAUNCH && g->mk_key >= 0) lo = mk_deg(g->mk_key, gb_root(s), sc);   /* (2026-10-30) */
     int top = mk_deg(127, gb_root(s), sc);
     if (lo + span > top) lo = top - span;
     if (lo < 0) lo = 0;
@@ -182,7 +199,7 @@ static void mk_start(one_t *s) {
 /* a key played into this Synth (the MIDI note-on path): learned */
 static void mk_hear(one_t *s, int note, int vel) {
     gb_run_t *g = &s->gb;
-    if (s->val[P_MKV_LEARN] < 0.5f || g->mk_held || !g->mk_init) return;
+    if (s->val[P_MKV_LEARN] < 0.5f || g->mk_takes || !g->mk_init) return;
     int64_t dt = s->now - g->l_t;
     if (g->l1 >= 0 && dt < (int64_t)(MK_CHORD_S * SR)) return;   /* a chord's other notes */
     int sc = mk_scale(s), size = KS_SIZE[sc], d = mk_deg(note, gb_root(s), sc);
@@ -190,7 +207,7 @@ static void mk_hear(one_t *s, int note, int vel) {
         g->l2 = g->l_gap = -1;
     } else {
         mk_learn_step(&g->mt, size, g->l2, g->l1, d);
-        double bps = g->bps0 > 0.0 ? g->bps0 : (s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm) / 60.0 / SR;
+        double bps = g->bps0 > 0.0 ? g->bps0 : gen_bpm(s) / 60.0 / SR;
         int gc = mk_gap_class((float)(dt * bps / mk_beats(s)));
         if (gc >= 0) mk_learn_gap(&g->mt, g->l_gap, gc);
         g->l_gap = gc;
@@ -207,6 +224,7 @@ static void mk_step(one_t *s, int64_t line) {
     gb_run_t *g = &s->gb;
     const float *p = s->val;
     if (!gb_keys_ok(s, g->mk_held)) { g->mk_wait = 0; return; }
+    if (g->mk_mode == GK_LAUNCH && g->mk_left <= 0) { g->mk_wait = 0; return; }   /* (2026-10-30) the phrase is over */
     if (g->mk_wait > 0) { g->mk_wait--; return; }
     if (g->mk_tokens < 1.0f) return;   /* over MAX NOTES/S: this line rests */
     g->mk_tokens -= 1.0f;
@@ -227,6 +245,7 @@ static void mk_step(one_t *s, int64_t line) {
     if (d > g->hi) d = g->g1 - (iv < 0 ? -iv : iv);   /* past the range: the same step the other way */
     if (d < g->lo) d = g->g1 + (iv < 0 ? -iv : iv);
     d = d < g->lo ? g->lo : d > g->hi ? g->hi : d;
+    if (g->mk_mode == GK_LAUNCH && g->mk_left == 1) d = g->lo;   /* (2026-10-30) a launched phrase ends on its key */
     g->choice = k;
     g->g2 = g->g1;
     g->g1 = d;
@@ -243,12 +262,18 @@ static void mk_step(one_t *s, int64_t line) {
     float steps = MK_GAP[gap] * mk_beats(s) / (float)(g->bps0 > 0.0 ? g->bps0 : 2.0 / SR);
     int32_t len = (int32_t)(steps * clampf(p[P_MKV_GATE] * 0.01f, 0.05f, 1.0f));
     int vel = (int)clampf(roundf(g->vavg + (seq_rand01(&g->mk_rng) - 0.5f) * 16.0f * c), 1.0f, 127.0f);
-    int n = mk_note(s, d);
-    if (g->mk_held && s->keys.n) {   /* from the lowest key held (in the key) */
-        int low = gb_lowest_key(s);
-        n = ks_quantize(low + mk_note(s, d) - mk_note(s, g->lo), gb_root(s), sc);
+    int n = mk_note(s, d), key = -1;
+    if (g->mk_held && s->keys.n) key = gb_lowest_key(s);   /* from the lowest key held (in the key) */
+    if (g->mk_mode == GK_LAUNCH && g->mk_key >= 0) {   /* (2026-10-30) from the key that launched it, at its velocity */
+        key = g->mk_key;
+        vel = g->mk_vel;
+        g->mk_left--;
     }
-    gb_queue(s, line, n, vel, len, 0);
+    if (key >= 0 && s->val[P_GEN_FOLLOW_KEYS] > 0.5f)   /* (2026-10-30) FOLLOW KEYS: the scale from the key played */
+        n = gen_follow_snap(s, ks_quantize(key + ks_degree(0, sc, 0, d - g->lo), key % 12, sc));
+    else if (key >= 0)
+        n = ks_quantize(key + mk_note(s, d) - mk_note(s, g->lo), gb_root(s), sc);
+    gb_queue(s, line, n, vel, len, 0, 1);
     g->hist[g->hist_head].t = line;
     g->hist[g->hist_head].d = (int16_t)(d - g->lo);
     g->hist_head = (g->hist_head + 1) % MK_HIST;
@@ -299,15 +324,43 @@ static void gb_apply(one_t *s) {
     }
     if (!rn) g->src[GBS_DROP] = g->src[GBS_RIPPLE] = 0.0f;
     g->rn_on = rn;
-    g->rn_held = rn && p[P_RAIN_KEYS] > 0.5f;
-    g->mk_held = mk && p[P_MKV_KEYS] > 0.5f;
+    /* (2026-10-30) KEYS: FREE, HELD KEYS, KEY LAUNCH, KEY EMIT (rain); FREE, HELD KEYS, KEY LAUNCH (Markov) */
+    int rm = (int)clampf(p[P_RAIN_KEYS], GK_FREE, GK_EMIT), mm = (int)clampf(p[P_MKV_KEYS], GK_FREE, GK_LAUNCH);
+    if (rm != g->rn_mode || !rn) g->rn_key = -1;
+    if (mm != g->mk_mode || !mk) { g->mk_key = -1; g->mk_left = 0; }
+    g->rn_mode = rm;
+    g->mk_mode = mm;
+    g->rn_held = rn && rm == GK_HELD;
+    g->rn_takes = rn && rm != GK_FREE;
+    g->mk_held = mk && mm == GK_HELD;
+    g->mk_takes = mk && mm != GK_FREE;
     if (mk && !g->mk_on) mk_start(s);
     if (!mk) g->src[GBS_MK_STEP] = g->src[GBS_MK_HEIGHT] = 0.0f;
     g->mk_on = mk;
     if (!rn && !mk) g->nq = 0;   /* both off: nothing more plays */
 }
 
-static void gb_key_on(one_t *s, int note, int vel) { mk_hear(s, note, vel); }
+/* a key into this Synth: the Markov melody learns it; (2026-10-30) KEY LAUNCH: the rain's shower (3 to 12 drops by
+ * velocity, landing over half a second), the Markov melody's phrase (MK_PHRASE notes from the key, ending on it) */
+#define MK_PHRASE 8
+static void gb_key_on(one_t *s, int note, int vel) {
+    gb_run_t *g = &s->gb;
+    mk_hear(s, note, vel);
+    if (g->rn_on && g->rn_mode == GK_LAUNCH) {
+        g->rn_key = note;
+        rn_shower(&g->rw, &g->rc, 3 + 9 * vel / 127, 0.5f, 0.5f + 0.5f * vel / 127.0f);
+    }
+    if (g->mk_on && g->mk_mode == GK_LAUNCH) {
+        g->mk_key = note;
+        g->mk_vel = vel;
+        g->mk_left = MK_PHRASE;
+        g->mk_wait = 0;
+        g->mk_line = -1;
+        mk_window(s);
+        g->g1 = g->lo;
+        g->g2 = -1;
+    }
+}
 
 /* ---- the windows' views (seqlock: the counter odd while they change) ---- */
 static void gb_view_write(one_t *s) {
@@ -436,9 +489,11 @@ static void gb_due(one_t *s, int *n) {
         g->t_next += GB_STEP;
     }
     int64_t d = g->t_next - s->now;
+    int keys = s->running && s->keys.n;   /* (2026-10-30) HELD KEYS let go: what still waits for its grid line goes */
     for (int i = 0; i < g->nq;) {
-        if (g->q[i].at <= s->now) {
-            play_step(s, g->q[i].note, g->q[i].vel, s->now + g->q[i].len);
+        int gone = !keys && (g->q[i].who ? g->mk_held : g->rn_held);
+        if (g->q[i].at <= s->now || gone) {
+            if (!gone) play_step(s, g->q[i].note, g->q[i].vel, s->now + g->q[i].len);
             g->q[i] = g->q[--g->nq];
         } else {
             if (g->q[i].at - s->now < d) d = g->q[i].at - s->now;

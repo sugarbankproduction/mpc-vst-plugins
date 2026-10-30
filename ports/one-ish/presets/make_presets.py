@@ -263,6 +263,7 @@ PATCHES = [
                              "gen_euclid_on": "On", "gen_steps": 16, "gen_hits": 7, "gen_rot": 2, "gen_prob": 90,
                              "gen_vel_rand": 30, "gen_tm_on": "On", "gen_tm_len": 8, "gen_tm_change": 12,
                              "gen_scale": "Pent Minor", "gen_range": "2", "arp_gate": 70, "arp_latch": "On",
+                             "gen_keys": "Held Keys",   # (2026-10-30: from the key you hold, as it always played)
                              **delay("1/8.", 45, 30, synced=True), **reverb(30, 3.0)}),
     # the MACRO channel (Plaits): a plucked string through the ladder; a wavetable pad whose morph an LFO sweeps; 6-op
     # FM keys with a little of the saw under them

@@ -198,3 +198,12 @@ static inline int tm_note(int v, int scale, int range, const seq_keys_t *k) {
     int m = SCALE_SIZE[scale], idx = v * m * range / 256;
     return sorted[0] + 12 * (idx / m) + SCALE[scale][idx % m];
 }
+
+/* ---- (2026-10-30) the generators' KEYS: one meaning for every generator's "..._keys" list (gen_keys, phys_keys,
+ * rain_keys, mkv_keys, life_keys, orb_keys, pend_keys; each lists those that make sense for it, in this order, so an
+ * option's number means the same everywhere). FREE: it plays on its own while it is on and the Synth is ON, and the
+ * keys play as usual. HELD: the keys go to it and it plays only while some are held (or latched), from the lowest one;
+ * after the last key is let go nothing new starts. LAUNCH: each key press starts it (or a burst) from that key, and it
+ * plays on after the key is let go. EMIT: it plays only while keys are held, as much as they are played hard. ---- */
+enum { GK_FREE, GK_HELD, GK_LAUNCH, GK_EMIT };
+enum { EUN_ROOT, EUN_UP, EUN_UPDOWN, EUN_RANDOM };   /* "gen_eu_notes": what Euclid's hits play (FREE, KEY LAUNCH) */

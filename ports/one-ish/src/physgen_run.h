@@ -53,7 +53,7 @@ static float ph_len_ms(const float *p) { return 20.0f * powf(100.0f, p[P_PH_LEN]
 static float gen_tempo_factor(const one_t *s, float *g, float dt) {
     float tgt = 0.0f;
     if (s->val[P_GEN_FOLLOW] > 0.5f) {
-        double bpm = s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm;
+        double bpm = gen_bpm(s);   /* (2026-10-30: GEN TEMPO OWN: this Synth's BPM) */
         if (!(bpm > 0.0)) bpm = 120.0;
         tgt = clampf((float)(bpm / 120.0), 0.25f, 4.0f) - 1.0f;
     }
@@ -172,11 +172,13 @@ static int ph_note(const one_t *s, int d, int key) {
     const float *p = s->val;
     int root = (int)clampf(p[P_KEY_ROOT], 0, 11), sc = ks_clamp_scale((int)p[P_KEY_SCALE]), note;
     if (key >= 0) {
-        note = key + ks_degree(root, sc, 0, d) - root;
+        root = gen_root_of(s, key);   /* (2026-10-30) FOLLOW KEYS */
+        return gen_follow_snap(s, ks_quantize(key + ks_degree(root, sc, 0, d) - root, root, sc));
     } else if (s->ph.held && s->keys.n) {
         int low = s->keys.note[0];
         for (int i = 1; i < s->keys.n; i++) if (s->keys.note[i] < low) low = s->keys.note[i];
-        note = low + ks_degree(root, sc, 0, d) - root;
+        root = gen_root_of(s, low);
+        return gen_follow_snap(s, ks_quantize(low + ks_degree(root, sc, 0, d) - root, root, sc));
     } else {
         int oct = (int)clampf(p[P_PH_OCT], 0, 5) + 2;   /* C1 = 24 (middle C is C4) */
         if (p[P_PH_FOLLOW_OCT] > 0.5f) oct = (int)clampf((float)(oct + s->ph.kb_oct), 0, 8);   /* (2026-10-30) */
@@ -212,8 +214,8 @@ static void ph_hit_note(const one_t *s, const ph_hit_t *h, int *note, int *vel) 
 /* SYNC: the beat clock (the host's song position while it plays, else free at its tempo) */
 static void ph_beat(one_t *s, int64_t t) {
     ph_run_t *r = &s->ph;
-    double bpm = s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm, bps = bpm / 60.0 / SR;
-    if (s->sp_playing && s->sp_ppq >= 0.0) {
+    double bpm = gen_bpm(s), bps = bpm / 60.0 / SR;   /* (2026-10-30: GEN TEMPO) */
+    if (!gen_own(s) && s->sp_playing && s->sp_ppq >= 0.0) {   /* (OWN: free from where it is) */
         r->b0 = s->sp_ppq;
         r->t0 = r->sp_at;
         r->bps0 = bps;
@@ -389,9 +391,10 @@ static void ph_due(one_t *s, int *n) {
         r->t_next += PH_STEP;
     }
     int64_t len = (int64_t)(ph_len_ms(s->val) * 0.001f * SR), d = r->t_next - s->now;
+    int gone = r->held && !(s->running && s->keys.n);   /* (2026-10-30) HELD KEYS let go: what waits for SYNC never plays */
     for (int i = 0; i < r->nq;) {
-        if (r->q[i].at <= s->now) {
-            play_step(s, r->q[i].note, r->q[i].vel, s->now + (len > 1 ? len : 1));
+        if (r->q[i].at <= s->now || gone) {
+            if (!gone) play_step(s, r->q[i].note, r->q[i].vel, s->now + (len > 1 ? len : 1));
             r->q[i] = r->q[--r->nq];
         } else {
             if (r->q[i].at - s->now < d) d = r->q[i].at - s->now;
