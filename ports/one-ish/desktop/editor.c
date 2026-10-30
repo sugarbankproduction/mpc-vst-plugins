@@ -735,10 +735,16 @@ void ed_rnd_gens(ed_t *e, int mutate, int all) {
         rnd_snapshot(e, cur);
         rnd_opts_t o = {0.0f, 1u << RS_GEN, 0, RV_BOTH};
         const unsigned sound = (1u << RS_COUNT) - 1u;   /* every sound section locked */
-        if (mutate) rnd_mutate_x(cur, out, fmaxf(e->rnd_amount, 0.4f), sound, &e->rnd_seed, &o);   /* (a clear nudge) */
-        else rnd_generate_x(cur, out, sound, &e->rnd_seed, &o);
-        for (int i = 0; i < NPARAMS; i++)
-            if (shared_param(i)) out[i] = cur[i];
+        /* (2026-10-31) MUTATE nudges each setting by chance, so now and then it nudged none and the click did nothing:
+         * try again (a few times) until something moves */
+        for (int tries = 0, moved = 0; !moved && tries < 8; tries++) {
+            if (mutate) rnd_mutate_x(cur, out, fmaxf(e->rnd_amount, 0.4f), sound, &e->rnd_seed, &o);   /* (a clear nudge) */
+            else rnd_generate_x(cur, out, sound, &e->rnd_seed, &o);
+            for (int i = 0; i < NPARAMS; i++) {
+                if (shared_param(i)) out[i] = cur[i];
+                else if (out[i] != cur[i]) moved = 1;
+            }
+        }
         rnd_apply(e, out);
     }
     e->focus = focus;
