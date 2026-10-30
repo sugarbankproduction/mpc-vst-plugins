@@ -514,6 +514,23 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      A click on a tile opens its page in that Synth. The tiles repaint every third tick of the rate timer (about 22 a
      second) and only while the overview shows. No engine change, no new params, nothing in the audio path, no CPU cost
      there. Left: the MPC page has none of this.
+  30. (2026-10-30) Robustness: the classes of bug a hardware synth's firmware notes list as fixed, each looked for in
+     ONE-ish with a regression test (`test/robust_check.c`, offline; `offline_check robust` runs it alone; load_test
+     `learn_shows_test`; host_test's 300-event block). Already fine, now tested: every envelope ends (52 settings x
+     poly / mono legato / unison: LOOP, LATCH with sustain 0, MULTI TRIG, delay and hold, curves, synced times in both
+     EG TIMES, MIN, a 100-second release; the last voice is idle, no tail left at a tiny level); a Synth switched on or
+     off never cuts the others' notes; 112000 random messages in 40 blocks on every channel (and an NRPN storm) leave
+     nothing hanging, no NaN, about 2 us a message under ASan; PANIC never starts a note and stops every Synth's notes,
+     the arp's and the sequencer's OUTPUT targets'; MIDI learn reaches all 1901 params, the host told each time; LOOP
+     with every time at MIN, a 200-key retrigger storm while looping: finite; the Init sound is one plain saw. Fixed:
+     (a) a key held while a Synth's MIDI channel, the global channel or Per Synth changed hung (its release was checked
+     against the new channel); (b) All Notes Off in mono moved the releasing voice onto another note of the chord or
+     arp; (c) LOOP switched off mid-loop with the key down stopped the note dead (it now goes on to its sustain);
+     (d) NRPN synced times: only 16383 reached the last of the 13, and in MIN, 13 Syncs an envelope's synced time
+     landed on the wrong value; (e) the plugin wrapper's SAMPLE_ACCURATE queue (other ports; ONE-ish applies events at
+     once) sent the 257th event of a block ahead of the 256 queued, so a note-off could beat its note-on. No event is
+     ever dropped: the MPC build passes each event straight to the engine; the desktop's rate converter (EVQ 512) sends
+     what it holds, in order, when full. Old sounds unchanged (golden check). Nothing new in the audio path.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

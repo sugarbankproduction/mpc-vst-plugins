@@ -56,7 +56,10 @@ is a setting like the others: the manual keeps it with the global settings, so i
 choose the number, CC 6 and 38 send the 14-bit value (0-16383). Synth 2's numbers are Synth 1's plus 3840, Synth 3's
 plus 7680; NRPN 1 (MASTER VOLUME) is the shared master level. Option values follow the manual's bands (for example
 LFO WAVEFORM: 0-4095 triangle, 4096-8191 pulse (square), 8192-12287 saw, 12288-16383 S&H). Free rates and times are
-taken only while the LFO or envelope is not synced, synced ones only while it is. The oscillators' SAW and TRIANGLE
+taken only while the LFO or envelope is not synced, synced ones only while it is. The synced values (13, 64 to 1/64
+beats) are 13 equal bands of 0-16383, so the data MSB alone reaches each, the last at 127 (2026-10-30; before, only
+16383 itself gave the last); with EG TIMES on MIN, 13 Syncs an envelope's synced time lands on that exact one of the
+13 (before, the nearest of the other setting's 11). The oscillators' SAW and TRIANGLE
 numbers both set ONE-ish's one WAVE ANGLE; POLYPHONY MONO on is 1 voice, off goes back to the default voice count;
 HEADPHONES (2) has no plugin meaning. ONE-ish's own NRPN replaces the plugin wrapper's generic one (NRPN n = parameter
 n), which is switched off for ONE-ish (`vst.json` `"nrpn": false`).

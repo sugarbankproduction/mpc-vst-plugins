@@ -93,7 +93,10 @@ way.
   Synth (each Synth on its own `syn_ch`, Omni or 1-16).
 - A note goes to every Synth that is on, listens on its channel and has the key in its range. Its release goes to the
   Synths the key went to, even if the range or channel changed meanwhile, so no note hangs. Controllers, pitch bend and
-  pressure go to every Synth on the channel.
+  pressure go to every Synth on the channel. (2026-10-30, offline: each Synth keeps, per key, the channels it came on,
+  and the release on that channel ends it whatever `midi_ch` or `syn_ch` became; before, a channel change while a key
+  was down left it hanging. A Synth on Omni lets go on any channel, as before. All Notes Off / All Sound Off on a
+  channel a Synth has left ends the notes it started there. `test/robust_check.c` routing.)
 - The window's keyboard plays on `midi_ch`, or on the focused Synth's `syn_ch` when it is Per Synth.
 
 ## State (projects and patches)
