@@ -467,8 +467,9 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      sequence's own Synth switched off, STOP, All Notes Off): offline, 40 changes of OUTPUT over ratchets and ties leave
      no voice sounding. The randomiser never changes it. Window: OUTPUT (a plain click opens the list) and PLAY ALL
      (`seq_all`, until now only on the SETUP page) on the SEQUENCER module's title strip, OUTPUT also on its MORE page.
-     CPU: nothing per sample, a few operations per note; offline bench (O2): 1+2+3 vs three sequences of their own
-     playing the same notes (see the bench line in `test/run.sh`). Left: the MPC page; `seq_output` is not on the MPC
+     CPU: nothing per sample, a few operations per note; offline bench (PC, O2, per 128-frame block): one sequence to
+     1+2+3 96.73 us against the same notes from three sequences of their own 96.79 us (the routing costs nothing
+     measurable; the cost is the extra voices themselves). Left: the MPC page; `seq_output` is not on the MPC
      params screen's SEQUENCER section yet (Phase 9).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
