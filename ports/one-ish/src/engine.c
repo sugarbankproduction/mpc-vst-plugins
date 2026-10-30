@@ -687,7 +687,8 @@ typedef struct {
     const float *ext;        /* this piece's audio input (mono, the EXT channel's signal), NULL while it is silent */
     const short *pidx;       /* each slot's params.json entry for this Synth (its own copies; the shared ones Synth 1's) */
     int on;                  /* ON, as last applied */
-    uint8_t kin[128];        /* the keys it took (each key's release goes where the key went) */
+    uint16_t kin[128];       /* the keys it took, a bit per MIDI channel they came on (each key's release goes where
+                              * the key went, whatever the routing is by then: src/synths.h midi(), 2026-10-30) */
     int64_t quiet;           /* samples since a voice of it last sounded */
     int moved;               /* LOAD INTO SYNTH changed its values: the host is told (mpc_engine_changed) */
     tuning_t tun;            /* MICROTUNING (src/tuning.h): a Scala scale and keyboard map, saved with the sound */

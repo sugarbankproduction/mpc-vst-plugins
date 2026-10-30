@@ -149,6 +149,10 @@ static int chan_ok(const inst_t *in, int c, int ch) {
     int own = (int)in->syn[c]->val[P_SYN_CH];   /* "syn_ch": Omni, 1 .. 16 */
     return own == 0 || ch == own - 1;
 }
+static int syn_omni(const inst_t *in, int c) {   /* Synth c takes every channel (Omni, or Per Synth with its own Omni) */
+    int mode = (int)in->syn[0]->val[P_MIDI_CH];
+    return mode == CH_OMNI || (mode == CH_PER_SYNTH && (int)in->syn[c]->val[P_SYN_CH] == 0);
+}
 #include "midi_in_run.h"
 static void midi(void *inst, const uint8_t *m, int len) {
     inst_t *in = inst;
@@ -167,15 +171,30 @@ static void midi(void *inst, const uint8_t *m, int len) {
     }
     for (int c = 0; c < NSYN; c++) {
         one_t *s = in->syn[c];
-        if (!chan_ok(in, c, ch)) continue;
+        int ok = chan_ok(in, c, ch);
+        uint16_t bit = (uint16_t)(1u << ch);
         if (st == 0x90 && len > 2 && vel) {   /* a key: to the Synths on, whose range has it */
-            if (s->val[P_SYN_ON] < 0.5f || note < s->val[P_KEY_LO] || note > s->val[P_KEY_HI]) continue;
-            s->kin[note] = 1;
-        } else if ((st == 0x80 || st == 0x90) && len > 2) {   /* its release: where the key went */
-            if (!s->kin[note]) continue;
+            if (!ok || s->val[P_SYN_ON] < 0.5f || note < s->val[P_KEY_LO] || note > s->val[P_KEY_HI]) continue;
+            s->kin[note] |= bit;
+        } else if ((st == 0x80 || st == 0x90) && len > 2) {
+            /* its release: where the key went, on the channel it came on, even if the Synth's channel (or the global
+             * one, or Per Synth) changed while it was down (2026-10-30: such a key hung). A Synth that takes every
+             * channel (Omni) lets go of it whichever channel the release comes on, as before. */
+            if (!(s->kin[note] & bit) && !(ok && s->kin[note] && syn_omni(in, c))) continue;
             s->kin[note] = 0;
         } else if (st == 0xb0 && len > 2 && (note == 120 || note == 123)) {
+            if (!ok) {   /* a channel the Synth has left: the notes it started there end (2026-10-30) */
+                for (int n = 0; n < 128; n++) {
+                    if (!(s->kin[n] & bit)) continue;
+                    uint8_t off[3] = {(uint8_t)(0x80 | ch), (uint8_t)n, 0};
+                    s->kin[n] = 0;
+                    synth_midi(s, off, 3);
+                }
+                continue;
+            }
             memset(s->kin, 0, sizeof s->kin);
+        } else if (!ok) {
+            continue;
         }
         synth_midi(s, m, len);
     }
