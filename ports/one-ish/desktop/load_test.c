@@ -231,17 +231,21 @@ static void ribbon_test(AEffect *fx, HWND child, float s) {
 
 /* ---- the randomiser page ---- */
 /* where its controls sit, in base units: mirrors editor.c's layout() (the screen's rows) and rnd_rect() */
-enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK, RP_ALSO, RP_WILD };
+/* (2026-10-30) RP_ALL: RANDOMISE's ALL half (it was the ALL 3 SYNTHS toggle); RP_MUT_ALL: MUTATE's; RP_VOICE k: BOTH,
+ * MONO, POLY where the toggle was */
+enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK, RP_ALSO, RP_WILD, RP_MUT_ALL, RP_VOICE };
 static void rnd_point(int what, int k, float *x, float *y) {   /* k: a lock's section, a tick (0-2), WILD in % */
     float x0 = ZONE_SCREEN[0] + 8.0f, x1 = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f, top = ZONE_SCREEN[1] + 6.0f + 36 + 20 + 18;
     float half = (x1 - x0 - 8) / 2, xr = x0 + half + 8, cw = (x1 - x0 - 16) / 3, q = (cw - 6) / 2;
     float col1 = x0 + cw + 8, col2 = x0 + 2 * (cw + 8);
     switch (what) {
-    case RP_GO: *x = x0 + half / 2; *y = top + 22; break;
-    case RP_MUTATE: *x = xr + half / 2; *y = top + 22; break;
+    case RP_GO: *x = x0 + (half - 50) / 2; *y = top + 22; break;
+    case RP_MUTATE: *x = xr + (half - 50) / 2; *y = top + 22; break;
+    case RP_MUT_ALL: *x = xr + half - 23; *y = top + 22; break;
+    case RP_VOICE: *x = col2 + (cw - 8) / 3 * (k + 0.5f) + 4 * k; *y = top + 22 * 7 + 11; break;
     case RP_UNDO: *x = col1 + q / 2; *y = top + 22 * 7 + 11; break;
     case RP_REDO: *x = col1 + q + 6 + q / 2; *y = top + 22 * 7 + 11; break;
-    case RP_ALL: *x = col2 + cw / 2; *y = top + 22 * 7 + 11; break;
+    case RP_ALL: *x = x0 + half - 23; *y = top + 22; break;
     case RP_ALSO: *x = col2 + cw / 2; *y = top + 22 * (4 + k) + 11; break;
     case RP_WILD: *x = x0 + 54 + (half - 94) * k / 100.0f; *y = top + 22 * 2 + 11; break;
     default: *x = (k < 4 ? x0 : col1) + cw / 2; *y = top + 22 * (4 + k % 4) + 11; break;
@@ -421,11 +425,10 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         PER_SYNTH(b, a);
         snprintf(what, sizeof what, "the M key mutates it (%d / %d / %d)", per[0], per[1], per[2]);
         check(per[0] > 0 && per[1] == 0 && per[2] == 0, what);
-        rnd_click(child, s, RP_ALL, 0);   /* ALL 3 SYNTHS on, then RANDOMISE */
-        rnd_click(child, s, RP_GO, 0);
+        rnd_click(child, s, RP_ALL, 0);   /* (2026-10-30) RANDOMISE's ALL half: all three Synths */
         snapshot(fx, b);
         PER_SYNTH(a, b);
-        snprintf(what, sizeof what, "with ALL 3 SYNTHS lit, RANDOMISE changes all three (%d / %d / %d)",
+        snprintf(what, sizeof what, "RANDOMISE's ALL half changes all three (%d / %d / %d)",
                  per[0], per[1], per[2]);
         check(per[0] > 40 && per[1] > 40 && per[2] > 40, what);
         int setup_moved = 0;
@@ -437,7 +440,11 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         snprintf(what, sizeof what, "... and leaves each Synth's ON, channel, key range and level alone (%d moved)",
                  setup_moved);
         check(setup_moved == 0, what);
-        rnd_click(child, s, RP_ALL, 0);   /* (off again) */
+        rnd_click(child, s, RP_MUT_ALL, 0);   /* MUTATE's ALL half: all three */
+        snapshot(fx, a);
+        PER_SYNTH(b, a);
+        snprintf(what, sizeof what, "MUTATE's ALL half changes all three (%d / %d / %d)", per[0], per[1], per[2]);
+        check(per[0] > 0 && per[1] > 0 && per[2] > 0, what);
         int got[3];   /* the keys 1-3 pick the Synth in focus (TEST_FOCUS: focus + 4 * mask) */
         for (int c = 0; c < 3; c++) {
             SendMessageA(child, WM_KEYDOWN, '1' + (c + 1) % 3, 1);
@@ -448,6 +455,7 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         SendMessageA(child, WM_KEYDOWN, '1', 1);   /* (back to Synth 1) */
         /* the computer keyboard as a music keyboard: A plays C4, its release ends it, Z an octave down (on the first
          * preset: the R test above left a random sound, which may be a slow pad) */
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);   /* (2026-10-30: via another, so Init loads again) */
         fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
         play(fx, 200, 512);
         double quiet = play(fx, 20, 512);
@@ -668,8 +676,20 @@ static void patch_tests(AEffect *fx) {
     if (len > 0 && chunk) snprintf(state, sizeof state, "%s", (const char *)chunk);
     char *tag = strstr(state, ";ui_patch=");
     if (tag) *tag = 0;
-    snprintf(what, sizeof what, "... the rest at the defaults: state \"%s\"", state);
-    check(!strcmp(state, "v=1;o2_wave=0;o2_level=55") || !strcmp(state, "v=1;o2_level=55;o2_wave=0"), what);
+    /* (2026-10-30) a patch file from before (no dv= line) loads at the defaults of then: the same as the old state
+     * "v=1;o2_wave=0;o2_level=55" restored by a host (Synths 2 and 3 off, no hands rows) */
+    static char ref[PATCH_STATE_MAX];
+    static char old[] = "v=1;o2_wave=0;o2_level=55";
+    fx->dispatcher(fx, 24 /* effSetChunk */, 0, (intptr_t)sizeof old, old, 0);
+    chunk = NULL;
+    len = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+    ref[0] = 0;
+    if (len > 0 && chunk) snprintf(ref, sizeof ref, "%s", (const char *)chunk);
+    if ((tag = strstr(ref, ";ui_patch="))) *tag = 0;
+    snprintf(what, sizeof what, "... the rest at the defaults (of before dv=1, as the old state restored): %s (\"%.60s...\")",
+             !strcmp(state, ref) ? "the same" : "NOT the same", state);
+    check(!strcmp(state, ref) && strstr(state, "o2_level=55") && strstr(state, "o2_wave=0") && !strstr(state, "flt_res"),
+          what);
 
     /* the * marker against the loaded values */
     pt(fx, PT_LOAD, "Bright Pad", NULL, 0);
@@ -1166,6 +1186,7 @@ static void phys_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     check(page_has(fx, PG_BALLS, "phys_balls") && page_has(fx, PG_BALLS, "phys_gravity") &&
           page_has(fx, PG_PARTICLES, "phys_rate") && page_has(fx, PG_PARTICLES, "phys_trigger") &&
           page_has(fx, PG_PARTICLES, "phys_max"), "... their params are on them");
+    set_option(fx, "phys_keys", "Free");   /* (the GENERATIVE tick may have left another, 2026-10-30) */
     set_option(fx, "phys_balls_on", "On");
     set_option(fx, "phys_parts_on", "On");
     static const struct { int page; const char *suffix; } P[] = {{PG_BALLS, "_more_balls"}, {PG_PARTICLES, "_more_particles"}};
@@ -1223,6 +1244,9 @@ static void gens_a_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     int x0 = (int)((ZONE_SCREEN[0] + 8) * s), x1 = (int)((ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8) * s);
     int y0 = (int)((ZONE_SCREEN[1] + 80 + 22 * (PT_ROWS - PIC_ROWS)) * s), y1 = (int)((ZONE_SCREEN[1] + 80 + 22 * PT_ROWS) * s);
     set_option(fx, "life_rate", "1/32");   /* (LIFE steps often enough to change between the two pictures) */
+    set_option(fx, "life_keys", "Free");   /* (the GENERATIVE tick may have left another, 2026-10-30) */
+    set_option(fx, "orb_keys", "Free");
+    set_option(fx, "pend_keys", "Free");
     for (int k = 0; k < 3; k++) {
         int ok = P[k].page >= 0 && PAGES[P[k].page].pic == P[k].pic;
         snprintf(what, sizeof what, "%s: a MORE page with its picture and its params", P[k].suffix + 6);
@@ -1284,6 +1308,8 @@ static void gens_b_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     check(page_has(fx, PG_RAIN, "rain_rate") && page_has(fx, PG_RAIN, "rain_echo") && page_has(fx, PG_RAIN, "rain_max") &&
           page_has(fx, PG_MARKOV, "mkv_creat") && page_has(fx, PG_MARKOV, "mkv_order") &&
           page_has(fx, PG_MARKOV, "mkv_forget"), "... their params are on them");
+    set_option(fx, "rain_keys", "Free");   /* (the GENERATIVE tick may have left another, 2026-10-30) */
+    set_option(fx, "mkv_keys", "Free");
     set_option(fx, "rain_on", "On");
     set_option(fx, "mkv_on", "On");
     fx->setParameter(fx, rnd_key("rain_rate"), 0.8f);    /* (busier, so a short look sees it move) */
@@ -2427,6 +2453,7 @@ static void triangle_sub_test(AEffect *fx, HWND child, float s, const char *bmp,
 }
 
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     tempo_test(fx, child, s, bmp, w, h);
@@ -2436,6 +2463,7 @@ static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     master_test(fx, child, s, bmp, w, h);
     triangle_sub_test(fx, child, s, bmp, w, h);
     plain_test(fx, child, s, bmp, w, h);   /* (2026-10-30) every hidden gesture's visible way */
+    defaults_ui_test(fx, child, s, bmp, w, h);   /* (2026-10-30) effect ONs, SYNC, the generators' buttons, voices */
 }
 
 /* ---- (2026-10-30) the plain-click pass: what a modifier key, a double-click, a right-click or a keyboard key did,
@@ -2479,6 +2507,177 @@ static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp,
     snprintf(what, sizeof what, "FOLLOW TEMPO on the BALLS, PARTICLES, RAIN, ORBITS and LIFE pages (%d of 5; LIFE's only "
              "with its FREE rate: %d)", pages, life_hid);
     check(pages == 5 && life_hid, what);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+/* ---- (2026-10-30) the new defaults' window side: the effects' ON buttons, SYNC, the GENERATIVE page's RANDOMISE /
+ * MUTATE / RESET (each with ALL), the RANDOM page's BOTH / MONO / POLY and the pad wired by RANDOMISE ---- */
+enum { HT_GEN_ARMED = 10, HT_RND_VOICING };   /* (after HT_HELP, as editor.h) */
+static int lt_gen_key(const char *k) {   /* hub_gens.c gen_param(): a generator's own setting (Synth 1's key) */
+    static const char *const PRE[] = {"gen_", "phys_", "rain_", "mkv_", "life_", "orb_", "pend_"};
+    if (!strcmp(k, "gen_follow_tempo")) return 0;
+    for (unsigned p = 0; p < sizeof PRE / sizeof PRE[0]; p++)
+        if (!strncmp(k, PRE[p], strlen(PRE[p]))) return 1;
+    return 0;
+}
+static int lt_synth_of(const char *k) { return k[0] == 's' && (k[1] == '2' || k[1] == '3') && k[2] == '_' ? k[1] - '1' : 0; }
+/* hub_gens.c's buttons: RANDOMISE (0) the whole first row; MUTATE (1) and RESET (2) the halves of the second */
+static void gens_xy(int which, int all, float *x, float *y) {
+    float x0 = ZONE_SCREEN[0] + 8.0f, hw = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2, xr = x0 + hw + 8.0f;
+    float w = which ? (hw - 6.0f) / 2 : hw, a = xr + (which == 2 ? w + 6.0f : 0.0f);
+    *x = all ? a + w - 15.0f : a + (w - 33.0f) / 2;
+    *y = ZONE_SCREEN[1] + 80.0f + 22.0f * (NHUB - 6 + (which ? 1 : 0)) + 11.0f;
+}
+static int lt_steps(AEffect *fx) { static char b[1024]; return (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, b, 0) % 1000); }
+static void gens_count(const float *a, const float *b, int *gen, int *other) {   /* changed params per Synth */
+    for (int c = 0; c < 3; c++) gen[c] = other[c] = 0;
+    for (int i = 0; i < NPARAMS; i++) {
+        if (a[i] == b[i]) continue;
+        const char *k = PARAMS[i].key, *base = lt_synth_of(k) ? k + 3 : k;
+        int keyscale = !strcmp(base, "key_root") || !strcmp(base, "key_scale");
+        if (lt_gen_key(base)) gen[lt_synth_of(k)]++;
+        else if (!keyscale) other[lt_synth_of(k)]++;
+    }
+}
+static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    static float a[NPARAMS], b[NPARAMS];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);   /* Synth 1 alone */
+    /* every effect's ON on the front panel, a plain click each way */
+    static const char *const ON[] = {"modfx_on", "mfx_on", "dly_on", "rev_on"};
+    int ons = 0;
+    for (int k = 0; k < 4; k++) {
+        RECT r = ctl_px(ON[k], s);
+        float v0 = getkey(fx, ON[k]);
+        click_ctl(child, s, ON[k]);
+        float v1 = getkey(fx, ON[k]);
+        click_ctl(child, s, ON[k]);
+        ons += !IsRectEmpty(&r) && v1 != v0 && getkey(fx, ON[k]) == v0;
+    }
+    snprintf(what, sizeof what, "the front panel's ON buttons: SYNTH EFFECT, MASTER EFFECTS, MASTER FX 1, MASTER FX 2 each "
+             "placed and switched by a plain click, and back (%d of 4)", ons);
+    check(ons == 4, what);
+    /* SYNC: both cutoffs of all three to Synth 1's, one undo step */
+    setkey(fx, "svf_cut", 0.4f); setkey(fx, "flt_cut", 0.6f);
+    setkey(fx, "s2_svf_cut", 0.1f); setkey(fx, "s3_flt_cut", 0.9f); setkey(fx, "s2_flt_link", 1.0f);
+    int st0 = lt_steps(fx);
+    click_zone(child, s, ZONE_SYNC_CUT);
+    int st1 = lt_steps(fx);
+    hover_zone(child, s, ZONE_SYNC_CUT);
+    int helped = strstr(help_fresh(fx), "SYNC") != NULL;
+    snprintf(what, sizeof what, "SYNC (over ALL 3): Synth 2 and 3's cutoffs now Synth 1's (%.2f %.2f / %.2f %.2f), LINK CUTOFF "
+             "kept (%.0f), one undo step (%d), its help (%d)", getkey(fx, "s2_svf_cut"), getkey(fx, "s2_flt_cut"),
+             getkey(fx, "s3_svf_cut"), getkey(fx, "s3_flt_cut"), getkey(fx, "s2_flt_link"), st1 - st0, helped);
+    check(fabsf(getkey(fx, "s2_svf_cut") - 0.4f) < 1e-6f && fabsf(getkey(fx, "s3_svf_cut") - 0.4f) < 1e-6f &&
+          fabsf(getkey(fx, "s2_flt_cut") - 0.6f) < 1e-6f && fabsf(getkey(fx, "s3_flt_cut") - 0.6f) < 1e-6f &&
+          getkey(fx, "s2_flt_link") > 0.5f && st1 - st0 == 1 && helped, what);
+    setkey(fx, "s2_flt_link", 0.0f);
+    /* the GENERATIVE page: RANDOMISE (the Synth in focus), its ALL; MUTATE; RESET (twice) and its ALL */
+    click_zone(child, s, ZONE_TAB_GEN);
+    float x, y;
+    int gen[3], other[3];
+    snapshot(fx, a);
+    st0 = lt_steps(fx);
+    gens_xy(0, 0, &x, &y);
+    click(child, s, x, y);
+    snapshot(fx, b);
+    st1 = lt_steps(fx);
+    gens_count(a, b, gen, other);
+    int on = 0;
+    static const char *const GON[] = {"gen_euclid_on", "gen_tm_on", "phys_balls_on", "phys_parts_on", "life_on", "orb_on",
+                                      "pend_on", "rain_on", "mkv_on"};
+    for (int g = 0; g < 9; g++) on += getkey(fx, GON[g]) > 0.5f;
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_randomise"); }
+    snprintf(what, sizeof what, "GENERATIVE page RANDOMISE: Synth 1's generators change (%d settings), Synths 2 and 3's not "
+             "(%d, %d), nothing else (%d %d %d), %d generator(s) on, one undo step (%d)", gen[0], gen[1], gen[2], other[0],
+             other[1], other[2], on, st1 - st0);
+    check(gen[0] > 10 && !gen[1] && !gen[2] && !other[0] && !other[1] && !other[2] && on >= 1 && on <= 2 && st1 - st0 == 1,
+          what);
+    gens_xy(0, 1, &x, &y);   /* its ALL */
+    click(child, s, x, y);
+    snapshot(fx, a);
+    gens_count(b, a, gen, other);
+    snprintf(what, sizeof what, "... its ALL: all three Synths' generators (%d / %d / %d), nothing else (%d %d %d)", gen[0],
+             gen[1], gen[2], other[0], other[1], other[2]);
+    check(gen[0] > 10 && gen[1] > 10 && gen[2] > 10 && !other[0] && !other[1] && !other[2], what);
+    st0 = lt_steps(fx);
+    gens_xy(1, 0, &x, &y);   /* MUTATE */
+    click(child, s, x, y);
+    snapshot(fx, b);
+    gens_count(a, b, gen, other);
+    st1 = lt_steps(fx);
+    snprintf(what, sizeof what, "GENERATIVE page MUTATE: only generator settings move (%d / %d / %d; other %d %d %d), one undo "
+             "step (%d)", gen[0], gen[1], gen[2], other[0], other[1], other[2], st1 - st0);
+    check(gen[0] > 0 && !gen[1] && !gen[2] && !other[0] && !other[1] && !other[2] && st1 - st0 == 1, what);
+    gens_xy(2, 0, &x, &y);   /* RESET: the first click asks */
+    click(child, s, x, y);
+    snapshot(fx, a);
+    int asked = (int)ht(fx, HT_GEN_ARMED, 0) != 0 && count_diff(a, b) == 0;
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_reset_ask"); }
+    st0 = lt_steps(fx);
+    click(child, s, x, y);   /* the second resets */
+    snapshot(fx, b);
+    st1 = lt_steps(fx);
+    int at_def = 1, s2_kept = 0;
+    for (int i = 0; i < NPARAMS; i++) {
+        const char *k = PARAMS[i].key;
+        if (!lt_synth_of(k) && lt_gen_key(k)) at_def &= fabsf(b[i] - PARAMS[i].def) < 1e-6f;
+        if (lt_synth_of(k) == 1 && lt_gen_key(k + 3) && a[i] != PARAMS[i].def) s2_kept += b[i] == a[i];
+    }
+    snprintf(what, sizeof what, "RESET: the first click asks (%d), the second puts every generator setting of Synth 1 at its "
+             "default (%d), Synth 2's stay (%d kept), one undo step (%d)", asked, at_def, s2_kept, st1 - st0);
+    check(asked && at_def && s2_kept > 0 && st1 - st0 == 1 && ht(fx, HT_GEN_ARMED, 0) == 0, what);
+    gens_xy(2, 1, &x, &y);   /* its ALL, twice */
+    click(child, s, x, y);
+    click(child, s, x, y);
+    snapshot(fx, b);
+    at_def = 1;
+    for (int i = 0; i < NPARAMS; i++) {
+        const char *k = PARAMS[i].key;
+        if (lt_gen_key(lt_synth_of(k) ? k + 3 : k)) at_def &= fabsf(b[i] - PARAMS[i].def) < 1e-6f;
+    }
+    check(at_def, "RESET's ALL (twice): every generator setting of all three Synths at its default");
+    click_zone(child, s, ZONE_TAB_RANDOM);
+    /* the RANDOM page: BOTH / MONO / POLY; RANDOMISE wires the pad, and the pad then moves the sound */
+    rnd_click(child, s, RP_VOICE, 1);
+    int v1 = (int)ht(fx, HT_RND_VOICING, 0), mono = 1;
+    for (int k = 0; k < 4; k++) { rnd_click(child, s, RP_GO, 0); mono &= getkey(fx, "voices") == 0.0f; }
+    rnd_click(child, s, RP_VOICE, 2);
+    int v2 = (int)ht(fx, HT_RND_VOICING, 0), poly = 1;
+    for (int k = 0; k < 4; k++) { rnd_click(child, s, RP_GO, 0); poly &= getkey(fx, "voices") > 0.0f; }
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_random_voices"); }
+    rnd_click(child, s, RP_VOICE, 0);
+    snprintf(what, sizeof what, "RANDOM page: MONO (%d) gives mono sounds (%d), POLY (%d) poly ones (%d), BOTH back (%d)", v1,
+             mono, v2, poly, (int)ht(fx, HT_RND_VOICING, 0));
+    check(v1 == 1 && mono && v2 == 2 && poly && ht(fx, HT_RND_VOICING, 0) == 0, what);
+    static const char *const HSRC[4] = {"Aftertouch", "Pad X (CC 2)", "Pad Y (CC 3)", "Ribbon"};
+    int wired = 1;
+    for (int k = 0; k < 4; k++) {
+        char ks[16], kd[16];
+        snprintf(ks, sizeof ks, "mod%d_src", 13 + k);
+        snprintf(kd, sizeof kd, "mod%d_dst", 13 + k);
+        int si = rnd_key(ks), o = (int)lroundf(getkey(fx, ks) * (PARAMS[si].nopts - 1));
+        wired &= !strcmp(PARAMS[si].opts[o], HSRC[k]) && getkey(fx, kd) > 0.0f;
+    }
+    check(wired, "RANDOMISE wired aftertouch, pad X, pad Y and the ribbon (matrix rows 13-16, each to a destination)");
+    /* the Init preset (a new instance's sound, three Synths): the pad clicked to the right darkens it (Pad X -> cutoff) */
+    fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);
+    fx->dispatcher(fx, 2, 0, 0, NULL, 0);
+    click(child, s, ZONE_PAD[0] + 4.0f, ZONE_PAD[1] + ZONE_PAD[3] - 4.0f);   /* the pad: left, down (at rest) */
+    send_midi(fx, 0x90, 60, 100);
+    play(fx, 40, 512);
+    double rest = play(fx, 20, 512);
+    click(child, s, ZONE_PAD[0] + ZONE_PAD[2] - 4.0f, ZONE_PAD[1] + ZONE_PAD[3] - 4.0f);   /* right */
+    play(fx, 20, 512);
+    double moved = play(fx, 20, 512);
+    click(child, s, ZONE_PAD[0] + 4.0f, ZONE_PAD[1] + ZONE_PAD[3] - 4.0f);   /* back */
+    play(fx, 20, 512);
+    double back = play(fx, 20, 512);
+    send_midi(fx, 0x80, 60, 0);
+    play(fx, 200, 512);
+    snprintf(what, sizeof what, "Init (all three Synths): a click on the pad's right side darkens it (rms %.4f at rest, %.4f "
+             "with the pad to the right, %.4f back)", rest, moved, back);
+    check(moved < rest * 0.85 && back > moved * 1.1, what);
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 

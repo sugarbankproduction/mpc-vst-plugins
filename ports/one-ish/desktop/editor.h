@@ -57,6 +57,9 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_RND_WILD, Z_RND_ALSO,   /* Z_RND_ALSO + 0..2: the ARPEGGIATOR, GENERATIVE and SEQUENCER tick buttons */
        Z_OCT_PICK = 100045,   /* (2026-10-30) a click on the octave LEDs: that octave */
        Z_PANIC,               /* (2026-10-30) PANIC: every note off (as holding an OCTAVE button 2 s) */
+       Z_RND_GO_ALL = 100050, /* (2026-10-30) RANDOMISE's and MUTATE's ALL halves: all three Synths */
+       Z_RND_MUT_ALL,
+       Z_RND_VOICE,           /* + 0..2: the RANDOM page's BOTH, MONO, POLY (RV_*) */
        Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
@@ -70,6 +73,9 @@ enum { Z_HUB_ON = 670000,        /* + row: a generator's ON (HUB[row]) */
        Z_TEMPO_DOWN, Z_TEMPO_UP, /* the TEMPO readout's < and >: 1 BPM (Shift 0.1), OWN */
        Z_TOGETHER,               /* (2026-10-30) lit: a SYNTH button adds / removes that Synth (as Ctrl-click) */
        Z_UNDO, Z_REDO,           /* (2026-10-30) the console's UNDO / REDO (as Ctrl+Z / Ctrl+Y) */
+       /* (2026-10-30, hub_gens.c) the GENERATIVE page's RANDOMISE, MUTATE and RESET (each: the Synth in focus, and
+        * its ALL half: all three Synths); SYNC over the filters' ALL 3 (both cutoffs of every Synth to the focus's) */
+       Z_GEN_RND = 670250, Z_GEN_RND_ALL, Z_GEN_MUT, Z_GEN_MUT_ALL, Z_GEN_RESET, Z_GEN_RESET_ALL, Z_SYNC_CUT,
        Z_HUB_END = 670300 };
 #define TEST_HUB 0x4F314842   /* VENDOR_SPECIFIC index: value = HT_ op (hub.c) */
 enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 1000) */
@@ -80,7 +86,9 @@ enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 100
        HT_VOL_MASTER,         /* 1: SYNTH OUTPUT's MASTER is lit */
        HT_SUB,                /* the screen's sub-page shown now */
        HT_TOGETHER,           /* 1: TOGETHER is lit */
-       HT_HELP };             /* the help line now, into ptr (1 KB); returns its length */
+       HT_HELP,               /* the help line now, into ptr (1 KB); returns its length */
+       HT_GEN_ARMED,          /* (2026-10-30) the RESET half waiting for its second click (a Z_GEN_RESET*), else 0 */
+       HT_RND_VOICING };      /* (2026-10-30) the RANDOM page's MONO / POLY / BOTH (RV_*) */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
@@ -109,6 +117,7 @@ typedef struct {
     RECT tab_gen, gen_off, tempo, tempo_host, tempo_own;   /* the console's third row (hub.c, 2026-10-30) */
     RECT vol_master;                          /* SYNTH OUTPUT's MASTER button (hub.c) */
     RECT together, undo, redo;                /* (2026-10-30) the third row's TOGETHER, UNDO, REDO (hub.c) */
+    RECT sync_cut;                            /* (2026-10-30) SYNC over the filters' ALL 3 (hub_gens.c) */
     RECT qm_hands, kb_hint;                   /* the controller's DEST (quickmod.c); the computer keyboard's hint */
     RECT panic;                               /* the controller's PANIC */
 } layout_t;
@@ -189,7 +198,6 @@ typedef struct {
     unsigned rnd_locks;
     uint32_t rnd_seed;
     int rnd_count, mut_count, hist_n, hist_pos;
-    int rnd_all;             /* ALL 3 SYNTHS: RANDOMISE and MUTATE change every Synth (Shift+R: once) */
     float rnd_wild;          /* WILD 0..1: how strange RANDOMISE and MUTATE get (0: the tame randomiser) */
     unsigned rnd_also;       /* the tick buttons: bit RS_ARP / RS_GEN / RS_SEQ, that section randomised too */
     float hist[RND_HIST][NPARAMS];
@@ -209,6 +217,10 @@ typedef struct {
     float tempo_from;                          /* a TEMPO drag: the BPM it started at */
     int vol_master;                            /* SYNTH OUTPUT's MASTER lit: VOLUME is master_level (never saved) */
     int together;                              /* TOGETHER lit: SYNTH buttons add / remove Synths (never saved) */
+    int rnd_voicing;                           /* (2026-10-30) the RANDOM page's BOTH / MONO / POLY (RV_*) */
+    int no_link;                               /* (2026-10-30) the randomiser's edits: no LINK to the other Synths */
+    int gens_arm;                              /* (2026-10-30) RESET (hub_gens.c): the half clicked once (0: none) */
+    unsigned gens_arm_t;                       /* ... and when (GetTickCount): a second click within 4 s resets */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
        M_QMOD, M_TEMPO };   /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
@@ -426,3 +438,15 @@ int tempo_wheel(ed_t *e, int z, int dir, int fine);   /* 1: used */
 const char *hub_zone_help(ed_t *e, int z);
 void hub_help(ed_t *e, char *out, int n);
 intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt);
+/* (2026-10-30, hub_gens.c) the GENERATIVE page's RANDOMISE / MUTATE / RESET and the filters' SYNC */
+RECT gens_rect(int z);                         /* where Z_GEN_* / Z_SYNC_CUT sits (empty: not on this layout) */
+int gens_hit(ed_t *e, POINT pt);               /* the hub page's own buttons, or -1 */
+int gens_press(ed_t *e, int z);                /* 1: z was one of them */
+void gens_draw(HDC dc, ed_t *e);               /* on the hub page */
+const char *gens_help(ed_t *e, int z);
+void gens_reset(ed_t *e, int all);             /* every generator's settings to its default (and off): one undo step */
+void sync_cutoffs(ed_t *e);                    /* SYNC: both cutoffs of all three Synths to the focus's */
+void ed_rnd_gens(ed_t *e, int mutate, int all);   /* (editor.c) the randomiser on the GENERATIVE section only */
+int gen_param(int i);                          /* a generator's setting (Synth 1's index; not KEY / SCALE, not shared) */
+void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f);   /* (editor_draw.c) */
+void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot);

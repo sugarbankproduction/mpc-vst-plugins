@@ -227,6 +227,7 @@ static void layout(void) {
     L.together = zone(ZONE_TOGETHER);   /* (2026-10-30) TOGETHER, UNDO, REDO (hub.c); the controller's DEST */
     L.undo = zone(ZONE_UNDO);
     L.redo = zone(ZONE_REDO);
+    L.sync_cut = zone(ZONE_SYNC_CUT);   /* (2026-10-30) SYNC over the filters' ALL 3 (hub_gens.c) */
     L.qm_hands = zone(ZONE_QM_HANDS);
     L.kb_hint = zone(ZONE_KB_HINT);
     L.panic = zone(ZONE_PANIC);
@@ -261,9 +262,16 @@ RECT rnd_col(int col) {   /* column col (0-2) of rows 4-7, its left and right ed
 RECT rnd_rect(int z) {
     int half = (rw(&L.row[0]) - sc(8)) / 2, xl = L.row[0].left, xr = xl + half + sc(8);
     RECT r = {0, 0, 0, 0};
-    if (z == Z_RND_GO || z == Z_RND_MUTATE) {
+    if (z == Z_RND_GO || z == Z_RND_MUTATE) {   /* (2026-10-30) split: the big part the Synth in focus, ... */
         int x = z == Z_RND_GO ? xl : xr;
-        SetRect(&r, x, L.row[0].top + sc(3), x + half, L.row[1].bottom - sc(3));
+        SetRect(&r, x, L.row[0].top + sc(3), x + half - sc(50), L.row[1].bottom - sc(3));
+    } else if (z == Z_RND_GO_ALL || z == Z_RND_MUT_ALL) {   /* ... its ALL part all three Synths */
+        int x = z == Z_RND_GO_ALL ? xl : xr;
+        SetRect(&r, x + half - sc(46), L.row[0].top + sc(3), x + half, L.row[1].bottom - sc(3));
+    } else if (z >= Z_RND_VOICE && z < Z_RND_VOICE + RV_COUNT) {   /* BOTH / MONO / POLY, where ALL 3 SYNTHS was */
+        RECT c = rnd_col(2);
+        int k = z - Z_RND_VOICE, w = (rw(&c) - 2 * sc(4)) / RV_COUNT, x = c.left + k * (w + sc(4));
+        SetRect(&r, x, L.row[7].top + sc(2), x + w, L.row[7].bottom - sc(2));
     } else if (z == Z_RND_AMOUNT || z == Z_RND_WILD) {   /* a bar between its name and its value */
         int x = z == Z_RND_WILD ? xl : xr;
         SetRect(&r, x + sc(54), L.row[2].top + sc(4), x + half - sc(40), L.row[2].bottom - sc(4));
@@ -279,9 +287,6 @@ RECT rnd_rect(int z) {
         RECT c = rnd_col(2);
         int row = 4 + z - Z_RND_ALSO;
         SetRect(&r, c.left, L.row[row].top + sc(2), c.right, L.row[row].bottom - sc(2));
-    } else if (z == Z_RND_ALL) {
-        RECT c = rnd_col(2);
-        SetRect(&r, c.left, L.row[7].top + sc(2), c.right, L.row[7].bottom - sc(2));
     }
     return r;
 }
@@ -400,6 +405,7 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_TOGETHER: for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]); r = &L.together; break;
     case Z_UNDO: r = &L.undo; break;
     case Z_REDO: r = &L.redo; break;
+    case Z_SYNC_CUT: r = &L.sync_cut; break;   /* (2026-10-30, hub_gens.c) */
     case Z_TEMPO: case Z_TEMPO_HOST: case Z_TEMPO_OWN: case Z_TEMPO_DOWN: case Z_TEMPO_UP:
         invalidate(e, &L.tempo_host); invalidate(e, &L.tempo_own);
         r = &L.tempo; break;
@@ -463,7 +469,7 @@ static int edit_targets(ed_t *e, int i, int *t) {
     int n = 0;
     t[n++] = fp(e, i);
     if (e->abs || shared_param(i) || synth_of(i) || i < 0 || i >= NPARAMS) return n;
-    int all = link_lit(e, i);
+    int all = !e->no_link && link_lit(e, i);   /* (2026-10-30: the randomiser sets one Synth, LINKs or not) */
     for (int c = 0; c < NSYNTHS; c++)
         if (c != e->focus && (all || (e->focus_mask >> c & 1u))) t[n++] = FMAP[c][i];
     return n;
@@ -596,15 +602,18 @@ static void rnd_apply(ed_t *e, const float *target) {
     if (link == -2) link = rnd_key("flt_link") < NPARAMS ? rnd_key("flt_link") : -1;
     float cur[NPARAMS];
     rnd_snapshot(e, cur);
+    e->no_link = 1;   /* (2026-10-30) a random sound is this Synth's: lit LINKs (LINK SENDS is on by default) don't
+                       * carry it to the other two */
     if (link >= 0 && cur[link] > 0.5f) edit_value(e, link, 0.0f);
     for (int i = 0; i < NPARAMS; i++)
         if (i != link && fabsf(target[i] - cur[i]) > 1e-7f) edit_value(e, i, target[i]);
     if (link >= 0 && target[link] > 0.5f) edit_value(e, link, target[link]);
+    e->no_link = 0;
 }
 /* a new sound for the focused Synth: RANDOMISE (0) or MUTATE (1) of cur; returns the archetype (RANDOMISE). SEQUENCER
  * lit: its notes (the hook), then its modulation lanes go to the engine here, the settings with the rest of out. */
 static int rnd_make(ed_t *e, const float *cur, float *out, int mutate) {
-    rnd_opts_t o = {e->rnd_wild, e->rnd_also, 0};
+    rnd_opts_t o = {e->rnd_wild, e->rnd_also, 0, mutate ? RV_BOTH : e->rnd_voicing};   /* (MUTATE keeps the voices) */
     int seq = e->rnd_also >> RS_SEQ & 1u;
     if (seq) o.seq_notes = 1;   /* (the sequence always has notes after: kept, or new ones from the generator below) */
     int a = mutate ? (rnd_mutate_x(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed, &o), 0)
@@ -669,6 +678,36 @@ static void rnd_action(ed_t *e, int mutate, int all) {   /* RANDOMISE (0) or MUT
     rnd_push(e, cur, name);
     lib_hold(e, -1);
     InvalidateRect(e->wnd, NULL, FALSE);
+}
+/* (2026-10-30) the GENERATIVE page's RANDOMISE / MUTATE (hub_gens.c): the randomiser with every sound section locked
+ * and only GENERATIVE open: the generators' settings, which ones are on (one or two), KEY and SCALE; the sound itself
+ * stays. The Synth in focus, or (all) each of the three its own. One undo step; not in the RANDOM page's history. */
+void ed_rnd_gens(ed_t *e, int mutate, int all) {
+    if (!e->rnd_seed) e->rnd_seed = ((uint32_t)GetTickCount() * 2654435761u) ^ (uint32_t)(uintptr_t)e ^ 0x2545F491u;
+    if (!e->rnd_seed) e->rnd_seed = 1;
+    lib_hold(e, 1);
+    lib_touch(e, mutate ? (all ? "Mutate the generators (all 3)" : "Mutate the generators")
+                        : (all ? "Randomise the generators (all 3)" : "Randomise the generators"));
+    int focus = e->focus;
+    unsigned mask = e->focus_mask;
+    static float cur[NPARAMS], out[NPARAMS];
+    for (int c = 0; c < NSYNTHS; c++) {
+        if (!all && c != focus) continue;
+        e->focus = c;
+        e->focus_mask = 1u << c;   /* (each Synth on its own) */
+        rnd_snapshot(e, cur);
+        rnd_opts_t o = {0.0f, 1u << RS_GEN, 0, RV_BOTH};
+        const unsigned sound = (1u << RS_COUNT) - 1u;   /* every sound section locked */
+        if (mutate) rnd_mutate_x(cur, out, fmaxf(e->rnd_amount, 0.4f), sound, &e->rnd_seed, &o);   /* (a clear nudge) */
+        else rnd_generate_x(cur, out, sound, &e->rnd_seed, &o);
+        for (int i = 0; i < NPARAMS; i++)
+            if (shared_param(i)) out[i] = cur[i];
+        rnd_apply(e, out);
+    }
+    e->focus = focus;
+    e->focus_mask = mask;
+    lib_hold(e, -1);
+    if (e->wnd) InvalidateRect(e->wnd, NULL, FALSE);
 }
 static void rnd_step(ed_t *e, int dir) {   /* UNDO (-1) / REDO (+1) through the history */
     float cur[NPARAMS];
@@ -754,7 +793,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (PtInRect(&L.sub_next, pt) && screen_subs(e) > 1) return Z_SUB_NEXT;
     if (lib_screen(e->screen)) return lib_hit(e, pt);   /* the patch list and the library's pages (library.c) */
     if (e->screen == SCR_RANDOM) {
-        static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_AMOUNT, Z_RND_WILD, Z_RND_UNDO, Z_RND_REDO, Z_RND_ALL,
+        static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_GO_ALL, Z_RND_MUT_ALL, Z_RND_AMOUNT, Z_RND_WILD, Z_RND_UNDO,
+                                Z_RND_REDO, Z_RND_VOICE, Z_RND_VOICE + 1, Z_RND_VOICE + 2,
                                 Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2};
         for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
             RECT r = rnd_rect(Z[k]);
@@ -1076,10 +1116,10 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         seq_open(e, -1);
     } else if (z == Z_EUCLID && PG_GEN >= 0) {   /* the ring of dots: the GENERATIVE section's page */
         show(e, PG_GEN, 0);
-    } else if (z == Z_RND_GO || z == Z_RND_MUTATE) {
-        rnd_action(e, z == Z_RND_MUTATE, e->rnd_all);
-    } else if (z == Z_RND_ALL) {
-        e->rnd_all = !e->rnd_all;
+    } else if (z == Z_RND_GO || z == Z_RND_MUTATE || z == Z_RND_GO_ALL || z == Z_RND_MUT_ALL) {
+        rnd_action(e, z == Z_RND_MUTATE || z == Z_RND_MUT_ALL, z == Z_RND_GO_ALL || z == Z_RND_MUT_ALL);
+    } else if (z >= Z_RND_VOICE && z < Z_RND_VOICE + RV_COUNT) {   /* (2026-10-30) BOTH / MONO / POLY */
+        e->rnd_voicing = z - Z_RND_VOICE;
         InvalidateRect(e->wnd, NULL, FALSE);
     } else if (z == Z_RND_UNDO || z == Z_RND_REDO) {
         rnd_step(e, z == Z_RND_UNDO ? -1 : 1);
@@ -1293,8 +1333,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         if (e && (wp == 'R' || wp == 'M') && GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 &&
             e->mode == M_NONE && !(lp & 0x40000000)) {   /* (a held key doesn't repeat it) */
             int shift = GetKeyState(VK_SHIFT) < 0;
-            if (wp == 'M') rnd_action(e, 1, e->rnd_all || shift);   /* M: mutate (Shift+M: all three) */
-            else rnd_action(e, 0, e->rnd_all || shift);              /* R: randomise (Shift+R: all three) */
+            if (wp == 'M') rnd_action(e, 1, shift);   /* M: mutate (Shift+M: all three) */
+            else rnd_action(e, 0, shift);              /* R: randomise (Shift+R: all three) */
             return 0;
         }
         break;
