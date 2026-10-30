@@ -206,7 +206,7 @@ static void sq_mod_voice(const one_t *s, const float *src, float *dm) {
     const sq_run_t *r = &s->sq;
     for (int l = 0; l < SQ_ML; l++) {
         int d = r->q.m[l].dest;
-        if (r->moff[l] == 0.0f || d <= MD_OFF || d >= MD_COUNT || (d >= MD_FX_FIRST && d <= MD_FX_END)) continue;
+        if (r->moff[l] == 0.0f || d <= MD_OFF || d >= MD_COUNT || md_fxk(d) >= 0) continue;
         dm[d] += r->moff[l] * sq_ctl_gain(&r->q.m[l], src);
     }
 }
@@ -225,7 +225,7 @@ static void sq_mod_fx(const one_t *s, const float *src, float *dm) {
     const sq_run_t *r = &s->sq;
     for (int l = 0; l < SQ_ML; l++) {
         int d = r->q.m[l].dest;
-        if (r->moff[l] != 0.0f && d >= MD_FX_FIRST && d <= MD_FX_END) dm[d] += r->moff[l] * sq_ctl_gain(&r->q.m[l], src);
+        if (r->moff[l] != 0.0f && md_fxk(d) >= 0) dm[d] += r->moff[l] * sq_ctl_gain(&r->q.m[l], src);
     }
 }
 /* after the lanes changed: which kinds of destination they reach (the matrix's per-voice paths and the effect pass
@@ -239,7 +239,7 @@ static void sq_lanes_changed(one_t *s) {
         r->env_lanes |= md_env(d);
         r->lfo_lanes |= md_lfo(d);
         r->nenv_lanes |= md_nenv(d);
-        if (d >= MD_FX_FIRST && d <= MD_FX_END) r->fx_mask[(d - MD_FX_FIRST) >> 6] |= 1ull << ((d - MD_FX_FIRST) & 63);
+        if (md_fxk(d) >= 0) r->fx_mask[md_fxk(d) >> 6] |= 1ull << (md_fxk(d) & 63);
     }
     apply_matrix(s);
     sq_moff_refresh(s);
@@ -617,7 +617,7 @@ static void sq_map_init(one_t *s) {
     }
     for (int n = 0; n < NLFO; n++) SQ_MAP(lfo_base(n) + 1, MD_LFO1_WAVE + n, (float)(LFO_WAVES - 1));
     for (int k = 0; k < MDF_COUNT; k++)   /* the effect controls: +-100% of their range */
-        if (s->fx_hi[k] > s->fx_lo[k]) SQ_MAP(FXMD_SLOT[k], MD_FX_FIRST + k, s->fx_hi[k] - s->fx_lo[k]);
+        if (s->fx_hi[k] > s->fx_lo[k]) SQ_MAP(FXMD_SLOT[k], md_of_fxk(k), s->fx_hi[k] - s->fx_lo[k]);
 #undef SQ_MAP
 }
 

@@ -161,7 +161,10 @@ static const char *const FX_KEY[MDF_COUNT] = {   /* modmatrix.h's MDF_* order (s
     "rev_offset", "rev_spread", "rev_noise", "rev_sweep", "rev_dfb", "rev_vrate", "rev_vdepth", "rev_flutter",
     "rev_wow", "rev_bias", "rev_room", "rev_distance", "rev_hifreq", "rev_hlevel", "rev_mlevel", "rev_llevel",
     "rev_ldecay", "rev_hdecay", "rev_pitch", "rev_pitch_b", "rev_pdecay", "rev_gravity", "rev_xover", "rev_bits",
-    "rev_srate", "rev_reso", "rev_cut1", "rev_cut2", "rev_cut3", "rev_lvl1", "rev_lvl2", "rev_lvl3"};
+    "rev_srate", "rev_reso", "rev_cut1", "rev_cut2", "rev_cut3", "rev_lvl1", "rev_lvl2", "rev_lvl3",
+    "modfx_spray", "modfx_prand", "modfx_reverse",   /* (2026-10-30) GRAINS' */
+    "dly_gpos", "dly_gdens", "dly_genv", "dly_gspray", "dly_gprand", "dly_greverse",
+    "rev_gpos", "rev_gdens", "rev_genv", "rev_gspray", "rev_gprand", "rev_greverse"};
 static const struct { const char *key; short dst; } DST[] = {
     {"o1_freq", MD_O1_PITCH}, {"o2_freq", MD_O2_PITCH}, {"o3_freq", MD_O3_PITCH},
     {"o1_level", MD_O1_LEVEL}, {"o2_level", MD_O2_LEVEL}, {"o3_level", MD_O3_LEVEL}, {"noise_level", MD_NOISE_LEVEL},
@@ -210,7 +213,7 @@ static void tables(void) {
         if (key_of(k) >= 0) DST_OF[key_of(k)] = (short)(MD_LFO1_WAVE + n);
     }
     for (int f = 0; f < MDF_COUNT; f++)
-        if (key_of(FX_KEY[f]) >= 0) DST_OF[key_of(FX_KEY[f])] = (short)(MD_FX_FIRST + f);
+        if (key_of(FX_KEY[f]) >= 0) DST_OF[key_of(FX_KEY[f])] = (short)md_of_fxk(f);
     for (int m = 0; m < NMATRIX; m++) {
         for (int c = 0; c < MX_COLS; c++)
             if (MATRIX[m][c] >= 0) IS_MATRIX[MATRIX[m][c]] = 1;

@@ -19,7 +19,9 @@ enum { SFX_DELAY, SFX_BBD, SFX_TAPE, SFX_ECHO, SFX_FLANGER, SFX_SFLANGER, SFX_CH
        /* the manual's two-tap delays (once the master delay alone; now any slot's) */
        SFX_SDELAY, SFX_PINGPONG,
        /* the manual's vocoders (vocoder.h): the audio input is the modulator, the slot's input the carrier */
-       SFX_VOC10, SFX_VOC16, SFX_NTYPES };
+       SFX_VOC10, SFX_VOC16,
+       /* (2026-10-30) GRAINS (grains.h): an original granular type, a long buffer with freeze */
+       SFX_GRAINS, SFX_NTYPES };
 #define SFX_IS_PHASER(t) ((t) == SFX_PHASER6 || (t) == SFX_PHASER12 || (t) == SFX_TPHASER)
 #define SFX_IS_VOCODER(t) ((t) == SFX_VOC10 || (t) == SFX_VOC16)
 
@@ -28,25 +30,42 @@ enum { FXD_AUTO, FXD_MIX, FXD_FB, FXD_FB_R, FXD_TIME, FXD_TIME_R, FXD_DTIME, FXD
        FXD_TONE, FXD_SPREAD, FXD_GAIN, FXD_SWEEP, FXD_NOISE, FXD_VRATE, FXD_VDEPTH, FXD_FLUTTER, FXD_WOW, FXD_BIAS,
        FXD_ROOM, FXD_DECAY, FXD_BITS, FXD_SRATE, FXD_RESO, FXD_CUT1, FXD_CUT2, FXD_CUT3,
        FXD_PITCH, FXD_STRUCT, FXD_POS, FXD_SIZE, FXD_DENSITY, FXD_TEXTURE, FXD_DRIVE, FXD_BUMP, FXD_LOWCUT,
-       FXD_DTIME_R, FXD_DEPTH_R, FXD_OFFSET, FXD_FBL, FXD_FBR, FXD_XOVER, FXD_SIBIL, FXD_SENS, FXD_COUNT };
+       FXD_DTIME_R, FXD_DEPTH_R, FXD_OFFSET, FXD_FBL, FXD_FBR, FXD_XOVER, FXD_SIBIL, FXD_SENS,
+       FXD_SPRAY, FXD_PRAND, FXD_REVERSE,   /* (2026-10-30) GRAINS' own (grains.h) */
+       FXD_COUNT };
 static const char *const FXD_NAME[FXD_COUNT] = {
     "Auto", "Mix", "Feedback", "Feedback R", "Time", "Time R", "Delay Time", "Delay FB", "Rate", "Rate R", "Depth",
     "Tone", "Spread", "Gain", "Sweep", "Noise", "Vib Rate", "Vib Depth", "Flutter", "Wow", "Bias", "Room", "Decay",
     "Bits", "Sample Rate", "Resonance", "Cutoff Low", "Cutoff Mid", "Cutoff High",
     "Pitch", "Structure", "Position", "Size", "Density", "Texture", "Drive", "Head Bump", "Low Cut",
-    "Delay Time R", "Depth R", "Offset", "Feedback Left", "Feedback Right", "Crossover", "Sibilance", "Sensitivity"};
-/* each type's CTRL 1 and CTRL 2 when set to Auto (the manual's pre-assignments, p103-108) */
+    "Delay Time R", "Depth R", "Offset", "Feedback Left", "Feedback Right", "Crossover", "Sibilance", "Sensitivity",
+    "Spray", "Pitch Random", "Reverse"};
+/* each type's CTRL 1 and CTRL 2 when set to Auto (2026-10-30, the owner's request): the type's two most audible
+ * controls, never MIX (MIX has its own knob on the panel) */
 static const unsigned char FX_AUTO_CTRL[SFX_NTYPES][2] = {
+    [SFX_DELAY] = {FXD_DTIME, FXD_FB},    [SFX_BBD] = {FXD_DTIME, FXD_FB},      [SFX_TAPE] = {FXD_DTIME, FXD_FB},
+    [SFX_ECHO] = {FXD_DTIME, FXD_FB},     [SFX_FLANGER] = {FXD_RATE, FXD_FB},   [SFX_SFLANGER] = {FXD_RATE, FXD_FB},
+    [SFX_CHORUS] = {FXD_RATE, FXD_DEPTH}, [SFX_DCHORUS] = {FXD_RATE, FXD_DEPTH}, [SFX_ENSEMBLE] = {FXD_RATE, FXD_DEPTH},
+    [SFX_SCHORUS] = {FXD_RATE, FXD_DEPTH}, [SFX_PHASER6] = {FXD_RATE, FXD_FB},  [SFX_PHASER12] = {FXD_RATE, FXD_FB},
+    [SFX_TPHASER] = {FXD_RATE, FXD_FB},   [SFX_CRUSH] = {FXD_BITS, FXD_SRATE},  [SFX_RESON] = {FXD_CUT2, FXD_RESO},
+    [SFX_RINGS] = {FXD_PITCH, FXD_DECAY}, [SFX_CLOUDS] = {FXD_POS, FXD_DENSITY}, [SFX_AWTAPE] = {FXD_DRIVE, FXD_FLUTTER},
+    [SFX_DENSITY] = {FXD_DRIVE, FXD_LOWCUT}, [SFX_CONSOLE] = {FXD_DRIVE, FXD_GAIN},
+    [SFX_SDELAY] = {FXD_DTIME, FXD_FB},   [SFX_PINGPONG] = {FXD_DTIME, FXD_FB},
+    [SFX_VOC10] = {FXD_TONE, FXD_SIBIL},  [SFX_VOC16] = {FXD_TONE, FXD_SIBIL},
+    [SFX_GRAINS] = {FXD_SIZE, FXD_DENSITY}};
+/* Auto as it was before 2026-10-30 (the manual's pre-assignments, p103-108): a sound saved then with a CTRL on Auto
+ * gets this target written in when it loads (src/synths.h fx_auto_compat), so it sounds as it did */
+static const unsigned char FX_AUTO_CTRL_V1[SFX_NTYPES][2] = {
     [SFX_DELAY] = {FXD_MIX, FXD_DTIME},   [SFX_BBD] = {FXD_MIX, FXD_FB},        [SFX_TAPE] = {FXD_MIX, FXD_FB},
     [SFX_ECHO] = {FXD_MIX, FXD_TONE},     [SFX_FLANGER] = {FXD_TIME, FXD_RATE}, [SFX_SFLANGER] = {FXD_TIME, FXD_TIME_R},
     [SFX_CHORUS] = {FXD_RATE, FXD_DEPTH}, [SFX_DCHORUS] = {FXD_MIX, FXD_FB},    [SFX_ENSEMBLE] = {FXD_MIX, FXD_FB},
     [SFX_SCHORUS] = {FXD_MIX, FXD_FB},    [SFX_PHASER6] = {FXD_MIX, FXD_FB},    [SFX_PHASER12] = {FXD_MIX, FXD_FB},
     [SFX_TPHASER] = {FXD_MIX, FXD_FB},    [SFX_CRUSH] = {FXD_MIX, FXD_BITS},    [SFX_RESON] = {FXD_MIX, FXD_RESO},
-    /* (not in the manual: the controls each is played by) */
     [SFX_RINGS] = {FXD_STRUCT, FXD_POS},  [SFX_CLOUDS] = {FXD_POS, FXD_DENSITY}, [SFX_AWTAPE] = {FXD_DRIVE, FXD_FLUTTER},
     [SFX_DENSITY] = {FXD_DRIVE, FXD_MIX}, [SFX_CONSOLE] = {FXD_DRIVE, FXD_MIX},
     [SFX_SDELAY] = {FXD_MIX, FXD_FB},     [SFX_PINGPONG] = {FXD_MIX, FXD_FB},
-    [SFX_VOC10] = {FXD_MIX, FXD_SIBIL},   [SFX_VOC16] = {FXD_MIX, FXD_SIBIL}};
+    [SFX_VOC10] = {FXD_MIX, FXD_SIBIL},   [SFX_VOC16] = {FXD_MIX, FXD_SIBIL},
+    [SFX_GRAINS] = {FXD_SIZE, FXD_DENSITY}};
 
 /* the master reverbs (original designs; SPACE is Airwindows Galactic) */
 enum { REV_PLATE, REV_ROOM, REV_HALL, REV_SPACE, REV_SHIMMER, REV_BLACKHOLE, REV_NTYPES };
@@ -56,12 +75,13 @@ enum { MFX_PLATE, MFX_ROOM, MFX_HALL, MFX_SPACE, MFX_SHIMMER, MFX_BLACKHOLE, MFX
        MFX_BBD, MFX_TAPE, MFX_ECHO, MFX_FLANGER, MFX_SFLANGER, MFX_CHORUS, MFX_DCHORUS, MFX_ENSEMBLE, MFX_SCHORUS,
        MFX_PHASER6, MFX_PHASER12, MFX_TPHASER, MFX_CRUSH, MFX_RESON,
        MFX_VOC10, MFX_VOC16,   /* the vocoders on a send (the manual's types may sit in either slot) */
+       MFX_GRAINS,             /* (2026-10-30) GRAINS on a send (grains.h) */
        MFX_NTYPES };
 /* a master type's synth effect type (-1: a reverb, REV_* = MFX_*) */
 static const signed char MFX_SFX[MFX_NTYPES] = {
     -1, -1, -1, -1, -1, -1, SFX_SDELAY, SFX_PINGPONG, SFX_DELAY, SFX_BBD, SFX_TAPE, SFX_ECHO, SFX_FLANGER,
     SFX_SFLANGER, SFX_CHORUS, SFX_DCHORUS, SFX_ENSEMBLE, SFX_SCHORUS, SFX_PHASER6, SFX_PHASER12, SFX_TPHASER,
-    SFX_CRUSH, SFX_RESON, SFX_VOC10, SFX_VOC16};
+    SFX_CRUSH, SFX_RESON, SFX_VOC10, SFX_VOC16, SFX_GRAINS};
 enum { HOLD_OFF, HOLD_FREEZE, HOLD_INFINITE, HOLD_PITCH };   /* "rev_freeze" / "dly_freeze" options */
 enum { MB_DUAL, MB_STEREO };              /* "mfx_buss" options: two effects, or one with a stereo input */
 enum { RES_LP, RES_BP, RES_HP };          /* "modfx_ftype" options */
@@ -102,6 +122,10 @@ typedef struct {   /* one effect slot's settings: the synth effect's, or a maste
     /* the vocoders (vocoder.h) */
     float sibil, sens;                    /* SIBILANCE and SENSITIVITY, 0..1 (TONE, NOISE and MIX as above) */
     const float *voc_mod;                 /* the modulator for this piece (the audio input, mono), NULL: silence */
+    /* (2026-10-30) GRAINS (grains.h; also position, size, density, texture as its ENVELOPE, pitch_st, spread, fb,
+     * freeze above) */
+    float spray, prand, reverse;          /* 0..1: position spray, pitch random, the reverse probability */
+    int gquant;                           /* GQ_*: the pitch quantised */
 } fxs_params_t;
 
 typedef struct {   /* what the effects read; worked out by the engine (fx_params() in engine.c) from the knobs */
