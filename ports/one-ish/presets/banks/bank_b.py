@@ -972,7 +972,7 @@ add("Life Cells", {**amp(1, 500, 0, 400), **fenv(1, 300, 0, 250), "o2_level": 60
                    "flt_cut": hz(1200), "flt_res": 30, "lad_env": 40, "voices": "8", "key_root": "E",
                    "key_scale": "Phrygian", "life_on": "On", "life_keys": "Free", "life_rate": "1/8",
                    "life_mode": "Scan Column", "life_rule": "Life", "life_density": 30, "life_seed": 7,
-                   "life_reseed": "On", "life_notes": 2, "life_octave": "C3", "life_range": "2", "life_max": 6,
+                   "life_notes": 2, "life_octave": "C3", "life_range": "2", "life_max": 6,
                    **rows(("Life Population", "Ladder Cutoff", 20), (MW, "Ladder Res", 30), (AT, "Ladder Cutoff", 20),
                           (PY, "Send 2 (FX2)", 25)),
                    **delay("1/8.", 35, 20, True), **space(20, 2.2)}, "Generative", "Dark")
@@ -1043,7 +1043,7 @@ add("Seeds Of Life", {**amp(1, 350, 0, 300), **fenv(1, 200, 0, 150), "o1_wave": 
                       "o2_level": 50, "o2_oct": "4'", "o2_freq": 0.1, "flt_cut": hz(2200), "flt_res": 25,
                       "lad_env": 35, "voices": "8", "key_root": "B", "key_scale": "Pent Minor", "life_on": "On",
                       "life_keys": "Free", "life_rate": "1/16", "life_mode": "Births", "life_rule": "Seeds",
-                      "life_density": 20, "life_seed": 42, "life_reseed": "On", "life_notes": 2,
+                      "life_density": 20, "life_seed": 42, "life_notes": 2,
                       "life_octave": "C3", "life_range": "3", "life_max": 6,
                       **rows(("Life Population", "Send 1 (FX1)", 15), (MW, "Ladder Cutoff", 30),
                              (AT, "Ladder Res", 20), (PY, "Send 2 (FX2)", 25)),
