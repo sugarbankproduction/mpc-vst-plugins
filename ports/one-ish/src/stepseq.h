@@ -373,4 +373,5 @@ typedef struct {
     unsigned rev;            /* counts edits (the window re-reads the sequence when it moves) */
     int lost;                /* the last saved state had no room for the sequence */
     int nenv_lanes;          /* (2026-10-29) a lane reaches the noise EG */
+    uint8_t lsyn[SQ_NL];     /* (2026-10-30) OUTPUT: the Synths (bit c: Synth c + 1) each lane's notes went to */
 } sq_run_t;

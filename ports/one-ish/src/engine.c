@@ -262,6 +262,7 @@ enum {
     P_PEND_ON, P_PEND_KEYS, P_PEND_COUNT, P_PEND_CYCLE, P_PEND_SPEED, P_PEND_SPREAD, P_PEND_DAMP, P_PEND_TRIGGER,
     P_PEND_RESTART, P_PEND_LEN, P_PEND_OCT, P_PEND_MAX, P_PEND_DYN,
     P_LIFE_RESEED,   /* (2026-10-30) LIFE's RESEED button (the engine sets it back to Off) */
+    P_SEQ_OUTPUT,    /* (2026-10-30) the sequencer's OUTPUT: the Synths its notes play (src/stepseq_run.h) */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -413,6 +414,7 @@ static const char *const KEYS[P_COUNT] = {
     "pend_on", "pend_keys", "pend_count", "pend_cycle", "pend_speed", "pend_spread", "pend_damp", "pend_trigger",
     "pend_restart", "pend_len", "pend_octave", "pend_max", "pend_dyn",
     "life_reseed",
+    "seq_output",   /* (2026-10-30) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */

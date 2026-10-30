@@ -91,6 +91,9 @@ static void keys_init(inst_t *in, short pidx[NSYN][P_COUNT]) {
     qsort(in->keys, (size_t)in->nkeys, sizeof in->keys[0], pkey_cmp);
 }
 
+/* the sequencer's OUTPUT (src/stepseq_run.h): Synth c of s's instance, NULL past the last */
+static one_t *sq_syn(one_t *s, int c) { return c >= 0 && c < NSYN ? s->in->syn[c] : NULL; }
+
 /* ---- the voice pool ---- */
 static int voice_busy(const voice_t *v) { return v->env[ENV_AMP].stage != ENV_IDLE && !v->dying; }
 

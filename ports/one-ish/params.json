@@ -733,6 +733,7 @@
   {"key": "pend_octave", "name": "Pendulum Low Octave", "options": ["C1", "C2", "C3", "C4", "C5", "C6"], "default": "C3"},
   {"key": "pend_max", "name": "Pendulum Max Notes/s", "min": 1, "max": 30, "unit": "/s", "default": 8, "display": "int"},
   {"key": "pend_dyn", "name": "Pendulum Dynamics", "min": 0, "max": 100, "unit": "%", "default": 60, "display": "int"},
+  {"key": "seq_output", "name": "Seq Output", "options": ["Own", "Synth 1", "Synth 2", "Synth 3", "1+2", "1+3", "2+3", "1+2+3"], "default": "Own"},
   {"key": "s2_o1_wave", "name": "S2 Osc 1 Wave", "options": ["Tri", "Saw"], "default": "Saw"},
   {"key": "s2_amp_a", "name": "S2 Amp Attack", "min": 0, "max": 100, "default": 17.5, "dynamic_display": true},
   {"key": "s2_amp_d", "name": "S2 Amp Decay", "min": 0, "max": 100, "default": 61.9, "dynamic_display": true},
@@ -1916,7 +1917,9 @@
   {"key": "s3_pend_max", "name": "S3 Pendulum Max Notes/s", "min": 1, "max": 30, "unit": "/s", "default": 8, "display": "int"},
   {"key": "s3_pend_dyn", "name": "S3 Pendulum Dynamics", "min": 0, "max": 100, "unit": "%", "default": 60, "display": "int"},
   {"key": "s2_life_reseed", "name": "S2 Life Reseed", "options": ["Off", "On"], "default": "Off"},
-  {"key": "s3_life_reseed", "name": "S3 Life Reseed", "options": ["Off", "On"], "default": "Off"}
+  {"key": "s3_life_reseed", "name": "S3 Life Reseed", "options": ["Off", "On"], "default": "Off"},
+  {"key": "s2_seq_output", "name": "S2 Seq Output", "options": ["Own", "Synth 1", "Synth 2", "Synth 3", "1+2", "1+3", "2+3", "1+2+3"], "default": "Own"},
+  {"key": "s3_seq_output", "name": "S3 Seq Output", "options": ["Own", "Synth 1", "Synth 2", "Synth 3", "1+2", "1+3", "2+3", "1+2+3"], "default": "Own"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},

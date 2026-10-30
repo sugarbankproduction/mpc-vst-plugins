@@ -10,6 +10,8 @@
  *   pool        16 voices shared: never more sounding; a new note of one Synth steals another's; No Stealing waits
  *   perf        each Synth's own arpeggiator and sequencer; PLAY ALL starts the sequences together; LOAD INTO SYNTH
  *   state       a full 3-Synth performance round trip; the worst case against the chunk; an 8 KB chunk keeps Synth 1
+ *   seq output  (2026-10-30) a sequence's OUTPUT: Own as before, 1+2+3 on all three sounds, no hung notes when it, an
+ *               ON switch or STOP changes mid-note, the setting round trips
  *   bench       (offline_bench) 1 Synth against 3 Synths, 16 voices */
 
 static int key_shared(const char *k) {   /* presets/make_synths.py's GLOBAL */
@@ -65,6 +67,7 @@ static double hz_of(void *e) {   /* the strongest frequency of the next N sample
     return peak_hz(x);
 }
 
+static void seq_output_check(void);   /* (2026-10-30) below */
 static void multitimbral(void) {
     char what[256];
 
@@ -415,6 +418,132 @@ static void multitimbral(void) {
         check_mpc(ns > 0 && ns < 8192 && get(c, "flt_cut") == get(b, "flt_cut") && get(c, "dly_time") == get(b, "dly_time"), what);
         E->destroy(a); E->destroy(b); E->destroy(c);
     }
+    seq_output_check();
+}
+
+/* (2026-10-30) the sequencer's OUTPUT (seq_output, src/stepseq_run.h): Synth 1's sequence on any Synths' voices */
+static int sounding(void *e, const char *key) {   /* "voices_sounding" of a Synth ("", "s2_", "s3_") */
+    char k[48], b[32];
+    snprintf(k, sizeof k, "%svoices_sounding", key);
+    return E->get_param(e, k, b, sizeof b) > 0 ? atoi(b) : -1;
+}
+/* three Synths on, each a saw an octave above the last (Synth 3 off unless s3), Synth 1's sequencer playing one held
+ * note (C3, tied over a one-step loop: it never ends while the sequence runs) */
+static void *out_patch(int s3, int tied) {
+    void *e = two_synths();
+    setkv(e, "s3_o1_oct=4,s3_amp_a=0,s3_amp_s=100,s3_amp_r=10,s3_volume=70,s3_flt_cut=100");
+    if (s3) set(e, "s3_syn_on", 1);
+    setkv(e, "seq_on=1,seq_length=1");
+    seqcmd(e, tied ? "note 0 0 48 100 100 1 1" : "note 0 0 48 100 50 1 0");
+    return e;
+}
+static double solo_hz(void *e, const char *who) {   /* the pitch heard with only that Synth soloed */
+    char k[32];
+    snprintf(k, sizeof k, "%ssyn_solo", who);
+    set(e, k, 1);
+    render_f(e, (float[2048]){0}, 2048);   /* (the solo's glide) */
+    double hz = hz_of(e);
+    set(e, k, 0);
+    return hz;
+}
+static void seq_output_check(void) {
+    char what[320];
+    static char st[VST2_CHUNK_MAX];
+    const double f1 = 440 * pow(2, (48 - 69) / 12.0);
+
+    /* Own: as before, Synth 1 alone */
+    void *e = out_patch(1, 1);
+    set(e, "seq_play", 1);
+    render_f(e, (float[SR / 4]){0}, SR / 4);
+    int a1 = sounding(e, ""), a2 = sounding(e, "s2_"), a3 = sounding(e, "s3_");
+    snprintf(what, sizeof what, "seq OUTPUT Own (the default): Synth 1's sequence plays Synth 1 only (voices %d %d %d)",
+             a1, a2, a3);
+    check(get(e, "seq_output") == 0 && a1 == 1 && a2 == 0 && a3 == 0, what);
+    E->destroy(e);
+
+    /* 1+2+3: the same note on all three Synths' voices, each its own sound (an octave apart), Synth 2's key range and
+     * transpose its own (out of range: still played; transposed: heard transposed) */
+    e = out_patch(1, 1);
+    setkv(e, "seq_output=7,s2_key_lo=100,s3_transpose=7");
+    set(e, "seq_play", 1);
+    render_f(e, (float[SR / 4]){0}, SR / 4);
+    a1 = sounding(e, ""); a2 = sounding(e, "s2_"); a3 = sounding(e, "s3_");
+    double h1 = solo_hz(e, ""), h2 = solo_hz(e, "s2_"), h3 = solo_hz(e, "s3_");
+    double w3 = 4 * f1 * pow(2, 7 / 12.0);
+    snprintf(what, sizeof what, "seq OUTPUT 1+2+3: one sequence plays all three Synths (voices %d %d %d), three sounds: "
+             "%.1f, %.1f, %.1f Hz (want %.1f, %.1f, %.1f: Synth 2 out of its key range, Synth 3 transposed +7)",
+             a1, a2, a3, h1, h2, h3, f1, 2 * f1, w3);
+    check(a1 == 1 && a2 == 1 && a3 == 1 && fabs(h1 / f1 - 1) < 0.02 && fabs(h2 / (2 * f1) - 1) < 0.02
+          && fabs(h3 / w3 - 1) < 0.02, what);
+
+    /* OUTPUT changed while the note holds: the held note stays where it went, and still ends there */
+    set(e, "seq_output", 0);
+    render_f(e, (float[SR / 8]){0}, SR / 8);
+    int b2 = sounding(e, "s2_");
+    set(e, "seq_play", 0);
+    render_f(e, (float[SR]){0}, SR);
+    snprintf(what, sizeof what, "seq OUTPUT changed mid-note (1+2+3 to Own): the note keeps sounding on Synth 2 (%d), and "
+             "STOP releases it everywhere (voices after: %d %d %d)", b2, sounding(e, ""), sounding(e, "s2_"),
+             sounding(e, "s3_"));
+    check(b2 == 1 && sounding(e, "") == 0 && sounding(e, "s2_") == 0 && sounding(e, "s3_") == 0, what);
+    E->destroy(e);
+
+    /* Synth 3 off: not played; Synth 2 switched off mid-note lets go, Synth 1 plays on; Synth 1 off lets go of all */
+    e = out_patch(0, 1);
+    set(e, "seq_output", 7);
+    set(e, "seq_play", 1);
+    render_f(e, (float[SR / 4]){0}, SR / 4);
+    a1 = sounding(e, ""); a2 = sounding(e, "s2_"); a3 = sounding(e, "s3_");
+    set(e, "s2_syn_on", 0);
+    render_f(e, (float[SR]){0}, SR);
+    int c1 = sounding(e, ""), c2 = sounding(e, "s2_");
+    set(e, "s2_syn_on", 1);   /* back on: the sequence's next note reaches it again */
+    set(e, "seq_output", 2);  /* (only Synth 2 now) */
+    set(e, "syn_on", 0);      /* the sequence's own Synth off: everything it played anywhere lets go */
+    render_f(e, (float[SR]){0}, SR);
+    int t = (int)get(e, "seq_play");
+    char vt[16];
+    E->get_param(e, "voices_total", vt, sizeof vt);
+    snprintf(what, sizeof what, "seq OUTPUT 1+2+3 with Synth 3 off: not played (voices %d %d %d); Synth 2 switched off "
+             "mid-note lets go (%d) while Synth 1 plays on (%d); Synth 1 off stops it (PLAY %d) and nothing hangs (%s)",
+             a1, a2, a3, c2, c1, t, vt);
+    check(a1 == 1 && a2 == 1 && a3 == 0 && c2 == 0 && c1 == 1 && t == 0 && atoi(vt) == 0, what);
+    E->destroy(e);
+
+    /* short notes, OUTPUT switched every few steps for a while: every note-on reaches a note-off (nothing hangs) */
+    e = out_patch(1, 0);
+    setkv(e, "seq_length=4,seq_div=5");
+    seqcmd(e, "note 1 0 55 100 90 3 0\nnote 2 0 60 100 100 1 1\nnote 3 0 62 100 40 1 0");
+    set(e, "seq_play", 1);
+    for (int k = 0; k < 40; k++) {
+        set(e, "seq_output", k % 8);
+        render_f(e, (float[1500]){0}, 1500);
+    }
+    set(e, "seq_play", 0);
+    render_f(e, (float[SR]){0}, SR);
+    E->get_param(e, "voices_total", vt, sizeof vt);
+    snprintf(what, sizeof what, "seq OUTPUT switched through all 8 settings 40 times over ratchets and a tie, then STOP: "
+             "no hung notes (%s voices sounding)", vt);
+    check(atoi(vt) == 0, what);
+    E->destroy(e);
+
+    /* a Synth 2 sequence to Synth 1 (Synth 2's own voices silent); and the state round trip */
+    e = two_synths();
+    setkv(e, "s2_seq_on=1,s2_seq_length=1,s2_seq_output=1");
+    E->set_param(e, "state", "seqcmd2\nnote 0 0 48 100 100 1 1");
+    set(e, "s2_seq_play", 1);
+    render_f(e, (float[SR / 4]){0}, SR / 4);
+    a1 = sounding(e, ""); a2 = sounding(e, "s2_");
+    set(e, "seq_output", 5);
+    E->get_param(e, "state", st, sizeof st);
+    void *b = E->create(NULL);
+    E->set_param(b, "state", st);
+    snprintf(what, sizeof what, "seq OUTPUT Synth 1 on Synth 2's sequence plays Synth 1's voices (%d) not its own (%d); "
+             "the setting round trips (Synth 1 %.0f, Synth 2 %.0f: want 5, 1), Own is not saved", a1, a2,
+             get(b, "seq_output"), get(b, "s2_seq_output"));
+    check(a1 == 1 && a2 == 0 && get(b, "seq_output") == 5 && get(b, "s2_seq_output") == 1
+          && get(b, "s3_seq_output") == 0 && !strstr(st, "s3_seq_output"), what);
+    E->destroy(e); E->destroy(b);
 }
 
 /* CPU: the busy patch at 16 voices in Synth 1 alone, then shared 6 / 5 / 5 by three Synths of the same sound (each with
@@ -450,4 +579,33 @@ static void multi_bench(void) {
                c ? "3 Synths (6/5/5)" : "Synth 1 alone", us, us / 16);
         E->destroy(e);
     }
+    /* (2026-10-30) OUTPUT: one sequence to 1+2+3 against each Synth playing its own copy of it (the same notes on the
+     * same voices): what the routing itself costs (a chord of 3 notes a step at 1/32, ratchets, all three Synths on) */
+    double us2[2];
+    for (int c = 0; c < 2; c++) {
+        void *e = patch(SAW, 1, 60, 50, 30);
+        setkv(e, "s2_syn_on=1,s3_syn_on=1,seq_on=1,seq_length=16,seq_div=5,voices=6,s2_voices=5,s3_voices=5");
+        static char cmds[16 * 3 * 32];
+        int used = 0;
+        for (int st = 0; st < 16; st++)
+            for (int l = 0; l < 3; l++) used += snprintf(cmds + used, sizeof cmds - used, "note %d %d %d 100 50 2 0\n", st, l, 48 + 4 * l + st % 5);
+        static char big[sizeof cmds + 16];
+        if (c) set(e, "seq_output", 7);
+        for (int s = 0; s < (c ? 1 : 3); s++) {
+            snprintf(big, sizeof big, "seqcmd%d\n%s", s + 1, cmds);
+            E->set_param(e, "state", big);
+        }
+        if (!c) setkv(e, "s2_seq_on=1,s3_seq_on=1,s2_seq_length=16,s3_seq_length=16,s2_seq_div=5,s3_seq_div=5");
+        set(e, "seq_all", 1);
+        E->render(e, buf, 128);
+        struct timespec t0, t1;
+        clock_gettime(CLOCK_MONOTONIC, &t0);
+        for (int b = 0; b < BLOCKS; b++) E->render(e, buf, 128);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        us2[c] = ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / BLOCKS;
+        E->destroy(e);
+    }
+    printf("bench: seq OUTPUT 1+2+3 (one sequence, 3 notes a step at 1/32 with ratchets, on 3 Synths) %6.2f us per "
+           "128-frame block; the same notes from three sequences of their own %6.2f us (the routing: %+.2f us)\n", us2[1],
+           us2[0], us2[1] - us2[0]);
 }

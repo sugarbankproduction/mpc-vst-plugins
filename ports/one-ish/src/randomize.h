@@ -245,6 +245,7 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
      * window do the modulation lanes; the transport, recording and the factory sequences are never touched) ---- */
     RNEVER("seq_play"), RNEVER("seq_rec"), RNEVER("seq_step_mod"), RNEVER("seq_rec_mode"), RNEVER("seq_pattern"),
     RNEVER("seq_pos"), RNEVER("seq_all"), RNEVER("seq_host_ss"),
+    RNEVER("seq_output"),   /* (2026-10-30) where the notes play: the player's routing, not part of the sound's dice */
     RCODEW("seq_on", RS_SEQ, "1 1", 1), RDEF("seq_sync", RS_SEQ, 0), RDEF("seq_rate", RS_SEQ, 0.02f),
     RCODEW("seq_div", RS_SEQ, "0 0 0.5 3 5 1 0 0", 1), ROPT("seq_timing", RS_SEQ, "6 1 1.5", 1),
     RCODE("seq_length", RS_SEQ, 4, 32, 0.02f), ROPT("seq_follow_swing", RS_SEQ, "2 1", 1),

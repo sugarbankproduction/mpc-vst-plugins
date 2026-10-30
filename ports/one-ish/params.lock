@@ -730,6 +730,7 @@ pend_len
 pend_octave
 pend_max
 pend_dyn
+seq_output
 s2_o1_wave
 s2_amp_a
 s2_amp_d
@@ -1914,3 +1915,5 @@ s3_pend_max
 s3_pend_dyn
 s2_life_reseed
 s3_life_reseed
+s2_seq_output
+s3_seq_output
