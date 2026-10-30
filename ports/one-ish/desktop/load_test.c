@@ -3575,9 +3575,14 @@ static void mset(AEffect *fx, int m, const char *col, float real) {   /* Synth 1
     fx->setParameter(fx, i, v);
 }
 typedef struct { const char *item[2]; int n; } menu_path_t;
-static HWND menu_window(HMENU not_this) {   /* a popup menu window shown now (not the one with not_this) */
-    for (HWND w = NULL; (w = FindWindowExA(NULL, w, "#32768", NULL));)
-        if (IsWindowVisible(w) && (HMENU)SendMessageA(w, 0x01E1 /* MN_GETHMENU */, 0, 0) != not_this) return w;
+static HWND menu_window(HMENU not_this) {   /* this process's popup menu window shown now (not the one with not_this) */
+    for (HWND w = NULL; (w = FindWindowExA(NULL, w, "#32768", NULL));) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(w, &pid);   /* (another test run on the same desktop may have a menu open too) */
+        if (pid == GetCurrentProcessId() && IsWindowVisible(w) &&
+            (HMENU)SendMessageA(w, 0x01E1 /* MN_GETHMENU */, 0, 0) != not_this)
+            return w;
+    }
     return NULL;
 }
 static int menu_lit(HWND m, char *txt, int n) {   /* the lit item's text */
