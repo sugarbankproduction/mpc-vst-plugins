@@ -541,9 +541,9 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        (largest 7.0) over 64 extreme settings, no denormals; FREEZE holds (-15.2 / -15.1 dB at 2 and 5 s, unfrozen
        silence); mix 0 exactly dry; PITCH +12 turns 220 Hz into 442 Hz; reverse as loud, another waveform; type
        changes mid-note (chorus, grains, delay, granular) without a click; state round trip. CPU on the PC (O2, per
-       128-frame block): 17.0 us at the defaults (183 ms grains, 74 a second), 77.3 us at full density (all 64 grains,
-       99th percentile 121 us); MPC: not measured yet (`tools/bench.sh`); at 4x the PC, full density would be about
-       310 us of the 2902 us block.
+       128-frame block): 16.9 us at the defaults (183 ms grains, 74 a second), 74.7 us at full density (all 64 grains,
+       99th percentile 93 us); MPC: not measured yet (`tools/bench.sh`); at 4x the PC, full density would be about
+       300 us of the 2902 us block.
      - Auto CTRL 1 / CTRL 2 (owner: "the knobs on the front don't always seem to do much"): each type's two most
        audible controls, never MIX (it has its own knob): delays TIME and FEEDBACK, choruses RATE and DEPTH, flangers
        and phasers RATE and FEEDBACK, bit crusher BITS and SAMPLE RATE, resonator CUTOFF MID and RESONANCE, modal
