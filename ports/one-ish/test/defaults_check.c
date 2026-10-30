@@ -319,6 +319,38 @@ static void defaults_gens(void) {
     check(onok == n && sound_same == n && heard >= n - 2 && finite && inkey == keyed, what);
 }
 
+/* (offline_bench) what the new defaults cost per 128-frame block, 4 held voices of Init: Synth 1 alone with rows 13-16
+ * empty (the old Init), Synth 1 alone with the hands rows (the new Init's Synth 1), the whole new Init (3 Synths) */
+static double dc_block_us(void *e, int blocks) {
+    int16_t buf[256];
+    struct timespec t0, t1;
+    for (int b = 0; b < 200; b++) E_REAL->render(e, buf, 128);
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for (int b = 0; b < blocks; b++) E_REAL->render(e, buf, 128);
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    return ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / blocks;
+}
+static void defaults_bench(void) {
+    enum { BLOCKS = 20000 };
+    static const int K[4] = {48, 55, 60, 64};
+    double us[3][3];
+    for (int run = 0; run < 3; run++)
+        for (int v = 0; v < 3; v++) {
+            void *e = v == 0 ? E->create(NULL) : fresh();
+            if (v == 1) { set(e, "s2_syn_on", 0); set(e, "s3_syn_on", 0); }
+            for (int k = 0; k < 4; k++) midi3r(e, 0x90, K[k], 100);
+            us[run][v] = dc_block_us(e, BLOCKS);
+            E_REAL->destroy(e);
+        }
+    double m[3];
+    for (int v = 0; v < 3; v++) {   /* the median of three runs */
+        double a = us[0][v], b = us[1][v], c = us[2][v];
+        m[v] = a > b ? (b > c ? b : a > c ? c : a) : (a > c ? a : b > c ? c : b);
+    }
+    printf("bench: Init, 4 held keys, per 128-frame block: Synth 1 alone, rows 13-16 empty (the old Init) %.2f us; with "
+           "the aftertouch / pad / ribbon rows %.2f us; the new Init (3 Synths) %.2f us\n", m[0], m[1], m[2]);
+}
+
 static void defaults_checks(void) {
     defaults_instance();
     defaults_effects();

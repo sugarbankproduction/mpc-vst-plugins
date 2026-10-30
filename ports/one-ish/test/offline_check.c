@@ -3904,7 +3904,11 @@ static void rnd_apply_norm(void *e, const float *n) {   /* a normalized param ar
         set(e, p->key, v);
     }
 }
-static void rnd_defaults(float *n) { for (int i = 0; i < NPARAMS; i++) n[i] = PARAMS[i].def; }
+static void rnd_defaults(float *n) {   /* (2026-10-30: Synths 2 and 3 off, as these checks play one Synth's sounds) */
+    for (int i = 0; i < NPARAMS; i++) n[i] = PARAMS[i].def;
+    for (int i = 0; i < NPARAMS; i++)
+        if (!strcmp(PARAMS[i].key, "s2_syn_on") || !strcmp(PARAMS[i].key, "s3_syn_on")) n[i] = 0.0f;
+}
 
 typedef struct { double rms, peak, over, note_rms[3], note_peak; int zero_run; } rnd_stats_t;
 /* a chord (C3 G3 C4 E4) held 1.5 s then 0.5 s of release, then C2, C4 and C6 alone (0.4 s held, 0.2 s released) */
@@ -5951,6 +5955,7 @@ int main(int argc, char **argv) {
         bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench(); tuning_bench(); lfoenv_bench(); physgen_bench();
         gens_b_bench();   /* (2026-10-30) */
         gens_a_bench();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
+        defaults_bench();   /* (2026-10-30) the new defaults */
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "defaults")) {   /* (2026-10-30) just the new defaults: offline_check defaults */

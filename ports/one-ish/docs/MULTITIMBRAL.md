@@ -73,7 +73,7 @@ follows the focus, would have let automation reach only the focused Synth). 1,52
   `mfx_series`, `mfx_width`, `mfx_buss`), `clock_swing`, `master_tune`, `fine_tune`, `midi_ch`, `learn_mode`,
   `master_level`, `seq_all`, `gen_follow_tempo` (2026-10-30) (`engine_global()` in `src/synths.h`; `is_global()` in
   `make_synths.py` keeps the same list).
-- Per Synth, beyond the sound: `syn_on` (Synth 1 On, 2 and 3 Off), `syn_ch` (1, 2, 3), `key_lo` / `key_hi` (0-127,
+- Per Synth, beyond the sound: `syn_on` (all three On since 2026-10-30; before, Synths 2 and 3 started Off), `syn_ch` (1, 2, 3), `key_lo` / `key_hi` (0-127,
   shown as note names), and its own `transpose`, `octave_shift`, `voices`, `volume`, `pan`, `mfx_send1/2`, the synth
   effect (`modfx_*`), arp, chord memory and sequencer. A Synth's matrix moves its own params, its synth effect
   included; the master effects' matrix destinations follow Synth 1's matrix.
@@ -96,7 +96,33 @@ way.
   pressure go to every Synth on the channel.
 - The window's keyboard plays on `midi_ch`, or on the focused Synth's `syn_ch` when it is Per Synth.
 
+## A new instance (2026-10-30, owner's request: "make the default that all 3 synths are turned on")
+
+- A new instance and the Init preset play all three Synths: playing a key layers them (that is how to play all three
+  at once; a split or another channel per Synth comes from KEY LO / HI and the channels on the SETUP page). So the layer
+  is not three times the same sound, Synths 2 and 3 have an Init of their own: Synth 2 its oscillator an octave down
+  (16'), level 45; Synth 3 a triangle an octave up (4'), level 35; Synth 1 is the old Init unchanged. Offline (a
+  3-note chord, `test/defaults_check.c`): peak 0.83, about 4 dB louder than Synth 1 alone, no clipping; 3 Synths x a
+  chord take 9 of the 16 shared voices, so a 5-note chord already shares the pool (the quietest released voices go
+  first).
+- Every Synth (new instance and Init) also has the hands wired in matrix rows 13-16: Aftertouch -> Pitch LFO1 Amt
+  (vibrato depth, +4: about half a semitone at full pressure), Pad X -> Ladder Cutoff (-90%: to the right darker, up
+  to 4.5 octaves), Pad Y -> Ladder Res (+60%), Ribbon -> Pitch (2 semitones each way). At rest (pad at 0, ribbon
+  centred, no pressure) they change nothing. LINK SENDS is on.
+- Channel pressure reaches every Synth listening on its channel (as the wheels); poly pressure (0xA0) the Synths that
+  hold that key, as their (whole-Synth) aftertouch.
+- The other factory presets are as designed: single-Synth presets keep Synths 2 and 3 off, with no hands rows.
+
 ## State (projects and patches)
+
+- (2026-10-30) The defaults' version: a state, a SAVE SYNTH sound and a patch file written from now on carry `dv=1`
+  (after `v=`). One without it was saved with the defaults before 2026-10-30, and as only non-default values are
+  saved, what it leaves out is read as those old defaults: Synths 2 and 3 off with Synth 1's sound (but their
+  channel), matrix rows 13-16 empty (`legacy_defaults()` in `src/synths.h`; `make_synths.py old_default()` the same
+  for the presets). So old projects, Carla projects, patches and presets play sample for sample as before
+  (`test/golden_check.c`); an old state with no `s2_syn_on` loads with Synth 2 off, a new one round trips with all
+  three on (`test/defaults_check.c`). LOAD INTO SYNTH loads a sound against Synth 1's defaults (not the target's own
+  Init); SAVE SYNTH 2 or 3 writes that Synth's own Init values (16', its level) into the sound.
 
 - The engine state stays `key=value;...` (`v=1`, or the compact `v=2` when it would not fit): Synth 1's keys as
   before, then `s2_...` and `s3_...` values that differ from their defaults, then `seq=`, `s2_seq=`, `s3_seq=` for

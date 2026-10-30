@@ -488,6 +488,51 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      1+2+3 96.73 us against the same notes from three sequences of their own 96.79 us (the routing costs nothing
      measurable; the cost is the extra voices themselves). Left: the MPC page; `seq_output` is not on the MPC
      params screen's SEQUENCER section yet (Phase 9).
+  29. (2026-10-30) New defaults, the effects' ONs, the generators' RANDOMISE / RESET, the randomiser's extras (owner's
+     requests). Done 2026-10-30 (offline and the desktop window; `src/synths.h` legacy_defaults, `src/randomize.h`,
+     `desktop/hub_gens.c`, `test/defaults_check.c`, `test/rnd_golden.c`, load_test `defaults_ui_test`;
+     `docs/MULTITIMBRAL.md`).
+     - A new instance and the Init preset: all three Synths on (Synth 2 16', level 45; Synth 3 a triangle 4', level 35;
+       Synth 1 the old Init), so a key plays the three-layer sound: peak 0.83, about 4 dB over Synth 1 alone, no
+       clipping (9 of the 16 shared voices for a 3-note chord). Every Synth's matrix rows 13-16: Aftertouch -> vibrato
+       depth, Pad X -> ladder cutoff (darker to the right), Pad Y -> resonance, Ribbon -> pitch 2 semitones; nothing at
+       rest. LINK SENDS on (a window convenience with no sound of its own: on for old sounds too).
+     - Old states, Carla projects, patches and presets: a state / SAVE SYNTH sound / patch file now carries `dv=1`; one
+       without it reads what it leaves out as the old defaults (Synths 2 and 3 off with Synth 1's sound, no hands rows),
+       so the 61 old sounds play sample for sample as states and as programs (golden check; the Init program with
+       Synths 2 and 3 switched off is the old Init exactly). The other factory presets are filled with the old defaults
+       (`make_synths.py old_default`): single-Synth presets stay single. LOAD INTO SYNTH loads against Synth 1's
+       defaults; SAVE SYNTH 2 / 3 writes that Synth's own Init values.
+     - ON buttons on the front panel for every effect: SYNTH EFFECT (as before), MASTER EFFECTS (both, as before), and
+       new MASTER FX 1 and MASTER FX 2 each (`dly_on`, `rev_on`, shared, default On: today's sound); off, the slot fades
+       out and its send does nothing (offline: the very samples of that send at 0).
+     - Aftertouch: channel pressure reaches every Synth on its channel (it did); poly pressure (0xA0) was ignored, now
+       it is the aftertouch of the Synths holding that key.
+     - GENERATIVE page: RANDOMISE | ALL, MUTATE | ALL, RESET | ALL (the right column under the generators). RANDOMISE:
+       every generator's settings in musical ranges (new rules for the balls, particles, rain, Markov, LIFE, orbits,
+       pendulums; the RANDOM page's GENERATIVE tick uses them too), one generator switched on, now and then two, and a
+       new KEY / SCALE; the sound stays. MUTATE nudges the settings of those on (40%, or AMOUNT if higher). RESET: every generator setting of the
+       Synth in focus (ALL: all three) to its default, so all off; KEY, SCALE, FOLLOW TEMPO stay; the first click asks
+       ("CLICK AGAIN", 4 s). One undo step each. Offline: 24 random generator sets, one or two on, all heard, finite,
+       every note in key (Turing aside: its own SCALE).
+     - SYNC above the filters' ALL 3: once, both cutoffs of all three Synths to the Synth in focus's (one undo step).
+     - The randomiser: RANDOMISE always wires aftertouch, pad X, pad Y and the ribbon (rows 13-16, distinct heard
+       destinations from lists made for each: cutoffs, resonance, the effects' mix and sends, wave shape, FM; pitch for
+       the ribbon; vibrato depth, a cutoff or the level for aftertouch; bigger at WILD); the MODULATION lock keeps the
+       matrix; MUTATE never adds, moves, removes or nudges those rows. The ANALOG page and SPREAD are never changed
+       (their numbers are still drawn, so the rest is the same). The effects are heard: at WILD 0 send 1 / send 2
+       9.5% / 17.2% -> 15.5% / 26.9% on average, sounds with both sends under 15% 24% -> 2%, the synth effect's mix
+       33.7% -> 45.7% (400 sounds, `rnd_golden stats`); within the safety caps. BOTH / MONO / POLY on the RANDOM page
+       (where ALL 3 SYNTHS was); RANDOMISE and MUTATE are split buttons, the right part ALL (all three Synths; Shift+R
+       / Shift+M still), so the ALL 3 SYNTHS toggle went. The randomiser's edits no longer follow lit LINKs to the other
+       Synths (with LINK SENDS on by default, a random sound's sends would have reached all three). A bug found on the way: the randomiser's rule table had grown
+       past 255 rules, so the sequencer tick's last rules wrapped onto the first ones (fixed: 16-bit rule numbers).
+       `test/rnd_golden.c`: RANDOMISE and MUTATE at WILD 0 / 50 / 100% (and with the arp tick) give exactly what they
+       gave before but for the rows 13-16, ANALOG, SPREAD, the sends and the mix.
+     CPU on the PC (offline_bench, O2, per 128-frame block, 4 held keys of Init, the median of three runs): Synth 1
+     alone with rows 13-16 empty (the old Init) 26.3 us, with the four hands rows 28.2 us (+2 us: four more matrix rows
+     per voice), the new Init with its three Synths 83.3 us (three layers: 12 voices). The FX slot ONs: two flags.
+     Nothing in the audio path allocates, locks or touches a file. Left: the MPC page has none of this.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
