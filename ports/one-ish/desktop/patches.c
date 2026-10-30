@@ -143,9 +143,9 @@ static int known_dir(int csidl, char *out, int n) {
     return snprintf(out, n, "%s\\ONE-ish\\Patches", base) < n;
 }
 
-/* the patch folder into out. create: make it if it isn't there yet (0 when it can't be made). Without create, the
- * folder it would be (1), or 0 when there is none at all. */
-int patch_dir(char *out, int n, int create) {
+/* the DEFAULT library's patch folder into out (the only one before 2026-10-30). create: make it if it isn't there yet
+ * (0 when it can't be made). Without create, the folder it would be (1), or 0 when there is none at all. */
+int patch_home_dir(char *out, int n, int create) {
     char d[MAX_PATH], a[MAX_PATH];
     DWORD k = GetEnvironmentVariableA("ONEISH_PATCH_DIR", d, sizeof d);
     if (k > 0 && k < sizeof d) {
@@ -158,6 +158,13 @@ int patch_dir(char *out, int n, int create) {
     if (!pick && !create) pick = hd ? d : ha ? a : NULL;
     if (!pick) return 0;
     return snprintf(out, n, "%s", pick) < n;
+}
+/* (2026-10-30) the patch folder of the user library in use (parts.c: the default library's folder above, or one in
+ * the Libraries folder); everything beside the patches (snapshots, tags, sets, effect and matrix presets) goes there */
+int patch_dir(char *out, int n, int create) {
+    char name[PATCH_NAME_MAX + 1];
+    if (settings_space(name, sizeof name) && name[0]) return space_dir(name, out, n, create);
+    return patch_home_dir(out, n, create);
 }
 
 static int patch_path(const char *name, char *out, int n, int create) {
@@ -290,7 +297,8 @@ static void parse(char *t, char *state, int n, parsed_t *r) {
         trim(val);
         if (!strcmp(key, "name")) { snprintf(r->name, sizeof r->name, "%s", val); continue; }
         const char *base = key[0] == 's' && (key[1] == '2' || key[1] == '3') && key[2] == '_' ? key + 3 : key;
-        if (!strcmp(base, "seq") || !strcmp(base, "tun_scl") || !strcmp(base, "tun_kbm") || !strcmp(key, "ctl")) {
+        if (!strcmp(base, "seq") || !strcmp(base, "tun_scl") || !strcmp(base, "tun_kbm") || !strcmp(key, "ctl") ||
+            !strcmp(base, "syn_name")) {   /* (2026-10-30: and a Synth's name, as it is) */
             /* a Synth's steps (src/stepseq.h) or scale and keyboard map (src/tuning.h), or the state's age (ctl,
              * src/synths.h STATE_CTL: a file without it is from before 2026-10-30): as they are */
             int len = snprintf(NULL, 0, ";%s=%s", key, val);
@@ -574,7 +582,7 @@ static int synth_sound(ed_t *e, char *out, int n) {
         if (pl ? strncmp(key, pre, pl) : (key[0] == 's' && key[1] >= '2' && key[1] <= '9' && key[2] == '_')) continue;
         key += pl;
         if (setup_key(key) || !strcmp(key, "v") || !strcmp(key, "ui_patch")) continue;
-        if (strcmp(key, "seq")) {
+        if (strcmp(key, "seq") && strcmp(key, "syn_name")) {   /* (its name goes along, 2026-10-30) */
             int i = param_of(key);
             if (i < 0 || shared_param(i)) continue;   /* the shared settings are the performance's */
             seen[i] = 1;
@@ -770,7 +778,9 @@ int patches_delete(ed_t *e) {
 
 void patches_import_name(const char *src, char *out) { name_from_path(src, out); }
 
-int patches_import(ed_t *e, const char *src, int overwrite) {
+int patches_import(ed_t *e, const char *src, int overwrite) { return patches_import_named(e, src, NULL, overwrite); }
+/* (2026-10-30) the same under a name of our own (NULL: the file's) */
+int patches_import_named(ed_t *e, const char *src, const char *as, int overwrite) {
     char name[PATCH_NAME_MAX + 1], dst[MAX_PATH], full_src[MAX_PATH], full_dst[MAX_PATH];
     char *t = read_text(src);
     if (!t) { say(e, "Could not open that file: %s.", why_io(GetLastError())); return PE_FAIL; }
@@ -779,7 +789,8 @@ int patches_import(ed_t *e, const char *src, int overwrite) {
         say(e, "That file is not a Moo Won patch (its first line isn't 'ONE-ish patch').");
         return PE_BADFILE;
     }
-    name_from_path(src, name);
+    if (as) snprintf(name, sizeof name, "%s", as);
+    else name_from_path(src, name);
     if (!patch_path(name, dst, sizeof dst, 1)) {
         free(t);
         say(e, "Could not make the patch folder: %s.", why_io(GetLastError()));
@@ -1036,7 +1047,7 @@ static void ui_rename(ed_t *e) {
 }
 
 static void ui_import(ed_t *e) {
-    char file[MAX_PATH] = "", name[PATCH_NAME_MAX + 1], q[200];
+    char file[MAX_PATH] = "";
     OPENFILENAMEA o = {0};
     o.lStructSize = sizeof o;
     o.hwndOwner = owner(e);
@@ -1045,11 +1056,42 @@ static void ui_import(ed_t *e) {
     o.nMaxFile = sizeof file;
     o.lpstrTitle = "Import a Moo Won patch";
     o.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_HIDEREADONLY;
-    if (!GetOpenFileNameA(&o)) return;
-    if (patches_import(e, file, 0) != PE_EXISTS) return;
+    if (GetOpenFileNameA(&o)) patches_import_choice(e, file);
+}
+/* (2026-10-30) IMPORT of a file, a same-named patch handled as the SETTINGS page's DUPLICATE NAMES says: ASK (as
+ * before), OVERWRITE, AUTO RENAME ("Name 2", "Name 3" ...) or IGNORE (the patch there stays, nothing imported) */
+int patches_import_choice(ed_t *e, const char *file) {
+    char name[PATCH_NAME_MAX + 1], q[200];
+    int mode = settings_import_dup();
+    int r = patches_import(e, file, mode == DUP_OVERWRITE);
+    if (r != PE_EXISTS) return r;
     name_from_path(file, name);
+    if (mode == DUP_IGNORE) {
+        say(e, "'%s' is already in your patches: not imported (DUPLICATE NAMES is IGNORE, SETTINGS > LIBRARY).", name);
+        return PE_EXISTS;
+    }
+    if (mode == DUP_RENAME) {
+        char to[PATCH_NAME_MAX + 1];
+        if (!patches_free_name(name, to)) { say(e, "No free name like '%s' was found: not imported.", name); return PE_FAIL; }
+        return patches_import_named(e, file, to, 0);
+    }
     snprintf(q, sizeof q, "A patch named '%s' already exists.\nReplace it with the imported one?", name);
-    if (confirm(e, q)) patches_import(e, file, 1);
+    return confirm(e, q) ? patches_import(e, file, 1) : PE_EXISTS;
+}
+/* a name like `name` no patch file has: "Name 2", "Name 3" ... (shortened to fit 32 characters); 0: none found */
+int patches_free_name(const char *name, char *out) {
+    char path[MAX_PATH];
+    for (int k = 2; k < 1000; k++) {
+        char sfx[8], t[PATCH_NAME_MAX + 1];
+        int sl = snprintf(sfx, sizeof sfx, " %d", k), keep = PATCH_NAME_MAX - sl;
+        snprintf(t, sizeof t, "%.*s", keep, name);
+        trim(t);
+        size_t l = strlen(t);
+        snprintf(t + l, sizeof t - l, "%s", sfx);
+        if (!patch_name_ok(t, NULL, 0)) continue;
+        if (!patch_path(t, path, sizeof path, 0) || !is_file(path)) { snprintf(out, PATCH_NAME_MAX + 1, "%s", t); return 1; }
+    }
+    return 0;
 }
 
 static void ui_export(ed_t *e) {
@@ -1406,6 +1448,21 @@ int pt_confirm(ed_t *e, const char *text) {
 HWND pt_owner(ed_t *e) { return owner(e); }
 void pt_ui_save_as(ed_t *e) { ui_save_as(e); }
 int pt_patch_path(const char *name, char *out, int n, int create) { return patch_path(name, out, n, create); }
+/* (2026-10-30, parts.c's NEW + FACTORY) factory preset p as a state, as the program list loads it, and its name; 0: none.
+ * Here, so the presets' table is in the DLL once. */
+int patches_factory_state(int p, char *out, int n, const char **name) {
+#ifdef NPRESETS
+    if (p < 0 || p >= NPRESETS) return 0;
+    int used = snprintf(out, n, "v=1;ctl=2");   /* (ctl=2: src/synths.h STATE_CTL) */
+    for (int k = 0; k < PRESETS[p].n && used < n; k++)
+        used += snprintf(out + used, n - used, ";%s=%s", PARAMS[PRESETS[p].values[k].param].key, PRESETS[p].values[k].value);
+    if (name) *name = PRESETS[p].name;
+    return used < n;
+#else
+    (void)p; (void)out; (void)n; (void)name;
+    return 0;
+#endif
+}
 char *pt_saved_state(ed_t *e) {   /* the current patch's saved version, as a state (malloc'd; NULL: none) */
     static char state[PATCH_STATE_MAX];
     if (e->pt.bank == BANK_USER) {

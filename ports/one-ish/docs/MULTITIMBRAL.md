@@ -222,7 +222,9 @@ gets three Synths (and how its page shows them) is the owner's later call.
 
 ## Not built
 
-- Per-Synth outputs (MAIN / SUB as extra VST2 output pairs), SUB VOLUME.
+- SUB VOLUME on the panel (outputs per Synth came 2026-10-30: OUTPUT above; the host's fader sets a pair's level).
 - The master effects' matrix destinations follow Synth 1's matrix only.
-- Timbre names on the home line. (NRPN for Synths 2 and 3 came with MIDI learn, 2026-10-29: `docs/SETTINGS.md`.)
+- (Timbre names came 2026-10-30: a click on a Synth's head on the SETUP page, saved with the sound, shown under the
+  SYNTH buttons and on the home line: `docs/PATCHES.md`. NRPN for Synths 2 and 3 came with MIDI learn, 2026-10-29:
+  `docs/SETTINGS.md`.)
 - The randomiser's undo history starts again when the focus changes.

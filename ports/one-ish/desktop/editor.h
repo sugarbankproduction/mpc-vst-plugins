@@ -10,6 +10,7 @@
 #include "patches.h"
 #include "seq_page.h"
 #include "settings.h"
+#include "parts.h"
 
 typedef struct AEffect AEffect;
 typedef intptr_t (*audioMasterCallback)(AEffect *, int32_t, int32_t, intptr_t, void *, float);
@@ -265,6 +266,7 @@ typedef struct {
     unsigned gens_arm_t;                       /* ... and when (GetTickCount): a second click within 4 s resets */
     cb_ui_t cb;                                /* (2026-10-30) the CABLES view (cables.c) */
     mx_ui_t mx;                                /* (2026-10-30) the MATRIX page's filters, KEY RANGE by a key (matrix_page.c) */
+    parts_ui_t pa;                             /* (2026-10-30) effect / matrix presets, names, libraries (parts.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
        M_QMOD, M_TEMPO,     /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
@@ -584,11 +586,11 @@ intptr_t cb_test(ed_t *e, intptr_t op, char *buf, float opt);
  * destination (SOURCE / DEST lists on the title line, CLEAR; EDIT MODULATIONS on quick assign's MOD FROM page opens
  * it filtered by that source), a destination picked in two steps (its section, then the parameter); the SETUP page's
  * LOW / HIGH buttons: click one, then press a key (the window's keyboard, the computer's keys or MIDI) */
-enum { Z_MX = 695000,                      /* (after the CABLES view's Z_CB .. Z_CB_END, before Z_ABS) */
+enum { Z_MX = 697000,                      /* (after CABLES 690000-690399 and PARTS 695000-695999, before Z_ABS) */
        Z_MX_FSRC, Z_MX_FDST, Z_MX_CLEAR,   /* the MATRIX page's title line: SOURCE, DEST, CLEAR */
-       Z_MX_DEL = 695010,                  /* + r: the DELETE of the screen's row r (0 .. ROWS-1) */
-       Z_MX_KEY = 695030,                  /* + 2 x Synth + (0 LOW, 1 HIGH): the SETUP page's buttons */
-       Z_MX_END = 695100 };
+       Z_MX_DEL = 697010,                  /* + r: the DELETE of the screen's row r (0 .. ROWS-1) */
+       Z_MX_KEY = 697030,                  /* + 2 x Synth + (0 LOW, 1 HIGH): the SETUP page's buttons */
+       Z_MX_END = 697100 };
 #define TEST_MX 0x4F314D58   /* VENDOR_SPECIFIC index: value = MXT_ op (matrix_page.c) */
 enum { MXT_XY = 1,            /* opt = a zone (Z_MX_*): its middle in pixels (x + 65536 y; -1: not shown) */
        MXT_VIEW,              /* the MATRIX page's rows shown (all sub-pages): their numbers (1-16) into ptr; how many */
@@ -616,3 +618,37 @@ void mx_setup_draw(HDC dc, ed_t *e, int row, int key);   /* the SETUP page's LOW
 RECT mx_setup_value(int row, int c);            /* a key row's cell, less its button */
 int mx_setup_key(int key);                      /* the SETUP row's param (Synth 1's) is key_lo (0) / key_hi (1), else -1 */
 intptr_t mx_test(ed_t *e, intptr_t op, char *buf, float opt);
+/* parts.c (2026-10-30): effect and matrix presets (the library's PARTS page), the Synths' names, user libraries,
+ * DUPLICATE NAMES (parts.h) */
+int parts_zone_rect(ed_t *e, int z, RECT *r);  /* where PARTS page zone z is (0: not shown) */
+int parts_hit(ed_t *e, POINT pt);              /* the PARTS page */
+int parts_subs(ed_t *e);
+void parts_open(ed_t *e, int slot);            /* the PARTS page on slot (-1: as it was) */
+void parts_draw(HDC dc, ed_t *e);
+void parts_help(ed_t *e, char *out, int n);
+int parts_press(ed_t *e, int z);               /* 1: z was parts.c's */
+const char *parts_zone_help(ed_t *e, int z);
+int parts_more_page(int p);                    /* MORE page p is an effect's: its slot (PS_), else -1 */
+RECT parts_more_rect(void);                    /* its PRESETS button, at the right of the note line */
+void parts_more_draw(HDC dc, ed_t *e);
+int parts_name(ed_t *e, int c, char *out, int n);   /* Synth c's name (1), or "" (0) */
+void parts_label(ed_t *e, int c, char *out, int n); /* "SYNTH 1" or its name, for the SYNTH buttons */
+int parts_names_line(ed_t *e, char *out, int n);    /* "S1 Bass  S2 Pad" for the home line (0: no names) */
+void parts_names_clear(ed_t *e);               /* a factory preset loaded: no names */
+RECT parts_name_head(int c);                   /* the SETUP page's head of Synth c */
+void parts_tick(ed_t *e);                      /* the window's timer: names that changed repaint */
+int parts_lib_hit(ed_t *e, POINT pt);          /* the SETTINGS page's LIBRARY rows (-1: none) */
+void parts_lib_draw(HDC dc, ed_t *e);
+intptr_t parts_test(ed_t *e, intptr_t op, char *buf, float opt);
+int space_dir(const char *name, char *out, int n, int create);   /* user library `name`'s folder (1 it exists / made) */
+/* settings.c: the library in use and DUPLICATE NAMES */
+int settings_space(char *out, int n);
+int settings_space_set(const char *name);
+int settings_import_dup(void);
+int settings_import_dup_set(int v);
+/* patches.c (2026-10-30) */
+int patch_home_dir(char *out, int n, int create);   /* the default library's folder (patch_dir: the one in use) */
+int patches_import_named(ed_t *e, const char *src, const char *as, int overwrite);
+int patches_import_choice(ed_t *e, const char *file);   /* IMPORT with DUPLICATE NAMES' choice */
+int patches_free_name(const char *name, char *out);     /* "Name 2", "Name 3" ...: one no patch has */
+int patches_factory_state(int p, char *out, int n, const char **name);   /* factory preset p as a state (0: none) */

@@ -92,6 +92,7 @@ static intptr_t host(AEffect *e, int32_t op, int32_t i, intptr_t v, void *p, flo
 static void midi_out_test(AEffect *fx);   /* (2026-10-30) below */
 int rate_tests(void *entry, void *old_entry);   /* rate_test.c: returns its failures */
 int library_tests(void *fx, HWND child, float s, const char *bmp, int w, int h, const char *patch_dir);   /* library_test.c */
+int parts_tests(void *fx, HWND child, float s, const char *bmp, int w, int h, const char *patch_dir);   /* parts_test.c */
 
 static int failures;
 static void check(int ok, const char *what) {
@@ -1602,6 +1603,8 @@ static void editor(AEffect *fx, const char *bmp) {
         focus_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         quickmod_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         failures += library_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* undo, compare, sets ... */
+        failures += parts_tests(fx, child, cr.right / (float)BASE_W, bmp, w, h, patch_dir);   /* (2026-10-30) presets,
+                                                                                    * names, libraries, DUPLICATE NAMES */
         settings_page_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         panel2_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* TEMPO, GENERATIVE, LINK, MASTER (2026-10-30) */
         learn_shows_test(fx, child, cr.right / (float)BASE_W, w, h);   /* (2026-10-30) a learned CC on the panel */
@@ -3535,6 +3538,9 @@ int main(int argc, char **argv) {
     CreateDirectoryA(patch_dir, NULL);
     empty_dir(patch_dir);
     SetEnvironmentVariableA("ONEISH_PATCH_DIR", patch_dir);
+    char lib_dir[MAX_PATH + 16];   /* (2026-10-30) the user libraries: inside the test folder, removed with it */
+    snprintf(lib_dir, sizeof lib_dir, "%s\\Libraries", patch_dir);
+    SetEnvironmentVariableA("ONEISH_LIB_DIR", lib_dir);
     snprintf(seq_dir, sizeof seq_dir, "%soneish_seq_test_%lu", tmp, (unsigned long)GetCurrentProcessId());
     CreateDirectoryA(seq_dir, NULL);
     empty_dir(seq_dir);
@@ -3840,7 +3846,7 @@ static void cables_test(AEffect *fx, HWND child, float s, const char *bmp, int w
 /* ---- (2026-10-30) the MATRIX page's DELETE, filters, EDIT MODULATIONS and two-step DESTINATION; SETUP's LOW / HIGH ----
  * Plain clicks only; a popup's item is picked with the keyboard by its text (menu_path), a sub-menu with Right. */
 #define TEST_MX 0x4F314D58   /* as editor.h */
-enum { Z_MX_FSRC = 695001, Z_MX_FDST, Z_MX_CLEAR, Z_MX_DEL = 695010, Z_MX_KEY = 695030 };   /* as editor.h */
+enum { Z_MX_FSRC = 697001, Z_MX_FDST, Z_MX_CLEAR, Z_MX_DEL = 697010, Z_MX_KEY = 697030 };   /* as editor.h */
 enum { MXT_XY = 1, MXT_VIEW, MXT_FSRC, MXT_FDST, MXT_WAIT, MXT_CELL_XY, MXT_SECTION };
 static char mxbuf[1024];
 static intptr_t mxt(AEffect *fx, int op, float opt) { mxbuf[0] = 0; return fx->dispatcher(fx, 50, TEST_MX, op, mxbuf, opt); }

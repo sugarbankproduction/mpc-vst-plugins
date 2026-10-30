@@ -77,7 +77,7 @@ user patch files (2026-10-27, offline).
 | Traditional knobs, soft knobs, master encoder; lit and red buttons [HW] | p11 | Missing | The window's drawn knobs, buttons and PRESET knob stand in (mouse) | - | none |
 | MORE pages: a second layer of parameters per module [UI] | p11, every module | Have | The window's MORE triangles open each module's second layer on the centre screen (sub-pages past 16 items) | - | none |
 | DEST button on each LFO and EG: next touched control becomes a destination [UI] | p11, p43, p47, p68 | Have | A DEST button in the title strip of LFO 1-4, the three envelopes and NOISE (Noise EG): lit while picked; each knob clicked then is connected in the first free matrix row of the Synths in focus, its drag the amount; DEST again or Esc ends it; QUICK ASSIGN (`desktop/quickmod.c`, 2026-10-30, the desktop window) | - | none |
-| HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Partial | The name line shows the patch (F/U, `*` when edited); each page's title the Synth in focus; the SETUP page the three Synths' on/off, channels and key ranges (2026-10-28, offline and the desktop window); the home line under the name its tags, NOTES and the host's tempo (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); no timbre names | S | none |
+| HOME screen: preset, timbre names, key ranges, synth on/off, tempo, tags [UI] | p12-13 | Have | The name line shows the patch (F/U, `*` when edited); each page's title the Synth in focus; the SETUP page the three Synths' on/off, channels and key ranges (2026-10-28, offline and the desktop window); the home line under the name its tags, NOTES and the host's tempo (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); timbre names: a click on a Synth's head on the SETUP page names it (12 characters), saved with the sound (`syn_name`), shown under the SYNTH 1/2/3 buttons and on the home line (2026-10-30, offline and the desktop window; `desktop/parts.c`) | - | none |
 | SETTINGS, MOD, DELETE, SNAPSHOT, SAVE, COMPARE buttons [UI] | p13-14 | Have | MATRIX (the MOD screen), the PATCHES page's SAVE / DELETE, and COMPARE and SNAPSHOT on the console (2026-10-29, offline and the desktop window; `docs/PATCHES.md`); SETTINGS on the console (2026-10-29, the desktop window; `docs/SETTINGS.md`) | - | none |
 | SHIFT: fine resolution on soft knobs, latching shift [UI] | p14 | Have | Shift-drag is the fine resolution on every knob (`editor.c`); a latching shift isn't needed with a keyboard modifier | - | none |
 | New initialised preset (SHIFT + COMPARE) | p14 | Have | The "Init" program | - | none |
@@ -328,7 +328,7 @@ user patch files (2026-10-27, offline).
 | TRANSFORM stage | see 15d (p71) | Have | `modN_xf` and `modN_xf_amt` (2026-10-27, offline) | - | - |
 | DESTINATION chosen as module, then parameter [UI] | see 15e (p71) | Have | A click on a DESTINATION (a matrix row's, or the ribbon's) lists 10 sections (oscillators, mixer and noise, filters, envelopes, LFOs, amp and output, synth effect, master sends, master FX 1, master FX 2), each its parameters (296 destinations); the old single list on a right-click (2026-10-30, the desktop window, `desktop/matrix_page.c`) | - | none |
 | DELETE a slot (later slots renumber); filter list by source or destination (SHIFT + DEST / SHIFT + MORE) [UI] | p72 | Have | An X at each row's right end: the rows below move up, the last one empty, one undo step, in every Synth in focus; SOURCE and DEST on the title line (plain clicks: the sources / destinations in use, with their row counts; a source also matches as VIA) and CLEAR (2026-10-30, the desktop window, load_test) | - | none |
-| SAVE / LOAD (add or replace) whole matrices as named presets with notes and timestamps [UI] | p73-74 | Missing | - | M | none |
+| SAVE / LOAD (add or replace) whole matrices as named presets with notes and timestamps [UI] | p73-74 | Have | The library's PARTS page, MATRIX: SAVE (a name, then notes; the time kept) the focused Synth's rows in use; a click on one, then ADD (into the free rows) or REPLACE (the rows where they were saved, the rest emptied); NOTES, DELETE; one undo step each; `Matrices\` beside the patches (2026-10-30, offline and the desktop window; `desktop/parts.c`, `docs/PATCHES.md`) | - | none |
 
 ### 15b. Matrix sources (p75)
 
@@ -505,7 +505,7 @@ Code: `src/fx.h` (routing), `src/fx/synth_fx.h`, `src/fx/master_delay.h`, `src/f
 | SYNTH EFFECT per Synth: one chosen type, mono in, stereo out, MIX always first | p96 | Have | `modfx_type` (22 types: 17 after the manual's list, 5 open-source), `modfx_mix`; mono in (the voices' sum), the wet at the synth pan, the dry keeps each voice's place | - | none/voice; shared 1.5-73 us per block by type |
 | Synth Effect ON button | on/off (p96) | Have | `modfx_on` | - | none |
 | CTRL 1 and CTRL 2 knobs, re-assignable to any effect parameter | p96-97 | Have | `modfx_ctrl1`/`modfx_ctrl2`: +-100% of the target's range on top of its knob; target `modfx_c1_dst`/`modfx_c2_dst`, Auto = the type's two most audible controls, never MIX (2026-10-30; the manual's pre-assignment before, kept for older states: see 18b) | - | none |
-| Effect presets per type: load, save, initialise to the type's defaults [UI] | p97-98, p101 | Missing | - | M | none |
+| Effect presets per type: load, save, initialise to the type's defaults [UI] | p97-98, p101 | Have | PRESETS on the SYNTH EFFECT, MASTER FX 1 and MASTER FX 2 MORE pages opens the library's PARTS page on that slot: the type's presets (ALL TYPES: every type the slot has), SAVE (a name, then notes), a click then LOAD (type and settings), INIT (the controls' defaults, the type kept), NOTES, DELETE; ON and the sends never change; one undo step each. Kept by type name and control name, so a preset moves between the Synth effect and the master slots (as the manual's). 13 original factory presets for the common types. `Effects\` beside the patches (2026-10-30, offline and the desktop window; `desktop/parts.c`, `docs/PATCHES.md`) | - | none |
 | Up to 5 effects at once (3 synth + 2 master) | p96 | Have | Three synth effects (one per Synth) and the two master effects (2026-10-28, offline and the desktop window) | - | shared medium |
 | MASTER EFFECTS: SEND 1 and SEND 2 per Synth into a master bus [MULTI] | p99 | Have | Each Synth's `mfx_send1` / `mfx_send2` into the shared master effects (their sum, `fx_master_multi`); returns added to the mix (2026-10-28, offline and the desktop window) | - | shared |
 | Master Effects ON button | on/off (p99) | Have | `mfx_on` | - | none |
@@ -745,7 +745,7 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | CHORD MEMORY learn mode | Silent Learn, Audible Learn (p125) | Have | `learn_mode` (shared; the SETUP page) (2026-10-28, offline) | - | none |
 | LCD BRIGHTNESS, PANEL LED BRIGHTNESS [HW] | 0% to 100% (p125) | Missing | - | - | none |
 | SHOW BANK PREVIEW, PRESET AUTOLOAD [UI] | off/on (p125) | Have | PRESET AUTOLOAD on the SETTINGS page: on, the PRESET knob and PREV/NEXT (tag filters too) load as they step (as before); off, they point at a patch ("> F 004 ... ?") and a click on the knob or the name loads it (2026-10-29, the desktop window; `docs/SETTINGS.md`); SHOW BANK PREVIEW on the SETTINGS page: on, the SET page's bank letters show their eight patches (as before, `docs/PATCHES.md`); off, only the numbers (2026-10-29, the desktop window) | - | none |
-| DUPLICATE NAMES ON IMPORT / EXPORT [UI] | Ignore, Overwrite, Auto Rename, Manual Rename (p126) | Partial | IMPORT asks before overwriting a same-named patch; no auto-rename or ignore choice | S | none |
+| DUPLICATE NAMES ON IMPORT / EXPORT [UI] | Ignore, Overwrite, Auto Rename, Manual Rename (p126) | Have | SETTINGS > LIBRARY, DUPLICATE NAMES (IMPORT) `<` `>`: ASK (the default, as before), OVERWRITE, AUTO RENAME ("Name 2"), IGNORE, for IMPORT and COPY SOUND TO; MANUAL RENAME: SAVE AS / RENAME after loading (2026-10-30, the desktop window; `desktop/parts.c`) | - | none |
 | STEP EDIT AUTO-SCROLL [UI] | off/on (p126) | Have | AUTO on the step editor's title line (lit by default): the page shown follows the step playing; a window setting for now, not saved (2026-10-29, the desktop window) | - | none |
 | NOISE REDUCTION between notes [ANALOG][HW] | -24 dB to 0 dB, default -12 dB (p126) | Missing | Not needed: no analog hiss (ONE-ish adds only a -100 dB floor) | - | none |
 | SET DATE/TIME, formats [HW] | p127 | Missing | The computer's clock | - | none |
@@ -781,8 +781,8 @@ bigness; pre-delay, damping, diffusion and early/late don't apply to it (9 us pe
 | LIGHT SHOW, UPDATE FIRMWARE, IP ADDRESS [HW] | p133-134 | Missing | - | - | none |
 | RESTORE DEFAULT SETTINGS [UI] | p133 | Have | SETTINGS > LIBRARY, after a question; patches and sounds untouched (2026-10-29, the desktop window) | - | none |
 | Firmware / UI version, build date and info [UI] | p134 | Have | SETTINGS > LIBRARY: version, params, build date and time, and where the patches and settings file live (with buttons that open the folders) (2026-10-29, the desktop window) | - | none |
-| USER SPACES: switch, create (factory or empty), rename, copy [UI] | p134-135 | Missing | One patch folder (`ONEISH_PATCH_DIR` can point elsewhere) | M | none |
-| EXPORT / IMPORT to USB: presets, sequences, sets, effect presets, matrix presets, globals, all [UI] | p136-137 | Partial | One patch at a time to or from any folder (the PATCHES page); nothing else exists to export yet | M | none |
+| USER SPACES: switch, create (factory or empty), rename, copy [UI] | p134-135 | Have | USER LIBRARY on SETTINGS > LIBRARY: `<` `>` switch, NEW EMPTY, NEW + FACTORY (every factory sound as a patch of its own), RENAME, COPY SOUND TO (the sound playing into another library). Each library is a folder with its own patches, snapshots, sets, tags, effect and matrix presets; Default is the patch folder of before, untouched; the others in `Documents\ONE-ish\Libraries` (`ONEISH_LIB_DIR`). The one in use is a setting (2026-10-30, offline and the desktop window; `desktop/parts.c`, `docs/PATCHES.md`) | - | none |
+| EXPORT / IMPORT to USB: presets, sequences, sets, effect presets, matrix presets, globals, all [UI] | p136-137 | Partial | One patch at a time to or from any folder (the PATCHES page); effect and matrix presets, sets and libraries are plain files in the library's folder (copy them in Explorer: OPEN PATCH FOLDER); no export / import of those from the window | M | none |
 | Edit CATEGORY, MOOD, GROUP tag lists [UI] | p137-138 | Have | The TAGS page: ADD, RENAME, DELETE (the patches that carry a tag follow); `tags.oneishtags` beside the patches (2026-10-29, offline and the desktop window; `docs/PATCHES.md`) | - | none |
 | MASTER FREQUENCY (A above middle C) | 400 Hz to 480 Hz, default 440 (p139) | Have | `master_tune` (2026-10-27, offline) | - | none |
 | MASTER FINE TUNE | -100 to +100 cents (p139) | Have | `fine_tune` (2026-10-27, offline) | - | none |
@@ -866,16 +866,16 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 12. Performance Sets and text entry (p57-60) | 5 | 0 | 0 | 0 | 0 |
 | 13. Master Clock (p60-62) | 5 | 0 | 3 | 3 | 0 |
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
-| 15. Modulation (p67-77) | 83 | 1 | 4 | 2 | 1 |
+| 15. Modulation (p67-77) | 84 | 1 | 3 | 2 | 1 |
 | 16. Arpeggiator (p78-81) | 17 | 0 | 0 | 0 | 0 |
 | 17. Sequencer (p82-95) | 33 | 0 | 0 | 0 | 0 |
-| 18. Effects (p96-111) | 87 | 0 | 1 | 0 | 1 |
+| 18. Effects (p96-111) | 88 | 0 | 0 | 0 | 0 |
 | 19. Left Hand Controller (p17-18, p112-117) | 17 | 1 | 1 | 1 | 0 |
 | 20. Browser, presets and timbres (p118-121) | 7 | 0 | 0 | 0 | 0 |
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
-| 22. Settings (p124-139) | 17 | 2 | 12 | 11 | 1 |
+| 22. Settings (p124-139) | 19 | 1 | 11 | 11 | 0 |
 | 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
-| **Total** | **433** | **11** | **31** | **27** | **3** |
+| **Total** | **437** | **10** | **28** | **27** | **1** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -1106,9 +1106,12 @@ voice for the EXT channel; shared medium (10-band) to medium-high (16-band) for 
   buttons are on the SET page of the centre screen (the console has no room for sixteen more), COMPARE and SNAPSHOT
   took the console's name plate.
 - 12c Libraries of parts: effect presets per type (load, save, initialise), matrix presets (load add or replace, with
-  notes and timestamps), sequences (with package 2). M.
+  notes and timestamps), sequences (with package 2). M. Effect and matrix presets done 2026-10-30 (offline and the
+  desktop window; the library's PARTS page, `desktop/parts.c`); sequences: the step editor's own SAVE / LOAD.
 - 12d User spaces (switchable libraries); export and import of every kind of item, and of everything; the
-  duplicate-name choices (ignore, overwrite, auto rename, ask). M.
+  duplicate-name choices (ignore, overwrite, auto rename, ask). M. User libraries and the duplicate-name choices done
+  2026-10-30 (SETTINGS > LIBRARY, `desktop/parts.c`); export / import of the other kinds from the window left.
+  Timbre names (section 1) done the same day.
 - Depends on: nothing for 12a and 12b; 12c needs packages 2 and 6 for their screens.
 - Files: `desktop/patches.c` (or a new `desktop/library.c`), `desktop/editor.c`, `docs/PATCHES.md`.
 

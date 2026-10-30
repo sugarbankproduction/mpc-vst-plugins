@@ -74,6 +74,10 @@ typedef struct {
 } settings_t;
 static settings_t G;
 static int g_loaded;
+/* (2026-10-30, parts.c) the user library in use ("" the default one) and DUPLICATE NAMES (DUP_*), on the LIBRARY tab:
+ * lines "library=<name>" and "import_dup=<n>" of the file. RESTORE DEFAULT SETTINGS leaves both as they are. */
+static char g_space[PATCH_NAME_MAX + 1];
+static int g_dup;
 
 static void defaults(settings_t *s) {
     for (int k = 0; k < SI_COUNT; k++) s->v[k] = ITEM[k].def;
@@ -102,7 +106,7 @@ int settings_path(char *out, int n) {
     char d[MAX_PATH];
     DWORD k = GetEnvironmentVariableA("ONEISH_SETTINGS", d, sizeof d);
     if (k > 0 && k < sizeof d) return GetFullPathNameA(d, n, out, NULL) > 0;
-    if (!patch_dir(d, sizeof d, 0)) return 0;
+    if (!patch_home_dir(d, sizeof d, 0)) return 0;   /* (the default library's, whichever is in use: 2026-10-30) */
     char *slash = strrchr(d, '\\');   /* beside the Patches folder */
     if (slash) *slash = 0;
     return snprintf(out, n, "%s\\Settings.txt", d) < n;
@@ -114,6 +118,8 @@ static void file_text(const settings_t *s, char *out, int n) {
         used += snprintf(out + used, n - used, "%s=%g\r\n", ITEM[k].key, s->v[k]);
     for (int k = 0; k < s->nmap && used < n; k++)   /* "map=<cc>,<param key>,<7|14>" */
         used += snprintf(out + used, n - used, "map=%d,%s,%d\r\n", s->map[k].cc, s->map[k].key, s->map[k].bits);
+    if (s == &G && used < n) used += snprintf(out + used, n - used, "import_dup=%d\r\n", g_dup);
+    if (s == &G && g_space[0] && used < n) snprintf(out + used, n - used, "library=%s\r\n", g_space);
 }
 static int map_add(const char *key, int cc, int bits);
 static int map_drop_cc(int cc);
@@ -141,6 +147,17 @@ static void parse(settings_t *s, char *t) {
             if (s == &G && sscanf(eq + 1, "%d,%47[^,],%d%n", &cc, key, &bits, &at) == 3 && at > 0) map_add(key, cc, bits);
             continue;
         }
+        if (s == &G && !strcmp(line, "library")) {   /* (2026-10-30) a user library that still exists, else the default */
+            char d[MAX_PATH];
+            snprintf(g_space, sizeof g_space, "%s", patch_name_ok(eq + 1, NULL, 0) ? eq + 1 : "");
+            if (g_space[0] && !space_dir(g_space, d, sizeof d, 0)) g_space[0] = 0;
+            continue;
+        }
+        if (s == &G && !strcmp(line, "import_dup")) {
+            int v = atoi(eq + 1);
+            g_dup = v >= 0 && v < DUP_COUNT ? v : DUP_ASK;
+            continue;
+        }
         set_key(s, line, eq + 1);
     }
 }
@@ -149,6 +166,8 @@ static void load_file(void) {
     char path[MAX_PATH];
     defaults(&G);
     g_loaded = 1;
+    g_space[0] = 0;
+    g_dup = DUP_ASK;
     if (!settings_path(path, sizeof path)) return;
     FILE *f = fopen(path, "rb");
     if (!f) return;
@@ -245,6 +264,20 @@ void settings_tempo_set(ed_t *e, int own, float bpm, int save) {
     if (!g_loaded) load_file();
     change_ex(e, SI_TEMPO, roundf(bpm * 10.0f) / 10.0f, 0);
     change_ex(e, SI_RX_CLOCK, own ? 0.0f : 1.0f, save);   /* (saves both, when asked to) */
+}
+
+/* ---- (2026-10-30) USER LIBRARIES and DUPLICATE NAMES (parts.c) ---- */
+int settings_space(char *out, int n) { if (!g_loaded) load_file(); snprintf(out, n, "%s", g_space); return 1; }
+int settings_space_set(const char *name) {   /* 1: saved */
+    if (!g_loaded) load_file();
+    snprintf(g_space, sizeof g_space, "%s", name ? name : "");
+    return save_file();
+}
+int settings_import_dup(void) { if (!g_loaded) load_file(); return g_dup; }
+int settings_import_dup_set(int v) {
+    if (!g_loaded) load_file();
+    g_dup = v >= 0 && v < DUP_COUNT ? v : DUP_ASK;
+    return save_file();
 }
 
 /* ---- PRESET AUTOLOAD (patches.c's browsing asks these) ---- */
@@ -609,6 +642,10 @@ static int map_at(ed_t *e, int row) {   /* the mapping shown on a row, or -1 */
 static int tuning_index(int row) { return row < NTUNING ? index_of(TUNING_KEY[row]) : -1; }
 
 int settings_hit(ed_t *e, POINT pt) {
+    if (e->st.tab == ST_LIBRARY) {   /* (2026-10-30) USER LIBRARY and DUPLICATE NAMES (parts.c) */
+        int z = parts_lib_hit(e, pt);
+        if (z >= 0) return z;
+    }
     for (int t = 0; t < ST_TABS; t++) {
         RECT r = tab_rect(t);
         if (PtInRect(&r, pt)) return Z_TAB + t;
@@ -831,23 +868,20 @@ void settings_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dr
             value_row(dc, e, k, it->label, v, it->kind == IK_NUM, G.v[k] > 0.5f);
         }
     } else if (e->st.tab == ST_LIBRARY) {
-        char pd[MAX_PATH], sp[MAX_PATH];
+        char pd[MAX_PATH];
         if (!patch_dir(pd, sizeof pd, 0)) snprintf(pd, sizeof pd, "(no Documents or AppData folder found)");
-        if (!settings_path(sp, sizeof sp)) snprintf(sp, sizeof sp, "(none)");
         patches_rescan(e);
-        const char *name[5] = {"PATCH FOLDER", "USER PATCHES", "FACTORY PRESETS", "SETTINGS FILE", "VERSION"};
-        char val[5][MAX_PATH + 32];
+        parts_lib_draw(dc, e);   /* (2026-10-30, parts.c) rows 0-2: USER LIBRARY, its buttons, DUPLICATE NAMES */
+        const char *name[2] = {"PATCH FOLDER", "VERSION"};
+        char val[2][MAX_PATH + 96];
         snprintf(val[0], sizeof val[0], "%s", pd);
-        snprintf(val[1], sizeof val[1], "%d", e->pt.count);
-        snprintf(val[2], sizeof val[2], "%d", e->fx->numPrograms);
-        snprintf(val[3], sizeof val[3], "%s", sp);
-        snprintf(val[4], sizeof val[4], "%s %d.%d.%d, %d params, built %s", PLUG_NAME, PLUG_VERSION / 1000,
+        snprintf(val[1], sizeof val[1], "%s %d.%d.%d, %d params, built %s", PLUG_NAME, PLUG_VERSION / 1000,
                  PLUG_VERSION / 100 % 10, PLUG_VERSION % 100, NPARAMS, __DATE__);
-        for (int r = 0; r < 5; r++) {
+        for (int r = 0; r < 2; r++) {
             RECT nm, vr, d, u;
-            row_parts(r, &nm, &vr, &d, &u);
+            row_parts(3 + r, &nm, &vr, &d, &u);
             label(dc, nm, name[r], font_cell, S_DIM, DT_LEFT);
-            label(dc, vr, val[r], font_cell, S_LCD, r == 0 || r == 3 ? DT_PATH_ELLIPSIS | DT_LEFT : DT_LEFT);
+            label(dc, vr, val[r], font_cell, S_LCD, r == 0 ? DT_PATH_ELLIPSIS | DT_LEFT : DT_LEFT);
         }
         static const char *const SIDE[3] = {"Every setting on this page:", "Your patches:", "This settings file:"};
         for (int r = 0; r < 3; r++) {
@@ -904,7 +938,8 @@ const char *settings_zone_help(ed_t *e, int z) {
         static const char *const H[ST_TABS] = {
             "GLOBAL: how the instrument behaves: preset autoload, the MIDI clock, channels from presets, the pedals.",
             "MIDI: MIDI LEARN. Map your controller's knobs and faders (their CCs) to any control on the panel.",
-            "LIBRARY: where your patches and the settings file are, how many patches, the version.",
+            "LIBRARY: your user libraries (switch, new, rename, copy a sound to another), what IMPORT does with a "
+            "same-named patch, where your patches are, the version.",
             "TUNING: the master frequency (the A above middle C), the master fine tune, and microtuning (Scala scales "
             "and keyboard maps) for the Synth in focus."};
         return H[z - Z_TAB];
@@ -944,8 +979,9 @@ void settings_help(ed_t *e, char *out, int n) {
         snprintf(out, n, "MIDI LEARN: a CC moves one control (learning a CC or a control again moves it). The map is "
                          "kept with these settings, for every sound. NRPN after the instrument's table always works.");
     else if (e->st.tab == ST_LIBRARY)
-        snprintf(out, n, "Your patches are files in the patch folder (PATCHES page: save, import, export). The "
-                         "settings on this page are kept in the settings file, apart from any sound.");
+        snprintf(out, n, "USER LIBRARY: separate collections of your patches (with their snapshots, sets, tags and "
+                         "effect and matrix presets); < > switch. DUPLICATE NAMES: what IMPORT and COPY SOUND TO do "
+                         "when a patch of that name is there.");
     else if (e->st.tab == ST_TUNING)
         snprintf(out, n, "Tuning, all part of the sound: master frequency and fine tune (click < > or scroll, Shift "
                          "finer), and the focused Synth's own scale and keyboard map (LOAD a Scala file).");

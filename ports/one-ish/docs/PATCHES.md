@@ -29,7 +29,8 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
   - SAVE AS: stores the sound under a new name; asks before replacing a patch with the same name.
   - RENAME, DELETE: act on the current user patch. DELETE asks first and removes the file; the sound stays loaded
     (`-  name *`), so SAVE AS can still keep it.
-  - IMPORT: picks a `.oneish` file anywhere (from a friend, a backup) and copies it into your patches.
+  - IMPORT: picks a `.oneish` file anywhere (from a friend, a backup) and copies it into your patches (a patch with
+    the same name: as DUPLICATE NAMES on SETTINGS > LIBRARY says, 2026-10-30; Ask by default).
   - EXPORT: writes the sound to a `.oneish` file wherever you choose.
   - INTO S1/2/3 (the number is the Synth in focus): while lit, the preset or patch you click loads into that Synth
     only; it keeps its ON, MIDI channel and key range, and the other Synths and the master effects stay as they are.
@@ -42,7 +43,7 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
 - Messages (saved, deleted, a file that couldn't be read or written and why) show for a few seconds where the help
   text is.
 - **Tabs on the title line** of the PATCHES page lead to the library's other pages: SET, ALL SETS, ARRANGE (performance
-  sets), SNAPSHOTS and TAGS (2026-10-29, offline).
+  sets), SNAPSHOTS and TAGS (2026-10-29, offline), and PARTS (effect and matrix presets, 2026-10-30).
 - **The home line** under the patch name shows its tags (TYPE, CATEGORY, MOOD, GROUP), `NOTES` when it has notes, and
   the host's tempo when the host reports one (2026-10-29, offline).
 
@@ -125,11 +126,69 @@ The host's MIDI reaches user patches and sets:
 - The program change is noted on the host's thread (no file touched there) and loaded on the window's thread: by the
   window's timer, or, with the window closed, by a hidden window's timer (made when the plugin instance is made).
 
+## Effect presets and matrix presets: the PARTS page (2026-10-30, offline)
+
+Code: `desktop/parts.c`; tested by `desktop/parts_test.c` inside load_test. Everything is on the window's thread.
+
+- **Effect presets.** On the SYNTH EFFECT, MASTER FX 1 and MASTER FX 2 MORE pages, **PRESETS** (right of the note
+  line) opens the library's **PARTS** page (also a tab after TAGS) on that slot. The four buttons on its first line
+  pick the slot: SYNTH FX (the Synth in focus), MASTER FX 1, MASTER FX 2, MATRIX. The list shows the presets of the
+  slot's current type (**ALL TYPES**, lit: every type the slot can be; LOAD then switches the type). `F` marks Moo
+  Won's own (13, for Chorus, Dual Chorus, Ensemble, Stereo Delay, Tape Delay, Ping Pong, Flanger, 6-Stage Phaser,
+  Bit Crusher, Room, Hall, Plate, Space; part of the program, never deleted), `U` yours.
+  - **SAVE**: asks a name, then notes; keeps the slot's type and every control (not ON, not the sends).
+  - Click a preset (its notes and when it was saved show in the help area), then **LOAD**: the slot's controls to
+    their defaults, the preset's type, then its values. **INIT**: the controls back to their defaults, the type kept.
+  - **NOTES** changes a preset's notes, **DELETE** removes it (asks first).
+  - A preset keeps its type by name and its controls by name without the slot's prefix (`time`, `fb`), so one saved
+    from the Synth effect loads into a master slot that has its type and back (the reverbs are master-only).
+  - LOAD and INIT are one undo step each; the host is told of every value that changed.
+- **Matrix presets** (MATRIX on the PARTS page): **SAVE** keeps the focused Synth's rows in use (a row is free when its
+  SOURCE is Off and VIA None), with a name, notes and the time. Click one, then **ADD** (its rows into the free rows, as
+  many as there are; the help area says if some didn't fit) or **REPLACE** (each row back where it was saved, every
+  other row emptied). NOTES, DELETE as above. One undo step each.
+- Files, in the library's folder: `Effects\<name>.oneishfx` (`ONE-ish effect 1`, `name=`, `type=<type name>`,
+  `time=yyyy-mm-dd hh:mm`, `notes=` (escaped as a patch's), then `<control>=<value>` in the control's units, an option
+  by its name) and `Matrices\<name>.oneishmtx` (`ONE-ish matrix 1`, `name=`, `time=`, `notes=`, then per row `[row]`,
+  `row=<1-16>` and `src=`, `dst=`, `amt=`, `via=`, `via_amt=`, `xf=`, `xf_amt=`, `on=`, options by name). A control a
+  file doesn't name stays at its default; unknown lines are skipped.
+
+## Synth names (2026-10-30, offline)
+
+- On the SETUP page, the heads above the three columns (`SYNTH 1 (name)`) are buttons: a click asks a name for that
+  Synth ("Bass", "Pad"; up to 12 characters, not `; | \`; empty: no name). The name shows under its SYNTH button on the
+  console, on the SETUP page (`2: Pad`) and on the home line under the patch name (`S1 Bass  S2 Pad`). A name change
+  is one undo step and marks the sound edited.
+- The engine keeps the names in the sound's state (`syn_name=`, `s2_syn_name=`, `s3_syn_name=`, after the tunings;
+  `src/synths.h`), so they are saved with patches, snapshots and projects; a sound without names writes exactly the
+  state it wrote before, so every older sound and project is unchanged and shows `SYNTH 1` etc. SAVE S1/2/3 keeps the
+  Synth's name as `syn_name`; INTO S1/2/3 brings the sound's own name (or none). Loading a factory preset clears them
+  (the presets have none). The window reads them without a lock (a counter the engine bumps around each change).
+
+## User libraries and DUPLICATE NAMES (2026-10-30, offline)
+
+- **SETTINGS > LIBRARY**, first three rows:
+  - **USER LIBRARY** `<` `>`: the library in use and how many patches it has; the arrows switch (Default first, then
+    the others A to Z). Every Moo Won open follows.
+  - **NEW EMPTY** / **NEW + FACTORY**: a new library (asks a name), in use at once; NEW + FACTORY starts it with every
+    factory preset as a user patch of its own, with its tags, to edit freely. **RENAME**: the library in use (not
+    Default). **COPY SOUND TO**: the sound playing (with its tags and notes), as a patch in another library picked from a
+    list (its patch name, or the factory preset's).
+  - **DUPLICATE NAMES (IMPORT)** `<` `>`: what IMPORT on the PATCHES page and COPY SOUND TO do with a same-named
+    patch: **Ask** (the default, as before), **Overwrite**, **Auto Rename** (`Name 2`, `Name 3` ...), **Ignore** (the
+    one there stays, nothing is copied).
+- Each library is a folder holding its own patches, snapshots, sets, tags, effect and matrix presets. **Default** is the
+  patch folder of before (below), untouched; the others are folders in `Documents\ONE-ish\Libraries` (beside the Patches
+  folder; `ONEISH_LIB_DIR` overrides it). Switching keeps the sound playing; a user patch of the old library then shows
+  as `-  name *` (SAVE AS keeps it in the new one). The settings file keeps `library=<name>` and `import_dup=<0-3>`;
+  RESTORE DEFAULTS leaves both. A library that is gone when Moo Won starts: Default.
+
 ## Where they live
 
 `Documents\ONE-ish\Patches` (the Documents folder Windows reports, also when it is moved to OneDrive), made on the first
 save. If Documents is missing or can't be written, `%APPDATA%\ONE-ish\Patches`. The environment variable
-`ONEISH_PATCH_DIR` overrides both (the tests use a temporary folder). One file per patch, `<name>.oneish`; copying,
+`ONEISH_PATCH_DIR` overrides both (the tests use a temporary folder). That is the Default library's folder; with
+another user library in use (above, 2026-10-30) its folder takes the place of this one for everything below. One file per patch, `<name>.oneish`; copying,
 backing up or deleting the files in Explorer works too (the folder is read again when the window or the PATCHES page opens, and on each step). A file whose name
 breaks the rules above is not listed; IMPORT it to give it a usable name.
 
