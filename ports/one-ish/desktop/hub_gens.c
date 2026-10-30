@@ -146,7 +146,7 @@ static int armed(ed_t *e, int z) {   /* RESET waiting for its second click (and 
     return 0;
 }
 void gens_draw(HDC dc, ed_t *e) {
-    screen_button(dc, gens_rect(Z_GEN_RND), "RANDOMISE", 0, e->hover == Z_GEN_RND, font_cell);
+    screen_button(dc, gens_rect(Z_GEN_RND), "RANDOM", 0, e->hover == Z_GEN_RND, font_cell);
     screen_button(dc, gens_rect(Z_GEN_RND_ALL), "ALL", 0, e->hover == Z_GEN_RND_ALL, font_cell);
     screen_button(dc, gens_rect(Z_GEN_MUT), "MUTATE", 0, e->hover == Z_GEN_MUT, font_cell);
     screen_button(dc, gens_rect(Z_GEN_MUT_ALL), "ALL", 0, e->hover == Z_GEN_MUT_ALL, font_cell);
