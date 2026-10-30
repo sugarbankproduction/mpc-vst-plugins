@@ -270,6 +270,9 @@ static const char *help_for(int i) {
         {"seq_rec_mode", "Record mode (running): Replace clears a step the first time you play into it, Overdub adds, Focused replaces the selected step."},
         {"seq_pattern", "Factory sequence: picks one of the built-in sequences (replacing the steps). User loads nothing: your own steps stay."},
         /* (2026-10-30) */
+        {"seq_output", "OUTPUT: which Synths this sequence plays. OWN SYNTH: its own (as before); or Synth 1, 2, 3 or a mix (1+2+3: one pattern on three sounds). Each plays it with its own sound, transpose and octave, if it is on; key ranges don't matter. The MODS lanes stay on this Synth. Click for the list."},
+        {"seq_all", "PLAY ALL: starts (and stops) the sequences of every Synth that is on with its sequencer ON, all on the same step. Shared by the three Synths."},
+        /* (2026-10-30) */
         {"volume", "Volume: the Synth in focus's own level. Light MASTER under it and the knob becomes MASTER, the whole instrument's level."},
         {"master_level", "MASTER: the level of the whole instrument, all three Synths together (shared; saved with the sound). SYNTH OUTPUT's MASTER button off: the knob is VOLUME again."},    };
     const char *key = PARAMS[i].key;

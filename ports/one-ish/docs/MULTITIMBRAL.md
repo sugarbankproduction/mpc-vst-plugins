@@ -34,7 +34,13 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
 - **KEY and SCALE per Synth** (2026-10-29): the step editor's GEN view (`docs/SEQUENCER.md`) generates a sequence for
   the Synth in focus in its own key and scale, so the Synths can play in different keys or modes; the other Synths'
   sequences stay as they are.
-- **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample.
+- **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample (also the PLAY
+  ALL button on the SEQUENCER module's title strip, 2026-10-30).
+- **Sequencer OUTPUT** (2026-10-30, offline and the desktop window; `seq_output`, `docs/SEQUENCER.md`): a Synth's
+  sequence can play its own Synth (OWN SYNTH, the default), another one, or several (1+2, 1+3, 2+3, 1+2+3): one pattern
+  on up to three sounds. The targets play it on their own voices from the shared pool, with their own sound, transpose
+  and octave, while they are on; their key ranges don't apply to sequenced notes. The sequence's modulation lanes stay
+  with its own Synth. Notes end where they started, whatever changes meanwhile.
 - **LINK** (2026-10-30, desktop window): small LINK buttons keep a setting the same in all three Synths. While one is
   lit, changing that setting on the Synth in focus sets the same value on the other two (host automation for each, one
   undo step). LINKs: KEY and SCALE (the GENERATIVE page and the GEN page), the arpeggiator's RATE (under it on the

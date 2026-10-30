@@ -47,29 +47,63 @@ static int64_t sq_first(const sq_run_t *r, double p) {   /* the first step at or
 }
 static int64_t sq_until(const sq_run_t *r, double t) { return (int64_t)ceil((t - r->pos0) / r->bps - 1e-6) - r->clk; }
 
+/* ---- OUTPUT (seq_output, 2026-10-30): the Synths the notes play ----
+ * Own (its own Synth, as before), Synth 1, 2 or 3, or a combination: the note lanes' notes (after this Synth's chord
+ * memory) start on those Synths' voices, with their sounds, poly counts, transpose and octave, whatever their key range
+ * (the notes go inside the instrument, not through the keys) and only on the ones that are on. A lane remembers where
+ * its notes went (lsyn), so their ends always reach the same Synths, whatever OUTPUT or the ON switches do meanwhile.
+ * The modulation lanes stay with this Synth. A target not in this build (fewer Synths): its own Synth instead. */
+#define SQ_SYNS 3
+static one_t *sq_syn(one_t *s, int c);   /* src/synths.h: Synth c of this instance, NULL past the last */
+static const uint8_t SQ_OUT_MASK[8] = {0, 1, 2, 4, 3, 5, 6, 7};   /* "seq_output" options: Own, 1, 2, 3, 1+2 .. */
+static int sq_targets(one_t *s) {
+    int own = 1 << s->idx, m = SQ_OUT_MASK[(int)clampf(s->val[P_SEQ_OUTPUT], 0.0f, 7.0f)], got = 0, any = 0;
+    if (!m) return own;
+    for (int c = 0; c < SQ_SYNS; c++) {
+        one_t *t = m >> c & 1 ? sq_syn(s, c) : NULL;
+        if (!t) continue;
+        any = 1;
+        if (t == s || t->on) got |= 1 << c;
+    }
+    return any ? got : own;
+}
+static void sq_out_on(one_t *s, int mask, int note, int vel) {
+    for (int c = 0; c < SQ_SYNS; c++)
+        if (mask >> c & 1) out_on(c == s->idx ? s : sq_syn(s, c), note, vel);
+}
+static void sq_out_off(one_t *s, int mask, int note) {
+    for (int c = 0; c < SQ_SYNS; c++)
+        if (mask >> c & 1) out_off(c == s->idx ? s : sq_syn(s, c), note, 1);
+}
+
 /* ---- a lane's sound ---- */
 static void sq_lane_off(one_t *s, int l) {
     sq_run_t *r = &s->sq;
-    for (int i = 0; i < r->lnout[l]; i++) out_off(s, r->lout[l][i], 1);
+    for (int i = 0; i < r->lnout[l]; i++) sq_out_off(s, r->lsyn[l], r->lout[l][i]);
     r->lnout[l] = 0;
     r->lroot[l] = -1;
     r->ltied[l] = 0;
+    r->lsyn[l] = 0;
 }
 static void sq_lane_on(one_t *s, int l, int root, int vel, int tied) {
     sq_run_t *r = &s->sq;
     int out[CHORD_MAX], n = chord_notes(s, root, out);
     if (r->lroot[l] >= 0) sq_lane_off(s, l);
+    int to = sq_targets(s);
     for (int i = 0; i < n; i++)
-        if (out[i] >= 0 && out[i] <= 127) { out_on(s, out[i], vel); r->lout[l][r->lnout[l]++] = (uint8_t)out[i]; }
+        if (out[i] >= 0 && out[i] <= 127) { sq_out_on(s, to, out[i], vel); r->lout[l][r->lnout[l]++] = (uint8_t)out[i]; }
     r->lroot[l] = root;
     r->ltied[l] = tied;
+    r->lsyn[l] = (uint8_t)to;
 }
 /* a tie into another note: its voice moves there without a new attack (legato). In mono, a new note before the old one
  * lets go is legato anyway; a chord (or a note another lane or the arp also holds) takes the new notes first. */
 static void sq_lane_legato(one_t *s, int l, int root, int vel, int tied) {
     sq_run_t *r = &s->sq;
     int out[CHORD_MAX], n = chord_notes(s, root, out), from = r->lnout[l] == 1 ? r->lout[l][0] : -1;
-    if (from >= 0 && n == 1 && out[0] >= 0 && out[0] <= 127 && !is_mono(s) && s->ocnt[from] == 1 && !s->ocnt[out[0]]) {
+    int own = 1 << s->idx, to = sq_targets(s);   /* (the voice move: only its own Synth's notes, to its own Synth) */
+    if (from >= 0 && n == 1 && out[0] >= 0 && out[0] <= 127 && !is_mono(s) && s->ocnt[from] == 1 && !s->ocnt[out[0]]
+        && r->lsyn[l] == own && to == own) {
         int moved = 0;
         for (int i = 0; i < MAX_VOICES; i++) {
             voice_t *v = &s->voice[i];
@@ -93,14 +127,15 @@ static void sq_lane_legato(one_t *s, int l, int root, int vel, int tied) {
         }
     }
     uint8_t old[CHORD_MAX];
-    int no = r->lnout[l];
+    int no = r->lnout[l], was = r->lsyn[l];
     memcpy(old, r->lout[l], (size_t)no);
     r->lnout[l] = 0;
     for (int i = 0; i < n; i++)
-        if (out[i] >= 0 && out[i] <= 127) { out_on(s, out[i], vel); r->lout[l][r->lnout[l]++] = (uint8_t)out[i]; }
-    for (int i = 0; i < no; i++) out_off(s, old[i], 1);
+        if (out[i] >= 0 && out[i] <= 127) { sq_out_on(s, to, out[i], vel); r->lout[l][r->lnout[l]++] = (uint8_t)out[i]; }
+    for (int i = 0; i < no; i++) sq_out_off(s, was, old[i]);
     r->lroot[l] = root;
     r->ltied[l] = tied;
+    r->lsyn[l] = (uint8_t)to;
 }
 
 /* ---- notes waiting for their sample: ratchets' re-articulations and note ends ---- */
@@ -127,11 +162,20 @@ static void sq_silence(one_t *s) {
     for (int l = 0; l < SQ_NL; l++) sq_lane_off(s, l);
     s->sq.nev = 0;
 }
-/* gen_stop() let go of every generated note itself: forget what the lanes held */
+/* gen_stop() let go of every generated note of this Synth itself: forget what the lanes held. Their notes on other
+ * Synths (OUTPUT) let go here; and the other Synths' lanes forget the notes they had on this one (gone with it). */
 static void sq_forget(one_t *s) {
     sq_run_t *r = &s->sq;
-    for (int l = 0; l < SQ_NL; l++) { r->lnout[l] = 0; r->lroot[l] = -1; r->ltied[l] = 0; }
+    int own = 1 << s->idx;
+    for (int l = 0; l < SQ_NL; l++) {
+        for (int i = 0; i < r->lnout[l] && (r->lsyn[l] & ~own); i++) sq_out_off(s, r->lsyn[l] & ~own, r->lout[l][i]);
+        r->lnout[l] = 0; r->lroot[l] = -1; r->ltied[l] = 0; r->lsyn[l] = 0;
+    }
     r->nev = 0;
+    for (int c = 0; c < SQ_SYNS; c++) {
+        one_t *o = c == s->idx ? NULL : sq_syn(s, c);
+        for (int l = 0; o && l < SQ_NL; l++) o->sq.lsyn[l] &= (uint8_t)~own;
+    }
 }
 
 /* ---- modulation lanes ---- */

@@ -526,6 +526,12 @@ def build(lay):
     L.column([("seq_rec", "REC"), ("seq_step_mod", "STEP MOD")], 902, 548, 70, 22, "toggle", SIDE)
     if "seq_on" in L.index:
         zones["SEQ_LEDS"] = (970, 546, 80, 46)
+    # (2026-10-30) on its title strip: PLAY ALL (seq_all, shared) at the left, OUTPUT (seq_output: the Synths its notes
+    # play) at the right; drawn and hit by desktop/seq_page.c as the params themselves (a click: toggle / option list)
+    if "seq_all" in L.index:
+        zones["SEQ_ALL"] = (768, 532, 76, 13)
+    if "seq_output" in L.index:
+        zones["SEQ_OUT"] = (1040, 532, 132, 13)
     L.ctl("seq_length", "small", 1050, 544, 48, 50, "LENGTH")
     L.ctl("seq_div", "button", 1098, 547, 46, 46, "RATE")
     if "seq_div" in L.index:
@@ -533,7 +539,8 @@ def build(lay):
     L.ctl("link_seq", "toggle", 1146, 547, 30, 46, "LINK")   # (2026-10-30) RATE the same in all 3 Synths
     L.placed.add("seq_pos")   # the readout: the step editor and the page LEDs show it
     L.page("SEQ", "SEQUENCER", "Settings; the steps: the SEQ button. Synced: RATE is each step's note value.", [
-        ("seq_on", "On"), ("seq_play", "Play"), ("seq_rec", "Record"), ("seq_rec_mode", "Record Mode"),
+        ("seq_on", "On"), ("seq_output", "Output"), ("seq_play", "Play"), ("seq_rec", "Record"),
+        ("seq_rec_mode", "Record Mode"),
         ("seq_step_mod", "Step Mod"), ("seq_length", "Length"), ("seq_sync", "Sync"), ("seq_div", "Rate (Synced)"),
         ("seq_timing", "Timing"), ("seq_rate", "Free Rate"), ("seq_follow_swing", "Follow Swing"),
         ("clock_swing", "Master Swing"), ("seq_note_trig", "Note Trig"), ("seq_note_reset", "Note Reset"),
@@ -795,6 +802,8 @@ def emit(lay, zones, out):
         eu = [-1] * 4
     zones["EUCLID"] = lay.euclid_at or (0, 0, 0, 0)
     zones.setdefault("SEQ_LEDS", (0, 0, 0, 0))   # (an empty zone without a sequencer)
+    zones.setdefault("SEQ_ALL", (0, 0, 0, 0))
+    zones.setdefault("SEQ_OUT", (0, 0, 0, 0))
     zones.setdefault("VOL_MASTER", (0, 0, 0, 0))
     sp = [lay.index.get(k, -1) for k in ("seq_on", "seq_play", "seq_rec", "seq_length", "seq_pos", "seq_step_mod",
                                          "seq_div", "seq_timing")]

@@ -13,6 +13,21 @@ the window: 2026-10-29).
   four PAGE LEDs (the page playing, lit red; click one to edit it), LENGTH and RATE (each step's note value). Its corner
   triangle: every setting (sync, free rate, timing, follow swing and the master swing, note reset, restart on trig and
   on hold, transpose mode, one shot, record mode, the factory sequences).
+- **(2026-10-30, offline and the desktop window) OUTPUT and PLAY ALL** on the SEQUENCER module's title strip. OUTPUT
+  (`seq_output`, each Synth its own; also on the module's MORE page; a plain click opens the list) picks which Synths
+  this Synth's sequence plays: OWN SYNTH (the default: as before, so every older sound is unchanged), SYNTH 1, 2 or 3,
+  or SYNTHS 1+2, 1+3, 2+3, 1+2+3 (one pattern layered on several sounds). Each target plays the notes on its own voices
+  (from the shared 16) with its own sound, voice count, TRANSPOSE and OCTAVE, and only while it is ON. Key ranges are
+  ignored for sequenced notes (as on the hardware, the notes go to the Synths inside the instrument, not through the
+  keyboard's zones; so a split never silences a layer you asked for). Chord memory is the sequence's own Synth's (a
+  lane's note becomes its chord first, then goes out). The modulation lanes stay with the sequence's own Synth (they
+  move its sound, not the targets'), and only the step sequencer's notes are routed: the arpeggiator and the
+  generators keep playing their own Synth. A note always ends on the Synths it started on: changing OUTPUT mid-note,
+  switching a target off (its notes let go), STOP, ON off, or the sequence's own Synth switched off never leave a note
+  hanging. Not touched by the randomiser (it is the player's routing, not part of the sound). PLAY ALL (`seq_all`,
+  shared; also on the SETUP page) starts or stops every Synth's sequence together (each Synth on with its sequencer ON).
+  CPU: nothing per sample; a few operations per note (offline bench: OUTPUT 1+2+3 costs the same as three sequences
+  of their own playing those notes).
 - **SEQ** (next to MATRIX/MORE/ANALOG/RANDOM) opens the step editor on the screen; SEQ again switches NOTES / MODS.
 - **Entering notes:** select a step (click its cell), light REC, play the on-screen keys or a MIDI keyboard: each note
   (or chord: keys held together) goes into that step and the selection moves on. Running, with REC lit, notes land on
@@ -140,6 +155,4 @@ change them, and the playing step from the `seq_pos` readout.
 
 ## Not built yet
 
-- OUTPUT to another Synth or all of them [MULTI]: each Synth's sequence plays its own Synth (2026-10-28). Sending it
-  elsewhere needs its notes to go to that Synth's voices instead of `out_on`.
 - The MPC page (Phase 9): the params are ready; editing steps there needs a page design (and the readout's polling).

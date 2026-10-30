@@ -78,6 +78,7 @@ static RECT gen_btn_rect(int which);
 
 static int P_DST = -1, P_SRC = -1;   /* the matrix's destination and source lists (mod1_dst / mod1_src): names, counts */
 static int P_KEY = -1, P_SCALE = -1; /* the Synth's KEY and SCALE (key_root / key_scale; the focus's own through fp) */
+static int P_OUT = -1, P_ALL = -1;   /* (2026-10-30) OUTPUT (seq_output, the focus's own) and PLAY ALL (seq_all, shared) */
 static int param_index(const char *key) {
     for (int i = 0; i < NPARAMS; i++)
         if (!strcmp(PARAMS[i].key, key)) return i;
@@ -102,6 +103,7 @@ const char *seq_message(ed_t *e) { return e->sq.msg[0] && GetTickCount() - e->sq
 void seq_init(ed_t *e) {
     if (P_DST < 0) { P_DST = param_index("mod1_dst"); P_SRC = param_index("mod1_src"); }
     if (P_KEY < 0) { P_KEY = param_index("key_root"); P_SCALE = param_index("key_scale"); }
+    if (P_OUT < 0) { P_OUT = param_index("seq_output"); P_ALL = param_index("seq_all"); }
     for (int c = 0; c < SQ_GEN_SYNTHS; c++) { seqgen_defaults(&e->sq.gen[c]); e->sq.gen_seed[c] = 0; }
     sq_clear(&e->sq.q);
     e->sq.len = 16;
@@ -295,8 +297,19 @@ int seq_hit(ed_t *e, POINT pt) {
     }
     return -1;
 }
+/* (2026-10-30) the SEQUENCER module's title strip: PLAY ALL at its left, OUTPUT at its right, hit as the params
+ * themselves (a plain click toggles PLAY ALL, or opens OUTPUT's list of options) */
+RECT seq_title_rect(int out) { return zone(out ? ZONE_SEQ_OUT : ZONE_SEQ_ALL); }
+int seq_title_param(int i) { return i >= 0 && (i == P_OUT || i == P_ALL); }
 int seq_hit_panel(ed_t *e, POINT pt) {
-    (void)e;
+    for (int k = 0; k < 2; k++) {
+        RECT r = seq_title_rect(k);
+        int i = k ? P_OUT : P_ALL;
+        if (i < 0 || rw(&r) <= 0 || !PtInRect(&r, pt)) continue;
+        e->hit_screen = 1;   /* (as a cell on the screen: a list opens its popup, a switch toggles) */
+        e->hit_rect = r;
+        return i;
+    }
     if (rw(&L.seq_leds) <= 0) return -1;
     for (int p = 0; p < 4; p++) { RECT r = pled_rect(p); if (PtInRect(&r, pt)) return Z_PLED + p; }
     return -1;
@@ -1252,6 +1265,28 @@ void seq_panel_draw(HDC dc, ed_t *e) {
     }
     RECT lr = {L.seq_leds.left, L.seq_leds.bottom - sc(14), L.seq_leds.right, L.seq_leds.bottom};
     txt(dc, lr, "PAGE", font_label, RGB(214, 214, 216), DT_CENTER | DT_VCENTER);
+    /* (2026-10-30) the title strip's PLAY ALL (a black button, lit while on) and OUTPUT (its value on a little glass) */
+    RECT pa = seq_title_rect(0), po = seq_title_rect(1);
+    if (P_ALL >= 0 && rw(&pa) > 0) {
+        int hot = e->hover == P_ALL, bw = sc(18), bh = sc(9);
+        skin_button((float)pa.left + 1, (pa.top + pa.bottom - bh) / 2.0f, (float)bw, (float)bh, SK_BLACK,
+                    option_of(e, P_ALL) == 1 ? SK_ON : hot ? SK_HOT : SK_UP);
+        RECT tr = {pa.left + bw + sc(5), pa.top, pa.right, pa.bottom};
+        txt(dc, tr, "PLAY ALL", font_tiny, hot ? RGB(170, 30, 20) : T_DARK, DT_LEFT | DT_VCENTER);
+    }
+    if (P_OUT >= 0 && rw(&po) > 0) {
+        int hot = e->hover == P_OUT, o = option_of(e, P_OUT), lw = sc(44);
+        RECT tr = {po.left, po.top, po.left + lw, po.bottom}, w = {po.left + lw + sc(4), po.top + 1, po.right, po.bottom - 1};
+        txt(dc, tr, "OUTPUT", font_tiny, hot ? RGB(170, 30, 20) : T_DARK, DT_RIGHT | DT_VCENTER);
+        skin_lcd(w.left, w.top, rw(&w), rh(&w));
+        gfx_frame((float)w.left, (float)w.top, (float)rw(&w), (float)rh(&w), 1.0f, hot ? 0xFFFFFFFF : 0xFF27404E);
+        const char *name = o >= 0 && o < PARAMS[P_OUT].nopts ? PARAMS[P_OUT].opts[o] : "?";
+        char v[24];   /* "OWN SYNTH", "SYNTH 2", "SYNTHS 1+2" */
+        if (o == 0) snprintf(v, sizeof v, "OWN SYNTH");
+        else if (!strncmp(name, "Synth ", 6)) snprintf(v, sizeof v, "SYNTH %s", name + 6);
+        else snprintf(v, sizeof v, "SYNTHS %s", name);
+        txt(dc, w, v, font_tiny, hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_END_ELLIPSIS);
+    }
     skin_bind(NULL);
     gfx_end();
 }
