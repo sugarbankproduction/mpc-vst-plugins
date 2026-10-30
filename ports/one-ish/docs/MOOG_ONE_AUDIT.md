@@ -453,7 +453,8 @@ user patch files (2026-10-27, offline).
 ## 17. Sequencer (p82-95)
 
 Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everything but OUTPUT and multi-Synth starts
-[MULTI] (2026-10-29: RTZ, editing every note of a step at once, the 15e step-mod-only destinations and performance notes since).
+[MULTI] (2026-10-29: RTZ, editing every note of a step at once, the 15e step-mod-only destinations and performance notes since;
+multi-Synth starts 2026-10-28 as PLAY ALL; OUTPUT 2026-10-30).
 
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
@@ -486,7 +487,7 @@ Built 2026-10-27 (offline and the desktop window; `docs/SEQUENCER.md`): everythi
 | TRANSPOSE MODE | Start Key, Interval (from middle C) (p93) | Have | `seq_tr_mode` (2026-10-27, offline) | - | none |
 | ONE SHOT | off/on (p94) | Have | `seq_one_shot` (PLAY goes off at the end) (2026-10-27, offline) | - | none |
 | RECORDING MODE | Replace, Overdub, Focused (p94) | Have | `seq_rec_mode`; step recording stopped, real time running (gate as held) (2026-10-27, offline) | - | none |
-| OUTPUT: which Synth(s) the sequence plays [MULTI] | Synth 1/2/3, All Synths (p94) | Missing | - | S | none |
+| OUTPUT: which Synth(s) the sequence plays [MULTI] | Synth 1/2/3, All Synths (p94) | Have | `seq_output` per Synth: Own, Synth 1/2/3, 1+2, 1+3, 2+3, 1+2+3 (All); the targets' own sounds, transpose and octave, while on; key ranges ignored; notes end where they started; the SEQUENCER title strip and its MORE page (2026-10-30, offline and the desktop window) | - | none |
 | Start several Synths' sequences together (Panel Focus multi-select) [MULTI] | p83 | Have | PLAY ALL (`seq_all`, the SETUP page): every Synth that is on with its sequencer ON starts (or stops) on the same sample (2026-10-28, offline and the desktop window) | - | none |
 | CLEAR SEQUENCE, DUPLICATE X-Y [UI] | p94 | Have | the step editor's CLEAR (asks) and DUP (2026-10-27, offline) | - | none |
 | LOAD / SAVE sequences with names, notes, sort by name/date [UI] | p95 | Have | `.oneseq` files from the step editor (the Windows file dialog sorts by name or date); SAVE asks for performance notes, kept in the file and shown on LOAD (2026-10-29, the desktop window) | - | none |
@@ -856,14 +857,14 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
 | 15. Modulation (p67-77) | 80 | 3 | 5 | 2 | 2 |
 | 16. Arpeggiator (p78-81) | 17 | 0 | 0 | 0 | 0 |
-| 17. Sequencer (p82-95) | 32 | 0 | 1 | 0 | 0 |
+| 17. Sequencer (p82-95) | 33 | 0 | 0 | 0 | 0 |
 | 18. Effects (p96-111) | 87 | 0 | 1 | 0 | 1 |
 | 19. Left Hand Controller (p17-18, p112-117) | 17 | 1 | 1 | 1 | 0 |
 | 20. Browser, presets and timbres (p118-121) | 7 | 0 | 0 | 0 | 0 |
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
 | 22. Settings (p124-139) | 15 | 2 | 14 | 11 | 1 |
 | 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
-| **Total** | **423** | **15** | **37** | **27** | **4** |
+| **Total** | **424** | **15** | **36** | **27** | **4** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.

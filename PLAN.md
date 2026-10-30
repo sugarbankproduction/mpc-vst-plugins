@@ -237,7 +237,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      2026-10-29): Synths 2 and 3 off cost nothing measurable (1, 4, 8 voices 9.40, 33.91, 67.20 us against 9.15, 33.69,
      66.07 before: within 3%); 16 voices 135 us (8.4 a voice); 16 voices of a busy patch with a chorus 124 us in Synth 1
      alone, 134 us shared 6/5/5 by three Synths with a chorus each (+8%: two more synth effects).
-     Left (solo and the M | S buttons done 2026-10-29): per-Synth outputs, sequencer OUTPUT to another Synth, the sustain pedal's target, a range set by
+     Left (solo and the M | S buttons done 2026-10-29; sequencer OUTPUT 2026-10-30, item 27): per-Synth outputs, the sustain pedal's target, a range set by
      pressing a key, NRPN; three Synths on the MPC is the owner's later call (`ONEISH_SYNTHS`).
   13. The library (audit packages 5, 12a, 12b). Done 2026-10-29 (offline and the desktop window; `desktop/library.c`,
      `docs/PATCHES.md`): UNDO / REDO of any edit from the window (knobs, buttons, lists, matrix, SETUP, step edits, the
@@ -456,6 +456,20 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        page is no longer made.
      load_test reads the help line now (`help_line()`, HT_HELP) and checks every console button and controller part has
      help of its own. No engine change, no new params, nothing in the audio path. Left: the MPC page has none of this.
+  27. (2026-10-30) The sequencer's OUTPUT (owner: "one sequence plays all three synths"; Moog One manual p94). Done
+     2026-10-30 (offline and the desktop window; `src/stepseq_run.h`, `test/multi_check.c` `seq_output_check`, load_test
+     `seq_output_ui_test`; `docs/SEQUENCER.md`). Each Synth's `seq_output` (Own, Synth 1, 2, 3, 1+2, 1+3, 2+3, 1+2+3;
+     Own first and the default, so old sounds are unchanged: golden check) chooses the Synths its step sequencer's
+     notes play: each on its own voices (the shared 16), its own sound, poly count, transpose and octave, only while
+     on; key ranges ignored (the notes go inside the instrument, not through the keyboard zones). Chord memory and the
+     modulation lanes stay the sequence's own Synth's; the arp and the generators are not routed. Each lane remembers
+     the Synths its notes went to, so note-offs reach them whatever happens (OUTPUT changed mid-note, a target or the
+     sequence's own Synth switched off, STOP, All Notes Off): offline, 40 changes of OUTPUT over ratchets and ties leave
+     no voice sounding. The randomiser never changes it. Window: OUTPUT (a plain click opens the list) and PLAY ALL
+     (`seq_all`, until now only on the SETUP page) on the SEQUENCER module's title strip, OUTPUT also on its MORE page.
+     CPU: nothing per sample, a few operations per note; offline bench (O2): 1+2+3 vs three sequences of their own
+     playing the same notes (see the bench line in `test/run.sh`). Left: the MPC page; `seq_output` is not on the MPC
+     params screen's SEQUENCER section yet (Phase 9).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
