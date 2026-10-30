@@ -11,6 +11,7 @@
 enum { PATCH_NAME_MAX = 32, PATCH_STATE_MAX = VST2_CHUNK_MAX };   /* a name's characters; the engine's state and the chunk */
 enum { SCR_PATCHES = -10 };                             /* the centre screen showing the patch list (see SCR_MATRIX) */
 enum { Z_PATCH_ACT = 100300, Z_PATCH_ITEM = 200000 };   /* hit codes: an action button (+ PA_), a list entry (+ pos) */
+enum { Z_PATCH_CAT = 100450, PATCH_CATS = 32 };          /* (2026-10-30) a category tab (+ k; 0 is ALL) */
 /* the library's pages (library.c): performance SET, ALL SETS, ARRANGE (sets), SNAPSHOTS, TAGS; and their hit codes:
  * the page tabs, the buttons on each page, the console's COMPARE and SNAPSHOT, the list entries */
 enum { SCR_SET = -12, SCR_SETS = -13, SCR_ARRANGE = -14, SCR_SNAPS = -15, SCR_TAGS = -16 };
@@ -32,7 +33,8 @@ enum { PT_SAVE = 1, PT_SAVE_AS, PT_RENAME, PT_DELETE, PT_IMPORT, PT_EXPORT, PT_L
  * LT_ZONE: where hit code opt is on the window now, (x | y << 16) in pixels, or -1 */
 #define TEST_LIB 0x4F314C42
 enum { LT_UNDO = 1, LT_REDO, LT_STEPS, LT_COMPARING, LT_SNAPS, LT_AUTOS, LT_SNAP_INFO, LT_SNAP_SEL, LT_ZONE, LT_SCREEN,
-       LT_META, LT_VIEW, LT_SETS, LT_SLOT, LT_SET_INFO, LT_IDLE, LT_TAGS, LT_HOME, LT_LABEL, LT_NOTES_SHOWN, LT_TICK, LT_FORGET };
+       LT_META, LT_VIEW, LT_SETS, LT_SLOT, LT_SET_INFO, LT_IDLE, LT_TAGS, LT_HOME, LT_LABEL, LT_NOTES_SHOWN, LT_TICK, LT_FORGET,
+       LT_CATS /* (2026-10-30) "sub/subs|ALL=n;Pad=n;..." the PATCHES page's page and its category tabs */ };
 
 #ifdef NPARAMS   /* the editor (params.h); load_test only needs the numbers above */
 typedef struct {

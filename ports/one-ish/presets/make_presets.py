@@ -342,26 +342,73 @@ PATCHES += [
 ]
 
 
+# the browser's tags of the presets above (TYPE, CATEGORY, MOOD; 2026-10-30: here instead of desktop/library.c, which
+# now reads every preset's from desktop/factory_tags.h, written below with the banks'). Not listed: Single, untagged.
+TAGS = {
+    "Fat Bass": ("Single", "Bass", "Dark"), "Pluck Bass": ("Single", "Bass", "Clean"),
+    "Acid Line": ("Single", "Bass", "Aggressive"), "Sync Lead": ("Single", "Lead", "Aggressive"),
+    "Brass Stack": ("Single", "Brass", "Bright"), "Warm Pad": ("Single", "Pad", "Warm"),
+    "Glass Keys": ("Single", "Keys", "Bright"), "Hollow Strings": ("Single", "Strings", "Soft"),
+    "Wobble Bass": ("Single", "Bass", "Aggressive"), "Self-Osc Whistle": ("Single", "FX", "Clean"),
+    "Noise Hat": ("Single", "Drum", "Bright"), "Notch Sweep": ("Single", "FX", "Evolving"),
+    "FM Bell": ("Single", "Bells", "Bright"), "Ring Clang": ("Single", "Bells", "Dirty"),
+    "PWM Strings": ("Single", "Strings", "Warm"), "Angle Lead": ("Single", "Lead", "Bright"),
+    "Unison Lead": ("Single", "Lead", "Aggressive"), "Vowel Pair": ("Single", "Pad", "Evolving"),
+    "FM Growl": ("Single", "Bass", "Dirty"), "Wind Spread": ("Single", "FX", "Soft"),
+    "Pulse Pad": ("Single", "Pad", "Warm"), "Morph Motion": ("Single", "Pad", "Evolving"),
+    "Ensemble Strings": ("Single", "Strings", "Warm"), "Tape Echo Lead": ("Single", "Lead", "Warm"),
+    "Crushed Keys": ("Single", "Keys", "Dirty"), "Vintage Poly Pad": ("Single", "Pad", "Warm"),
+    "Arp Cascade": ("Single", "Arp", "Bright"), "Euclid Turing Bells": ("Single", "Sequence", "Evolving"),
+    "Macro String": ("Single", "Strings", "Clean"), "Macro Wave Pad": ("Single", "Pad", "Evolving"),
+    "Macro FM Keys": ("Single", "Keys", "Clean"), "Modal Bells": ("Single", "Bells", "Soft"),
+    "Grain Cloud": ("Single", "FX", "Evolving"), "Tape Bass": ("Single", "Bass", "Warm"),
+    "Seq Bass Line": ("Single", "Sequence", "Dark"), "Seq Chord Stabs": ("Single", "Sequence", "Bright"),
+    "Split Bass + Lead": ("Split", "Lead", "Bright"), "Layer Pad + Pluck": ("Layer", "Pad", "Warm"),
+    "Split Bass, Pad + Bells": ("Split", "Pad", "Soft"),
+}
+
+
 def banks():   # (2026-10-30) the factory banks in presets/banks/bank_*.py, each BANK = [(name, values, tags)]
     import glob
     import importlib
     out = []
     for f in sorted(glob.glob(os.path.join(HERE, "banks", "bank_*.py"))):
-        mod = importlib.import_module("banks." + os.path.splitext(os.path.basename(f))[0])
-        out += list(mod.BANK)
+        stem = os.path.splitext(os.path.basename(f))[0]
+        mod = importlib.import_module("banks." + stem)
+        out += [(stem[5:].upper(), n, v, t) for n, v, t in mod.BANK]   # (the bank's letter first)
     return out
+
+
+def write_tags_h(entries, tags, bank_of):   # desktop/factory_tags.h: every preset's tags, in program order
+    def c(s):
+        return json.dumps(s, ensure_ascii=True)   # (a C string for plain ASCII names and tags)
+    rows = []
+    for name, _ in entries:
+        t = tags.get(name, {})
+        rows.append("    {%s, %s, %s, %s, %s}," % (c(name), c(t.get("type", "Single")), c(t.get("category", "")),
+                                                   c(t.get("mood", "")), c(bank_of.get(name, ""))))
+    with open(os.path.join(HERE, "..", "desktop", "factory_tags.h"), "w", encoding="utf-8", newline="\n") as f:
+        f.write("/* Written by presets/make_presets.py (do not edit): the factory presets' browser tags in program order (as\n"
+                " * presets.json). bank: the factory bank it came from (presets/banks/bank_<x>.py), \"\" for the first ones.\n"
+                " * desktop/library.c reads it; test/bank_check.c finds a bank's presets by it. */\n"
+                "#pragma once\n"
+                "typedef struct { const char *name, *type, *cat, *mood, *bank; } factory_tag_t;\n"
+                "static const factory_tag_t FACTORY_TAG[] = {\n")
+        f.write("\n".join(rows) + "\n};\n#define NFACTORY_TAGS %d\n" % len(rows))
 
 
 def main():
     by_key = {p["key"]: p for p in PARAMS}
     presets = []
-    tags = {}
+    tags = {n: {"type": t[0], "category": t[1], "mood": t[2]} for n, t in TAGS.items()}
+    bank_of = {}
     entries = list(PATCHES)
-    for name, pv, tg in banks():
+    for bank, name, pv, tg in banks():
         if any(n == name for n, _ in entries):
             raise SystemExit("%s: two presets with one name" % name)
         entries.append((name, pv))
         tags[name] = tg
+        bank_of[name] = bank
     for name, pv in entries:
         for k in pv:
             if k not in by_key:
@@ -388,7 +435,8 @@ def main():
         f.write('{\n "presets": [\n')
         f.write(",\n".join("  " + json.dumps(pr, ensure_ascii=False) for pr in presets))
         f.write("\n ]\n}\n")
-    print("presets.json: %d presets x %d parameters" % (len(presets), len(PARAMS)))
+    write_tags_h(entries, tags, bank_of)
+    print("presets.json: %d presets x %d parameters (and desktop/factory_tags.h)" % (len(presets), len(PARAMS)))
 
 
 if __name__ == "__main__":

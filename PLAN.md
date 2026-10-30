@@ -514,6 +514,16 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      A click on a tile opens its page in that Synth. The tiles repaint every third tick of the rate timer (about 22 a
      second) and only while the overview shows. No engine change, no new params, nothing in the audio path, no CPU cost
      there. Left: the MPC page has none of this.
+  30. (2026-10-30) Factory bank B and browsing by category. Done 2026-10-30 (offline and the desktop window): 128
+     original presets in `presets/banks/bank_b.py` (pads 28, strings 16, bells 12, effects 14, arps 12, sequences 12,
+     drums 8, performances 14, generative 12), most played from aftertouch, the mod wheel, velocity, Pad X / Y and the
+     ribbon; `test/bank_check.c` (`bank_b_checks`, run by `test/run.sh`) plays each one: no peak over -1 dBFS, none
+     silent, no NaN, every one within 6 dB of the bank's median loudness (a TRIM table in the bank evens them out), the
+     generative ones make notes (ten by themselves, two from a held chord), and its CPU on the PC (about 52 us per
+     128-frame block on average, 1.8% of a block); `test/out/bank_b_demo.wav` to listen to. The factory presets' tags
+     now come from presets.json (`make_presets.py` writes `desktop/factory_tags.h`; the first 40's tags moved there
+     from library.c). The PATCHES page: category tabs (ALL and every category with its count, plain clicks), 8 patches
+     a column, pages by the arrows or the wheel. Left: listening on Carla, the MPC (the generative presets' CPU there).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
