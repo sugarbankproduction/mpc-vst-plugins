@@ -514,6 +514,55 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      A click on a tile opens its page in that Synth. The tiles repaint every third tick of the rate timer (about 22 a
      second) and only while the overview shows. No engine change, no new params, nothing in the audio path, no CPU cost
      there. Left: the MPC page has none of this.
+  30. (2026-10-30) GRAINS, Auto CTRLs that play, and LINK on the X/Y pad (owner's requests). Done 2026-10-30 (offline
+     and the desktop window; `src/fx/grains.h`, `test/grains_check.c` (offline_check `grains`), load_test
+     `pad_link_test`).
+     - GRAINS: a new SYNTH EFFECT type and MASTER FX 1 / 2 type (last in each list), an original granular design, kept
+       apart from GRANULAR (Mutable Instruments Clouds): a 5.9 s recording (mono, in the slot's own memory: the delay
+       lines', no new memory but a 64-grain pool, about 3 KB), FREEZE that holds all of it, POSITION (0 .. 5 s back),
+       SIZE (10 .. 500 ms), DENSITY (1 .. 150 grains a second), PITCH (+-48 st, the master slots' PITCH A in cents),
+       SPRAY (up to 2 s more back at random), PITCH RANDOM (up to +-12 st), PITCH QUANTISE (Free, Semitones, Octaves,
+       Oct + 5ths), REVERSE (the chance a grain plays backwards), STEREO (SPREAD), ENVELOPE (TEXTURE: 0 near-square,
+       50% Hann, 100% percussive; edges never under 1.5 ms), FEEDBACK (the grains back into the recording, a block
+       later, soft-limited, at most 90%), MIX. Hermite-interpolated reads, every grain kept inside the recorded audio
+       whatever FREEZE does (no crossing the write point), level by the expected overlap. The synth effect reuses the
+       Clouds-era keys (`modfx_pos`, `size`, `density`, `texture`, `pitch`, `freeze`, `spread`, `fb`) and adds
+       `modfx_spray`, `modfx_prand`, `modfx_reverse`, `modfx_gquant`; each master slot `dly_` / `rev_` `gpos`, `gdens`,
+       `genv`, `gspray`, `gprand`, `greverse`, `gquant` (SIZE, PITCH A, SPREAD, FEEDBACK, HOLD shared with the other
+       types). Matrix destinations: the reused keys already were; Spray, Pitch Random, Reverse and each slot's six new
+       ones are 15 new destinations at the very end of the list (`MD_FX2_FIRST`, `md_fxk()` in src/modmatrix.h: no
+       older destination moved). CTRL 1 / CTRL 2 can target Spray, Pitch Random, Reverse. FREEZE: a button on the
+       SYNTH EFFECT panel (a plain click; GRANULAR's too). RANDOMISE: WILD's any-type pick may choose GRAINS (its new
+       controls get no randomiser rule, so they stay as they are, at first their defaults: a lush cloud), and WILD's
+       matrix rows and lanes draw from the destinations before GRAINS' 15 (so their draws are as before); WILD 0
+       draws exactly as before. Found: src/randomize.h's rule table has 262 entries but `rnd_ctx_t.rule` is an
+       `unsigned char` (255 = no rule), so its last seven rules (the sequencer's, from `seq_note_trig` on) never
+       apply; not changed here (widening it changes what RANDOMISE does), the randomiser's owner to decide. Offline: finite and bounded
+       (largest 7.0) over 64 extreme settings, no denormals; FREEZE holds (-15.2 / -15.1 dB at 2 and 5 s, unfrozen
+       silence); mix 0 exactly dry; PITCH +12 turns 220 Hz into 442 Hz; reverse as loud, another waveform; type
+       changes mid-note (chorus, grains, delay, granular) without a click; state round trip. CPU on the PC (O2, per
+       128-frame block): 17.0 us at the defaults (183 ms grains, 74 a second), 77.3 us at full density (all 64 grains,
+       99th percentile 121 us); MPC: not measured yet (`tools/bench.sh`); at 4x the PC, full density would be about
+       310 us of the 2902 us block.
+     - Auto CTRL 1 / CTRL 2 (owner: "the knobs on the front don't always seem to do much"): each type's two most
+       audible controls, never MIX (it has its own knob): delays TIME and FEEDBACK, choruses RATE and DEPTH, flangers
+       and phasers RATE and FEEDBACK, bit crusher BITS and SAMPLE RATE, resonator CUTOFF MID and RESONANCE, modal
+       resonator PITCH and DECAY, granular POSITION and DENSITY, tape colour DRIVE and FLUTTER, density DRIVE and LOW
+       CUT, console DRIVE and GAIN, vocoders TONE and SIBILANCE, grains SIZE and DENSITY. The panel writes the target
+       under each knob (TIME / FDBK ...) instead of CTRL 1 / CTRL 2. Old sounds: every state now starts "v=1;ctl=2"
+       (src/synths.h STATE_CTL; patch files keep the line); a state without it is older, and a CTRL on Auto that does
+       something there (its knob off centre, a matrix slot, the ribbon or a sequencer lane on it) gets Auto's old
+       target written in (`FX_AUTO_CTRL_V1`, engine.c `fx_auto_compat`), so it sounds as it did (golden check). Not
+       covered: host automation of a CTRL knob in an old project whose saved value was 0. Offline: all 25 types' Auto
+       CTRLs move the sound (centre against either end), none is MIX.
+     - LINK on the X/Y pad: before, the pad sent CC 2 / CC 3 / CC 18 on the window's MIDI channel, so with MIDI
+       CHANNEL Omni it already reached every Synth, on a fixed channel only the Synths there, and with Per Synth
+       channels only the Synth in focus. `link_pad` (shared, saved with the sound, as the other LINKs): lit, those
+       three CCs from anywhere (the window, or a controller) reach all three Synths whatever their channels, so Pad X,
+       Pad Y and Pad Gate move together in each (each Synth keeps its own POLARITY and HOLD). Engine-side (src/synths.h
+       midi) so a hardware pad and the MPC follow it too. The LINK button sits beside the pad's name (a plain click);
+       also on the CONTROLLERS page. Offline and load_test: off, Synth 1 alone; lit, all three, let go in all three.
+     Left: an MPC page for GRAINS' controls; an on-device bench.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
