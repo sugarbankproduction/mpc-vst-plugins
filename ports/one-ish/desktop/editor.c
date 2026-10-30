@@ -337,6 +337,8 @@ static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control
         InflateRect(&r, sc(16), sc(6));
         invalidate(e, &r);
     }
+    if (seq_title_param(base_of(i)))   /* (2026-10-30) the SEQUENCER title strip's PLAY ALL and OUTPUT */
+        for (int k = 0; k < 2; k++) { RECT t = seq_title_rect(k); InflateRect(&t, sc(2), sc(2)); invalidate(e, &t); }
     for (int k = 0; k < NHUB; k++)   /* a generator's ON: GEN OFF's name (GEN BACK) may change */
         if (HUB[k].on == i) { RECT g = L.gen_off; InflateRect(&g, sc(12), sc(4)); invalidate(e, &g); }
     if (!IsRectEmpty(&L.ctl[i])) {   /* on the panel: the control, its label and value (they spill a little) */

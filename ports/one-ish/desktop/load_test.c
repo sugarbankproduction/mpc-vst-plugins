@@ -2694,8 +2694,63 @@ static void zone_help_test(AEffect *fx, HWND child, float s) {
     check(n == 0, what);
 }
 
+/* (2026-10-30) a popup menu's item picked with the keyboard (up to 5 s for the menu to show): `downs` presses of Down
+ * (the first selects the first item), then Return */
+typedef struct { int downs; } menu_answer_t;
+static DWORD WINAPI menu_answer(void *arg) {
+    const menu_answer_t *a = arg;
+    for (int t = 0; t < 500; t++, Sleep(10)) {
+        HWND m = FindWindowA("#32768", NULL);
+        if (!m || !IsWindowVisible(m)) continue;
+        Sleep(50);
+        for (int k = 0; k < a->downs; k++) PostMessageA(m, WM_KEYDOWN, VK_DOWN, 0);
+        PostMessageA(m, WM_KEYDOWN, VK_RETURN, 0);
+        return 1;
+    }
+    return 0;
+}
+static int click_menu(HWND child, float s, const short z[4], int downs) {
+    menu_answer_t a = {downs};
+    HANDLE th = CreateThread(NULL, 0, menu_answer, &a, 0, NULL);
+    click_zone(child, s, z);
+    WaitForSingleObject(th, 6000);
+    DWORD found = 0;
+    GetExitCodeThread(th, &found);
+    CloseHandle(th);
+    return (int)found;
+}
+/* the SEQUENCER title strip: OUTPUT (a plain click opens its list) and PLAY ALL (a plain click switches it) */
+static void seq_output_ui_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    float out0 = getkey(fx, "seq_output"), all0 = getkey(fx, "seq_all");
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    hover_zone(child, s, ZONE_SEQ_OUT);
+    help_fresh(fx);
+    int help_out = strstr(hbuf, "OUTPUT") != NULL;
+    hover_zone(child, s, ZONE_SEQ_ALL);
+    help_fresh(fx);
+    int help_all = strstr(hbuf, "PLAY ALL") != NULL;
+    int menu = click_menu(child, s, ZONE_SEQ_OUT, 8);   /* the 8th item: 1+2+3 */
+    float o = getkey(fx, "seq_output");
+    snprintf(what, sizeof what, "SEQUENCER's OUTPUT: a plain click opens its list (%s) and 1+2+3 picked sets seq_output "
+             "(%.3f, want 1); its help (%d) and PLAY ALL's (%d) on the help line", menu ? "shown" : "NOT shown", o,
+             help_out, help_all);
+    check(menu && fabsf(o - 1.0f) < 1e-3f && help_out && help_all, what);
+    if (bmp) shot(child, w, h, bmp, "_seq_output");
+    click_zone(child, s, ZONE_SEQ_ALL);
+    float a1 = getkey(fx, "seq_all");
+    click_zone(child, s, ZONE_SEQ_ALL);
+    float a2 = getkey(fx, "seq_all");
+    snprintf(what, sizeof what, "SEQUENCER's PLAY ALL button: a click switches seq_all on (%.0f), another off (%.0f)", a1, a2);
+    check(a1 > 0.5f && a2 < 0.5f, what);
+    setkey(fx, "seq_output", out0);
+    setkey(fx, "seq_all", all0);
+    hover_at(child, s, 0, 0);
+}
+
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     zone_help_test(fx, child, s);
+    seq_output_ui_test(fx, child, s, bmp, w, h);
     oct_panic_test(fx, child, s);
     together_test(fx, child, s, bmp, w, h);
     undo_buttons_test(fx, child, s);

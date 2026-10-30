@@ -352,6 +352,8 @@ void seq_open(ed_t *e, int page);
 int seq_zone(int z);
 int seq_hit(ed_t *e, POINT pt);
 int seq_hit_panel(ed_t *e, POINT pt);
+RECT seq_title_rect(int out);   /* (2026-10-30) the SEQUENCER title strip's PLAY ALL (0) and OUTPUT (1) */
+int seq_title_param(int i);     /* i (a panel index) is one of them */
 int seq_press(ed_t *e, int z, int x, int y, int shift);
 void seq_drag(ed_t *e, int x, int y, int shift);
 void seq_release(ed_t *e);
