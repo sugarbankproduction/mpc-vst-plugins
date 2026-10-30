@@ -32,6 +32,8 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
   - IMPORT: picks a `.oneish` file anywhere (from a friend, a backup) and copies it into your patches (a patch with
     the same name: as DUPLICATE NAMES on SETTINGS > LIBRARY says, 2026-10-30; Ask by default).
   - EXPORT: writes the sound to a `.oneish` file wherever you choose.
+  - IMPORT .M1P and REPORT (2026-10-31): Moog One preset files you have, converted into user patches, and the report of
+    what converted (below, "Importing Moog One presets").
   - INTO S1/2/3 (the number is the Synth in focus): while lit, the preset or patch you click loads into that Synth
     only; it keeps its ON, MIDI channel and key range, and the other Synths and the master effects stay as they are.
     From a patch or preset with several Synths, its Synth 1 is loaded. Click INTO again to go back to loading whole
@@ -182,6 +184,51 @@ Code: `desktop/parts.c`; tested by `desktop/parts_test.c` inside load_test. Ever
   folder; `ONEISH_LIB_DIR` overrides it). Switching keeps the sound playing; a user patch of the old library then shows
   as `-  name *` (SAVE AS keeps it in the new one). The settings file keeps `library=<name>` and `import_dup=<0-3>`;
   RESTORE DEFAULTS leaves both. A library that is gone when Moo Won starts: Default.
+
+## Importing Moog One presets (2026-10-31, the desktop window)
+
+Moo Won ships with **no** Moog presets. If you have Moog One preset files (`.m1p`) of your own (free community
+patches you downloaded, packs you bought, your own exports from the instrument), Moo Won converts them on your PC into
+user patches. Nothing of them goes into Moo Won itself.
+
+- **IMPORT .M1P** (PATCHES page, the button row): a file dialog opens in `Documents\Moog One presets` when that folder
+  exists (otherwise where Windows last was). Go into a subfolder if your files are in one; pick one file, several
+  (Ctrl+click), or all of them (Ctrl+A), then Open. Each preset becomes a user patch in the **library in use** (SETTINGS
+  > LIBRARY; make a new empty one first to keep the imports apart, e.g. "Moog One imports").
+- Each patch is named after the preset (its own name inside the file, else the file's), tagged **GROUP Imported** with
+  the preset's TYPE, CATEGORY and MOOD (e.g. Brass, Energetic), and its comment and group in the notes. The Synths'
+  names come along. A same-named patch: as DUPLICATE NAMES (SETTINGS > LIBRARY) says (Ask, Overwrite, Auto Rename,
+  Ignore).
+- **Level check:** each converted sound is played once (a four-note chord) in a separate, silent copy of the engine. If
+  it peaks over -1 dBFS its Volume is turned down (towards -4 dBFS); a sound that plays silent is reported. The engine
+  you are playing is not touched, and nothing of this runs in the audio path (about 0.15 s a file).
+- **The message line** says how many imported and how many settings mapped. **REPORT** (next to IMPORT .M1P) opens
+  `Import report.txt` beside your patches: for every file, whether it imported (and why not), each setting that
+  mapped and what it became, the ones marked "a guess: check by ear", and every setting Moo Won has no equivalent for
+  yet, summed up by part of the instrument. Each import replaces the report.
+- **What converts** (2026-10-31, checked on 47 presets of the owner's: all imported, none silent, 11 turned down):
+  the three Synths and whether each is on; oscillators (wave, octave, frequency, beat, wave angle, pulse width, sync,
+  key tracking, bend offsets), FM, ring mod source; the mixer (levels, wave / pulse mix, which filter each source
+  feeds), the noise colours and noise envelope; the ladder (cutoff, resonance, LP / HP, slope, envelope, LFO and key
+  amounts, filter FM) and the SVF pair (cutoff, resonance, mode, series / parallel, amounts), filter routing and the
+  SVF / ladder mix, link cutoff; all three envelopes (times in seconds, sustain, delay, hold, curves, velocity, loop,
+  latch, sync, multi trigger, reset); the four LFOs (rate in Hz with the right RANGE, wave, sync, polarity,
+  variation, phase, reset); vibrato, pitch envelope, angle and pulse-width LFO amounts; glide; unison count and
+  detune; voices and mono; note priority and stealing; key range; pitch bend; volume, pan, spread; the effect sends;
+  the arpeggiator's on, pattern, direction, division, octaves, gate, sync; the Synth effect's type, on and mix; the two
+  master effects' types and on; and the modulation matrix (source, destination, amount, the controller as VIA,
+  transform, mute) where source and destination have an equivalent.
+- **What doesn't (yet):** the sequencer's steps, the effects' own controls (only their type, on and mix), LFO and
+  envelope sync divisions, LFO delay / fades / smoothing, the SVF pair's spacing, unison pitch spread, MIDI, CV and
+  pedal setups, the chord memory, the tempo, and a few switches whose meaning isn't known. They are listed in the
+  report, never guessed.
+- **How sure:** the key names of the oscillators, mixer and envelopes are publicly documented; the rest were worked out
+  from the value ranges in the owner's preset files (e.g. cutoffs are MIDI note numbers, times are seconds, LFO rates
+  Hz). Where the Moog One's scale isn't known (resonance, amounts, levels, curves) values are spread linearly, so
+  sounds come close rather than exact: treat an import as a starting point and adjust by ear. The tables are in
+  `desktop/m1p_map.h`, with how to add a row; the converter is `desktop/m1p.c`, the button and report
+  `desktop/m1p_import.c`. Tests: `test/m1p_check.c` (offline) and `desktop/m1p_test.c` (load_test) on our own synthetic
+  files in `test/m1p/` (made-up values; no Moog preset is in the project).
 
 ## Where they live
 

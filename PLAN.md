@@ -939,6 +939,31 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      `_cables_repatch`, `_cables_full`. Nothing in the audio path changes. Left: VIA as a second thin cable (VIA shows
      in the box and its list only); dragging a cable to a generator source that no row uses yet (GENERATIVE's DEST
      does it); hover highlighting of a whole cable; the MPC page.
+  44. (2026-10-31) IMPORT .M1P: Moog One preset files into user patches (owner's decision 2026-10-31: Moo Won ships no
+     Moog presets; the owner downloads or buys .m1p files and Moo Won converts them on his PC). Done 2026-10-31 (the
+     desktop window; `desktop/m1p.c` the converter, `desktop/m1p_map.h` its tables, `desktop/m1p_import.c` the button,
+     the dialog and the report; `docs/PATCHES.md` "Importing Moog One presets"). Every one a plain click:
+     - IMPORT .M1P on the PATCHES page: a file dialog (opens in `Documents\Moog One presets` when it exists; one, many
+       or Ctrl+A all files), each preset a user patch in the library in use, named after the preset, GROUP Imported with
+       its TYPE, CATEGORY, MOOD, the Synths' names and its comment in the notes; DUPLICATE NAMES as for IMPORT.
+     - The format, as read: plain text, "key value" a line (numbers, true / false, quoted words, lists). The oscillator,
+       mixer and envelope keys are publicly documented; the rest was worked out from the value ranges of 47 files the
+       owner downloaded (read only, never copied into the project): cutoffs are MIDI note numbers, times seconds, LFO
+       rates Hz, oscillator frequency semitones. About 560 settings a preset convert (the Synths and their on/off,
+       oscillators, mixer, noise, both filters and their routing, envelopes, LFOs, the panel's mod amounts, glide,
+       unison, voices, key range, bend, the arp's main settings, the effects' types, the matrix with VIA and
+       transforms); the sequencer, the effects' controls, sync divisions, CV / MIDI setups are listed in the report,
+       not guessed. Rows the files don't settle are marked "a guess: check by ear" in the report.
+     - Level check: each sound played once (a chord) in a separate engine instance on the window's thread; over -1
+       dBFS, Volume down towards -4 dBFS (up to four tries); silence reported. About 0.15 s a file on the PC.
+     - REPORT opens `Import report.txt` beside the patches; the message line has the summary.
+     The owner's 47 files: all imported, none silent, 11 turned down; put in the user library "Moog One imports"
+     (SETTINGS > LIBRARY to switch to it). Tests (offline): `test/m1p_check.c` on our own synthetic files in `test/m1p/`
+     (every kind of conversion, the matrix, the labels, unknown keys reported, empty / other text / binary / too big /
+     nothing known, the level trim); load_test `m1p_tests`: IMPORT .M1P and REPORT clicked with the dialog bypassed
+     (TEST_PATCH PT_M1P_PICK), the patches, tags, sound, message, report, AUTO RENAME and IGNORE. Nothing in the audio
+     path. Left: the sequences, the effects' own controls and sync divisions (their scales need more files to read),
+     importing a whole folder from the window (the dialog's Ctrl+A does a folder at a time).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
