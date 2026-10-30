@@ -3129,10 +3129,27 @@ static void zone_help_test(AEffect *fx, HWND child, float s) {
 /* (2026-10-30) a popup menu's item picked with the keyboard (up to 5 s for the menu to show): `downs` presses of Down
  * (the first selects the first item), then Return */
 typedef struct { int downs; } menu_answer_t;
+/* (2026-10-30) this process's own popup menu: another test run on the same desktop (a parallel build) may have one
+ * open too, and FindWindow would hand back that one */
+static BOOL CALLBACK own_menu_cb(HWND w, LPARAM out) {
+    char cls[16];
+    DWORD pid = 0;
+    GetWindowThreadProcessId(w, &pid);
+    if (pid == GetCurrentProcessId() && GetClassNameA(w, cls, sizeof cls) && !strcmp(cls, "#32768") && IsWindowVisible(w)) {
+        *(HWND *)out = w;
+        return FALSE;
+    }
+    return TRUE;
+}
+static HWND own_menu(void) {
+    HWND m = NULL;
+    EnumWindows(own_menu_cb, (LPARAM)&m);
+    return m;
+}
 static DWORD WINAPI menu_answer(void *arg) {
     const menu_answer_t *a = arg;
     for (int t = 0; t < 500; t++, Sleep(10)) {
-        HWND m = FindWindowA("#32768", NULL);
+        HWND m = own_menu();
         if (!m || !IsWindowVisible(m)) continue;
         Sleep(200);   /* (the menu settles first; keys posted at once to a busy PC's menu were lost now and then) */
         for (int k = 0; k < a->downs; k++, Sleep(15)) PostMessageA(m, WM_KEYDOWN, VK_DOWN, 0);
