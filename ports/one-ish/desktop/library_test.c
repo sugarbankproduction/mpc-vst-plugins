@@ -757,13 +757,19 @@ static void set_tests(void) {
 
     /* MIDI from the host: bank select and program change (loaded by the hidden window's timer) */
     pt(PT_LOAD_POS, NULL, NULL, 0);
-    unsigned char pos40[3][3] = {{0xB0, 0, 0}, {0xB0, 32, 0}, {0xC0, (unsigned char)fx->numPrograms, 0}};
+    /* the first user patch sits right after the factory presets: position 128 x LSB + program (2026-10-30: past 128
+     * factory presets, so the LSB is no longer 0) */
+    unsigned char pos40[3][3] = {{0xB0, 0, 0}, {0xB0, 32, (unsigned char)(fx->numPrograms / 128)},
+                                 {0xC0, (unsigned char)(fx->numPrograms % 128), 0}};
     send_events((const unsigned char (*)[3])pos40, 3);
-    check(pump_until("U  Bright Pad"), "MIDI bank 0 / 0, program 40: the first user patch (by the hidden window's timer)");
+    char what_pos[96];
+    snprintf(what_pos, sizeof what_pos, "MIDI bank 0 / %d, program %d: the first user patch (by the hidden window's timer)",
+             fx->numPrograms / 128, fx->numPrograms % 128);
+    check(pump_until("U  Bright Pad"), what_pos);
     unsigned char set1[3][3] = {{0xB0, 0, 1}, {0xB0, 32, 0}, {0xC0, 10, 0}};
     send_events((const unsigned char (*)[3])set1, 3);
     check(pump_until("F 004  Acid Line"), "MIDI bank 1 / 0, program 10: set 1's B3");
-    unsigned char far_[3][3] = {{0xB0, 0, 0}, {0xB0, 32, 1}, {0xC0, 0, 0}};
+    unsigned char far_[3][3] = {{0xB0, 0, 0}, {0xB0, 32, 127}, {0xC0, 0, 0}};   /* (far past any list) */
     send_events((const unsigned char (*)[3])far_, 3);
     pump_until("F 004  Acid Line");
     check(title_starts("F 004  Acid Line"), "MIDI asking for a patch past the end of the list changes nothing");
