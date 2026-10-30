@@ -97,15 +97,17 @@ static double play(AEffect *fx, int blocks, int frames) {   /* rms of `blocks` h
     return sqrt(e / (blocks * frames));
 }
 
-enum { SR = 44100, BLOCK = 512, PHRASE_BLOCKS = 8 * SR / BLOCK / 2, MAX_PRESETS = 64 };   /* 4 s per preset */
+enum { SR = 44100, BLOCK = 512, PHRASE_BLOCKS = 8 * SR / BLOCK / 2 };   /* 4 s per preset */
 
 /* every preset through the DLL's program list: a short line then a chord. Each must sound and stay off the limiter's
- * ceiling. With a path, all of them go into one WAV to listen to, in program order. */
+ * ceiling. With a path, all of them go into one WAV to listen to, in program order (2026-10-30: every preset, no longer
+ * the first 64; the WAV's buffer is allocated only when asked for). */
 static void audition(AEffect *fx, const char *wav) {
-    static int16_t pcm[MAX_PRESETS * PHRASE_BLOCKS * BLOCK * 2];
     static const unsigned char line[] = {48, 55, 60, 67}, chord[] = {48, 60, 64, 67};
     float l[BLOCK], r[BLOCK], *out[2] = {l, r};
-    int np = fx->numPrograms < MAX_PRESETS ? fx->numPrograms : MAX_PRESETS, frames = 0;
+    int np = fx->numPrograms, frames = 0;
+    int16_t *pcm = wav ? malloc((size_t)np * PHRASE_BLOCKS * BLOCK * 2 * sizeof *pcm) : NULL;
+    if (wav && !pcm) { printf("FAIL no memory for %s\n", wav); failures++; wav = NULL; }
     char what[160];
     snprintf(what, sizeof what, "%d presets in the program list", fx->numPrograms);
     check(fx->numPrograms > 1, what);
@@ -129,8 +131,10 @@ static void audition(AEffect *fx, const char *wav) {
             for (int i = 0; i < BLOCK; i++) {
                 e += l[i] * l[i];
                 if (fabsf(l[i]) > peak) peak = fabsf(l[i]);
-                pcm[2 * frames] = (int16_t)(l[i] * 32767.0f);
-                pcm[2 * frames + 1] = (int16_t)(r[i] * 32767.0f);
+                if (pcm) {
+                    pcm[2 * frames] = (int16_t)(l[i] * 32767.0f);
+                    pcm[2 * frames + 1] = (int16_t)(r[i] * 32767.0f);
+                }
                 frames++;
             }
         }
@@ -141,7 +145,7 @@ static void audition(AEffect *fx, const char *wav) {
     }
     if (!wav) return;
     FILE *f = fopen(wav, "wb");
-    if (!f) { printf("FAIL cannot write %s\n", wav); failures++; return; }
+    if (!f) { printf("FAIL cannot write %s\n", wav); failures++; free(pcm); return; }
     uint32_t bytes = (uint32_t)frames * 4, v32;
     uint16_t v16;
     fwrite("RIFF", 1, 4, f); v32 = 36 + bytes; fwrite(&v32, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f);
@@ -150,6 +154,7 @@ static void audition(AEffect *fx, const char *wav) {
     v16 = 16; fwrite(&v16, 2, 1, f); fwrite("data", 1, 4, f); fwrite(&bytes, 4, 1, f);
     fwrite(pcm, 4, frames, f);
     fclose(f);
+    free(pcm);
     printf("     wrote %s (%d presets, %.0f s)\n", wav, np, frames / (double)SR);
 }
 
