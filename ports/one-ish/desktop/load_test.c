@@ -451,9 +451,21 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
         play(fx, 200, 512);
         double quiet = play(fx, 20, 512);
+        unsigned char qlog[64][3];
+        fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, qlog, 0);   /* (forget what came before) */
         SendMessageA(child, WM_KEYDOWN, 'A', 1);
         SendMessageA(child, WM_KEYDOWN, 'A', 1 | 0x40000000);   /* (a repeat: no second note) */
         double held = play(fx, 40, 512);
+        if (held <= 0.0005) {   /* (diagnosis, only when it fails) */
+            int nq = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, qlog, 0);
+            fprintf(stderr, "DIAG keyboard: %d MIDI out:", nq);
+            for (int k = 0; k < nq && k < 8; k++) fprintf(stderr, " %02x %d %d;", qlog[k][0], qlog[k][1], qlog[k][2]);
+            static const char *const DK[] = {"syn_on", "syn_solo", "s2_syn_on", "s2_syn_solo", "s3_syn_on", "s3_syn_solo",
+                "seq_on", "seq_play", "arp_on", "gen_euclid_on", "gen_tm_on", "phys_keys", "phys_balls_on", "volume",
+                "master_level", "amp_s", "amp_a", "key_lo", "key_hi", "syn_ch", "midi_ch", "octave_shift", "transpose"};
+            for (unsigned k = 0; k < sizeof DK / sizeof DK[0]; k++) fprintf(stderr, " %s=%.3f", DK[k], rnd_key(DK[k]) < NPARAMS ? fx->getParameter(fx, rnd_key(DK[k])) : -1.0f);
+            fprintf(stderr, "\n");
+        }
         SendMessageA(child, WM_KEYUP, 'A', 0xC0000001);
         play(fx, 400, 512);
         double after = play(fx, 20, 512);
@@ -464,6 +476,21 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         SendMessageA(child, WM_KEYUP, 'Z', 0xC0000001);
         SendMessageA(child, WM_KEYDOWN, 'X', 1);
         SendMessageA(child, WM_KEYUP, 'X', 0xC0000001);
+        {   /* ten computer keys held at once: ten notes reach the engine (the window sets no limit; a physical keyboard
+             * may: many register only a few keys pressed together) */
+            static const unsigned char K10[] = {'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', 'W'};
+            unsigned char log[64][3];
+            play(fx, 2, 512);
+            fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0);   /* (forget what came before) */
+            for (unsigned k = 0; k < sizeof K10; k++) SendMessageA(child, WM_KEYDOWN, K10[k], 1);
+            play(fx, 4, 512);
+            int n = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0), ons = 0;
+            for (int k = 0; k < n; k++) ons += (log[k][0] & 0xF0) == 0x90 && log[k][2] > 0;
+            for (unsigned k = 0; k < sizeof K10; k++) SendMessageA(child, WM_KEYUP, K10[k], 0xC0000001);
+            play(fx, 200, 512);
+            snprintf(what, sizeof what, "the computer keyboard: ten keys held at once send ten notes (%d)", ons);
+            check(ons == 10, what);
+        }
 #undef PER_SYNTH
     }
 
@@ -2746,7 +2773,15 @@ static DWORD WINAPI menu_answer(void *arg) {
         if (!m || !IsWindowVisible(m)) continue;
         Sleep(200);   /* (the menu settles first; keys posted at once to a busy PC's menu were lost now and then) */
         for (int k = 0; k < a->downs; k++, Sleep(15)) PostMessageA(m, WM_KEYDOWN, VK_DOWN, 0);
-        Sleep(30);
+        for (int tries = 0; tries < 40; tries++) {   /* then make sure item `downs` (1 = the first) is the one lit */
+            Sleep(30);
+            HMENU hm = (HMENU)SendMessageA(m, 0x01E1 /* MN_GETHMENU */, 0, 0);
+            int n = hm ? GetMenuItemCount(hm) : 0, lit = -1;
+            for (int i = 0; i < n; i++)
+                if (GetMenuState(hm, (UINT)i, MF_BYPOSITION) & MF_HILITE) lit = i;
+            if (!hm || lit == a->downs - 1) break;
+            PostMessageA(m, WM_KEYDOWN, lit < a->downs - 1 ? VK_DOWN : VK_UP, 0);
+        }
         PostMessageA(m, WM_KEYDOWN, VK_RETURN, 0);
         return 1;
     }
