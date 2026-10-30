@@ -1645,6 +1645,11 @@ static int square_corners(HWND wnd) {
 static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, void *ptr, float opt) {
     ed_t *e = ed_of(fx);
     switch (op) {
+#ifdef ONEISH_MULTI
+    case 45: case 48:   /* effGetEffectName, effGetProductString: the eight-output build is its own plugin */
+        if (ptr) { strncpy(ptr, "Moo Won Multi", 31); ((char *)ptr)[31] = 0; }
+        return 1;
+#endif
     case effEditGetRect: {
         static ERect r;
         layout();
@@ -1802,7 +1807,12 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         lib_new(e);   /* (before patches_init: it records the saved version) */
         e->idle = make_idle(e);
         if (hr) fx->numInputs = 2;   /* a stereo audio input (hostrate.c): the EXT channel and the vocoders */
+#ifdef ONEISH_MULTI
         if (hr) fx->numOutputs = HR_OUTPUTS;   /* (2026-10-30) MAIN and a pair per Synth (hostrate.h: multi-out) */
+        fx->uniqueID = 0x4D6F574D;   /* 'MoWM': "Moo Won Multi" is a plugin of its own beside the stereo one */
+#endif
+        /* (2026-10-31) the default build stays stereo: Carla's rack (the owner's host) plays nothing from a plugin
+         * with more than two outputs, so the eight outputs are a second DLL, "Moo Won Multi" (build.sh) */
         patches_init(e);
         seq_init(e);
         settings_init(e);   /* the settings file (once per process) into this instance's engine */

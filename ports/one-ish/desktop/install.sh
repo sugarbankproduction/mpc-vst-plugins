@@ -16,3 +16,11 @@ for old in "$DEST/$NAME" "$DEST/ONE-ish.dll"; do
 done
 cp "$SRC" "$DEST/$NAME"
 echo "installed: $(cygpath -w "$DEST/$NAME")"
+# (2026-10-31) the eight-output build beside it, a plugin of its own ("Moo Won Multi", its own ID)
+MSRC="$(dirname "$0")/../build/desktop/ONE-ish-Multi.dll"
+MNAME="Moo Won Multi.dll"
+if [ -f "$MSRC" ]; then
+    if [ -f "$DEST/$MNAME" ]; then mv "$DEST/$MNAME" "$DEST/$MNAME.old-$(date +%s)"; fi
+    cp "$MSRC" "$DEST/$MNAME"
+    echo "installed: $(cygpath -w "$DEST/$MNAME")"
+fi

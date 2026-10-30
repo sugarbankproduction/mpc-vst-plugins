@@ -134,7 +134,11 @@ static void shim_render(void *inst, int16_t *out, int frames) {
         if (h->in_live) one_ish_set_input(h->eng, h->in_blk, frames);
         h->in_ready = 0;
     }
+#ifdef ONEISH_MULTI
     float *const pairs[HR_PAIRS] = {h->syn_tap[0], h->syn_tap[1], h->syn_tap[2]};
+#else
+    float *const pairs[HR_PAIRS] = {NULL, NULL, NULL};   /* (2026-10-31) the stereo build: every Synth on MAIN */
+#endif
     one_ish_render_multi(h->eng, h->tap, pairs, frames);   /* MAIN as one_ish_render_float(), and the Synths' pairs */
     for (int i = 0; i < 2 * frames; i++) out[i] = (int16_t)(h->tap[i] * 32767.0f);   /* exactly the engine's render() */
     h->tap_n = frames;

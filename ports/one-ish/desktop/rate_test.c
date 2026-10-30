@@ -352,7 +352,7 @@ static void input_tests(AEffect *fx) {
     static const int rates[] = {44100, 48000, 96000}, blocks[] = {64, 512, 1000};
     char what[300];
     snprintf(what, sizeof what, "the plugin declares %d audio inputs and %d outputs", fx->numInputs, fx->numOutputs);
-    check(fx->numInputs == 2 && fx->numOutputs == 8, what);
+    check(fx->numInputs == 2 && (fx->numOutputs == 8 || fx->numOutputs == 2), what);   /* (8: Moo Won Multi) */
     /* EXT alone into an open SVF: no oscillators, no effects, the amp envelope full on */
     static const char *const PATCH = "v=1;o1_level=0;mfx_on=0;modfx_on=0;amp_a=0;amp_s=100;volume=100;ext_route=1;"
                                      "flt_mix=0;ext_level=%d";
@@ -523,6 +523,16 @@ static void multiout_tests(AEffect *fx) {
     set_patch(fx, "v=1;dv=1");
 }
 
+/* (2026-10-31) the stereo build (two outputs, for hosts such as Carla's rack): a Synth set to Own Pair still plays,
+ * on MAIN, so nothing goes quiet */
+static void stereo_test(void) {
+    char what[200];
+    multi_fresh(1, 1, 1, 44100, 512, 22050);
+    double pmain = fmax(peak_of(L, 22050), peak_of(R, 22050));
+    snprintf(what, sizeof what, "stereo build: 2 outputs; all three Synths on Own Pair still play on MAIN (peak %.3f)",
+             pmain);
+    check(pmain > 0.02, what);
+}
 /* (2026-10-30) what the multi-out's converters cost: three Synths, all on MAIN (the pairs silent) or each on its own
  * pair, at 44.1 and 48 kHz */
 static void multiout_bench(AEffect *fx) {
@@ -572,12 +582,13 @@ int rate_tests(void *entry_fn, void *old_entry_fn) {
     arp_test(fx);
     input_tests(fx);
     mo_entry = entry;
-    multiout_tests(fx);   /* (2026-10-30) */
+    if (fx->numOutputs == 8) multiout_tests(fx);   /* (2026-10-30) Moo Won Multi */
+    else stereo_test();   /* (2026-10-31) the stereo build */
     char what[160];
     snprintf(what, sizeof what, "every sample above was finite (%ld not) and none denormal (%ld)", nonfinite, subnormal);
     check(nonfinite == 0 && subnormal == 0, what);
     bench(fx);
-    multiout_bench(fx);   /* (2026-10-30) */
+    if (fx->numOutputs == 8) multiout_bench(fx);   /* (2026-10-30) */
     close_fx(fx);
     exact_test(entry, NULL);
     if (old_entry_fn) exact_test(entry, (AEffect * (*)(master_t)) old_entry_fn);

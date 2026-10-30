@@ -57,9 +57,24 @@ $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/cables.c" -o "$OUT/cables.o"   # (2026
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/matrix_page.c" -o "$OUT/matrix_page.o"   # (2026-10-30)
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/parts.c" -o "$OUT/parts.o"         # (2026-10-30) presets, names, libraries
 # -static: winpthreads and libgcc go inside the DLL, so it needs nothing else installed
-$LINK -shared "${OBJS[@]}" "$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/editor_draw.o" "$OUT/skin.o" "$OUT/patches.o" "$OUT/library.o" "$OUT/settings.o" "$OUT/scala.o" "$OUT/seq_page.o" "$OUT/more_pics.o" "$OUT/rate_leds.o" "$OUT/quickmod.o" "$OUT/hub.o" "$OUT/nav.o" "$OUT/hub_gens.o" "$OUT/cables.o" "$OUT/matrix_page.o" "$OUT/parts.o" "$OUT/hostrate.o" "$OUT/resample.o" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
+DLL_OBJS=("$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/editor_draw.o" "$OUT/skin.o" "$OUT/patches.o" "$OUT/library.o" "$OUT/settings.o" "$OUT/scala.o" "$OUT/seq_page.o" "$OUT/more_pics.o" "$OUT/rate_leds.o" "$OUT/quickmod.o" "$OUT/hub.o" "$OUT/nav.o" "$OUT/hub_gens.o" "$OUT/cables.o" "$OUT/matrix_page.o" "$OUT/parts.o" "$OUT/hostrate.o" "$OUT/resample.o")
+$LINK -shared "${OBJS[@]}" "${DLL_OBJS[@]}" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
   -lcomdlg32 -lshell32 \
   -o "$OUT/ONE-ish.dll"
+# (2026-10-31) "Moo Won Multi": the same plugin with eight outputs (MAIN and a pair per Synth) and its own ID; the
+# default DLL stays stereo, as Carla's rack plays nothing from a plugin with more than two outputs
+$CC "${FLAGS[@]}" -DONEISH_MULTI -I"$OUT" -c "$P/desktop/editor.c" -o "$OUT/editor_multi.o"
+$CC "${FLAGS[@]}" -DONEISH_MULTI -I"$OUT" -c "$P/desktop/hostrate.c" -o "$OUT/hostrate_multi.o"
+MULTI_OBJS=()
+for o in "${DLL_OBJS[@]}"; do
+  case "$o" in
+    "$OUT/editor.o") MULTI_OBJS+=("$OUT/editor_multi.o") ;;
+    "$OUT/hostrate.o") MULTI_OBJS+=("$OUT/hostrate_multi.o") ;;
+    *) MULTI_OBJS+=("$o") ;;
+  esac
+done
+$LINK -shared "${OBJS[@]}" "${MULTI_OBJS[@]}" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
+  -lcomdlg32 -lshell32 -o "$OUT/ONE-ish-Multi.dll"
 $CC -O2 -std=gnu11 -Wall -Wextra "${CHUNK[@]}" -I"$OUT" -I"$P/build" "$P/desktop/load_test.c" "$P/desktop/rate_test.c" "$P/desktop/library_test.c" "$P/desktop/parts_test.c" -static -lgdi32 -luser32 \
   -o "$OUT/load_test.exe"
 $CC -O2 -std=gnu11 -Wall -Wextra "$P/desktop/resample_test.c" "$P/desktop/resample.c" -static -lpthread -o "$OUT/resample_test.exe"
