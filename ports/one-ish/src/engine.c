@@ -290,6 +290,10 @@ enum {
     P_SYN_OUT,       /* (2026-10-30) the Synth's output: MAIN, its own pair, or both (src/synths.h; desktop multi-out) */
     P_MOUT_ON, P_MOUT_SEND, P_MOUT_CH,   /* (2026-10-30) MIDI OUT per Synth: on, what it sends, its channel (src/midi_out.h) */
     P_SUS_PEDAL,     /* (2026-10-30) SUSTAIN IN SYNTH: the sustain pedal (CC 64) holds this Synth (On) or not */
+    /* (2026-10-31) LINK on the mod wheel (CC 1), the pitch wheel (pitch bend) and the ribbon (CC 16, 17): shared; lit,
+     * that controller reaches all three Synths whatever their MIDI channels (src/synths.h midi), as link_pad */
+    P_LINK_MOD, P_LINK_BEND, P_LINK_RIBBON,
+    P_LINK_GLIDE,    /* (2026-10-31) the window's glide LINK (gen_layout.py LINK_GROUPS): stored, as the other LINKs */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -454,6 +458,8 @@ static const char *const KEYS[P_COUNT] = {
     "an_hq", "an_warm", "an_warm_amt", "an_warm_time",   /* (2026-10-30) */
     "syn_out",   /* (2026-10-30) */
     "mout_on", "mout_send", "mout_ch", "sus_pedal",   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH */
+    "link_mod", "link_bend", "link_ribbon",   /* (2026-10-31) the wheels' and the ribbon's LINKs */
+    "link_glide",   /* (2026-10-31) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -2603,6 +2609,9 @@ static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "syn_name")) return syn_name_text(s, buf, n);   /* (2026-10-30) its name ("" none) */
     if (!strcmp(key, "pad_now"))   /* (2026-10-30) a test readout: the X/Y pad as this Synth has it (X, Y, gate) */
         return snprintf(buf, n, "%.4f %.4f %.0f", s->pad_x, s->pad_y, s->pad_gate);
+    if (!strcmp(key, "hands_now"))   /* (2026-10-31) a test readout: the mod wheel, the pitch bend, the ribbon's
+                                      * position (where it is going, 0..127) and its touch, as this Synth has them */
+        return snprintf(buf, n, "%.4f %.4f %.1f %d", s->wheel, s->bend, s->rib_to, s->rib_touch);
     if (!strcmp(key, "seq_pos")) return sq_readout(s, buf, n);
     if (!strcmp(key, "rain_view")) return gb_view_text(s, 0, buf, n);     /* (2026-10-30) the pond (the window's view) */
     if (!strcmp(key, "markov_view")) return gb_view_text(s, 1, buf, n);   /* ... and the Markov melody's */

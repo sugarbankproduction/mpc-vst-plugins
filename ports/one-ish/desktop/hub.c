@@ -75,6 +75,31 @@ int link_relative(ed_t *e, int i) {   /* lit, and a relative one (ALL 3 over LIN
     return cut >= 0 && link_param(i) == cut && link_lit(e, i);
 }
 
+/* ---- (2026-10-31) LINK ALL: every LINK of the controller box (the wheels', the X/Y pad's, the ribbon's, glide's) ---- */
+static const char *const HAND_LINK[] = {"link_bend", "link_mod", "link_pad", "link_ribbon", "link_glide"};
+enum { NHAND_LINK = sizeof HAND_LINK / sizeof HAND_LINK[0] };
+int hands_linked(ed_t *e) {   /* 1: every one of them that this build has is lit */
+    int any = 0;
+    for (int k = 0; k < NHAND_LINK; k++) {
+        int i = key_ix(HAND_LINK[k]);
+        if (i < 0) continue;
+        if (e->fx->getParameter(e->fx, i) < 0.5f) return 0;
+        any = 1;
+    }
+    return any;
+}
+void hands_link_all(ed_t *e) {   /* all lit: all off; else all on. One undo step, the host told of each */
+    int on = !hands_linked(e);
+    lib_hold(e, 1);
+    lib_touch(e, on ? "LINK ALL on" : "LINK ALL off");
+    for (int k = 0; k < NHAND_LINK; k++) {
+        int i = key_ix(HAND_LINK[k]);
+        if (i >= 0) ed_edit(e, i, on ? 1.0f : 0.0f);
+    }
+    lib_hold(e, -1);
+    if (e->wnd) InvalidateRect(e->wnd, NULL, FALSE);
+}
+
 /* ---- SYNTH OUTPUT's MASTER: while it is lit the section's VOLUME knob is master_level (the whole instrument) ---- */
 int master_param(void) {
     static int m = -2;

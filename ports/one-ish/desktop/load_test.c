@@ -2553,6 +2553,7 @@ static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp,
 static void nav_tests(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void cables_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void cables_drag_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void cables_more_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 /* (2026-10-30) the X/Y pad's LINK and the synth effect's FREEZE, plain clicks on the panel. With Per Synth MIDI
  * channels the pad (CC 2, CC 3, CC 18 on the window's channel) reaches Synth 1 only; LINK lit, all three. Read from the
  * engine ("pad_now" readouts, TEST_HUB HT_PEEK) after the audio thread passed the pad's MIDI on. */
@@ -2618,9 +2619,125 @@ static void pad_link_test(AEffect *fx, HWND child, float s, const char *bmp, int
     if (mc < NPARAMS) fx->setParameter(fx, mc, mc0);
 }
 
+/* ---- (2026-10-31) the controller box's other LINKs and LINK ALL, plain clicks. With Per Synth MIDI channels the mod
+ * wheel, the pitch wheel and the ribbon (dragged in the window, on its channel) reach Synth 1 only; each one's LINK lit,
+ * all three ("hands_now" readouts: wheel, bend, ribbon target, touch). Glide's LINK: ON clicked goes to all three; the
+ * pitch wheel's LINK: BEND UP turned goes to all three. LINK ALL lights them all as one undo step, then puts them out. */
+static void hands_peek(AEffect *fx, int c, float v[4]) {
+    enum { HT_PEEK_OP = 12 };
+    static char b[1024];
+    snprintf(b, sizeof b, c ? "s%d_hands_now" : "hands_now", c + 1);
+    fx->dispatcher(fx, 50, TEST_HUB, HT_PEEK_OP, b, 0);
+    v[0] = v[1] = v[2] = v[3] = -9;
+    sscanf(b, "%f %f %f %f", &v[0], &v[1], &v[2], &v[3]);
+}
+static void zone_drag(AEffect *fx, HWND child, float s, const short z[4], float fx0, float fy0, float fx1, float fy1) {
+    int x0 = (int)lroundf((z[0] + z[2] * fx0) * s), y0 = (int)lroundf((z[1] + z[3] * fy0) * s);
+    int x1 = (int)lroundf((z[0] + z[2] * fx1) * s), y1 = (int)lroundf((z[1] + z[3] * fy1) * s);
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x0, y0));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x1, y1));
+    play(fx, 2, 512);   /* (the audio thread passes the window's MIDI on) */
+}
+static void hands_link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[600];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    int mc = rnd_key("midi_ch");
+    float mc0 = pv(fx, "midi_ch");
+    if (mc < NPARAMS) fx->setParameter(fx, mc, 17.0f / (PARAMS[mc].nopts - 1));   /* Per Synth (2 and 3 on 2, 3) */
+    static const char *const K[3] = {"link_mod", "link_bend", "link_ribbon"};
+    static const char *const NAME[3] = {"mod wheel", "pitch wheel", "ribbon"};
+    for (int c = 0; c < 5; c++) setkey(fx, c < 3 ? K[c] : c == 3 ? "link_pad" : "link_glide", 0);
+    for (int k = 0; k < 3; k++) {
+        float b2[4], b3[4], v1[4], v2[4], v3[4];
+        int res[2];
+        for (int lit = 0; lit < 2; lit++) {
+            if (lit) click_ctl(child, s, K[k]);   /* its LINK, beside it */
+            hands_peek(fx, 1, b2);
+            hands_peek(fx, 2, b3);
+            const short *z = k == 0 ? ZONE_MODW : k == 1 ? ZONE_PITCH : ZONE_RIBBON;
+            if (k == 2) zone_drag(fx, child, s, z, lit ? 0.3f : 0.7f, 0.5f, lit ? 0.2f : 0.8f, 0.5f);
+            else zone_drag(fx, child, s, z, 0.5f, lit ? 0.6f : 0.5f, 0.5f, lit ? 0.15f : 0.25f);
+            hands_peek(fx, 0, v1);
+            hands_peek(fx, 1, v2);
+            hands_peek(fx, 2, v3);
+            int f = k == 0 ? 0 : k == 1 ? 1 : 2;
+            int moved1 = fabsf(v1[f] - (k == 2 ? 64.0f : 0.0f)) > (k == 2 ? 5.0f : 0.1f);
+            res[lit] = lit ? moved1 && v2[f] == v1[f] && v3[f] == v1[f] : moved1 && v2[f] == b2[f] && v3[f] == b3[f];
+            SendMessageA(child, WM_LBUTTONUP, 0, 0);
+            play(fx, 4, 512);
+        }
+        snprintf(what, sizeof what, "%s LINK (Per Synth channels): off, dragging it moves Synth 1 alone (%d); a click "
+                 "lights its LINK (%d), then it moves all three Synths alike (%.3f %.3f %.3f, %d)", NAME[k], res[0],
+                 pv(fx, K[k]) > 0.5f, v1[k == 0 ? 0 : k == 1 ? 1 : 2], v2[k == 0 ? 0 : k == 1 ? 1 : 2],
+                 v3[k == 0 ? 0 : k == 1 ? 1 : 2], res[1]);
+        check(res[0] && res[1] && pv(fx, K[k]) > 0.5f, what);
+        click_ctl(child, s, K[k]);
+        check(pv(fx, K[k]) < 0.5f, "its LINK: a second click puts it out");
+    }
+    /* glide's LINK: ON from the panel goes to all three; the pitch wheel's LINK: BEND UP too */
+    for (int c = 0; c < 3; c++) {
+        char k[32];
+        snprintf(k, sizeof k, c ? "s%d_glide" : "glide", c + 1);
+        setkey(fx, k, 0);
+        snprintf(k, sizeof k, c ? "s%d_bend_up" : "bend_up", c + 1);
+        setkey(fx, k, 0.5f);
+    }
+    click_ctl(child, s, "glide");
+    int alone = pv(fx, "glide") > 0.5f && pv(fx, "s2_glide") < 0.5f && pv(fx, "s3_glide") < 0.5f;
+    click_ctl(child, s, "glide");
+    click_ctl(child, s, "link_glide");
+    click_ctl(child, s, "glide");
+    int all = pv(fx, "glide") > 0.5f && pv(fx, "s2_glide") > 0.5f && pv(fx, "s3_glide") > 0.5f;
+    snprintf(what, sizeof what, "glide's LINK: off, ON clicked switches Synth 1's glide alone (%d); LINK lit (%d), ON "
+             "clicked switches all three Synths' (%d)", alone, pv(fx, "link_glide") > 0.5f, all);
+    check(alone && all, what);
+    click_ctl(child, s, "link_bend");
+    qm_drag(child, "bend_up", s, 30);
+    float u1 = pv(fx, "bend_up"), u2 = pv(fx, "s2_bend_up"), u3 = pv(fx, "s3_bend_up");
+    snprintf(what, sizeof what, "the pitch wheel's LINK also keeps BEND RANGE alike: BEND UP turned with it lit moves all "
+             "three Synths' (%.3f %.3f %.3f, from 0.500)", u1, u2, u3);
+    check(u1 > 0.52f && u2 == u1 && u3 == u1, what);
+    /* LINK ALL: a plain click lights every LINK of the box (one undo step), lit when all are; again: all out */
+    for (int c = 0; c < 5; c++) setkey(fx, c < 3 ? K[c] : c == 3 ? "link_pad" : "link_glide", 0);
+    setkey(fx, "link_mod", 1);   /* (one lit already) */
+    SendMessageA(child, WM_TIMER, 1, 0);
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, qbuf, 0);
+    click_zone(child, s, ZONE_LINK_ALL);
+    int on = pv(fx, "link_mod") > 0.5f && pv(fx, "link_bend") > 0.5f && pv(fx, "link_pad") > 0.5f &&
+             pv(fx, "link_ribbon") > 0.5f && pv(fx, "link_glide") > 0.5f;
+    int steps = qm_steps(fx);
+    if (bmp) shot(child, w, h, bmp, "_hands_links");
+    click_zone(child, s, ZONE_LINK_ALL);
+    int off = pv(fx, "link_mod") < 0.5f && pv(fx, "link_bend") < 0.5f && pv(fx, "link_pad") < 0.5f &&
+              pv(fx, "link_ribbon") < 0.5f && pv(fx, "link_glide") < 0.5f;
+    snprintf(what, sizeof what, "LINK ALL: a plain click lights all five LINKs of the controller box (pitch, mod, pad, "
+             "ribbon, glide) (%d) as one undo step (%d); clicked again with all lit, all go out (%d)", on, steps, off);
+    check(on && steps == 1 && off, what);
+    click_zone(child, s, ZONE_LINK_ALL);
+    void *chunk = NULL;   /* saved with the sound */
+    intptr_t n = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+    static char saved[300000];
+    if (n > 0 && n <= (intptr_t)sizeof saved) memcpy(saved, chunk, (size_t)n);
+    for (int c = 0; c < 5; c++) setkey(fx, c < 3 ? K[c] : c == 3 ? "link_pad" : "link_glide", 0);
+    if (n > 0 && n <= (intptr_t)sizeof saved) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, saved, 0);
+    check(pv(fx, "link_mod") > 0.5f && pv(fx, "link_bend") > 0.5f && pv(fx, "link_ribbon") > 0.5f &&
+          pv(fx, "link_glide") > 0.5f, "the controller box's LINKs: saved with the sound (lit again after its chunk)");
+    for (int c = 0; c < 5; c++) setkey(fx, c < 3 ? K[c] : c == 3 ? "link_pad" : "link_glide", 0);
+    for (int c = 0; c < 3; c++) {
+        char k[32];
+        snprintf(k, sizeof k, c ? "s%d_glide" : "glide", c + 1);
+        setkey(fx, k, 0);
+        snprintf(k, sizeof k, c ? "s%d_bend_up" : "bend_up", c + 1);
+        setkey(fx, k, (2.0f + 24) / 48);
+    }
+    if (mc < NPARAMS) fx->setParameter(fx, mc, mc0);
+    SendMessageA(child, WM_TIMER, 1, 0);
+}
+
 static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-10-30) */
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     pad_link_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
+    hands_link_test(fx, child, s, bmp, w, h);   /* (2026-10-31) */
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
     follow_tempo_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
@@ -2632,6 +2749,7 @@ static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     defaults_ui_test(fx, child, s, bmp, w, h);   /* (2026-10-30) effect ONs, SYNC, the generators' buttons, voices */
     cables_test(fx, child, s, bmp, w, h);        /* (2026-10-30) the CABLES view */
     cables_drag_test(fx, child, s, bmp, w, h);   /* (2026-10-31) CABLES by dragging, the settings box */
+    cables_more_test(fx, child, s, bmp, w, h);   /* (2026-10-31) double-click, right-click menu, drag the other way */
     analog_test(fx, child, s, bmp, w, h);   /* (2026-10-30) HQ MODE and WARM-UP on the ANALOG page */
 }
 
@@ -4446,6 +4564,229 @@ static void cables_drag_test(AEffect *fx, HWND child, float s, const char *bmp, 
              "after (\"%.50s\"); nothing connected (%d LFO 3 rows, steps %d -> %d)", hl1, help_now(fx), lfo3, s0, qm_steps(fx));
     check(strstr(hl1, "16 matrix rows") && strstr(hl1, "in use") && strstr(help_now(fx), "in use") && !lfo3 &&
           qm_steps(fx) == s0, what);
+    for (int i = 0; i < NPARAMS; i++)
+        if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
+    if (cbt(fx, CBT_ON, 0)) qm_click_xy(child, cbt(fx, CBT_OFF_XY, 0));
+    SendMessageA(child, WM_TIMER, 1, 0);
+}
+
+/* ---- (2026-10-31) CABLES: a double-click removes a cable, a right-click opens its menu (Delete, Turn Off / On,
+ * Settings, Open in Matrix), and a cable dragged the other way, from a control's "+" dot (or a destination jack) to a
+ * source; a plain drag on a knob still turns it ---- */
+enum { CBT_DOT_XY = CBT_DJACK_XY + 1, CBT_NDOTS };
+static const char *menu_bmp;   /* where to put a picture of the cable menu */
+static DWORD WINAPI cable_menu_shot(void *arg) {   /* the real menu: pictured, then cancelled (as Esc) */
+    HWND child = arg;
+    for (int t = 0; t < 300; t++, Sleep(10)) {
+        HWND m = own_menu();
+        if (!m || !IsWindowVisible(m)) continue;
+        Sleep(150);
+        RECT r;
+        GetWindowRect(m, &r);
+        int w = r.right - r.left, h = r.bottom - r.top, stride = (w * 3 + 3) & ~3;
+        char path[512];
+        const char *dot = strrchr(menu_bmp, '.');
+        snprintf(path, sizeof path, "%.*s_cables_menu.bmp", dot ? (int)(dot - menu_bmp) : (int)strlen(menu_bmp), menu_bmp);
+        HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+        HBITMAP bm = CreateCompatibleBitmap(screen, w, h);
+        HGDIOBJ old = SelectObject(dc, bm);
+        if (!PrintWindow(m, dc, 0)) BitBlt(dc, 0, 0, w, h, screen, r.left, r.top, SRCCOPY);
+        BITMAPINFOHEADER bi = {sizeof bi, w, h, 1, 24, BI_RGB, 0, 0, 0, 0, 0};
+        unsigned char *px = malloc((size_t)stride * h);
+        FILE *f = px ? fopen(path, "wb") : NULL;
+        if (f) {
+            GetDIBits(dc, bm, 0, h, px, (BITMAPINFO *)&bi, DIB_RGB_COLORS);
+            BITMAPFILEHEADER fh = {0x4d42, (DWORD)(sizeof fh + sizeof bi + stride * h), 0, 0, sizeof fh + sizeof bi};
+            fwrite(&fh, sizeof fh, 1, f); fwrite(&bi, sizeof bi, 1, f); fwrite(px, (size_t)stride * h, 1, f);
+            fclose(f);
+            printf("     wrote %s\n", path);
+        }
+        free(px);
+        SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
+        PostMessageA(m, WM_KEYDOWN, VK_ESCAPE, 0);
+        return 1;
+    }
+    return 0;
+}
+static void CALLBACK end_menu_soon(HWND w, UINT msg, UINT_PTR id, DWORD t) { (void)w; (void)msg; (void)id; (void)t; EndMenu(); }
+static void dbl_click_px(HWND child, intptr_t at, int jitter) {   /* down (a little move), up, the double-click, up */
+    int x = (int)(at & 0xFFFF), y = (int)(at >> 16);
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+    if (jitter) SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x + 1, y - jitter));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(x + 1, y - jitter));
+    SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, MAKELPARAM(x, y));
+    SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(x, y));
+}
+static void cables_more_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[500], lb[1024];
+    static float saved[NPARAMS];
+    snapshot(fx, saved);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0.0f);   /* Synth 1 alone */
+    mclear(fx);
+    for (int m = 0; m < 16; m++) { mset(fx, m, "on", 1); mset(fx, m, "xf", 0); mset(fx, m, "via_amt", 100); }
+    int lad = rnd_key("flt_cut"), svf = rnd_key("svf_cut"), res = rnd_key("flt_res");
+    int d_lad = (int)qmt(fx, QMT_DST_OF, (float)lad), d_svf = (int)qmt(fx, QMT_DST_OF, (float)svf);
+    int d_res = (int)qmt(fx, QMT_DST_OF, (float)res), d_pitch = opt_named(mk(0, 0, "dst"), "Pitch");
+    enum { LFO1 = 4, VEL = 6, WHEEL = 7, AT = 8 };   /* modmatrix.h MS_* */
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    if (fx->dispatcher(fx, 50, TEST_LIB, LT_SCREEN, lb, 0) != -1) click_zone(child, s, ZONE_TAB_MATRIX);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    if (!cbt(fx, CBT_ON, 0)) qm_click_xy(child, cbt(fx, CBT_BTN_XY, 0));
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, lb, 0);
+
+    /* 1. a double-click on a cable's middle knob (with a 1 px wobble during the first click): its row goes, one undo step,
+     * and the first click changed nothing */
+    mrow(fx, 0, VEL, d_lad, 30.0f);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    int s0 = qm_steps(fx), k = cable_of(fx, 0);
+    intptr_t kn = cbt(fx, CBT_KNOB_XY, (float)k);
+    {
+        int x = (int)(kn & 0xFFFF), y = (int)(kn >> 16);
+        SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x, y));
+        SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x + 1, y - 1));
+        SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(x + 1, y - 1));
+    }
+    float a_first = mamt(fx, 0, 0);
+    int st_first = qm_steps(fx);
+    SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, kn);
+    SendMessageA(child, WM_LBUTTONUP, 0, kn);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    int gone = mopt(fx, 0, 0, "dst") == 0 && cbt(fx, CBT_N, 0) == 0, st_gone = qm_steps(fx);
+    with_keys(1, 0);
+    SendMessageA(child, WM_KEYDOWN, 'Z', 0);
+    with_keys(0, 0);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    snprintf(what, sizeof what, "cables double-click on the middle knob: the first click (a 1 px wobble) leaves the amount "
+             "(%+.0f%%) and makes no undo step (%d -> %d); the double-click removes row 1 (%d) as one undo step (%d); UNDO "
+             "brings it back (%d > %d at %+.0f%%)", a_first, s0, st_first, gone, st_gone - s0, mopt(fx, 0, 0, "src"),
+             mopt(fx, 0, 0, "dst"), mamt(fx, 0, 0));
+    check(fabsf(a_first - 30) < 0.01f && st_first == s0 && gone && st_gone == s0 + 1 && mopt(fx, 0, 0, "dst") == d_lad &&
+          fabsf(mamt(fx, 0, 0) - 30) < 0.01f, what);
+    /* the same on the cable itself (its wire) */
+    s0 = qm_steps(fx);
+    dbl_click_px(child, cbt(fx, CBT_WIRE_XY, (float)cable_of(fx, 0)), 1);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    snprintf(what, sizeof what, "cables double-click on the cable's wire: row 1 removed (dst %d, %d cables), one undo step "
+             "(%d -> %d)", mopt(fx, 0, 0, "dst"), (int)cbt(fx, CBT_N, 0), s0, qm_steps(fx));
+    check(mopt(fx, 0, 0, "dst") == 0 && cbt(fx, CBT_N, 0) == 0 && qm_steps(fx) == s0 + 1, what);
+
+    /* 2. the right-click menu: Turn Off, Turn On, Settings..., Open in Matrix, Delete (the menu answered) */
+    mrow(fx, 0, VEL, d_lad, 30.0f);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    intptr_t wire = cbt(fx, CBT_WIRE_XY, (float)cable_of(fx, 0));
+    int wx = (int)(wire & 0xFFFF), wy = (int)(wire >> 16);
+    s0 = qm_steps(fx);
+    qmt(fx, QMT_ANSWER, 2);   /* Turn Off */
+    qm_right_click(child, wx, wy);
+    int off = mopt(fx, 0, 0, "on") == 0, st_off = qm_steps(fx);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    if (bmp) shot(child, w, h, bmp, "_cables_menu_off");
+    qmt(fx, QMT_ANSWER, 2);   /* Turn On */
+    qm_right_click(child, wx, wy);
+    int on = mopt(fx, 0, 0, "on") == 1;
+    snprintf(what, sizeof what, "cables right-click menu: Turn Off switches row 1 off (%d) as one undo step (%d -> %d); "
+             "Turn On again (%d)", off, s0, st_off, on);
+    check(off && st_off == s0 + 1 && on, what);
+    if (cbt(fx, CBT_SEL, 0) == 0) qm_click_xy(child, wire);   /* (a click on the selected cable: not selected) */
+    SendMessageA(child, WM_TIMER, 1, 0);
+    int sel0 = (int)cbt(fx, CBT_SEL, 0);
+    qmt(fx, QMT_ANSWER, 3);   /* Settings... */
+    qm_right_click(child, wx, wy);
+    snprintf(what, sizeof what, "cables right-click menu: Settings... selects the cable, its box open (row %d, before %d; AMOUNT "
+             "at %d)", (int)cbt(fx, CBT_SEL, 0), sel0, (int)cbt(fx, CBT_BOX_XY, 2 /* CBX_AMT */));
+    check(sel0 == -1 && cbt(fx, CBT_SEL, 0) == 0 && cbt(fx, CBT_BOX_XY, 2) >= 0, what);
+    click_zone(child, s, ZONE_TAB_MORE);   /* (another page shows) */
+    int before = screen_now(fx);
+    qmt(fx, QMT_ANSWER, 4);   /* Open in Matrix */
+    qm_right_click(child, wx, wy);
+    snprintf(what, sizeof what, "cables right-click menu: Open in Matrix shows the MATRIX page (screen %d -> %d), the cables "
+             "still on (%d)", before, screen_now(fx), (int)cbt(fx, CBT_ON, 0));
+    check(before != -1 && screen_now(fx) == -1 && cbt(fx, CBT_ON, 0), what);
+    if (bmp) {   /* the real menu, pictured (then cancelled: nothing changes) */
+        menu_bmp = bmp;
+        float a = mamt(fx, 0, 0);
+        HANDLE th = CreateThread(NULL, 0, cable_menu_shot, child, 0, NULL);
+        UINT_PTR tm = SetTimer(NULL, 0, 2500, end_menu_soon);   /* (the menu's own loop runs it: the menu ends for sure) */
+        qm_right_click(child, wx, wy);
+        KillTimer(NULL, tm);
+        WaitForSingleObject(th, 4000);
+        CloseHandle(th);
+        check(mopt(fx, 0, 0, "dst") == d_lad && mamt(fx, 0, 0) == a, "cables right-click menu: shown and cancelled, nothing changes");
+    }
+    s0 = qm_steps(fx);
+    qmt(fx, QMT_ANSWER, 1);   /* Delete */
+    qm_right_click(child, wx, wy);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    snprintf(what, sizeof what, "cables right-click menu: Delete removes row 1 (dst %d), one undo step (%d -> %d)",
+             mopt(fx, 0, 0, "dst"), s0, qm_steps(fx));
+    check(mopt(fx, 0, 0, "dst") == 0 && cbt(fx, CBT_N, 0) == 0 && qm_steps(fx) == s0 + 1, what);
+
+    /* 3. the other way: from the RESONANCE knob's "+" dot to the LFO 1 jack, a live cable; let go: LFO 1 > resonance */
+    intptr_t d_res_xy = cbt(fx, CBT_DOT_XY, (float)res), d_svf_xy = cbt(fx, CBT_DOT_XY, (float)svf);
+    intptr_t j_lfo1 = cbt(fx, CBT_JACK_XY, LFO1), j_vel = cbt(fx, CBT_JACK_XY, VEL), j_at = cbt(fx, CBT_JACK_XY, AT);
+    intptr_t j_pitch = cbt(fx, CBT_DJACK_XY, (float)d_pitch);
+    snprintf(what, sizeof what, "cables: a \"+\" dot by every control the matrix can move (%d dots; RESONANCE at %d, SVF "
+             "CUTOFF at %d)", (int)cbt(fx, CBT_NDOTS, 0), (int)d_res_xy, (int)d_svf_xy);
+    check(cbt(fx, CBT_NDOTS, 0) > 40 && d_res_xy >= 0 && d_svf_xy >= 0, what);
+    s0 = qm_steps(fx);
+    cb_drag_px(child, d_res_xy, j_lfo1, 0);
+    int drag = (int)cbt(fx, CBT_DRAG, 0);
+    char hl[300];
+    snprintf(hl, sizeof hl, "%s", help_now(fx));
+    if (bmp) shot(child, w, h, bmp, "_cables_reverse");
+    SendMessageA(child, WM_LBUTTONUP, 0, (LPARAM)j_lfo1);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    snprintf(what, sizeof what, "cables drag the other way: from RESONANCE's + dot over the LFO 1 jack (drag %d, help \"%.80s\"); "
+             "let go: row 1 is LFO 1 > Ladder Res (%d > %d) at %+.0f%%, one undo step (%d -> %d), selected (%d)", drag, hl,
+             mopt(fx, 0, 0, "src"), mopt(fx, 0, 0, "dst"), mamt(fx, 0, 0), s0, qm_steps(fx), (int)cbt(fx, CBT_SEL, 0));
+    check(drag == 7 && strstr(hl, "Let go") && strstr(hl, "LFO 1") && mopt(fx, 0, 0, "src") == LFO1 &&
+          mopt(fx, 0, 0, "dst") == d_res && fabsf(mamt(fx, 0, 0) - 25) < 0.01f && qm_steps(fx) == s0 + 1 &&
+          cbt(fx, CBT_SEL, 0) == 0, what);
+    /* to the mod wheel itself (a source's place on the panel, not only its jack) */
+    intptr_t wheel = (ZONE_MODW[0] + ZONE_MODW[2] / 2) | (intptr_t)(ZONE_MODW[1] + ZONE_MODW[3] / 2) << 16;
+    if (s != 1.0f) wheel = (intptr_t)lroundf((ZONE_MODW[0] + ZONE_MODW[2] / 2.0f) * s) |
+                           (intptr_t)lroundf((ZONE_MODW[1] + ZONE_MODW[3] / 2.0f) * s) << 16;
+    s0 = qm_steps(fx);
+    cb_drag_px(child, d_svf_xy, wheel, 1);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    snprintf(what, sizeof what, "cables drag the other way: from SVF CUTOFF's + dot onto the mod wheel: row 2 is Mod Wheel > "
+             "SVF cutoff (%d > %d), one undo step (%d -> %d)", mopt(fx, 1, 0, "src"), mopt(fx, 1, 0, "dst"), s0, qm_steps(fx));
+    check(mopt(fx, 1, 0, "src") == WHEEL && mopt(fx, 1, 0, "dst") == d_svf && qm_steps(fx) == s0 + 1, what);
+    /* from the bay's Pitch jack to the VELOCITY jack */
+    s0 = qm_steps(fx);
+    cb_drag_px(child, j_pitch, j_vel, 1);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    snprintf(what, sizeof what, "cables drag the other way: from the bay's Pitch jack to VELOCITY: row 3 is Velocity > Pitch "
+             "(%d > %d), one undo step (%d -> %d)", mopt(fx, 2, 0, "src"), mopt(fx, 2, 0, "dst"), s0, qm_steps(fx));
+    check(mopt(fx, 2, 0, "src") == VEL && mopt(fx, 2, 0, "dst") == d_pitch && qm_steps(fx) == s0 + 1, what);
+    /* let go over nothing (the bay between two jacks): nothing */
+    intptr_t empty = (((j_vel & 0xFFFF) + (j_at & 0xFFFF)) / 2) | (j_vel & ~(intptr_t)0xFFFF);
+    s0 = qm_steps(fx);
+    int n0 = (int)cbt(fx, CBT_N, 0);
+    cb_drag_px(child, d_svf_xy, empty, 1);
+    SendMessageA(child, WM_TIMER, 1, 0);
+    snprintf(what, sizeof what, "cables drag the other way, let go over nothing: no new row (%d -> %d cables), no undo step "
+             "(%d -> %d), \"%.50s\"", n0, (int)cbt(fx, CBT_N, 0), s0, qm_steps(fx), help_now(fx));
+    check(cbt(fx, CBT_N, 0) == n0 && qm_steps(fx) == s0 && strstr(help_now(fx), "Nothing connected"), what);
+    /* a plain click on a + dot changes nothing: with a cable there it selects it (as a destination jack's click), with
+     * none it says how to use the dot */
+    s0 = qm_steps(fx);
+    qm_click_xy(child, d_svf_xy);
+    int sel_svf = (int)cbt(fx, CBT_SEL, 0);
+    intptr_t d_free = cbt(fx, CBT_DOT_XY, (float)rnd_key("svf_res"));
+    qm_click_xy(child, d_free);
+    snprintf(hl, sizeof hl, "%s", help_now(fx));
+    snprintf(what, sizeof what, "cables: a plain click on a + dot changes nothing (%d -> %d): SVF CUTOFF's selects its cable "
+             "(row %d), SVF RESONANCE's (none; dot at %d) says to drag it (\"%.70s\")", s0, qm_steps(fx), sel_svf,
+             (int)d_free, hl);
+    check(qm_steps(fx) == s0 && sel_svf == 1 && d_free >= 0 && strstr(hl, "+ dot"), what);
+    /* 4. a plain drag on a knob (not its dot) in the CABLES view still turns it, and makes no cable */
+    float c0 = getkey(fx, "flt_cut");
+    n0 = (int)cbt(fx, CBT_N, 0);
+    qm_drag(child, "flt_cut", s, c0 > 0.5f ? -20 : 20);
+    snprintf(what, sizeof what, "cables: a plain drag on the ladder CUTOFF knob in the CABLES view still turns it (%.3f -> "
+             "%.3f), no cable made (%d -> %d)", c0, getkey(fx, "flt_cut"), n0, (int)cbt(fx, CBT_N, 0));
+    check(fabsf(getkey(fx, "flt_cut") - c0) > 0.05f && cbt(fx, CBT_N, 0) == n0 && cbt(fx, CBT_ON, 0), what);
     for (int i = 0; i < NPARAMS; i++)
         if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
     if (cbt(fx, CBT_ON, 0)) qm_click_xy(child, cbt(fx, CBT_OFF_XY, 0));

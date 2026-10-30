@@ -58,6 +58,7 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_RND_WILD, Z_RND_ALSO,   /* Z_RND_ALSO + 0..2: the ARPEGGIATOR, GENERATIVE and SEQUENCER tick buttons */
        Z_OCT_PICK = 100045,   /* (2026-10-30) a click on the octave LEDs: that octave */
        Z_PANIC,               /* (2026-10-30) PANIC: every note off (as holding an OCTAVE button 2 s) */
+       Z_LINK_ALL,            /* (2026-10-31) LINK ALL: every LINK of the controller box at once (hub.c) */
        Z_RND_GO_ALL = 100050, /* (2026-10-30) RANDOMISE's and MUTATE's ALL halves: all three Synths */
        Z_RND_MUT_ALL,
        Z_RND_VOICE,           /* + 0..2: the RANDOM page's BOTH, MONO, POLY (RV_*) */
@@ -123,6 +124,7 @@ typedef struct {
     RECT sync_cut;                            /* (2026-10-30) SYNC over the filters' ALL 3 (hub_gens.c) */
     RECT qm_hands, kb_hint;                   /* the controller's DEST (quickmod.c); the computer keyboard's hint */
     RECT panic;                               /* the controller's PANIC */
+    RECT link_all;                            /* (2026-10-31) the controller's LINK ALL (hub.c) */
     RECT back, fwd;                           /* (2026-10-30, nav.c) the screen's BACK / FWD, either side of the name */
 } layout_t;
 extern layout_t L;
@@ -170,7 +172,7 @@ typedef struct {
     unsigned char drawn[NPARAMS];   /* a control drawn with a modulation ring (repainted when the matrix changes) */
 } qm_ui_t;
 /* (2026-10-30) the CABLES view (cables.c): the focused Synth's matrix rows drawn as patch cables over the panel */
-enum { CB_MAX = 16, CB_PTS = 33, CB_JACKS = 64 };
+enum { CB_MAX = 16, CB_PTS = 33, CB_JACKS = 64, CB_DOTS = 300 };
 typedef struct {
     short row, src, dst, ctl, on;    /* the matrix row, its source, destination (MD_*), the panel control (-1: a jack) */
     float x0, y0, x1, y1, kx, ky;    /* the ends (source, destination) and the amount knob, in pixels */
@@ -203,6 +205,13 @@ typedef struct {
     int probe;                       /* (cb_hit answers -1 while cables.c asks the panel what is under the mouse) */
     char msg[220];                   /* what the last drag or box edit did, for the help line, and since when */
     DWORD msg_at;
+    /* (2026-10-31) a drag the other way, from a destination to a source: each modulatable panel control's "+" dot */
+    int nd;                          /* how many dots */
+    short dot_ctl[CB_DOTS], dot_dst[CB_DOTS];   /* its control (Synth 1's index) and its destination (MD_*) */
+    float dot_x[CB_DOTS], dot_y[CB_DOTS];
+    int ddst, dfrom;                 /* the destination dragged from; from a dot (k) or a bay jack (-1 - j) */
+    float dx, dy, drad;              /* where that cable ends (the knob's middle, or the jack) and its ring */
+    int amt_moved;                   /* a value drag has moved past its dead zone (a double-click changes nothing) */
 } cb_ui_t;
 /* (2026-10-30, matrix_page.c) the MATRIX page's filters and the SETUP page's key range set by pressing a key */
 typedef struct {
@@ -357,6 +366,7 @@ unsigned qm_family(int s);                      /* ... the colour of its family 
 int qm_is_gen_src(int s);                       /* ... one of the generators' */
 void qm_remove_row(ed_t *e, int row);           /* ... the focused Synth's row emptied (and in the Synths with it): undo */
 void qm_pick(ed_t *e, int s);                   /* ... quick assign from source s (as its DEST button) */
+void qm_open_matrix(ed_t *e, int row);           /* (2026-10-31) ... the MATRIX page at that row, marked */
 int qm_connect(ed_t *e, int s, int d, float amt, int *how);   /* (2026-10-31) s -> d in each Synth in focus, a new
                                                  * row at amt % (an existing one kept as it is): one undo step; the
                                                  * focused Synth's row, or -1: its matrix is full. how: 1 a new row,
@@ -490,6 +500,8 @@ void settings_tempo_set(ed_t *e, int own, float bpm, int save);   /* both (save 
 int link_lit(ed_t *e, int i);                  /* panel index i has a LINK, lit: edits go to all three Synths */
 int link_param(int i);                         /* the LINK param of panel index i (-1: none) */
 int link_relative(ed_t *e, int i);             /* lit and relative (ALL 3: the cutoffs move by the same amount) */
+int hands_linked(ed_t *e);                     /* (2026-10-31) 1: every LINK of the controller box is lit */
+void hands_link_all(ed_t *e);                  /* LINK ALL: all lit, all off; else all on (one undo step) */
 int panel_source(ed_t *e, int i);              /* what panel control i moves now (VOLUME: master_level, MASTER lit) */
 int master_param(void);                        /* master_level's index (-1: none) */
 RECT hub_rect(int z);                          /* where hub zone z sits (the page's or the console's) */
@@ -575,7 +587,8 @@ void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot);
 enum { Z_CB_BTN = Z_CB, Z_CB_OFF, Z_CB_X, Z_CB_KNOB = Z_CB + 100, Z_CB_WIRE = Z_CB + 200, Z_CB_JACK = Z_CB + 300,
        Z_CB_HANDLE = Z_CB + 400,   /* (2026-10-31) + 2 x cable + end (0 source, 1 destination): its grab handle */
        Z_CB_BOX = Z_CB + 450,      /* + CBX_*: the selected cable's settings box */
-       Z_CB_END = Z_CB + 500 };
+       Z_CB_DOT = Z_CB + 500,      /* (2026-10-31) + k: a modulatable control's "+" dot (drag it to a source) */
+       Z_CB_END = Z_CB + 800 };
 enum { CBX_BG, CBX_AMT_DN, CBX_AMT, CBX_AMT_UP, CBX_ON, CBX_VIA, CBX_VIA_DN, CBX_VIA_AMT, CBX_VIA_UP, CBX_XF, CBX_XF_DN,
        CBX_XF_AMT, CBX_XF_UP, CBX_COUNT };
 #define TEST_CB 0x4F314342   /* VENDOR_SPECIFIC index: value = CBT_ op (cables.c) */
@@ -596,9 +609,13 @@ enum { CBT_ON = 1,           /* 1: shown */
        CBT_BOX_XY,           /* opt = CBX_*: that control of the settings box (-1: not shown) */
        CBT_DRAG,             /* the drag going on (CD_*, 0: none) */
        CBT_LIVE,             /* the live cable's repainted area as drawn last: width + 65536 x height */
-       CBT_DJACK_XY };       /* opt = a destination (MD_*): its jack in the bay (-1: none) */
+       CBT_DJACK_XY,         /* opt = a destination (MD_*): its jack in the bay (-1: none) */
+       CBT_DOT_XY,           /* (2026-10-31) opt = a panel index: its "+" dot (-1: none) */
+       CBT_NDOTS };          /* how many "+" dots */
 int cb_hit(ed_t *e, POINT pt);                  /* a cable's part under pt (Z_CB_*), or -1 */
 int cb_press(ed_t *e, int z, int x, int y);     /* a left click (z: hit()'s); 1: taken */
+int cb_double(ed_t *e, int z);                  /* (2026-10-31) a double-click on a cable: its row removed (1: taken) */
+int cb_right(ed_t *e, int z, int x, int y);     /* (2026-10-31) a right-click on a cable: its menu (1: taken) */
 void cb_drag(ed_t *e, int x, int y, int fine);  /* M_CABLE: the amount, or the cable being dragged, follows the mouse */
 void cb_release(ed_t *e, int up, int x, int y); /* up: the button let go there (else the capture lost: cancelled) */
 int cb_key(ed_t *e, int vk);                    /* Esc: hidden (1: taken) */
@@ -614,7 +631,7 @@ intptr_t cb_test(ed_t *e, intptr_t op, char *buf, float opt);
  * destination (SOURCE / DEST lists on the title line, CLEAR; EDIT MODULATIONS on quick assign's MOD FROM page opens
  * it filtered by that source), a destination picked in two steps (its section, then the parameter); the SETUP page's
  * LOW / HIGH buttons: click one, then press a key (the window's keyboard, the computer's keys or MIDI) */
-enum { Z_MX = 697000,                      /* (after CABLES 690000-690499 and PARTS 695000-695999, before Z_ABS) */
+enum { Z_MX = 697000,                      /* (after CABLES 690000-690799 and PARTS 695000-695999, before Z_ABS) */
        Z_MX_FSRC, Z_MX_FDST, Z_MX_CLEAR,   /* the MATRIX page's title line: SOURCE, DEST, CLEAR */
        Z_MX_DEL = 697010,                  /* + r: the DELETE of the screen's row r (0 .. ROWS-1) */
        Z_MX_KEY = 697030,                  /* + 2 x Synth + (0 LOW, 1 HIGH): the SETUP page's buttons */

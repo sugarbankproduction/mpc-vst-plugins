@@ -24,6 +24,13 @@
  *   - a selected cable's box: ON / OFF (its ENABLE), X, AMOUNT, VIA (its list) and VIA AMOUNT, XFORM (its list) and its
  *     amount: each value dragged or < > (5%). Every edit and every drag is one undo step, told to the host as a knob,
  *     in the MATRIX page's own params (the page stays the only truth).
+ *   (2026-10-31) Shortcuts beside the visible X: a double-click on a cable (its wire, its knob, an end dot) removes its
+ *   row (one undo step; the first click changes nothing, the amount knob has a 3 px dead zone); a right-click opens its
+ *   menu: Delete, Turn Off / On, Settings... (the box), Open in Matrix. A grab handle clicked without moving selects.
+ *   And the other way round: each control the matrix can move has a small "+" dot at its top right (a knob's just
+ *   outside it); a drag from the dot (or from a destination jack in the bay) to a source (a jack, an LFO's or
+ *   envelope's title strip, a wheel, the ribbon) makes the same row as a drag from the source. A drag on the knob itself
+ *   turns it, as always; a plain click on the dot only says how to use it.
  *   The live cable is drawn over the cached layer and repaints only its own area as it moves; a cable whose end is
  *   dragged is left out of the layer (drawn again once at the start and once at the end of the drag).
  *
@@ -60,7 +67,9 @@ static const signed char PANEL_SRC[] = {MS_LFO1, MS_LFO2, MS_LFO3, MS_LFO4, MS_F
                                         MS_BEND, MS_WHEEL, MS_PAD_X, MS_PAD_Y, MS_PAD_GATE, MS_RIBBON};
 /* (2026-10-31) dragging (e->cb.drag): a value (the amount knob, the box's), a press on a source's jack not moved yet, a
  * new cable from it, a cable's destination end, its source end */
-enum { CD_NONE, CD_AMT, CD_PRESS, CD_NEW, CD_DST, CD_SRC };
+enum { CD_NONE, CD_AMT, CD_PRESS, CD_NEW, CD_DST, CD_SRC,
+       CD_PRESSD, CD_REV };   /* (2026-10-31) a press on a destination ("+" dot or bay jack), a new cable from it */
+static int live_kind(int d) { return d == CD_NEW || d == CD_DST || d == CD_SRC || d == CD_REV; }   /* a cable in the hand */
 /* what letting go would do (e->cb.act): nothing, connect, nothing (the matrix full), move the end, nothing (the same
  * end), remove the row, nothing (not a destination / not a source there) */
 enum { CA_NONE, CA_CONNECT, CA_FULL, CA_MOVE, CA_SAME, CA_REMOVE, CA_NOT_DST, CA_NOT_SRC };
@@ -292,6 +301,30 @@ static void geom(ed_t *e) {
         b->n++;
     }
     for (int k = 0; k < b->n; k++) curve(e, k);
+    /* (2026-10-31) a "+" dot by each control the matrix can move: a drag from it to a source makes a cable (the
+     * control itself turns as always); at a knob's top right, just outside it; at a switch's top right corner */
+    b->nd = 0;
+    for (int k = 0; k < NCTLS && b->nd < CB_DOTS; k++) {
+        int i = CTLS[k].param, d = qm_dst_of(i);
+        if (d <= 0 || IsRectEmpty(&L.ctl[i])) continue;
+        float x, y;
+        if (L.kind[i] == K_KNOB || L.kind[i] == K_SMALL || L.kind[i] == K_BIG) {
+            float cx, cy, r;
+            knob_geom(i, &cx, &cy, &r, NULL);
+            x = cx + (r + 4.0f * L.s) * 0.7071f;
+            y = cy - (r + 4.0f * L.s) * 0.7071f;
+        } else {
+            x = L.ctl[i].right - 4.0f * L.s;
+            y = L.ctl[i].top + 4.0f * L.s;
+        }
+        POINT p = {(int)x, (int)y};
+        if (PtInRect(&L.screen, p) || PtInRect(&L.help, p) || PtInRect(&L.tabline, p)) continue;
+        b->dot_ctl[b->nd] = (short)i;
+        b->dot_dst[b->nd] = (short)d;
+        b->dot_x[b->nd] = x;
+        b->dot_y[b->nd] = y;
+        b->nd++;
+    }
 }
 
 static unsigned signature(ed_t *e) {   /* what the cables' look depends on (not the amounts, not the selection) */
@@ -364,6 +397,14 @@ static void draw_jack(const cb_jack_t *j) {
     gfx_circle(j->x, j->y, 5.2f * s, 1.5f * s, j->dst ? 0xFF8A8A92 : 0xFFC4C6CC);
     gfx_disc(j->x, j->y, 2.6f * s, 0xFF000000);
 }
+static void draw_dot(float x, float y, int hot) {   /* (2026-10-31) a destination's "+" dot */
+    float s = L.s, r = (hot ? 5.2f : 4.2f) * s, d = (hot ? 2.6f : 2.1f) * s;
+    gfx_disc(x, y, r + 1.0f * s, 0xF0060607);
+    gfx_disc(x, y, r, hot ? 0xFF3A3A40 : 0xFF1A1A1D);
+    gfx_circle(x, y, r, 1.1f * s, hot ? 0xFFFFFFFF : 0xFFC4C6CC);
+    gfx_line(x - d, y, x + d, y, 1.3f * s, hot ? 0xFFFFFFFF : 0xFFE8E8EC);
+    gfx_line(x, y - d, x, y + d, 1.3f * s, hot ? 0xFFFFFFFF : 0xFFE8E8EC);
+}
 static void build(ed_t *e) {
     cb_ui_t *b = &e->cb;
     if (!b->layer || b->lw != L.w || b->lh != L.h) {
@@ -392,6 +433,7 @@ static void build(ed_t *e) {
             }
             draw_jack(k);
         }
+        for (int k = 0; k < b->nd; k++) draw_dot(b->dot_x[k], b->dot_y[k], 0);   /* (2026-10-31) under the cables */
         for (int k = 0; k < b->n; k++)   /* (the faint ones under; one whose end is dragged: not) */
             if (!b->cab[k].on && b->cab[k].row + 1 != b->hide) draw_cable(&b->cab[k], 0);
         for (int k = 0; k < b->n; k++)
@@ -570,11 +612,18 @@ static void amount_knob(const cb_cable_t *c, float amt, int hot) {
 /* ---- (2026-10-31) a cable being dragged: drawn over the layer, only its own area repainted as it moves ---- */
 static int live_cable(ed_t *e, cb_cable_t *t) {   /* the dragged cable now (0: none) */
     cb_ui_t *b = &e->cb;
-    if (b->drag != CD_NEW && b->drag != CD_DST && b->drag != CD_SRC) return 0;
+    if (!live_kind(b->drag)) return 0;
     memset(t, 0, sizeof *t);
     t->on = 1;
     t->rad = 4.0f * L.s;
-    if (b->drag == CD_NEW) {
+    if (b->drag == CD_REV) {   /* (2026-10-31) from the destination (its knob) to the mouse, the source end */
+        t->src = (short)b->tsrc;
+        t->x1 = b->dx;
+        t->y1 = b->dy;
+        t->rad = b->drad;
+        t->x0 = (float)b->mx;
+        t->y0 = (float)b->my;
+    } else if (b->drag == CD_NEW) {
         int j = jack_of_src(e, b->dsrc);
         if (j < 0) return 0;
         t->src = (short)b->dsrc;
@@ -629,12 +678,12 @@ static void live_draw(ed_t *e, const RECT *clip) {
     gpt_t p[CB_PTS];
     for (int k = 0; k < CB_PTS; k++) { p[k].x = t.pt[k][0]; p[k].y = t.pt[k][1]; }
     int removing = e->cb.act == CA_REMOVE;
-    DWORD col = removing ? 0x90FF7468 : qm_family(t.src);
+    DWORD col = removing ? 0x90FF7468 : e->cb.drag == CD_REV && !t.src ? 0xFFB8BCC4 : qm_family(t.src);
     gfx_lines(p, CB_PTS, 6.4f * s, removing ? 0x90101012 : 0xE6101012);
     gfx_lines(p, CB_PTS, 4.0f * s, col);
     gfx_disc(t.x0, t.y0, 4.4f * s, 0xFF101012);   /* the plugs: in the jack, at the far end */
     gfx_disc(t.x0, t.y0, 3.1f * s, col);
-    if (e->cb.drag == CD_SRC && !removing) {   /* (its destination's ring stays where it is) */
+    if ((e->cb.drag == CD_SRC || e->cb.drag == CD_REV) && !removing) {   /* (its destination's ring stays where it is) */
         gfx_circle(t.x1, t.y1, t.rad, 3.4f * s, 0xE0101012);
         gfx_circle(t.x1, t.y1, t.rad, 1.9f * s, col);
     } else {
@@ -773,6 +822,10 @@ void cb_draw(HDC dc, ed_t *e, const RECT *clip) {
         b->cab[k].amt = amt;
         amount_knob(c, amt, e->hover == Z_CB_KNOB + k || e->cb.sel == c->row);
     }
+    for (int k = 0; k < b->nd; k++)   /* (2026-10-31) the "+" dot under the mouse, or dragged from: lit */
+        if ((e->hover == Z_CB_DOT + k || ((b->drag == CD_PRESSD || b->drag == CD_REV) && b->dfrom == k)) &&
+            seen(b->dot_x[k] - 7 * s, b->dot_y[k] - 7 * s, b->dot_x[k] + 7 * s, b->dot_y[k] + 7 * s, clip))
+            draw_dot(b->dot_x[k], b->dot_y[k], 1);
     for (int k = 0; k < b->n; k++) {   /* (2026-10-31) the grab handles near each end (drag one to re-patch) */
         const cb_cable_t *c = &b->cab[k];
         if (c->row + 1 == b->hide) continue;
@@ -784,7 +837,7 @@ void cb_draw(HDC dc, ed_t *e, const RECT *clip) {
         }
     }
     gfx_end();
-    if (b->drag == CD_NEW || b->drag == CD_DST || b->drag == CD_SRC) {   /* (behind the screen's title and help lines) */
+    if (live_kind(b->drag)) {   /* (behind the screen's title and help lines) */
         int saved = SaveDC(dc);
         ExcludeClipRect(dc, L.tabline.left, L.tabline.top, L.tabline.right, L.tabline.bottom);
         ExcludeClipRect(dc, L.help.left, L.help.top, L.help.right, L.help.bottom);
@@ -832,6 +885,8 @@ int cb_hit(ed_t *e, POINT pt) {
     if (nearest >= 0) return nearest;
     for (int j = 0; j < e->cb.nj; j++)
         if (hypotf(e->cb.jack[j].x - x, e->cb.jack[j].y - y) < 7.5f * s) return Z_CB_JACK + j;
+    for (int k = 0; k < e->cb.nd; k++)   /* (2026-10-31) a control's "+" dot (its knob still turns off the dot) */
+        if (hypotf(e->cb.dot_x[k] - x, e->cb.dot_y[k] - y) < 5.5f * s) return Z_CB_DOT + k;
     if (!e->qm.src)   /* (while quick assign waits for a knob, the knobs under the cables take the click) */
         for (int k = e->cb.n - 1; k >= 0; k--)
             for (int p = 0; p + 1 < CB_PTS; p++)
@@ -912,6 +967,7 @@ static void value_drag(ed_t *e, int row, int col, int y) {
         if (e->cb.rows[s] >= 0) edit_begin(e, cell(e->cb.rows[s], col, s), 0);
     e->cb.drag_y = y;
     e->cb.drag_from = real_at(e, cell(row, col, e->focus));
+    e->cb.amt_moved = 0;
     e->cb.drag = CD_AMT;
     e->mode = M_CABLE;
     SetCapture(e->wnd);
@@ -946,6 +1002,23 @@ static void ring_of(ed_t *e, int h, RECT *r, int *round) {   /* where panel hit 
     *r = L.ctl[i];
     InflateRect(r, sc(3), sc(3));
 }
+/* (2026-10-31) a source's place on the panel under pt, besides the jacks: an LFO's or envelope's title strip, a wheel,
+ * the ribbon (the pad has three sources: its jacks). Its source, or 0; r: the place, to light it */
+static int src_area_at(ed_t *e, POINT pt, RECT *r) {
+    (void)e;
+    static const struct { int s; const char *panel; } P[] = {
+        {MS_LFO1, "LFO 1"}, {MS_LFO2, "LFO 2"}, {MS_LFO3, "LFO 3"}, {MS_LFO4, "LFO 4"}, {MS_FENV, "FILTER ENVELOPE"},
+        {MS_AENV, "AMPLIFIER ENVELOPE"}, {MS_MENV, "MODULATION ENVELOPE"}, {MS_NOISE_EG, "NOISE"}};
+    for (unsigned k = 0; k < sizeof P / sizeof P[0]; k++)
+        if (panel_rect(P[k].panel, r)) {
+            r->bottom = r->top + sc(15);   /* (its title strip) */
+            if (PtInRect(r, pt)) return P[k].s;
+        }
+    const struct { const RECT *w; int s; } W[] = {{&L.pitch, MS_BEND}, {&L.modw, MS_WHEEL}, {&L.ribbon, MS_RIBBON}};
+    for (unsigned k = 0; k < sizeof W / sizeof W[0]; k++)
+        if (PtInRect(W[k].w, pt)) { *r = *W[k].w; return W[k].s; }
+    return 0;
+}
 static void aim(ed_t *e, int x, int y) {   /* what letting go at x, y would do: e->cb.act, its target, its light */
     cb_ui_t *b = &e->cb;
     POINT pt = {x, y};
@@ -953,7 +1026,21 @@ static void aim(ed_t *e, int x, int y) {   /* what letting go at x, y would do: 
     int act = CA_NONE, tsrc = 0, tdst = 0, round = 1, h = -1;
     int k = b->drag == CD_NEW ? -1 : cable_of_row(e, b->drow);
     RECT bp = bay_plate(e);
-    if (b->drag == CD_SRC) {
+    if (b->drag == CD_REV) {   /* (2026-10-31) from a destination: a source's jack, or its place on the panel */
+        int j = jack_at(e, pt, 1);
+        if (j >= 0) {
+            tsrc = b->jack[j].src;
+            float r = 9.0f * L.s;
+            SetRect(&ring, (int)(b->jack[j].x - r), (int)(b->jack[j].y - r), (int)(b->jack[j].x + r), (int)(b->jack[j].y + r));
+        } else if ((tsrc = src_area_at(e, pt, &ring)) > 0) {
+            round = 0;
+            InflateRect(&ring, sc(2), sc(2));
+        } else {
+            h = ed_hit(e, x, y);
+            act = h >= 0 && h < NPARAMS ? CA_NOT_SRC : CA_NONE;
+        }
+        if (tsrc > 0) act = matrix_full(e, tsrc, b->ddst) ? CA_FULL : CA_CONNECT;
+    } else if (b->drag == CD_SRC) {
         int j = jack_at(e, pt, 1);
         if (j >= 0) {
             tsrc = b->jack[j].src;
@@ -1017,6 +1104,41 @@ static void press_source(ed_t *e, int s, int x, int y) {   /* a press on a sourc
     e->mode = M_CABLE;
     SetCapture(e->wnd);
 }
+/* (2026-10-31) a press on a destination: a control's "+" dot (k >= 0) or a destination jack in the bay (-1 - j): a
+ * click, or a drag from it to a source */
+static void press_dest(ed_t *e, int from, int x, int y) {
+    cb_ui_t *b = &e->cb;
+    b->dfrom = from;
+    if (from >= 0) {
+        int i = b->dot_ctl[from];
+        b->ddst = b->dot_dst[from];
+        if (L.kind[i] == K_KNOB || L.kind[i] == K_SMALL || L.kind[i] == K_BIG) {
+            float cx, cy, r;
+            knob_geom(i, &cx, &cy, &r, NULL);
+            b->dx = cx;
+            b->dy = cy;
+            b->drad = r + 2.5f * L.s;
+        } else {
+            b->dx = (L.ctl[i].left + L.ctl[i].right) / 2.0f;
+            b->dy = (L.ctl[i].top + L.ctl[i].bottom) / 2.0f;
+            b->drad = 7.0f * L.s;
+        }
+    } else {
+        const cb_jack_t *j = &b->jack[-1 - from];
+        b->ddst = j->dst;
+        b->dx = j->x;
+        b->dy = j->y;
+        b->drad = 5.5f * L.s;
+    }
+    b->tsrc = 0;
+    b->drag = CD_PRESSD;
+    b->px = b->mx = x;
+    b->py = b->my = y;
+    e->mode = M_CABLE;
+    SetCapture(e->wnd);
+    if (from >= 0) inval(e, (RECT){(int)(b->dot_x[from] - sc(8)), (int)(b->dot_y[from] - sc(8)),
+                                   (int)(b->dot_x[from] + sc(8)), (int)(b->dot_y[from] + sc(8))});
+}
 static void press_end(ed_t *e, int k, int end, int x, int y) {   /* a press on a cable's grab handle: its end follows */
     const cb_cable_t *c = &e->cb.cab[k];
     select_row(e, -1);   /* (the box would be in the way) */
@@ -1043,8 +1165,9 @@ static void repatch(ed_t *e, int row, int col, int v) {   /* row's source or des
 static void drop(ed_t *e, int kind) {   /* the mouse let go after a drag: what aim() said */
     cb_ui_t *b = &e->cb;
     int act = b->act;
-    if (kind == CD_NEW) {
-        int how = 0, row = act == CA_CONNECT ? qm_connect(e, b->dsrc, b->tdst, (float)NEW_AMT, &how) : -1;
+    if (kind == CD_NEW || kind == CD_REV) {   /* (CD_REV, 2026-10-31: from a destination to a source) */
+        int sv = kind == CD_REV ? b->tsrc : b->dsrc, dv = kind == CD_REV ? b->ddst : b->tdst;
+        int how = 0, row = act == CA_CONNECT ? qm_connect(e, sv, dv, (float)NEW_AMT, &how) : -1;
         if (row >= 0) {
             refresh(e);
             select_row(e, row);
@@ -1053,13 +1176,15 @@ static void drop(ed_t *e, int kind) {   /* the mouse let go after a drag: what a
                 if (how >> c & 2) n += snprintf(also + n, sizeof also - n, n ? "+%d" : "; not in Synth %d (its matrix is full)", c + 1);
             if (how & 1)
                 say(e, "%s > %s connected at %+d%% (row %d%s). Drag its middle knob, or use the box, for the amount.",
-                    qm_src_name(b->dsrc), qm_dst_name(b->tdst), NEW_AMT, row + 1, also);
+                    qm_src_name(sv), qm_dst_name(dv), NEW_AMT, row + 1, also);
             else
-                say(e, "%s > %s was connected already (row %d%s): its settings are in the box.", qm_src_name(b->dsrc),
-                    qm_dst_name(b->tdst), row + 1, also);
+                say(e, "%s > %s was connected already (row %d%s): its settings are in the box.", qm_src_name(sv),
+                    qm_dst_name(dv), row + 1, also);
         } else if (act == CA_FULL || (act == CA_CONNECT && row < 0)) {
             say(e, "All %d matrix rows of Synth %d are in use: %s > %s was not connected. Free a row first (click a cable, "
-                "then its X).", NMATRIX, e->focus + 1, qm_src_name(b->dsrc), qm_dst_name(b->tdst));
+                "then its X).", NMATRIX, e->focus + 1, qm_src_name(sv), qm_dst_name(dv));
+        } else if (kind == CD_REV) {
+            say(e, "Nothing connected: let go over a source (a jack, an LFO's or envelope's title, a wheel, the ribbon).");
         } else {
             say(e, "Nothing connected: let go over a knob (it lights up) or a destination jack in the bay.");
         }
@@ -1163,13 +1288,74 @@ int cb_press(ed_t *e, int z, int x, int y) {
     if (z >= Z_CB_JACK && z < Z_CB_JACK + e->cb.nj) {
         const cb_jack_t *j = &e->cb.jack[z - Z_CB_JACK];
         if (j->src > 0) press_source(e, j->src, x, y);   /* let go there: quick assign from it; dragged: a new cable */
-        else
-            for (int k = 0; k < e->cb.n; k++)   /* a destination's jack: its (first) cable */
-                if (e->cb.cab[k].dst == j->dst) { select_row(e, e->cb.cab[k].row); break; }
+        else press_dest(e, -1 - (z - Z_CB_JACK), x, y);   /* (2026-10-31) a click: its cable; dragged: to a source */
         return 1;
     }
+    if (z >= Z_CB_DOT && z < Z_CB_DOT + e->cb.nd) { press_dest(e, z - Z_CB_DOT, x, y); return 1; }   /* (2026-10-31) */
     if (e->cb.sel >= 0) select_row(e, -1);   /* a click elsewhere: the panel's, and the selection goes */
     return 0;
+}
+/* (2026-10-31) the cable a zone belongs to (its knob, its wire, a grab handle), or -1 */
+static int cable_of_zone(ed_t *e, int z) {
+    if (!e->cb.on) return -1;
+    if (z >= Z_CB_KNOB && z < Z_CB_KNOB + e->cb.n) return z - Z_CB_KNOB;
+    if (z >= Z_CB_WIRE && z < Z_CB_WIRE + e->cb.n) return z - Z_CB_WIRE;
+    if (z >= Z_CB_HANDLE && z < Z_CB_HANDLE + 2 * e->cb.n) return (z - Z_CB_HANDLE) / 2;
+    return -1;
+}
+static void remove_cable(ed_t *e, int row, const char *how) {   /* one undo step (quickmod.c's REMOVE) */
+    select_row(e, -1);
+    qm_remove_row(e, row);
+    refresh(e);
+    if (e->wnd) InvalidateRect(e->wnd, NULL, FALSE);
+    say(e, "Row %d removed (%s). UNDO brings it back.", row + 1, how);
+}
+int cb_double(ed_t *e, int z) {   /* the second click of a double-click on a cable: its row goes */
+    int k = cable_of_zone(e, z);
+    if (k < 0 || e->mode == M_CABLE) return 0;
+    remove_cable(e, e->cb.cab[k].row, "double-click");
+    return 1;
+}
+enum { CM_DELETE = 1, CM_ONOFF, CM_SETTINGS, CM_MATRIX };   /* the cable menu's items (load_test answers them) */
+int cb_right(ed_t *e, int z, int x, int y) {   /* a right-click on a cable: Delete, Turn Off / On, Settings, MATRIX */
+    int k = cable_of_zone(e, z);
+    if (k < 0 || e->mode == M_CABLE) return 0;
+    const cb_cable_t *c = &e->cb.cab[k];
+    int row = c->row, on = c->on, src = c->src, dst = c->dst;
+    select_row(e, row);
+    int choice;
+    if (e->qm.answer) {   /* (load_test answers it) */
+        choice = e->qm.answer;
+        e->qm.answer = 0;
+    } else {
+        HMENU m = CreatePopupMenu();
+        char t[96];
+        snprintf(t, sizeof t, "Row %d:  %s > %s", row + 1, qm_src_name(src), qm_dst_name(dst));
+        AppendMenuA(m, MF_STRING | MF_GRAYED, 0, t);
+        AppendMenuA(m, MF_SEPARATOR, 0, NULL);
+        AppendMenuA(m, MF_STRING, CM_DELETE, "Delete");
+        AppendMenuA(m, MF_STRING, CM_ONOFF, on ? "Turn Off" : "Turn On");
+        AppendMenuA(m, MF_STRING, CM_SETTINGS, "Settings...");
+        AppendMenuA(m, MF_STRING, CM_MATRIX, "Open in Matrix");
+        POINT pt = {x, y};
+        ClientToScreen(e->wnd, &pt);
+        choice = TrackPopupMenu(m, TPM_RETURNCMD | TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0, e->wnd, NULL);
+        DestroyMenu(m);
+    }
+    char what[96];
+    switch (choice) {
+    case CM_DELETE: remove_cable(e, row, "its menu's Delete"); break;
+    case CM_ONOFF:
+        if (MATRIX_ON[row] < 0) break;
+        snprintf(what, sizeof what, "Cable %s %s > %s", on ? "off" : "on", qm_src_name(src), qm_dst_name(dst));
+        edit_col(e, row, COL_ON, on ? 0.0f : 1.0f, what);
+        say(e, "Row %d %s (its ENABLE on the MATRIX page).", row + 1, on ? "switched off: it does nothing now" : "on again");
+        refresh(e);
+        break;
+    case CM_SETTINGS: say(e, "Row %d's settings: the box by its knob (the cable is selected).", row + 1); break;
+    case CM_MATRIX: qm_open_matrix(e, row); break;
+    }
+    return 1;
 }
 void cb_drag(ed_t *e, int x, int y, int fine) {
     cb_ui_t *b = &e->cb;
@@ -1179,8 +1365,16 @@ void cb_drag(ed_t *e, int x, int y, int fine) {
         b->drag = CD_NEW;
         b->act = -1;
     }
-    if (b->drag == CD_NEW || b->drag == CD_DST || b->drag == CD_SRC) { live_move(e, x, y); return; }
+    if (b->drag == CD_PRESSD) {   /* (2026-10-31) moved far enough: a new cable from the destination pressed */
+        if (abs(x - b->px) <= DRAG_PX && abs(y - b->py) <= DRAG_PX) return;
+        if (b->sel >= 0) select_row(e, -1);
+        b->drag = CD_REV;
+        b->act = -1;
+    }
+    if (live_kind(b->drag)) { live_move(e, x, y); return; }
     if (b->drag != CD_AMT) return;
+    if (!b->amt_moved && abs(y - b->drag_y) < 3) return;   /* (2026-10-31) still a click: nothing changes yet */
+    b->amt_moved = 1;
     float a = b->drag_from + (b->drag_y - y) * (fine ? 0.2f : 1.0f);
     if (!fine) a = roundf(a);
     for (int s = 0; s < NSYNTHS; s++) {
@@ -1220,7 +1414,31 @@ void cb_release(ed_t *e, int up, int x, int y) {
         if (up) qm_pick(e, b->dsrc);
         return;
     }
-    if (kind != CD_NEW && kind != CD_DST && kind != CD_SRC) return;
+    if (kind == CD_PRESSD) {   /* (2026-10-31) a plain click on a destination: a bay jack selects its cable, as before */
+        if (b->dfrom >= 0) {
+            RECT r = {(int)(b->dot_x[b->dfrom] - sc(8)), (int)(b->dot_y[b->dfrom] - sc(8)), (int)(b->dot_x[b->dfrom] + sc(8)),
+                      (int)(b->dot_y[b->dfrom] + sc(8))};
+            inval(e, r);
+        }
+        if (!up) return;
+        for (int k = 0; k < b->n; k++)
+            if (b->cab[k].dst == b->ddst) { select_row(e, b->cab[k].row); return; }
+        say(e, "%s: drag from its + dot to a source (a jack, an LFO's or envelope's title, a wheel, the ribbon) to connect "
+            "it.", qm_dst_name(b->ddst));
+        return;
+    }
+    if (!live_kind(kind)) return;
+    if ((kind == CD_DST || kind == CD_SRC) && up && abs(x - b->px) <= DRAG_PX && abs(y - b->py) <= DRAG_PX) {
+        /* (2026-10-31) a grab handle clicked, not dragged: the cable selected, nothing re-patched */
+        inval(e, b->live_at);
+        SetRectEmpty(&b->live_at);
+        SetRectEmpty(&b->ring);
+        b->act = CA_NONE;
+        if (b->hide) { b->hide = 0; if (e->wnd) InvalidateRect(e->wnd, NULL, FALSE); }
+        refresh(e);
+        select_row(e, b->drow);
+        return;
+    }
     inval(e, b->live_at);
     RECT o = b->ring;
     InflateRect(&o, sc(7), sc(7));
@@ -1230,7 +1448,7 @@ void cb_release(ed_t *e, int up, int x, int y) {
         aim(e, x, y);
         b->drag = CD_NONE;
         drop(e, kind);
-    } else if (kind == CD_NEW) say(e, "Nothing connected.");
+    } else if (kind == CD_NEW || kind == CD_REV) say(e, "Nothing connected.");
     SetRectEmpty(&b->live_at);
     SetRectEmpty(&b->ring);
     b->act = CA_NONE;
@@ -1265,6 +1483,12 @@ void cb_hover(ed_t *e, int z) {   /* the mouse moved onto or off z: it repaints 
     if (!e->cb.on || z < Z_CB || z >= Z_CB_END) return;
     if (z == Z_CB_OFF) { RECT r = off_rect(); InflateRect(&r, sc(2), sc(2)); inval(e, r); }
     else if (z >= Z_CB_KNOB && z < Z_CB_KNOB + e->cb.n) inval_knob(e, z - Z_CB_KNOB);
+    else if (z >= Z_CB_DOT && z < Z_CB_DOT + e->cb.nd) {   /* (2026-10-31) */
+        int k = z - Z_CB_DOT;
+        RECT r = {(int)(e->cb.dot_x[k] - sc(8)), (int)(e->cb.dot_y[k] - sc(8)), (int)(e->cb.dot_x[k] + sc(8)),
+                  (int)(e->cb.dot_y[k] + sc(8))};
+        inval(e, r);
+    }
     else if (z >= Z_CB_HANDLE && z < Z_CB_HANDLE + 2 * e->cb.n) {
         const cb_cable_t *c = &e->cb.cab[(z - Z_CB_HANDLE) / 2];
         int end = (z - Z_CB_HANDLE) % 2;
@@ -1289,6 +1513,28 @@ static int drag_help(ed_t *e, char *out, int n) {   /* (2026-10-31) while a cabl
     int k = b->drag == CD_NEW ? -1 : cable_of_row(e, b->drow);
     const char *src = qm_src_name(b->drag == CD_NEW ? b->dsrc : k >= 0 ? b->cab[k].src : 0);
     const char *here = b->thit >= 0 && b->thit < NPARAMS ? PARAMS[fp(e, base_of(b->thit))].name : "This";
+    if (b->drag == CD_REV) {   /* (2026-10-31) from a destination, to a source */
+        const char *dst = qm_dst_name(b->ddst);
+        switch (b->act) {
+        case CA_CONNECT:
+            snprintf(out, n, "Let go: %s > %s, connected at %+d%% (Synth %d, a free matrix row).\nThen drag the cable's "
+                     "middle knob for the amount. Let go anywhere else: nothing changes.", qm_src_name(b->tsrc), dst, NEW_AMT,
+                     e->focus + 1);
+            return 1;
+        case CA_FULL:
+            snprintf(out, n, "All %d matrix rows of Synth %d are in use: %s can't be connected to %s.\nFree a row first: "
+                     "click a cable, then its X (or set a row's DESTINATION to Off on the MATRIX page).", NMATRIX,
+                     e->focus + 1, qm_src_name(b->tsrc), dst);
+            return 1;
+        case CA_NOT_SRC:
+            snprintf(out, n, "%s is not a modulation source.\nLet go over a source: a jack, an LFO's or envelope's title, a "
+                     "wheel, the ribbon; anywhere else connects nothing.", here);
+            return 1;
+        }
+        snprintf(out, n, "A new cable to %s: let go over a source (a jack, an LFO's or envelope's title strip, a wheel, the "
+                 "ribbon; it lights up).\nLet go anywhere else: nothing is connected.", dst);
+        return 1;
+    }
     if (b->drag == CD_NEW) {
         switch (b->act) {
         case CA_CONNECT:
@@ -1360,7 +1606,7 @@ int cb_help(ed_t *e, char *out, int n) {
         return 1;
     }
     if (!e->cb.on) return 0;
-    if (e->mode == M_CABLE && (e->cb.drag == CD_NEW || e->cb.drag == CD_DST || e->cb.drag == CD_SRC)) return drag_help(e, out, n);
+    if (e->mode == M_CABLE && live_kind(e->cb.drag)) return drag_help(e, out, n);
     int in = z >= Z_CB && z < Z_CB_END;
     if (e->qm.src && !in && e->mode != M_CABLE) return 0;   /* (quick assign's own help while it waits for a knob) */
     char t[200] = "";
@@ -1375,6 +1621,12 @@ int cb_help(ed_t *e, char *out, int n) {
     }
     if (e->mode == M_CABLE) return 0;   /* (a press on a jack, not moved yet) */
     if (z >= Z_CB_BOX && z < Z_CB_BOX + CBX_COUNT) { snprintf(out, n, "%s", box_help(z - Z_CB_BOX)); return 1; }
+    if (z >= Z_CB_DOT && z < Z_CB_DOT + e->cb.nd) {   /* (2026-10-31) */
+        snprintf(out, n, "%s: drag from this + dot to a source (a jack, an LFO's or envelope's title, a wheel, the ribbon) "
+                 "for a new cable.\nThe knob itself turns as always (drag on the knob, not the dot).",
+                 qm_dst_name(e->cb.dot_dst[z - Z_CB_DOT]));
+        return 1;
+    }
     if (e->cb.msg[0] && GetTickCount() - e->cb.msg_at <= MSG_MS) {   /* what the last drag or edit did */
         snprintf(out, n, "%s\nDrag from a source's jack to a knob: a new cable. Drag a cable's end dot: re-patch it. Click a "
                  "cable: its settings.", e->cb.msg);
@@ -1383,10 +1635,10 @@ int cb_help(ed_t *e, char *out, int n) {
     if (k >= 0) {
         label_text(e, &e->cb.cab[k], t, sizeof t);
         snprintf(out, n, "Row %s\n%s", t, z >= Z_CB_KNOB && z < Z_CB_KNOB + CB_MAX
-                 ? "Drag this knob up or down for the amount (green: positive, red: negative; Shift: fine). A click "
-                   "selects the cable: its box has the settings and an X to remove it."
+                 ? "Drag this knob up or down for the amount (Shift: fine). A click selects the cable: its box has the "
+                   "settings and an X to remove it. Double-click: remove it; right-click: its menu."
                  : "Click to select this cable (again: not): a box with its settings and an X. Its knob sets the amount; "
-                   "the dots near its ends re-patch it.");
+                   "the dots near its ends re-patch it. Double-click: remove it; right-click: its menu.");
         return 1;
     }
     if (z >= Z_CB_HANDLE && z < Z_CB_HANDLE + 2 * e->cb.n) {
@@ -1407,16 +1659,17 @@ int cb_help(ed_t *e, char *out, int n) {
     if (z == Z_CB_OFF) { snprintf(out, n, "CABLES OFF: hides the cables (as CABLES on the MATRIX page, or Esc)."); return 1; }
     if (z >= Z_CB_JACK && z < Z_CB_JACK + e->cb.nj) {
         const cb_jack_t *j = &e->cb.jack[z - Z_CB_JACK];
-        if (j->dst) snprintf(out, n, "%s: a destination with no knob on the panel. Drop a cable here to connect it; a click "
-                             "selects its cable.", j->label);
+        if (j->dst) snprintf(out, n, "%s: a destination with no knob on the panel. Drop a cable here to connect it, or drag "
+                             "from here to a source; a click selects its cable.", j->label);
         else snprintf(out, n, "%s: a source. Drag from it to a knob: a new cable. Or click it, then click knobs to connect "
                       "(quick assign; DONE or Esc when finished).", j->label);
         return 1;
     }
     if (z < 0 || z == Z_CB_BAY) {
-        snprintf(out, n, "CABLES: Synth %d's %d connection%s. Drag from a source's jack to a knob for a new one; drag a "
-                 "cable's end dot to re-patch it; click a cable for its settings. Esc or CABLES OFF: hidden.", e->focus + 1,
-                 e->cb.n, e->cb.n == 1 ? "" : "s");
+        snprintf(out, n, "CABLES: Synth %d's %d connection%s. A new one: drag from a source's jack to a knob, or from a "
+                 "knob's + dot to a source (a drag on the knob itself turns it).\nClick a cable for its settings, drag its "
+                 "end dots to re-patch it; double-click removes it, right-click opens its menu. Esc or CABLES OFF: hidden.",
+                 e->focus + 1, e->cb.n, e->cb.n == 1 ? "" : "s");
         return 1;
     }
     return 0;
@@ -1463,6 +1716,11 @@ intptr_t cb_test(ed_t *e, intptr_t op, char *buf, float opt) {
         for (int j = 0; j < e->cb.nj; j++)
             if (!e->cb.jack[j].src && e->cb.jack[j].dst == k) return xy(e->cb.jack[j].x, e->cb.jack[j].y);
         return -1;
+    case CBT_DOT_XY:
+        for (int d = 0; d < e->cb.nd; d++)
+            if (e->cb.dot_ctl[d] == k) return xy(e->cb.dot_x[d], e->cb.dot_y[d]);
+        return -1;
+    case CBT_NDOTS: return e->cb.on ? e->cb.nd : 0;
     }
     return 0;
 }
