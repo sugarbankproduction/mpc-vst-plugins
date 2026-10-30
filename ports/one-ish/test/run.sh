@@ -26,4 +26,7 @@ build "$P/build/obj_o2" "$P/build/offline_bench" -O2
 # old sounds play exactly as before (test/golden_check.c against test/golden_states.txt, made by test/golden_gen.sh)
 TEST="$P/test/golden_check.c $P/test/golden_rng.cc" build "$P/build/obj_o2" "$P/build/golden_check" -O2
 "$P/build/golden_check" check "$P/test/golden_states.txt"
+# the factory banks: every preset of each played, its peak, loudness and CPU, and test/out/bank_*_demo.wav (2026-10-30)
+TEST="$P/test/bank_check.c" build "$P/build/obj_o2" "$P/build/bank_check" -O2
+"$P/build/bank_check" "$P/test/out"
 "$P/build/offline_bench" bench
