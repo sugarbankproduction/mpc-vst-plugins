@@ -54,7 +54,7 @@ static const item_t ITEM[SI_COUNT] = {
      "RECEIVE MIDI CLOCK: On, the host's tempo and song position drive synced LFOs, envelopes, effects, the arp and "
      "the sequencer. Off, they are ignored and everything runs free at TEMPO below."},
     {"TEMPO (CLOCK OFF)", "tempo", IK_NUM, 10, 280, 1, 120, " BPM",
-     "TEMPO: the tempo ONE-ish keeps itself while RECEIVE MIDI CLOCK is off (10-280 BPM). Scroll or click < >; Shift "
+     "TEMPO: the tempo Moo Won keeps itself while RECEIVE MIDI CLOCK is off (10-280 BPM). Scroll or click < >; Shift "
      "for 0.1."},
     {"MIDI I/O FROM PRESET", "midi_io_preset", IK_ONOFF, 0, 1, 1, 1, "",
      "MIDI I/O LOAD FROM PRESET: On, a preset or patch you load brings its MIDI channels (MIDI IN (ALL) and each "
@@ -683,9 +683,9 @@ int settings_press(ed_t *e, int z) {   /* 1: z was the page's */
         int b = z - Z_BTN;
         if (b == B_RESTORE
             && MessageBoxA(e->wnd ? GetAncestor(e->wnd, GA_ROOT) : NULL,
-                           "Put every setting back to how ONE-ish came (autoload, MIDI clock, channels from presets, "
+                           "Put every setting back to how Moo Won came (autoload, MIDI clock, channels from presets, "
                            "pedal numbers)? Your patches and sounds are not touched.",
-                           "ONE-ish", MB_OKCANCEL | MB_ICONQUESTION) == IDOK)
+                           "Moo Won", MB_OKCANCEL | MB_ICONQUESTION) == IDOK)
             restore_defaults(e);
         if (b == B_OPEN_PATCHES || b == B_OPEN_SETTINGS) open_folder(e, b == B_OPEN_SETTINGS);
         if (b == B_LOAD_SCL || b == B_LOAD_KBM) tun_pick(e, b == B_LOAD_KBM);
@@ -696,7 +696,7 @@ int settings_press(ed_t *e, int z) {   /* 1: z was the page's */
         }
         if (b == B_CLEAR_MAP && G.nmap
             && MessageBoxA(e->wnd ? GetAncestor(e->wnd, GA_ROOT) : NULL, "Delete every learned MIDI CC mapping?",
-                           "ONE-ish", MB_OKCANCEL | MB_ICONQUESTION) == IDOK) {
+                           "Moo Won", MB_OKCANCEL | MB_ICONQUESTION) == IDOK) {
             G.nmap = 0;
             map_changed(e);
         }
@@ -905,7 +905,7 @@ const char *settings_zone_help(ed_t *e, int z) {
             "and keyboard maps) for the Synth in focus."};
         return H[z - Z_TAB];
     }
-    if (z == Z_BTN + B_RESTORE) return "RESTORE DEFAULT SETTINGS: every setting on this page back to how ONE-ish came. "
+    if (z == Z_BTN + B_RESTORE) return "RESTORE DEFAULT SETTINGS: every setting on this page back to how Moo Won came. "
                                        "Patches, presets and sounds are not changed.";
     if (z == Z_BTN + B_OPEN_PATCHES) return "Opens the folder with your patch files in Explorer.";
     if (z == Z_BTN + B_OPEN_SETTINGS) return "Opens the folder with the settings file in Explorer.";
@@ -947,7 +947,7 @@ void settings_help(ed_t *e, char *out, int n) {
                          "finer), and the focused Synth's own scale and keyboard map (LOAD a Scala file).");
     else
         snprintf(out, n, "Settings kept apart from the sounds: loading a sound or a project never changes them. Click "
-                         "a value to change it (or scroll over it). They are saved at once, for every ONE-ish.");
+                         "a value to change it (or scroll over it). They are saved at once, for every Moo Won.");
 }
 
 /* ---- load_test (effVendorSpecific TEST_SETTINGS; buf holds 1 KB) ---- */

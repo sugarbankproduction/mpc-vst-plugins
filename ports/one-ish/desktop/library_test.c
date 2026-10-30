@@ -236,7 +236,7 @@ static int click_answered(int z, const answer_t *a) {
     if (!found) printf("     (no \"%s\" window appeared)\n", a->title);
     return ok && found;
 }
-static const answer_t YES = {"ONE-ish", NULL, NULL, {0}, IDYES, NULL};
+static const answer_t YES = {"Moo Won", NULL, NULL, {0}, IDYES, NULL};
 
 static int file_has(const char *name, const char *what) {   /* a file in the patch folder holds what */
     char path[MAX_PATH + 64], buf[8192];

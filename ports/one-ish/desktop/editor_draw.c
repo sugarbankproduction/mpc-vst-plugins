@@ -1403,8 +1403,8 @@ static void bake(HDC dc) {
     {   /* our name, printed on the console with a faint shadow */
         RECT b1 = L.brand;
         OffsetRect(&b1, 0, 1);
-        text(dc, &b1, "ONE-ish", font_brand, RGB(8, 8, 9), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-        text(dc, &L.brand, "ONE-ish", font_brand, RGB(196, 198, 202), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &b1, "Moo Won", font_brand, RGB(8, 8, 9), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &L.brand, "Moo Won", font_brand, RGB(196, 198, 202), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
     controller_static(dc);
     rate_leds_static(dc);   /* (skin_text only: no GDI+ of its own) */
@@ -1422,8 +1422,8 @@ static void bake(HDC dc) {
         RECT r = {L.keys.right - sc(150), L.keys.bottom + sc(1), L.keys.right - sc(10), L.h - sc(1)};
         RECT r1 = r;
         OffsetRect(&r1, 0, 1);
-        text(dc, &r1, "ONE-ish", font_title, RGB(232, 190, 130), DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
-        text(dc, &r, "ONE-ish", font_title, RGB(74, 40, 18), DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &r1, "Moo Won", font_title, RGB(232, 190, 130), DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        text(dc, &r, "Moo Won", font_title, RGB(74, 40, 18), DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     }
     gfx_end();
     skin_bind(NULL);

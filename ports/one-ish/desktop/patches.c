@@ -753,7 +753,7 @@ int patches_import(ed_t *e, const char *src, int overwrite) {
     if (!t) { say(e, "Could not open that file: %s.", why_io(GetLastError())); return PE_FAIL; }
     if (!has_header(t)) {
         free(t);
-        say(e, "That file is not a ONE-ish patch (its first line isn't 'ONE-ish patch').");
+        say(e, "That file is not a Moo Won patch (its first line isn't 'ONE-ish patch').");
         return PE_BADFILE;
     }
     name_from_path(src, name);
@@ -885,7 +885,7 @@ void patches_chunk_set(ed_t *e, const void *chunk, intptr_t len) {   /* after th
 static HWND owner(ed_t *e) { return e->wnd ? GetAncestor(e->wnd, GA_ROOT) : NULL; }
 
 static int confirm(ed_t *e, const char *text) {
-    return MessageBoxA(owner(e), text, "ONE-ish", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES;
+    return MessageBoxA(owner(e), text, "Moo Won", MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) == IDYES;
 }
 
 typedef struct { const char *title, *prompt; char text[64]; } ask_t;
@@ -1017,10 +1017,10 @@ static void ui_import(ed_t *e) {
     OPENFILENAMEA o = {0};
     o.lStructSize = sizeof o;
     o.hwndOwner = owner(e);
-    o.lpstrFilter = "ONE-ish patches (*.oneish)\0*.oneish\0All files (*.*)\0*.*\0";
+    o.lpstrFilter = "Moo Won patches (*.oneish)\0*.oneish\0All files (*.*)\0*.*\0";
     o.lpstrFile = file;
     o.nMaxFile = sizeof file;
-    o.lpstrTitle = "Import a ONE-ish patch";
+    o.lpstrTitle = "Import a Moo Won patch";
     o.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_HIDEREADONLY;
     if (!GetOpenFileNameA(&o)) return;
     if (patches_import(e, file, 0) != PE_EXISTS) return;
@@ -1036,11 +1036,11 @@ static void ui_export(ed_t *e) {
     OPENFILENAMEA o = {0};
     o.lStructSize = sizeof o;
     o.hwndOwner = owner(e);
-    o.lpstrFilter = "ONE-ish patches (*.oneish)\0*.oneish\0";
+    o.lpstrFilter = "Moo Won patches (*.oneish)\0*.oneish\0";
     o.lpstrFile = file;
     o.nMaxFile = sizeof file;
     o.lpstrDefExt = "oneish";
-    o.lpstrTitle = "Export the sound as a ONE-ish patch";
+    o.lpstrTitle = "Export the sound as a Moo Won patch";
     o.Flags = OFN_OVERWRITEPROMPT | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR | OFN_HIDEREADONLY;
     if (GetSaveFileNameA(&o)) patches_export(e, file);
 }

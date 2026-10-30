@@ -750,7 +750,7 @@ static void patch_page(AEffect *fx, HWND child, float s, const char *bmp, int w,
     dialog_bmp = bmp;
     float act_y = sy + 6 + 36 + 20 + 9, act_w = (384 - 4 * (PA_COUNT - 1)) / (float)PA_COUNT + 4;   /* the PATCHES page's buttons (patches.c) */
     click(child, s, sx + 200, sy + 23);   /* the patch name: the list */
-    static const answer_t save_as = {"Save as", "UI Lead", IDOK}, yes = {"ONE-ish", NULL, IDYES};
+    static const answer_t save_as = {"Save as", "UI Lead", IDOK}, yes = {"Moo Won", NULL, IDYES};
     click_answered(child, s, sx + 8 + act_w * PA_SAVE_AS + act_w / 2 - 2, act_y, &save_as);
     int saved = exists("UI Lead") && title_is(fx, "U  UI Lead", 1);
     check(saved, "PATCHES page: SAVE AS asks for a name and saves");
@@ -794,7 +794,7 @@ static void seq_page_test(AEffect *fx, HWND child, float s, const char *bmp, int
     click_zone(child, s, ZONE_TAB_SEQ);   /* the step editor */
     float bx = ZONE_SCREEN[0] + 8 + (ZONE_SCREEN[2] - 16 - 24) / 8.0f * 4.5f + 6;   /* (8 buttons: CLEAR is the fifth) */
     float by = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 176 + 8 + 24 + 9;   /* CLEAR, in the buttons' row */
-    static const answer_t yes = {"ONE-ish", NULL, IDYES};
+    static const answer_t yes = {"Moo Won", NULL, IDYES};
     click_answered(child, s, bx, by, &yes);   /* CLEAR (asked; Yes): an empty sequence to start with */
     check(seq_now(fx, &q) && sq_used_steps(&q) == 0, "SEQ page: CLEAR (after asking) empties the sequence");
     click_ctl(child, s, "seq_rec");
@@ -2603,7 +2603,7 @@ static void seq_plain_test(AEffect *fx, HWND child, float s, const char *bmp, in
     click_zone(child, s, ZONE_TAB_MATRIX);
     click_zone(child, s, ZONE_TAB_SEQ);
     click(child, s, x0 + 56 + 22, ty);   /* NOTES */
-    static const answer_t yes = {"ONE-ish", NULL, IDYES};
+    static const answer_t yes = {"Moo Won", NULL, IDYES};
     click_answered(child, s, x0 + 4 * (bw + 4) + bw / 2, by, &yes);   /* CLEAR */
     click(child, s, x0 + 384 - 100 + 11, ty);   /* page 1 */
     cell_xy(3, 2, &x, &y);

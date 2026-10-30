@@ -1527,7 +1527,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
         e->hover = e->drag = e->key = -1;
         e->mode = M_NONE;
         patches_rescan(e);
-        e->wnd = CreateWindowExA(0, CLASS_NAME, "ONE-ish", WS_CHILD | WS_VISIBLE, 0, 0, L.w, L.h, (HWND)ptr, NULL, dll, e);
+        e->wnd = CreateWindowExA(0, CLASS_NAME, "Moo Won", WS_CHILD | WS_VISIBLE, 0, 0, L.w, L.h, (HWND)ptr, NULL, dll, e);
         e->corner_tries = 0;
         e->corners = square_corners(e->wnd);   /* (again from the timer: some hosts size their window afterwards) */
         send_kb_oct(e);   /* (2026-10-30) the engine follows this window's keyboard octave */

@@ -484,7 +484,7 @@ static int load_path(ed_t *e, const char *path) {
     int r = read_seq(e, path);
     if (r > 0 && e->sq.notes[0]) say(e, "Loaded the sequence \"%s\". Notes: %s", name, e->sq.notes);
     else if (r > 0) say(e, "Loaded the sequence \"%s\".", name);
-    else say(e, r < 0 ? "\"%s\" is not a ONE-ish sequence (or it is damaged)." : "Couldn't open \"%s\".", name);
+    else say(e, r < 0 ? "\"%s\" is not a Moo Won sequence (or it is damaged)." : "Couldn't open \"%s\".", name);
     return r > 0;
 }
 static int file_dialog(ed_t *e, int save, char *path, int n) {
@@ -493,7 +493,7 @@ static int file_dialog(ed_t *e, int save, char *path, int n) {
     OPENFILENAMEA o = {0};
     o.lStructSize = sizeof o;
     o.hwndOwner = e->wnd;
-    o.lpstrFilter = "ONE-ish sequences (*.oneseq)\0*.oneseq\0All files\0*.*\0";
+    o.lpstrFilter = "Moo Won sequences (*.oneseq)\0*.oneseq\0All files\0*.*\0";
     o.lpstrFile = path;
     o.nMaxFile = (DWORD)n;
     o.lpstrInitialDir = dir;
@@ -596,7 +596,7 @@ static void press_button(ed_t *e, int b) {
         else seq_send(e, "note %d %d -1 0 0 0 0", e->sq.step, e->sq.lane);
         return;
     case B_CLEAR:
-        if (MessageBoxA(e->wnd, "Clear the whole sequence (its notes and its modulation lanes)?", "ONE-ish",
+        if (MessageBoxA(e->wnd, "Clear the whole sequence (its notes and its modulation lanes)?", "Moo Won",
                         MB_YESNO | MB_ICONQUESTION) == IDYES)
             seq_send(e, "clear");
         return;
