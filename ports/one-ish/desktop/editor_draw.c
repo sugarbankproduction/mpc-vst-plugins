@@ -103,6 +103,10 @@ static const char *help_for(int i) {
         {"_gprand", "Pitch random (GRAINS on a master slot): each grain's pitch moves at random by up to 12 semitones either way."},
         {"_greverse", "Reverse (GRAINS on a master slot): the chance that a grain plays backwards."},
         {"_gquant", "Pitch quantise (GRAINS on a master slot): grain pitches kept to semitones, octaves, or octaves and fifths."},
+        {"link_bend", "LINK (pitch wheel): lit, the pitch wheel bends all three Synths at once, whatever their MIDI channels, and BEND RANGE (UP / DOWN) set from the panel goes to all three. Saved with the sound."},
+        {"link_mod", "LINK (mod wheel): lit, the mod wheel (CC 1) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
+        {"link_ribbon", "LINK (ribbon): lit, the ribbon (CC 16 and 17) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
+        {"link_glide", "LINK (glide): lit, glide's settings set from the panel (ON, RATE, TYPE, LEGATO, GATED, GLISS) go to all three Synths. Saved with the sound."},
         {"link_pad", "LINK (X/Y pad): lit, moving the pad drives Pad X, Pad Y and the pad's gate in all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"modfx_gain", "Wet gain: the level of the effect's output (50% = as it comes)."},
         {"mfx_series", "FX 1 > FX 2: how much of master effect 1 goes on into effect 2 (Dual Mono)."},
@@ -354,6 +358,9 @@ static const char *zone_help(ed_t *e, int z) {
                "octave at once (0: the default); PANIC (under glide's ON) stops every note. Shortcut: hold one, 1 s the "
                "default octave, 2 s PANIC.";
     case Z_OCT_PICK: return "Octave LEDs: the keyboard's octave (lit). Click one to go straight to it; 0 is the default.";
+    case Z_LINK_ALL: return "LINK ALL: every LINK of this box at once (pitch wheel, mod wheel, X/Y pad, ribbon, glide). "
+                            "Lit when they all are: a click puts them all out; otherwise a click lights them all. Each LINK "
+                            "still works on its own.";
     case Z_PANIC: return "PANIC: stops every note at once (all notes and sounds off on every MIDI channel, the pedals up). "
                          "It also stops every sequence and switches the generators off (GEN OFF brings them back). Use it when a note "
                          "hangs. Shortcut: hold an OCTAVE button for 2 s.";
@@ -1460,6 +1467,14 @@ static void draw_controller(HDC dc, ed_t *e) {
         skin_button((float)r->left + 1, (r->top + r->bottom - bh) / 2.0f, (float)bw, (float)bh, SK_BLACK, hot ? SK_HOT : SK_UP);
         RECT tr = {r->left + bw + sc(5), r->top, r->right + sc(6), r->bottom};
         text(dc, &tr, "PANIC", font_label, hot ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    }
+    if (vis(&L.link_all, sc(4)) && !IsRectEmpty(&L.link_all)) {   /* (2026-10-31) LINK ALL: lit when every LINK is */
+        const RECT *r = &L.link_all;
+        int bh = sc(10), bw = sc(18), hot = e->hover == Z_LINK_ALL;
+        skin_button((float)r->left + 1, (r->top + r->bottom - bh) / 2.0f, (float)bw, (float)bh, SK_BLACK,
+                    hands_linked(e) ? SK_ON : hot ? SK_HOT : SK_UP);
+        RECT tr = {r->left + bw + sc(5), r->top, r->right + sc(6), r->bottom};
+        text(dc, &tr, "LINK ALL", font_label, hot ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
     wheel(dc, &L.pitch, e->bend, "PITCH", e->hover == Z_PITCH);
     wheel(dc, &L.modw, e->wheel * 2 - 1, "MOD", e->hover == Z_MODW);

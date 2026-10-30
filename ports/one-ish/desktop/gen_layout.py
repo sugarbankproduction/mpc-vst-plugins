@@ -691,16 +691,28 @@ def build(lay):
 
     # ---- left-hand controller: octave, glide, wheels, X/Y pad, bend range; the ribbon over the keys ----
     zones.update({"OCT_LEDS": (50, 632, 116, 26), "OCT_DOWN": (64, 662, 36, 16), "OCT_UP": (118, 662, 36, 16),
-                  "PITCH": (56, 706, 36, 112), "MODW": (110, 706, 36, 112), "PAD": (166, 706, 126, 112),
-                  "KEYS": (384, 640, 1744, 200), "RIBBON": (384, 612, 1744, 20),   # shorter with a MORE page
+                  # (2026-10-31) the wheels 14 px shorter: their LINKs under their names
+                  "PITCH": (56, 706, 36, 98), "MODW": (110, 706, 36, 98), "PAD": (166, 706, 126, 112),
+                  # (2026-10-31) the ribbon starts 60 px in: its LINK at its left end (shorter with a MORE page)
+                  "KEYS": (384, 640, 1744, 200), "RIBBON": (444, 612, 1684, 20),
                   # (2026-10-30) the controller's DEST button, top left: modulate from the wheels, the X/Y pad,
                   # the ribbon or the keyboard (quickmod.c); the computer keyboard's hint on the front rail
                   "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14),
-                  "PANIC": (236, 691, 54, 13)})   # (2026-10-30) every note off, under glide's ON
+                  "PANIC": (236, 691, 54, 13),   # (2026-10-30) every note off, under glide's ON
+                  # (2026-10-31) LINK ALL: every LINK of this box on (or off) at once, after the pad's LINK
+                  "LINK_ALL": (308, 822, 60, 14)})
     # (2026-10-30) LINK beside the X/Y pad's name: lit, the pad plays all three Synths (src/synths.h midi)
     L.ctl("link_pad", "toggle", 256, 822, 48, 14, "LINK", SIDE)
+    # (2026-10-31) LINK under each wheel's name: lit, that wheel reaches all three Synths (src/synths.h midi); the pitch
+    # wheel's also keeps BEND RANGE the same in all three (LINK_GROUPS); glide's under its ON (all its settings alike);
+    # the ribbon's at the ribbon's left end, on a small plate of its own
+    L.ctl("link_bend", "toggle", 52, 822, 44, 14, "LINK", SIDE)
+    L.ctl("link_mod", "toggle", 106, 822, 44, 14, "LINK", SIDE)
+    L.panel(384, 612, 56, 20, "", style="frame", keys=["link_ribbon"])
+    L.ctl("link_ribbon", "toggle", 388, 615, 50, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
-    L.ctl("glide", "toggle", 236, 632, 42, 56, "ON")
+    L.ctl("glide", "toggle", 236, 640, 42, 36, "ON")   # (2026-10-31: 20 px shorter, the button where it was)
+    L.ctl("link_glide", "toggle", 236, 676, 42, 14, "LINK", SIDE)
     L.ctl("glide_type", "leds", 278, 624, 52, 76, "TYPE")
     L.column([("glide_legato", "LEGATO"), ("glide_gated", "GATED"), ("glissando", "GLISS")], 298, 706, 72, 22,
              "toggle", SIDE)   # the other glide options, beside the pad
@@ -721,11 +733,15 @@ def build(lay):
         ("glissando", "Glissando"),
         # the X/Y pad and the saved wheel and pad positions (2026-10-29)
         ("pad_polarity", "Pad Polarity"), ("pad_hold", "Pad X/Y Hold"), ("link_pad", "Link Pad (3 Synths)"),
+        # (2026-10-31) the other LINKs of the controller box
+        ("link_bend", "Link Pitch Wheel"), ("link_mod", "Link Mod Wheel"), ("link_ribbon", "Link Ribbon"),
+        ("link_glide", "Link Glide"),
         ("load_pos", "Load Saved Pos"),
         ("wheel_pos", "Saved Mod Wheel"), ("pad_x_pos", "Saved Pad X"), ("pad_y_pos", "Saved Pad Y"),
         ("eg_times", "EG Times (MIN, Syncs)")])   # the envelopes' MIN and 13 synced values (2026-10-29)
     L.page("RIBBON", "RIBBON", "The touch strip over the keys (MIDI CC 16 position, CC 17 touch).", [
-        ("ribbon_dst", "Destination"), ("ribbon_amt", "Amount"), ("ribbon_mode", "Mode"), ("ribbon_origin", "Origin")])
+        ("ribbon_dst", "Destination"), ("ribbon_amt", "Amount"), ("ribbon_mode", "Mode"), ("ribbon_origin", "Origin"),
+        ("link_ribbon", "Link (3 Synths)")])
     L.page("ANALOG", "ANALOG CHARACTER", "Per-voice differences, as between real analog voices. All 0 = exact.", [
         ("drift", "Drift"), ("an_cut", "Cutoff Spread"), ("an_res", "Resonance Spread"), ("an_env", "Envelope Spread"),
         ("an_lvl", "Level Spread"), ("an_tune", "Tuning Spread"), ("an_ladder", "Ladder Character"),
@@ -753,7 +769,10 @@ LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
                ("link_arp", ("arp_div", "arp_timing", "arp_sync", "arp_rate")),
                ("link_seq", ("seq_div", "seq_timing", "seq_sync", "seq_rate")),
                ("link_send", ("mfx_send1", "mfx_send2")),
-               ("link_cut", ("svf_cut", "flt_cut"))] + \
+               ("link_cut", ("svf_cut", "flt_cut")),
+               # (2026-10-31) the controller box: glide's settings; the pitch wheel's LINK also keeps BEND RANGE alike
+               ("link_glide", ("glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando")),
+               ("link_bend", ("bend_up", "bend_down"))] + \
               [("link_lfo%d" % n, tuple("lfo%d_%s" % (n, s) for s in ("rate", "sync", "timing"))) for n in range(1, 5)]
 
 

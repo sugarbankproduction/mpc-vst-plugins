@@ -58,6 +58,7 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_RND_WILD, Z_RND_ALSO,   /* Z_RND_ALSO + 0..2: the ARPEGGIATOR, GENERATIVE and SEQUENCER tick buttons */
        Z_OCT_PICK = 100045,   /* (2026-10-30) a click on the octave LEDs: that octave */
        Z_PANIC,               /* (2026-10-30) PANIC: every note off (as holding an OCTAVE button 2 s) */
+       Z_LINK_ALL,            /* (2026-10-31) LINK ALL: every LINK of the controller box at once (hub.c) */
        Z_RND_GO_ALL = 100050, /* (2026-10-30) RANDOMISE's and MUTATE's ALL halves: all three Synths */
        Z_RND_MUT_ALL,
        Z_RND_VOICE,           /* + 0..2: the RANDOM page's BOTH, MONO, POLY (RV_*) */
@@ -123,6 +124,7 @@ typedef struct {
     RECT sync_cut;                            /* (2026-10-30) SYNC over the filters' ALL 3 (hub_gens.c) */
     RECT qm_hands, kb_hint;                   /* the controller's DEST (quickmod.c); the computer keyboard's hint */
     RECT panic;                               /* the controller's PANIC */
+    RECT link_all;                            /* (2026-10-31) the controller's LINK ALL (hub.c) */
     RECT back, fwd;                           /* (2026-10-30, nav.c) the screen's BACK / FWD, either side of the name */
 } layout_t;
 extern layout_t L;
@@ -490,6 +492,8 @@ void settings_tempo_set(ed_t *e, int own, float bpm, int save);   /* both (save 
 int link_lit(ed_t *e, int i);                  /* panel index i has a LINK, lit: edits go to all three Synths */
 int link_param(int i);                         /* the LINK param of panel index i (-1: none) */
 int link_relative(ed_t *e, int i);             /* lit and relative (ALL 3: the cutoffs move by the same amount) */
+int hands_linked(ed_t *e);                     /* (2026-10-31) 1: every LINK of the controller box is lit */
+void hands_link_all(ed_t *e);                  /* LINK ALL: all lit, all off; else all on (one undo step) */
 int panel_source(ed_t *e, int i);              /* what panel control i moves now (VOLUME: master_level, MASTER lit) */
 int master_param(void);                        /* master_level's index (-1: none) */
 RECT hub_rect(int z);                          /* where hub zone z sits (the page's or the console's) */

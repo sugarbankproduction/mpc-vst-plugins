@@ -2615,9 +2615,125 @@ static void pad_link_test(AEffect *fx, HWND child, float s, const char *bmp, int
     if (mc < NPARAMS) fx->setParameter(fx, mc, mc0);
 }
 
+/* ---- (2026-10-31) the controller box's other LINKs and LINK ALL, plain clicks. With Per Synth MIDI channels the mod
+ * wheel, the pitch wheel and the ribbon (dragged in the window, on its channel) reach Synth 1 only; each one's LINK lit,
+ * all three ("hands_now" readouts: wheel, bend, ribbon target, touch). Glide's LINK: ON clicked goes to all three; the
+ * pitch wheel's LINK: BEND UP turned goes to all three. LINK ALL lights them all as one undo step, then puts them out. */
+static void hands_peek(AEffect *fx, int c, float v[4]) {
+    enum { HT_PEEK_OP = 12 };
+    static char b[1024];
+    snprintf(b, sizeof b, c ? "s%d_hands_now" : "hands_now", c + 1);
+    fx->dispatcher(fx, 50, TEST_HUB, HT_PEEK_OP, b, 0);
+    v[0] = v[1] = v[2] = v[3] = -9;
+    sscanf(b, "%f %f %f %f", &v[0], &v[1], &v[2], &v[3]);
+}
+static void zone_drag(AEffect *fx, HWND child, float s, const short z[4], float fx0, float fy0, float fx1, float fy1) {
+    int x0 = (int)lroundf((z[0] + z[2] * fx0) * s), y0 = (int)lroundf((z[1] + z[3] * fy0) * s);
+    int x1 = (int)lroundf((z[0] + z[2] * fx1) * s), y1 = (int)lroundf((z[1] + z[3] * fy1) * s);
+    SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(x0, y0));
+    SendMessageA(child, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(x1, y1));
+    play(fx, 2, 512);   /* (the audio thread passes the window's MIDI on) */
+}
+static void hands_link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[600];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    int mc = rnd_key("midi_ch");
+    float mc0 = pv(fx, "midi_ch");
+    if (mc < NPARAMS) fx->setParameter(fx, mc, 17.0f / (PARAMS[mc].nopts - 1));   /* Per Synth (2 and 3 on 2, 3) */
+    static const char *const K[3] = {"link_mod", "link_bend", "link_ribbon"};
+    static const char *const NAME[3] = {"mod wheel", "pitch wheel", "ribbon"};
+    for (int c = 0; c < 5; c++) setkey(fx, c < 3 ? K[c] : c == 3 ? "link_pad" : "link_glide", 0);
+    for (int k = 0; k < 3; k++) {
+        float b2[4], b3[4], v1[4], v2[4], v3[4];
+        int res[2];
+        for (int lit = 0; lit < 2; lit++) {
+            if (lit) click_ctl(child, s, K[k]);   /* its LINK, beside it */
+            hands_peek(fx, 1, b2);
+            hands_peek(fx, 2, b3);
+            const short *z = k == 0 ? ZONE_MODW : k == 1 ? ZONE_PITCH : ZONE_RIBBON;
+            if (k == 2) zone_drag(fx, child, s, z, lit ? 0.3f : 0.7f, 0.5f, lit ? 0.2f : 0.8f, 0.5f);
+            else zone_drag(fx, child, s, z, 0.5f, lit ? 0.6f : 0.5f, 0.5f, lit ? 0.15f : 0.25f);
+            hands_peek(fx, 0, v1);
+            hands_peek(fx, 1, v2);
+            hands_peek(fx, 2, v3);
+            int f = k == 0 ? 0 : k == 1 ? 1 : 2;
+            int moved1 = fabsf(v1[f] - (k == 2 ? 64.0f : 0.0f)) > (k == 2 ? 5.0f : 0.1f);
+            res[lit] = lit ? moved1 && v2[f] == v1[f] && v3[f] == v1[f] : moved1 && v2[f] == b2[f] && v3[f] == b3[f];
+            SendMessageA(child, WM_LBUTTONUP, 0, 0);
+            play(fx, 4, 512);
+        }
+        snprintf(what, sizeof what, "%s LINK (Per Synth channels): off, dragging it moves Synth 1 alone (%d); a click "
+                 "lights its LINK (%d), then it moves all three Synths alike (%.3f %.3f %.3f, %d)", NAME[k], res[0],
+                 pv(fx, K[k]) > 0.5f, v1[k == 0 ? 0 : k == 1 ? 1 : 2], v2[k == 0 ? 0 : k == 1 ? 1 : 2],
+                 v3[k == 0 ? 0 : k == 1 ? 1 : 2], res[1]);
+        check(res[0] && res[1] && pv(fx, K[k]) > 0.5f, what);
+        click_ctl(child, s, K[k]);
+        check(pv(fx, K[k]) < 0.5f, "its LINK: a second click puts it out");
+    }
+    /* glide's LINK: ON from the panel goes to all three; the pitch wheel's LINK: BEND UP too */
+    for (int c = 0; c < 3; c++) {
+        char k[32];
+        snprintf(k, sizeof k, c ? "s%d_glide" : "glide", c + 1);
+        setkey(fx, k, 0);
+        snprintf(k, sizeof k, c ? "s%d_bend_up" : "bend_up", c + 1);
+        setkey(fx, k, 0.5f);
+    }
+    click_ctl(child, s, "glide");
+    int alone = pv(fx, "glide") > 0.5f && pv(fx, "s2_glide") < 0.5f && pv(fx, "s3_glide") < 0.5f;
+    click_ctl(child, s, "glide");
+    click_ctl(child, s, "link_glide");
+    click_ctl(child, s, "glide");
+    int all = pv(fx, "glide") > 0.5f && pv(fx, "s2_glide") > 0.5f && pv(fx, "s3_glide") > 0.5f;
+    snprintf(what, sizeof what, "glide's LINK: off, ON clicked switches Synth 1's glide alone (%d); LINK lit (%d), ON "
+             "clicked switches all three Synths' (%d)", alone, pv(fx, "link_glide") > 0.5f, all);
+    check(alone && all, what);
+    click_ctl(child, s, "link_bend");
+    qm_drag(child, "bend_up", s, 30);
+    float u1 = pv(fx, "bend_up"), u2 = pv(fx, "s2_bend_up"), u3 = pv(fx, "s3_bend_up");
+    snprintf(what, sizeof what, "the pitch wheel's LINK also keeps BEND RANGE alike: BEND UP turned with it lit moves all "
+             "three Synths' (%.3f %.3f %.3f, from 0.500)", u1, u2, u3);
+    check(u1 > 0.52f && u2 == u1 && u3 == u1, what);
+    /* LINK ALL: a plain click lights every LINK of the box (one undo step), lit when all are; again: all out */
+    for (int c = 0; c < 5; c++) setkey(fx, c < 3 ? K[c] : c == 3 ? "link_pad" : "link_glide", 0);
+    setkey(fx, "link_mod", 1);   /* (one lit already) */
+    SendMessageA(child, WM_TIMER, 1, 0);
+    fx->dispatcher(fx, 50, TEST_LIB, LT_FORGET, qbuf, 0);
+    click_zone(child, s, ZONE_LINK_ALL);
+    int on = pv(fx, "link_mod") > 0.5f && pv(fx, "link_bend") > 0.5f && pv(fx, "link_pad") > 0.5f &&
+             pv(fx, "link_ribbon") > 0.5f && pv(fx, "link_glide") > 0.5f;
+    int steps = qm_steps(fx);
+    if (bmp) shot(child, w, h, bmp, "_hands_links");
+    click_zone(child, s, ZONE_LINK_ALL);
+    int off = pv(fx, "link_mod") < 0.5f && pv(fx, "link_bend") < 0.5f && pv(fx, "link_pad") < 0.5f &&
+              pv(fx, "link_ribbon") < 0.5f && pv(fx, "link_glide") < 0.5f;
+    snprintf(what, sizeof what, "LINK ALL: a plain click lights all five LINKs of the controller box (pitch, mod, pad, "
+             "ribbon, glide) (%d) as one undo step (%d); clicked again with all lit, all go out (%d)", on, steps, off);
+    check(on && steps == 1 && off, what);
+    click_zone(child, s, ZONE_LINK_ALL);
+    void *chunk = NULL;   /* saved with the sound */
+    intptr_t n = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+    static char saved[300000];
+    if (n > 0 && n <= (intptr_t)sizeof saved) memcpy(saved, chunk, (size_t)n);
+    for (int c = 0; c < 5; c++) setkey(fx, c < 3 ? K[c] : c == 3 ? "link_pad" : "link_glide", 0);
+    if (n > 0 && n <= (intptr_t)sizeof saved) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, saved, 0);
+    check(pv(fx, "link_mod") > 0.5f && pv(fx, "link_bend") > 0.5f && pv(fx, "link_ribbon") > 0.5f &&
+          pv(fx, "link_glide") > 0.5f, "the controller box's LINKs: saved with the sound (lit again after its chunk)");
+    for (int c = 0; c < 5; c++) setkey(fx, c < 3 ? K[c] : c == 3 ? "link_pad" : "link_glide", 0);
+    for (int c = 0; c < 3; c++) {
+        char k[32];
+        snprintf(k, sizeof k, c ? "s%d_glide" : "glide", c + 1);
+        setkey(fx, k, 0);
+        snprintf(k, sizeof k, c ? "s%d_bend_up" : "bend_up", c + 1);
+        setkey(fx, k, (2.0f + 24) / 48);
+    }
+    if (mc < NPARAMS) fx->setParameter(fx, mc, mc0);
+    SendMessageA(child, WM_TIMER, 1, 0);
+}
+
 static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-10-30) */
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     pad_link_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
+    hands_link_test(fx, child, s, bmp, w, h);   /* (2026-10-31) */
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
     follow_tempo_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */

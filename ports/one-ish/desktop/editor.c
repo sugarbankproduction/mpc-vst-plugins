@@ -260,6 +260,7 @@ static void layout(void) {
     L.qm_hands = zone(ZONE_QM_HANDS);
     L.kb_hint = zone(ZONE_KB_HINT);
     L.panic = zone(ZONE_PANIC);
+    L.link_all = zone(ZONE_LINK_ALL);   /* (2026-10-31) */
     for (int k = 0; k < NMORES; k++) {
         const short z[4] = {MORES[k].x, MORES[k].y, MORES[k].w, MORES[k].h};
         L.more[k] = zone(z);
@@ -375,6 +376,11 @@ static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control
     }
     if (seq_title_param(base_of(i)))   /* (2026-10-30) the SEQUENCER title strip's PLAY ALL and OUTPUT */
         for (int k = 0; k < 2; k++) { RECT t = seq_title_rect(k); InflateRect(&t, sc(2), sc(2)); invalidate(e, &t); }
+    if (!strncmp(PARAMS[i].key, "link_", 5)) {   /* (2026-10-31) a LINK: LINK ALL may light or go out */
+        RECT a = L.link_all;
+        InflateRect(&a, sc(8), sc(2));
+        invalidate(e, &a);
+    }
     for (int k = 0; k < NHUB; k++)   /* a generator's ON: GEN OFF's name (GEN BACK) may change */
         if (HUB[k].on == i) { RECT g = L.gen_off; InflateRect(&g, sc(12), sc(4)); invalidate(e, &g); }
     if (!IsRectEmpty(&L.ctl[i])) {   /* on the panel: the control, its label and value (they spill a little) */
@@ -414,6 +420,7 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_OCT_DOWN: r = &L.oct_down; break;
     case Z_OCT_PICK: r = &L.oct_leds; break;
     case Z_PANIC: r = &L.panic; break;
+    case Z_LINK_ALL: r = &L.link_all; break;
     case Z_OCT_UP: r = &L.oct_up; break;
     case Z_PREV: case Z_NEXT: invalidate(e, &L.bprev); r = &L.bnext; break;
     case Z_ENCODER: r = &L.encoder; break;
@@ -934,6 +941,7 @@ static int hit(ed_t *e, int x, int y) {
     static const struct { RECT *r; int z; } Z[] = {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
         {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.oct_leds, Z_OCT_PICK}, {&L.panic, Z_PANIC},
+        {&L.link_all, Z_LINK_ALL},
         {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.back, Z_NAV_BACK}, {&L.fwd, Z_NAV_FWD}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
@@ -1239,6 +1247,7 @@ static void press(ed_t *e, int x, int y) {
         hub_panic_stop(e);
         InvalidateRect(e->wnd, NULL, FALSE);
         return;
+    case Z_LINK_ALL: hands_link_all(e); return;   /* (2026-10-31) every LINK of the controller box (hub.c) */
     case Z_KEYS: e->mode = M_KEY; break;
     case Z_PITCH: e->mode = M_PITCH; break;
     case Z_MODW: e->mode = M_MODW; break;
