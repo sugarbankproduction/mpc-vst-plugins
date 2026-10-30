@@ -21,7 +21,8 @@
 #include "params.h"
 #include "randomize.h"
 
-static const char *const NEWER[] = {"dly_on", "rev_on"};   /* (2026-10-30) the master effect slots' own ON */
+static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the master effect slots' own ON */
+                                    "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share"};   /* (2026-10-30) SHARE */
 static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
                                       "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
 

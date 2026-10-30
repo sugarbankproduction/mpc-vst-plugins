@@ -5189,6 +5189,7 @@ static void arp_wav(const char *demo_path) {
 #include "gens_a_check.c"   /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
 #include "defaults_check.c"   /* (2026-10-30) the new defaults, old states, the effects' ONs, the hands, the randomiser */
 #include "robust_check.c"   /* (2026-10-30) robustness: envelopes end, routing, floods, panic, learn */
+#include "lfoshare_check.c"   /* (2026-10-30) SHARE: Synth 1's LFOs in all three Synths, in step */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5957,10 +5958,17 @@ int main(int argc, char **argv) {
         gens_b_bench();   /* (2026-10-30) */
         gens_a_bench();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
         defaults_bench();   /* (2026-10-30) the new defaults */
+        lfo_share_bench();   /* (2026-10-30) SHARE */
         return 0;
     }
     if (argc > 1 && !strcmp(argv[1], "defaults")) {   /* (2026-10-30) just the new defaults: offline_check defaults */
         defaults_checks();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "lfoshare")) {   /* (2026-10-30) just SHARE: offline_check lfoshare */
+        lfo_share_checks();
+        lfo_share_bench();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -6098,6 +6106,7 @@ int main(int argc, char **argv) {
     gens_a_checks();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
     defaults_checks();   /* (2026-10-30) */
     robust_checks();   /* (2026-10-30) robustness (test/robust_check.c) */
+    lfo_share_checks();   /* (2026-10-30) SHARE (test/lfoshare_check.c) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

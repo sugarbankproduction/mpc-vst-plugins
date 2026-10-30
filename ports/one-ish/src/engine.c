@@ -265,6 +265,8 @@ enum {
     P_GEN_FOLLOW,    /* (2026-10-30) FOLLOW TEMPO: the free-running generators' speeds follow the BPM (shared) */
     P_SEQ_OUTPUT,    /* (2026-10-30) the sequencer's OUTPUT: the Synths its notes play (src/stepseq_run.h) */
     P_DLY_ON, P_REV_ON,   /* (2026-10-30) MASTER FX 1 and 2 each on or off (shared; under the master ON) */
+    P_LFO1_SHARE,    /* (2026-10-30) SHARE: LFO n of Synths 2 and 3 is Synth 1's (shared; lfo_owner), 4 of them */
+    P_LFO4_SHARE = P_LFO1_SHARE + 3,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -419,6 +421,7 @@ static const char *const KEYS[P_COUNT] = {
     "gen_follow_tempo",   /* (2026-10-30) */
     "seq_output",   /* (2026-10-30) */
     "dly_on", "rev_on",   /* (2026-10-30) */
+    "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   /* (2026-10-30) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -586,7 +589,7 @@ typedef struct {
 } voice_t;
 enum { HK_PITCH, HK_O1, HK_O2, HK_O3, HK_LAD, HK_SVF, HK_AMP };   /* semitones (all, each osc), octaves (ladder, SVF), x */
 
-typedef struct {
+typedef struct one_s {
     float val[P_COUNT];      /* each value in its own units: option index, semitones, cents, % or a 0..100 knob */
     float def[P_COUNT];      /* the defaults, so a saved state lists only what differs from them */
     float ratio[NOSC];       /* each oscillator's pitch against the played note (octave and frequency) */
@@ -697,6 +700,8 @@ typedef struct {
     ph_run_t ph;             /* THE BOUNCING BALLS AND PARTICLES (src/physgen_run.h; runtime only, never saved) */
     gb_run_t gb;             /* (2026-10-30) RAIN AND RIPPLES, MARKOV MELODY (src/gens_b_run.h; runtime only, never saved) */
     ga_run_t ga;             /* (2026-10-30) LIFE, ORBITS, PENDULUMS (src/gens_a_run.h; runtime only, never saved) */
+    struct one_s *syn1;      /* (2026-10-30) Synth 1 of the instance (src/synths.h create): a SHARED LFO's owner */
+    int64_t lfo_at[NLFO];    /* (2026-10-30) the sample (now) its free-running LFO n last stepped (-1: not yet) */
 } one_t;
 static void sq_init(one_t *s);   /* src/stepseq_run.h */
 static int pool_room(one_t *s, const int *idx, int n);   /* src/synths.h */
@@ -882,6 +887,16 @@ static void apply_lfos(one_t *s) {
 /* LFO n runs per sample: RANGE High, not tempo-synced (2026-10-29) */
 static int lfo_high(const one_t *s, int n) {
     return s->val[lfo_base(n) + 2] < 0.5f && (int)lfo_x(s, n)[L_RANGE] == LR_HIGH;
+}
+
+/* (2026-10-30) SHARE (lfoN_share, shared, default Off): LFO n of Synths 2 and 3 is Synth 1's. Its settings (rate, sync,
+ * timing, wave and every setting on its page) are read from Synth 1 (this returns whose to read), and its free-running
+ * LFO is Synth 1's, the same value at the same moment (control_lfos copies it), so one wobble drives all three Synths.
+ * A voice that runs the LFO itself (note reset, repeats, the High range, modulated) restarts per note as before, with
+ * Synth 1's settings: two Synths' voices started by the same key move in step. The Synth's own matrix still reaches its
+ * voices' copies. The Synth's own LFO settings stay stored and come back when SHARE goes off. */
+static const one_t *lfo_owner(const one_t *s, int n) {
+    return s->idx > 0 && s->val[P_LFO1_SHARE + n] > 0.5f ? s->syn1 : s;
 }
 
 /* the matrix slots in use, split into those the voices evaluate and those that reach the effects (the effect pass),
@@ -1250,6 +1265,8 @@ static one_t *synth_create(struct inst *in, int idx, const short *pidx) {
         }
     }
     for (int n = 0; n < NLFO; n++) lfo_init(&s->lfo[n], 0x2545f491u * (n + 1));
+    for (int n = 0; n < NLFO; n++) s->lfo_at[n] = -1;
+    s->syn1 = s;   /* (Synths 2 and 3: create() points it at Synth 1) */
     s->bpm = 120.0f;
     s->voices = voices_used(s);
     s->link_off = s->val[P_SVF_CUT] - s->val[P_FLT_CUT];
@@ -1486,7 +1503,7 @@ static int mono_key(const one_t *s) {
 static void lfo_note_on(one_t *s, voice_t *v) {
     v->hi_run = v->hi_reach = 0;   /* the High range's per-sample path waits for the next control step's values */
     for (int n = 0; n < NLFO; n++) {
-        const float *x = lfo_x(s, n);
+        const float *x = lfo_x(lfo_owner(s, n), n);   /* (SHARE: Synth 1's settings) */
         lfo_t *l = &v->lfo[n];
         *l = s->lfo[n];
         v->lfo_own &= ~(1u << n);
@@ -2045,8 +2062,9 @@ static void perf_after_set(one_t *s, int k) {
  * and each voice's own (its repeat count carries on), as the manual's Master Clock start does */
 static void lfo_transport_start(one_t *s) {
     for (int n = 0; n < NLFO; n++) {
-        if (s->val[lfo_base(n) + 2] < 0.5f) continue;
-        float ph = lfo_x(s, n)[L_PHASE] * 0.01f;
+        const one_t *o = lfo_owner(s, n);   /* (SHARE: Synth 1's settings; its free-running LFO is copied) */
+        if (o->val[lfo_base(n) + 2] < 0.5f) continue;
+        float ph = lfo_x(o, n)[L_PHASE] * 0.01f;
         lfo_reset(&s->lfo[n], ph);
         for (int i = 0; i < MAX_VOICES; i++)
             if (s->voice[i].lfo_own >> n & 1) s->voice[i].lfo[n].phase = ph - floorf(ph);
@@ -2368,11 +2386,22 @@ static float lfo_polar(const one_t *s, int n, float y) {
 }
 
 /* the free-running LFOs, once per control step */
+static void lfo_step(one_t *s, int n) {
+    lfo_advance(&s->lfo[n], fminf(s->lfo_hz[n] * CR / SR, 0.5f));
+    float y = lfo_shape(&s->lfo[n], (int)s->val[lfo_base(n) + 1], lfo_x(s, n)[L_VAR] * 0.01f);
+    s->lfo_val[n] = lfo_smooth(&s->lfo[n], lfo_polar(s, n, y), s->lfo_coef[n]);
+    s->lfo_at[n] = s->now;
+}
 static void control_lfos(one_t *s) {
     for (int n = 0; n < NLFO; n++) {
-        lfo_advance(&s->lfo[n], fminf(s->lfo_hz[n] * CR / SR, 0.5f));
-        float y = lfo_shape(&s->lfo[n], (int)s->val[lfo_base(n) + 1], lfo_x(s, n)[L_VAR] * 0.01f);
-        s->lfo_val[n] = lfo_smooth(&s->lfo[n], lfo_polar(s, n, y), s->lfo_coef[n]);
+        one_t *o = s->syn1;
+        if (o == s || s->val[P_LFO1_SHARE + n] < 0.5f) { lfo_step(s, n); continue; }
+        /* SHARE: Synth 1's, as it is at this sample. The Synths step in lockstep, Synth 1 first; while Synth 1 is
+         * silent (it renders nothing) the first Synth sharing it steps it here. */
+        if (o->lfo_at[n] != s->now) lfo_step(o, n);
+        s->lfo[n] = o->lfo[n];
+        s->lfo_val[n] = o->lfo_val[n];
+        s->lfo_at[n] = s->now;
     }
 }
 
@@ -2399,15 +2428,16 @@ static float lfo_fade(const one_t *s, voice_t *v, int n, const float *dm, int *w
  * restarted it). After its repeat count it stays at 0 until the next note-on. */
 static void voice_lfos(const one_t *s, voice_t *v) {
     for (int n = 0; n < NLFO; n++) {
-        const float *x = lfo_x(s, n), *dm = v->lfo_dm[n], *f = s->lfo_fade[n];
+        const one_t *o = lfo_owner(s, n);   /* (2026-10-30) whose settings: its own, or with SHARE Synth 1's */
+        const float *x = lfo_x(o, n), *dm = v->lfo_dm[n], *f = o->lfo_fade[n];
         int repeats = (int)x[L_REPEATS], waiting = 0;
         float y, g = 1.0f;
         if (f[0] > 0.0f || f[1] > 0.0f || f[2] > 0.0f
             || (s->mod_lfo && (dm[MDL_DELAY] != 0.0f || dm[MDL_FADE_IN] != 0.0f || dm[MDL_FADE_OUT] != 0.0f)))
-            g = lfo_fade(s, v, n, dm, &waiting);
+            g = lfo_fade(o, v, n, dm, &waiting);
         float wdm = s->mod_lfo ? v->lfo_wdm[n] : 0.0f;   /* LFO WAVE as a destination (2026-10-29) */
-        int wave = wdm != 0.0f ? md_step(s->val[lfo_base(n) + 1], wdm, LFO_WAVES) : (int)s->val[lfo_base(n) + 1];
-        int high = lfo_high(s, n);   /* RANGE High: each voice runs it, per sample (render_voice, 2026-10-29) */
+        int wave = wdm != 0.0f ? md_step(o->val[lfo_base(n) + 1], wdm, LFO_WAVES) : (int)o->val[lfo_base(n) + 1];
+        int high = lfo_high(o, n);   /* RANGE High: each voice runs it, per sample (render_voice, 2026-10-29) */
         int own = x[L_RESET] > 0.5f || repeats >= 1 || high
                   || (s->mod_lfo && (dm[MDL_RATE] != 0.0f || dm[MDL_SEMIS] != 0.0f || dm[MDL_VAR] != 0.0f || wdm != 0.0f));
         v->hi_run &= ~(1u << n);
@@ -2420,7 +2450,7 @@ static void voice_lfos(const one_t *s, voice_t *v) {
             int run = !waiting && (repeats < 1 || l->cycles < repeats);   /* a restarted LFO waits out its delay */
             float hz = 0.0f, var = x[L_VAR] * 0.01f + dm[MDL_VAR];
             if (run) {
-                hz = dm[MDL_RATE] != 0.0f ? lfo_rate_hz(s, n, s->val[lfo_base(n)] + 100.0f * dm[MDL_RATE]) : s->lfo_hz[n];
+                hz = dm[MDL_RATE] != 0.0f ? lfo_rate_hz(o, n, o->val[lfo_base(n)] + 100.0f * dm[MDL_RATE]) : o->lfo_hz[n];
                 if (dm[MDL_SEMIS] != 0.0f) hz *= exp2f(dm[MDL_SEMIS] * MOD_PITCH_ST / 12.0f);
             }
             if (high) {   /* not moved on here: the samples of this step do it; this is its value now */
@@ -2430,13 +2460,13 @@ static void voice_lfos(const one_t *s, voice_t *v) {
                 v->hi_var[n] = var;
                 v->hi_g[n] = g;
                 if (repeats >= 1 && l->cycles >= repeats) y = 0.0f;
-                else if (s->lfo_coef1[n] < 1.0f) y = l->smooth;
-                else y = lfo_polar(s, n, lfo_shape(l, wave, var));
+                else if (o->lfo_coef1[n] < 1.0f) y = l->smooth;
+                else y = lfo_polar(o, n, lfo_shape(l, wave, var));
                 v->hi_y0[n] = y * g;
             } else {
                 if (run) lfo_advance(l, fminf(hz * CR / SR, 0.5f));
                 if (repeats >= 1 && l->cycles >= repeats) y = 0.0f;
-                else y = lfo_smooth(l, lfo_polar(s, n, lfo_shape(l, wave, var)), s->lfo_coef[n]);
+                else y = lfo_smooth(l, lfo_polar(o, n, lfo_shape(l, wave, var)), o->lfo_coef[n]);
             }
         }
         v->lfo_out[n] = y * g;
@@ -2772,8 +2802,9 @@ __attribute__((noinline)) static int hi_lfo_block(const one_t *s, voice_t *v, in
     for (int k = 0; k < NLFO; k++) {
         if (!(v->hi_run >> k & 1)) continue;
         lfo_t *l = &v->lfo[k];
-        float inc = v->hi_inc[k], coef = s->lfo_coef1[k], g = v->hi_g[k], y0 = v->hi_y0[k], var = v->hi_var[k];
-        int wave = v->hi_wave[k], uni = (int)lfo_x(s, k)[L_POLARITY] == POL_UNIPOLAR, reach = v->hi_reach >> k & 1;
+        const one_t *o = lfo_owner(s, k);   /* (2026-10-30: SHARE, Synth 1's settings) */
+        float inc = v->hi_inc[k], coef = o->lfo_coef1[k], g = v->hi_g[k], y0 = v->hi_y0[k], var = v->hi_var[k];
+        int wave = v->hi_wave[k], uni = (int)lfo_x(o, k)[L_POLARITY] == POL_UNIPOLAR, reach = v->hi_reach >> k & 1;
         if (!reach && coef >= 1.0f) { lfo_advance(l, inc * (float)n); continue; }   /* nothing heard per sample */
         const float *kk = v->hi_k[k];
         float kp[NOSC] = {kk[HK_PITCH] + kk[HK_O1], kk[HK_PITCH] + kk[HK_O2], kk[HK_PITCH] + kk[HK_O3]};
