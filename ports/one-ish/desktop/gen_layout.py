@@ -496,8 +496,9 @@ def build(lay):
 
     # ---- centre console: the screen (presets, mod matrix, MORE pages, the step editor, help), its buttons, and under
     # them the SEQUENCER module ----
-    zones = {"SCREEN": (770, 22, 400, 362), "TAB_MATRIX": (769, 390, 48, 40), "TAB_MORE": (817, 390, 48, 40),
-             "TAB_ANALOG": (865, 390, 48, 40), "TAB_RANDOM": (913, 390, 48, 40), "TAB_SEQ": (961, 390, 44, 40),
+    zones = {"SCREEN": (770, 22, 400, 362), "TAB_MATRIX": (769, 390, 48, 40), "TAB_RANDOM": (817, 390, 48, 40),
+             "TAB_SEQ": (865, 390, 48, 40), "TAB_ANALOG": (913, 390, 48, 40), "TAB_MORE": (961, 390, 44, 40),
+             # (2026-10-30, the owner's order: MATRIX, RANDOM, SEQ, ANALOG, MORE)
              "ENCODER": (1008, 384, 64, 92), "PREV": (1078, 390, 44, 40), "NEXT": (1124, 390, 44, 40),
              "BRAND": (1076, 438, 94, 28),
              # PANEL FOCUS: which Synth the panel shows and edits (multitimbral), and the SETUP page of all three
@@ -606,7 +607,7 @@ def build(lay):
     # ---- envelopes: a row each, buttons over the time knobs, curve / scaling knobs at the right ----
     for k, (p, title) in enumerate([("fenv", "FILTER ENVELOPE"), ("amp", "AMPLIFIER ENVELOPE"),
                                     ("menv", "MODULATION ENVELOPE")]):
-        yt = 18 + 112 * k
+        yt = 18 + 112 * (1, 0, 2)[k]   # (2026-10-30, the owner's order: AMPLIFIER on top, then FILTER, MODULATION)
         L.panel(X + 1542, yt, 478, 108, title, more="ENV%d" % (k + 1))
         L.page("ENV%d" % (k + 1), title, "Its shape below: stage times as their knobs, curves, sustain.", [
             (p + "_delay", "Delay"), (p + "_a", "Attack"), (p + "_hold", "Hold"), (p + "_d", "Decay"),
