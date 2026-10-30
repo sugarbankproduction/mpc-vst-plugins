@@ -947,3 +947,16 @@ intptr_t qm_test(ed_t *e, intptr_t op, char *buf, float opt) {
     }
     return 0;
 }
+
+/* ---- (2026-10-30) for the CABLES view (cables.c): the same names, colours, destinations and remove ---- */
+const char *qm_src_name(int s) { return src_name(s); }
+const char *qm_dst_name(int d) { return dst_name(d); }
+int qm_dst_of(int i) { return dst_of(i); }
+unsigned qm_family(int s) { return family(s); }
+int qm_is_gen_src(int s) { return is_gen_src(s); }
+void qm_remove_row(ed_t *e, int row) { remove_link(e, row); }
+void qm_pick(ed_t *e, int s) {   /* a source's jack clicked: quick assign from s (the same again: done) */
+    if (s <= 0 || s >= nsources()) return;
+    if (e->qm.src == s) { arm(e, 0); say(e, "Quick assign from %s done.", src_name(s)); return; }
+    arm(e, s);
+}

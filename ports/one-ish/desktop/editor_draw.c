@@ -809,6 +809,7 @@ static void screen_menu(HDC dc, ed_t *e, int i, RECT c, int active, HFONT f) {  
 static void title_line(HDC dc, ed_t *e, const char *t, int subs) {
     RECT r = L.tabline;
     if (subs > 1) r.right = L.sub_prev.left - sc(4);
+    if (e->screen == SCR_MATRIX) r.right = cb_button_rect().left - sc(4);   /* (2026-10-30) CABLES (cables.c) */
     char st[200], who[16] = "";
     if (e->screen != SCR_SETUP && e->screen != SCR_PATCHES && e->screen != SCR_SETTINGS) {   /* the Synth it shows */
         int n = 0;
@@ -844,6 +845,7 @@ void sub_pager_draw(HDC dc, ed_t *e, const char *n) {
 
 static void draw_matrix(HDC dc, ed_t *e, int subs) {
     title_line(dc, e, "MOD MATRIX:  SOURCE moves DESTINATION by AMOUNT x VIA", subs);
+    screen_button(dc, cb_button_rect(), "CABLES", e->cb.on, e->hover == Z_CB_BTN, font_tiny);   /* (cables.c) */
     static const char *const head[] = {"#", "SOURCE", "DESTINATION", "AMOUNT", "VIA", "V.AMT", "XFORM", "X.AMT"};
     for (int c = 0; c < MX_COLS + 1; c++) {
         RECT h = {L.head.left + sc(MXC[c]), L.head.top, L.head.left + sc(MXC[c + 1]) - sc(4), L.head.bottom};
@@ -1124,7 +1126,8 @@ void help_line(ed_t *e, char *out, int n) {
     char help[480];
     const char *zh = zone_help(e, e->hover), *pm = patches_message(e), *sm = settings_message(e);
     if (sm && (!pm || e->screen == SCR_SETTINGS)) pm = sm;   /* (the SETTINGS page's own first, on that page) */
-    if (qm_help(e, help, sizeof help)) {   /* QUICK ASSIGN: picking, connecting, the amount (quickmod.c) */
+    if (cb_help(e, help, sizeof help)) {   /* (2026-10-30) the CABLES view: its button, cables, knobs, jacks (cables.c) */
+    } else if (qm_help(e, help, sizeof help)) {   /* QUICK ASSIGN: picking, connecting, the amount (quickmod.c) */
     } else if (pm) {   /* what the last patch operation did (or why it couldn't) */
         snprintf(help, sizeof help, "%s", pm);
     } else if ((e->hover >= 0 && e->hover < NPARAMS) || (e->hover >= Z_ABS && e->hover < Z_ABS + NPARAMS)) {
@@ -1636,6 +1639,7 @@ static void paint_rect(ed_t *e, HDC out, const RECT *r) {   /* everything that s
     if (vis(&L.keys, 0)) draw_keys(dc, e);
     gfx_end();
     skin_bind(NULL);
+    cb_draw(dc, e, &clipr);   /* (2026-10-30) the CABLES view over all of it, when shown (cables.c: its own surface) */
     RestoreDC(dc, saved);
     skin_present(out, &clipr);
 }

@@ -864,6 +864,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
 static int hit(ed_t *e, int x, int y) {
     POINT pt = {x, y};
     e->hit_screen = 0;
+    int cz = cb_hit(e, pt);   /* (2026-10-30) CABLES, and while it shows a cable, its knob, X or a jack (cables.c) */
+    if (cz >= 0) return cz;
     int q = qm_hit(e, pt);   /* a DEST button (quickmod.c) */
     if (q >= 0) return q;
     for (int k = 0; k < NMORES; k++)
@@ -1147,6 +1149,7 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
 
 static void press(ed_t *e, int x, int y) {
     int i = hit(e, x, y);
+    if (cb_press(e, i, x, y)) return;   /* the CABLES view (cables.c): its button, a cable, a knob, X, a jack */
     if (qm_press(e, i, x, y)) return;   /* QUICK ASSIGN: a source picked, a knob connected (quickmod.c) */
     if (seq_zone(i)) {   /* the step editor and the page LEDs (seq_page.c); a drag on a note or a value follows */
         lib_touch(e, NULL);   /* (a step edit is an undo step; a click that changes nothing is none) */
@@ -1263,6 +1266,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         octave_hold(e);
         lib_tick(e);   /* an undo step after a pause, a set's number held, a MIDI program change, the tempo */
         qm_tick(e);   /* quick assign's message runs out */
+        cb_tick(e);   /* (2026-10-30) the CABLES view: a matrix row changed, an amount moved (cables.c) */
         settings_tick(e);   /* MIDI LEARN: a CC heard */
         int changed = 0, moved = 0, prog = (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0), which[16];
         for (int i = 0; i < NPARAMS; i++) {
@@ -1300,12 +1304,19 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (e->mode == M_SEQ) { seq_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode == M_QMOD) { qm_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
+        if (e->mode == M_CABLE) { cb_drag(e, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode != M_NONE) { controller_move(e, x, y); return 0; }
         int h = hit(e, x, y);
         if (h != e->hover) {
-            invalidate_zone(e, e->hover);
+            if (e->hover >= Z_CB && e->hover < Z_CB_END) cb_hover(e, e->hover);   /* (only its own part, cables.c) */
+            else invalidate_zone(e, e->hover);
             e->hover = h;
-            invalidate_zone(e, h);
+            if (h >= Z_CB && h < Z_CB_END) {
+                cb_hover(e, h);
+                RECT hl = L.help;
+                InflateRect(&hl, sc(2), sc(6));
+                invalidate(e, &hl);
+            } else invalidate_zone(e, h);
         }
         TRACKMOUSEEVENT tme = {sizeof tme, TME_LEAVE, w, 0};
         TrackMouseEvent(&tme);
@@ -1313,6 +1324,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     }
     case WM_KEYDOWN:   /* 1-3 or Shift+F5/F6/F7: the Synth in focus (Shift+1-3, Ctrl+Shift+F5-F7: added); the step editor: arrows, Delete */
         if (e && qm_key(e, (int)wp)) return 0;   /* Esc: quick assign done */
+        if (e && cb_key(e, (int)wp)) return 0;   /* Esc (then): the cables hidden (cables.c) */
         if (e && GetKeyState(VK_CONTROL) < 0 && (wp == 'Z' || wp == 'Y')) {   /* undo, redo (Ctrl+Shift+Z: redo) */
             if (wp == 'Y' || GetKeyState(VK_SHIFT) < 0) lib_redo(e);
             else lib_undo(e);
@@ -1389,6 +1401,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             lib_commit(e);
         } else if (e->mode == M_QMOD) {
             qm_release(e);
+        } else if (e->mode == M_CABLE) {
+            cb_release(e);
         } else if (e->mode == M_PARAM) {
             if (e->drag >= 0) begin_edit(e, e->drag, 1);
             e->drag = -1;
@@ -1450,6 +1464,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             if (e->ribbon_on) { e->ribbon_on = 0; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
             if (e->pad_on) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); }
             e->mode = M_NONE;
+            cb_free(e);   /* (the cables' cached layer; they show again when the window opens) */
         }
         KillTimer(w, 1);
         KillTimer(w, 2);
@@ -1616,6 +1631,7 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             return e->focus + 4 * (intptr_t)e->focus_mask;
         }
         if (idx == TEST_QM && e && ptr) return qm_test(e, v, ptr, opt);   /* load_test: quick assign */
+        if (idx == TEST_CB && e) return cb_test(e, v, ptr, opt);   /* load_test: the CABLES view (cables.c) */
         if (idx == TEST_SEQ && e && ptr) return seq_test(e, v, ptr);   /* load_test: the step sequencer's page */
         if (idx == TEST_SETTINGS && e && ptr) return settings_test(e, v, ptr, opt);   /* load_test: the settings */
         if (idx == TEST_HUB && e) return hub_test(e, v, ptr, opt);   /* load_test: TEMPO, GEN OFF, LINK (hub.c) */
@@ -1703,6 +1719,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->rnd_amount = 0.2f;   /* (WILD 0, no ticks: rnd_wild and rnd_also start at 0) */
         e->qm.dst = e->qm.ctl = e->qm.last_row = e->qm.last_dst = e->qm.mark = -1;   /* (quick assign: nothing yet) */
         e->nav.ov_synth = -1;   /* (the overview: the Synth in focus) */
+        e->cb.sel = -1;         /* (the CABLES view: hidden, nothing selected) */
         e->hr = hr;
         eds[i] = e;
         wrapped_dispatch = fx->dispatcher;

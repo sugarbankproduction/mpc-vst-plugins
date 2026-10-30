@@ -42,6 +42,10 @@ void skin_black_key(float x0, float x1, int top, int h, int down);
 void skin_key_shadow(float x0, float x1, int top, int h);         /* a black key's cast shadow on the white keys */
 void skin_wheel(int x, int y, int w, int h, float pos);           /* a ridged rubber wheel, pos -1..1 */
 
+/* (2026-10-30) the frame inside clip a quarter darker (but inside the keep rects, which share no rows), then a
+ * premultiplied 0xAARRGGBB layer of the frame's size (w x h, rows top down) blended over it: the CABLES view (cables.c) */
+void skin_layer_blend(const uint32_t *px, int w, int h, const RECT *clip, const RECT *keep, int nkeep);
+
 /* text: GDI's ClearType text, drawn once per string, font, format and box size and kept; blended in with colour c.
  * 0 if it couldn't (draw it with DrawText then). */
 int skin_text(const RECT *r, const char *s, HFONT f, COLORREF c, UINT fmt);

@@ -168,6 +168,27 @@ typedef struct {
     DWORD msg_at;
     unsigned char drawn[NPARAMS];   /* a control drawn with a modulation ring (repainted when the matrix changes) */
 } qm_ui_t;
+/* (2026-10-30) the CABLES view (cables.c): the focused Synth's matrix rows drawn as patch cables over the panel */
+enum { CB_MAX = 16, CB_PTS = 33, CB_JACKS = 48 };
+typedef struct {
+    short row, src, dst, ctl, on;    /* the matrix row, its source, destination (MD_*), the panel control (-1: a jack) */
+    float x0, y0, x1, y1, kx, ky;    /* the ends (source, destination) and the amount knob, in pixels */
+    float rad;                       /* the destination's ring (around its knob) */
+    float pt[CB_PTS][2];             /* the cable as a line through these points */
+    float amt;                       /* the amount drawn last (%), to repaint its knob when it changes */
+} cb_cable_t;
+typedef struct { short src, dst; float x, y; char label[28]; } cb_jack_t;   /* a source's jack (dst 0) or a destination's */
+typedef struct {
+    int on, sel, drag_y, rows[NSYNTHS];   /* shown; the cable selected (its row, -1); a drag on its knob: each Synth's row */
+    float drag_from;
+    unsigned sig, layer_sig;         /* what the cables show now / what the cached layer was drawn for */
+    uint32_t *layer;                 /* the cables, cached (premultiplied ARGB, the window's size); NULL: none */
+    int lw, lh, builds;              /* its size; how many times it was drawn (load_test) */
+    int n, nj;
+    cb_cable_t cab[CB_MAX];
+    cb_jack_t jack[CB_JACKS];
+    RECT label_at;                   /* the selected cable's label as drawn last (to repaint it) */
+} cb_ui_t;
 #define RND_HIST 32   /* sounds the randomiser's UNDO / REDO keep (the oldest goes) */
 enum { MLOG = 64 };
 /* (2026-10-30, nav.c) the centre screen's page history for BACK / FWD: a page and the sub-page it was left on */
@@ -234,9 +255,11 @@ typedef struct {
     int no_link;                               /* (2026-10-30) the randomiser's edits: no LINK to the other Synths */
     int gens_arm;                              /* (2026-10-30) RESET (hub_gens.c): the half clicked once (0: none) */
     unsigned gens_arm_t;                       /* ... and when (GetTickCount): a second click within 4 s resets */
+    cb_ui_t cb;                                /* (2026-10-30) the CABLES view (cables.c) */
 } ed_t;
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
-       M_QMOD, M_TEMPO };   /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
+       M_QMOD, M_TEMPO,     /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
+       M_CABLE };           /* (2026-10-30) a drag on a cable's amount knob (cables.c) */
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -301,6 +324,13 @@ const char *qm_zone_help(ed_t *e, int z);
 int qm_marked(ed_t *e);                         /* the MATRIX row to mark (-1: none) */
 void qm_matrix_changed(ed_t *e, int i);         /* param i (a panel index) changed: rings to repaint if it is the matrix's */
 intptr_t qm_test(ed_t *e, intptr_t op, char *buf, float opt);
+const char *qm_src_name(int s);                 /* (2026-10-30, for cables.c) a source's name (a matrix option) */
+const char *qm_dst_name(int d);                 /* ... a destination's (MD_*) */
+int qm_dst_of(int i);                           /* ... panel index i's destination (-1: none) */
+unsigned qm_family(int s);                      /* ... the colour of its family (0xAARRGGBB) */
+int qm_is_gen_src(int s);                       /* ... one of the generators' */
+void qm_remove_row(ed_t *e, int row);           /* ... the focused Synth's row emptied (and in the Synths with it): undo */
+void qm_pick(ed_t *e, int s);                   /* ... quick assign from source s (as its DEST button) */
 int qm_subs(ed_t *e);                           /* the MOD FROM page's sub-pages */
 void qm_page_title(ed_t *e, char *out, int n);  /* its title line */
 void qm_page_draw(HDC dc, ed_t *e);             /* its connections and buttons, under the title line */
@@ -507,3 +537,36 @@ void ed_rnd_gens(ed_t *e, int mutate, int all);   /* (editor.c) the randomiser o
 int gen_param(int i);                          /* a generator's setting (Synth 1's index; not KEY / SCALE, not shared) */
 void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f);   /* (editor_draw.c) */
 void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot);
+/* cables.c (2026-10-30): the CABLES view. CABLES on the MATRIX page's title line (a plain click; again, CABLES OFF in
+ * the jack bay, or Esc: hidden) dims the panel a little and draws each active matrix row of the Synth in focus as a
+ * patch cable from its source (a panel spot or a jack) to the control it moves, with an amount knob in its middle. */
+#define Z_CB 690000
+enum { Z_CB_BTN = Z_CB, Z_CB_OFF, Z_CB_X, Z_CB_KNOB = Z_CB + 100, Z_CB_WIRE = Z_CB + 200, Z_CB_JACK = Z_CB + 300,
+       Z_CB_END = Z_CB + 400 };
+#define TEST_CB 0x4F314342   /* VENDOR_SPECIFIC index: value = CBT_ op (cables.c) */
+enum { CBT_ON = 1,           /* 1: shown */
+       CBT_N,                /* how many cables */
+       CBT_ROW,              /* opt = a cable: its matrix row (-1: none) */
+       CBT_END_XY,           /* opt = 2 x cable + end (0 source, 1 destination): that end in pixels (x + 65536 y) */
+       CBT_KNOB_XY,          /* opt = a cable: its amount knob's middle */
+       CBT_X_XY,             /* the selected cable's X button (-1: none) */
+       CBT_SEL,              /* the selected cable's row (-1: none) */
+       CBT_BTN_XY,           /* the CABLES button (-1: not shown) */
+       CBT_CTL_XY,           /* opt = a panel index: where its cable would end (its knob's middle) */
+       CBT_BUILDS,           /* how many times the cached layer was drawn */
+       CBT_JACK_XY,          /* opt = a source: its jack (-1: none) */
+       CBT_WIRE_XY,          /* opt = a cable: a point on the cable a quarter of the way along */
+       CBT_OFF_XY };         /* the jack bay's CABLES OFF */
+int cb_hit(ed_t *e, POINT pt);                  /* a cable's part under pt (Z_CB_*), or -1 */
+int cb_press(ed_t *e, int z, int x, int y);     /* a left click (z: hit()'s); 1: taken */
+void cb_drag(ed_t *e, int y, int fine);         /* M_CABLE: the amount follows the mouse */
+void cb_release(ed_t *e);
+int cb_key(ed_t *e, int vk);                    /* Esc: hidden (1: taken) */
+void cb_tick(ed_t *e);                          /* the window's timer: a changed matrix redraws the cables */
+void cb_draw(HDC dc, ed_t *e, const RECT *clip);   /* over everything else, when shown */
+RECT cb_button_rect(void);                      /* the CABLES button on the MATRIX page's title line */
+int cb_help(ed_t *e, char *out, int n);         /* the help line while the cables show (1) */
+void cb_free(ed_t *e);                          /* the window closes: the cached layer goes */
+void cb_hover(ed_t *e, int z);                  /* the mouse moved onto or off zone z: it repaints */
+void cb_toggle(ed_t *e);
+intptr_t cb_test(ed_t *e, intptr_t op, char *buf, float opt);

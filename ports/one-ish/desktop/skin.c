@@ -192,6 +192,35 @@ void skin_present(HDC out, const RECT *clip) {
            clip->top, SRCCOPY);
 }
 
+static inline uint32_t dim75(uint32_t q) { return 0xFF000000u | ((q >> 1 & 0x7F7F7Fu) + (q >> 2 & 0x3F3F3Fu)); }
+void skin_layer_blend(const uint32_t *px, int w, int h, const RECT *clip, const RECT *keep, int nkeep) {
+    int x0, y0, x1, y1;
+    if (!px || !S.tgt || w != S.tgt->w || h != S.tgt->h) return;
+    RECT c = S.clip;
+    if (!IntersectRect(&S.clip, &S.clip, clip)) { S.clip = c; return; }
+    int ok = span(0, 0, w, h, &x0, &y0, &x1, &y1);   /* (flushes pending GDI / GDI+ drawing) */
+    S.clip = c;
+    if (!ok) return;
+    for (int y = y0; y < y1; y++) {
+        const uint32_t *s = px + (size_t)y * w;
+        uint32_t *d = &PIX(0, y);
+        int k0 = 0, k1 = 0;   /* this row's part left bright (one of the keep rects; they don't share rows) */
+        for (int k = 0; k < nkeep; k++)
+            if (y >= keep[k].top && y < keep[k].bottom) { k0 = keep[k].left; k1 = keep[k].right; }
+        for (int x = x0; x < x1; x++) {
+            uint32_t v = s[x], a = v >> 24;
+            if (x < k0 || x >= k1) d[x] = dim75(d[x]);   /* the panel under the cables, a quarter darker */
+            if (!a) continue;
+            if (a == 255) { d[x] = v; continue; }
+            uint32_t q = d[x], k = 255 - a;   /* premultiplied: out = src + dst x (1 - alpha) */
+            uint32_t rb = (q & 0x00FF00FFu) * k + 0x00800080u, g = (q >> 8 & 255u) * k + 128u;   /* (x / 255, rounded) */
+            rb = ((rb + (rb >> 8 & 0x00FF00FFu)) >> 8) & 0x00FF00FFu;
+            g = (g + (g >> 8)) >> 8;
+            d[x] = 0xFF000000u | ((v & 0x00FFFFFFu) + (rb | g << 8));
+        }
+    }
+}
+
 /* ---- materials ---- */
 void skin_chassis(int x, int y, int w, int h) {
     int x0, y0, x1, y1;
