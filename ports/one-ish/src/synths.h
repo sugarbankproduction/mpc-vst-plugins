@@ -171,12 +171,18 @@ static void midi(void *inst, const uint8_t *m, int len) {
             note = r;
         }
     }
-    /* (2026-10-30) LINK on the X/Y pad (link_pad, shared): the pad's CCs reach every Synth, whatever its channel */
-    int pad_all = st == 0xb0 && len > 2 && in->syn[0]->val[P_LINK_PAD] > 0.5f &&
-                  (note == PAD_X_CC || note == PAD_Y_CC || note == PAD_TOUCH_CC);
+    /* (2026-10-30) LINK on the X/Y pad (link_pad, shared): the pad's CCs reach every Synth, whatever its channel.
+     * (2026-10-31) the same for the mod wheel (link_mod: CC 1), the pitch wheel (link_bend: pitch bend) and the ribbon
+     * (link_ribbon: CC 16 and 17). All off (the default): as before. */
+    const float *sv = in->syn[0]->val;
+    int pad_all = (st == 0xb0 && len > 2 &&
+                   ((sv[P_LINK_PAD] > 0.5f && (note == PAD_X_CC || note == PAD_Y_CC || note == PAD_TOUCH_CC)) ||
+                    (sv[P_LINK_MOD] > 0.5f && note == 1) ||
+                    (sv[P_LINK_RIBBON] > 0.5f && (note == RIBBON_CC || note == RIBBON_TOUCH_CC)))) ||
+                  (st == 0xe0 && len > 2 && sv[P_LINK_BEND] > 0.5f);
     for (int c = 0; c < NSYN; c++) {
         one_t *s = in->syn[c];
-        int ok = pad_all || chan_ok(in, c, ch);   /* (pad_all: only the pad's CCs, never a key) */
+        int ok = pad_all || chan_ok(in, c, ch);   /* (pad_all: only a linked controller, never a key) */
         uint16_t bit = (uint16_t)(1u << ch);
         if (st == 0x90 && len > 2 && vel) {   /* a key: to the Synths on, whose range has it */
             if (!ok || s->val[P_SYN_ON] < 0.5f || note < s->val[P_KEY_LO] || note > s->val[P_KEY_HI]) continue;

@@ -772,6 +772,10 @@ mout_on
 mout_send
 mout_ch
 sus_pedal
+link_mod
+link_bend
+link_ribbon
+link_glide
 s2_o1_wave
 s2_amp_a
 s2_amp_d

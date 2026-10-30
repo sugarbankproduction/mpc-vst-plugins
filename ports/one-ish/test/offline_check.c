@@ -5212,6 +5212,7 @@ static void arp_wav(const char *demo_path) {
 #include "hq_check.c"   /* (2026-10-30) HQ MODE and WARM-UP (the ANALOG page) */
 #include "multiout_check.c"   /* (2026-10-30) multi-out: each Synth's OUTPUT (MAIN, its own pair, both) */
 #include "midiout_check.c"    /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH */
+#include "links_check.c"     /* (2026-10-31) LINK on the mod wheel, the pitch wheel, the ribbon */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -6038,6 +6039,11 @@ int main(int argc, char **argv) {
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "links")) {   /* (2026-10-31) just the wheels' and the ribbon's LINKs */
+        links_checks();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "grains")) {   /* (2026-10-30) just GRAINS, Auto's CTRLs, the pad LINK */
         grains_checks();
         grains_bench();
@@ -6182,6 +6188,7 @@ int main(int argc, char **argv) {
     hq_checks();   /* (2026-10-30) HQ MODE and WARM-UP (test/hq_check.c) */
     multiout_checks();   /* (2026-10-30) multi-out (test/multiout_check.c) */
     midi_out_checks();   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (test/midiout_check.c) */
+    links_checks();   /* (2026-10-31) the wheels' and the ribbon's LINKs (test/links_check.c) */
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");
