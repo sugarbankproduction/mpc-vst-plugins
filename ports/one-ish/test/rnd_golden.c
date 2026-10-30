@@ -6,7 +6,7 @@
  *   rnd_golden check <fixture>   with the randomiser AFTER them: the same calls must give the same hashes
  *
  * Calls: RANDOMISE from the defaults, and MUTATE (40%) from the defaults, at WILD 0, 50 and 100%, with no tick button
- * and with ARPEGGIATOR + SEQUENCER lit, 20 seeds each. Left out of the hash, the deliberate changes of 2026-10-30:
+ * and with ARPEGGIATOR lit, 20 seeds each. Left out of the hash, the deliberate changes of 2026-10-30:
  *   - matrix rows 13-16: the aftertouch, X/Y pad and ribbon rows RANDOMISE always wires (MUTATE leaves them alone)
  *   - the ANALOG page (drift, an_*) and SPREAD: never changed by the randomiser now
  *   - the master effect sends and the synth effect's mix: RANDOMISE makes the effects clearly heard
@@ -22,7 +22,8 @@
 #include "randomize.h"
 
 static const char *const NEWER[] = {"dly_on", "rev_on"};   /* (2026-10-30) the master effect slots' own ON */
-static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix"};
+static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
+                                      "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
 
 static int skipped(const char *k) {
     if (k[0] == 's' && k[1] >= '2' && k[1] <= '9' && k[2] == '_') return 1;
@@ -54,8 +55,10 @@ static uint64_t hash(const float *n, uint32_t seed) {
     for (int j = 0; j < no; j++) {
         int i = order[j];
         snprintf(t, sizeof t, "%s=%.5g;", PARAMS[i].key, rnd_real(i, n[i]));
+        if (getenv("RND_GOLDEN_DUMP")) printf("%s\n", t);   /* (to see what differs: run old and new, diff) */
         for (const char *p = t; *p; p++) h = (h ^ (unsigned char)*p) * 1099511628211ull;
     }
+    if (getenv("RND_GOLDEN_DUMP")) printf("seed=%u\n", seed);
     snprintf(t, sizeof t, "seed=%u", seed);
     for (const char *p = t; *p; p++) h = (h ^ (unsigned char)*p) * 1099511628211ull;
     return h;
@@ -81,7 +84,7 @@ int main(int argc, char **argv) {
             double a1 = 0, a2 = 0, am = 0, nz = 0, non = 0, quiet = 0;
             for (int s = 0; s < 400; s++) {
                 uint32_t seed = 9100u + (uint32_t)s;
-                rnd_opts_t op = {w * 0.5f, 0, 0};
+                rnd_opts_t op = {w * 0.5f, 0, 0, RV_BOTH};
                 rnd_generate_x(d, o, 0, &seed, &op);
                 float v1 = rnd_real(s1, o[s1]), v2 = rnd_real(s2, o[s2]);
                 a1 += v1; a2 += v2;
@@ -104,16 +107,17 @@ int main(int argc, char **argv) {
     for (int i = 0; i < NPARAMS; i++) def[i] = PARAMS[i].def;
     empty_rows(def);
     static const float WILD[3] = {0.0f, 0.5f, 1.0f};
-    static const unsigned ALSO[2] = {0, 1u << RS_ARP | 1u << RS_SEQ};
+    static const unsigned ALSO[2] = {0, 1u << RS_ARP};   /* (not SEQUENCER: its last rules were past rule 255 before, a bug fixed that day) */
     FILE *f = fopen(argv[2], gen ? "w" : "r");
     if (!f) { fprintf(stderr, "rnd_golden: can't open %s\n", argv[2]); return 2; }
     int n = 0, bad = 0;
     for (int w = 0; w < 3; w++)
         for (int a = 0; a < 2; a++)
             for (int s = 0; s < 20; s++) {
-                rnd_opts_t o = {WILD[w], ALSO[a], 0};
+                rnd_opts_t o = {WILD[w], ALSO[a], 0, RV_BOTH};
                 uint32_t seed = 7000u + 97u * (uint32_t)s + 13u * (uint32_t)w + (uint32_t)a, seed2 = seed ^ 0x5bd1e995u;
-                rnd_generate_x(def, out, 0, &seed, &o);
+                int arch = rnd_generate_x(def, out, 0, &seed, &o);
+                if (getenv("RND_GOLDEN_DUMP")) printf("arch=%d\n", arch);
                 uint64_t hg = hash(out, seed);
                 rnd_mutate_x(def, out, 0.4f, 0, &seed2, &o);
                 uint64_t hm = hash(out, seed2);

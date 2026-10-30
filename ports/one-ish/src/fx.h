@@ -203,19 +203,20 @@ static void fx_master_multi(fx_mst_t *f, const fx_params_t *p, int ns, fx_send_t
     enum { FX_MAX_SYN = 8 };
     mslot_t *m1 = &f->m[0], *m2 = &f->m[1];
     const int on = p->mfx_on, stereo = p->buss == MB_STEREO;
+    const int on1 = on && !p->off1, on2 = on && !p->off2;   /* (2026-10-30) each slot's own ON: off, it fades out */
     const float tse = stereo ? 0.0f : p->series;
     float t1[FX_MAX_SYN], t2[FX_MAX_SYN];
     int any1 = 0, any2 = 0;   /* a send is up, or still on its way down */
     if (ns > FX_MAX_SYN) ns = FX_MAX_SYN;
     for (int k = 0; k < ns; k++) {
-        t1[k] = on ? ps[k]->send1 : 0.0f;
-        t2[k] = on && !stereo ? ps[k]->send2 : 0.0f;
+        t1[k] = on1 ? ps[k]->send1 : 0.0f;
+        t2[k] = on2 && !stereo ? ps[k]->send2 : 0.0f;
         any1 |= t1[k] > 0.0f || snd[k]->send1 > 0.0f;
         any2 |= t2[k] > 0.0f || snd[k]->send2 > 0.0f;
     }
     int run1 = m1->s.state == FS_RUN, run2 = m2->s.state == FS_RUN;
-    int want1 = on && (any1 || run1);
-    int want2 = on && !stereo && (any2 || run2 || (want1 && tse > 0.0f));
+    int want1 = on1 && (any1 || run1);
+    int want2 = on2 && !stereo && (any2 || run2 || (want1 && tse > 0.0f));
     if (!want1 && !want2 && !run1 && !run2) {   /* nothing plays: the next part of a stopped slot's memory cleared */
         if (m1->s.state == FS_CLEAR) fx_clear_step(&m1->s, &m1->u, sizeof m1->u, 0);
         if (m2->s.state == FS_CLEAR) fx_clear_step(&m2->s, &m2->u, sizeof m2->u, 0);

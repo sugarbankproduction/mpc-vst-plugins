@@ -176,8 +176,10 @@ static void midi(void *inst, const uint8_t *m, int len) {
             s->kin[note] = 0;
         } else if (st == 0xb0 && len > 2 && (note == 120 || note == 123)) {
             memset(s->kin, 0, sizeof s->kin);
+        } else if (st == 0xa0 && len > 2 && !s->kin[note]) {   /* (2026-10-30) poly pressure: the Synths with the key */
+            continue;
         }
-        synth_midi(s, m, len);
+        synth_midi(s, m, len);   /* (channel pressure, 0xD0: every Synth on that channel, as the wheels) */
     }
 }
 
@@ -279,6 +281,36 @@ static void set_param(void *inst, const char *key, const char *val) {
  * prefixes); still too long, the Synths past the first are dropped from the end (Synth 3 first), then the sequences are
  * left out (each Synth's readout says so). Synth 1 and the shared values never: should they alone not fit, nothing is
  * saved (0, and stderr says so). */
+/* (2026-10-30) the defaults' version: a state, patch or SAVE SYNTH sound written from now on says "dv=1" (after "v=");
+ * one without it was saved with the defaults before 2026-10-30, and only non-default values were written, so what it
+ * leaves out is read as those old defaults: Synths 2 and 3 off with Synth 1's sound (but their channel), and no
+ * aftertouch / X/Y pad / ribbon rows in matrix rows 13-16 (presets/make_synths.py OLD_S1 keeps the same list). Old
+ * projects, patches and presets so play sample for sample as before (test/golden_check.c). */
+#define STATE_DV 1
+static const struct { const char *key; float val; } LEGACY_S1[] = {
+    {"mod13_src", 0}, {"mod13_dst", 0}, {"mod13_amt", 0}, {"mod14_src", 0}, {"mod14_dst", 0}, {"mod14_amt", 0},
+    {"mod15_src", 0}, {"mod15_dst", 0}, {"mod15_amt", 0}, {"mod16_src", 0}, {"mod16_dst", 0}, {"mod16_amt", 0}};
+static int state_dv(const char *str) {
+    const char *p = strstr(str, ";dv=");
+    if (p) return atoi(p + 4);
+    return !strncmp(str, "dv=", 3) ? atoi(str + 3) : 0;
+}
+static void legacy_s1(one_t *s) {   /* a Synth's own sound: the old defaults of what changed */
+    for (unsigned i = 0; i < sizeof LEGACY_S1 / sizeof LEGACY_S1[0]; i++) {
+        int k = slot(LEGACY_S1[i].key);
+        if (k >= 0) s->val[k] = LEGACY_S1[i].val;
+    }
+}
+static void legacy_defaults(inst_t *in) {   /* (after load_defaults) every Synth at the defaults of before */
+    legacy_s1(in->syn[0]);
+    for (int c = 1; c < NSYN; c++) {
+        one_t *s = in->syn[c];
+        for (int k = 0; k < P_COUNT; k++)
+            if (!engine_global(k) && k != P_SYN_CH) s->val[k] = in->syn[0]->val[k];
+        s->val[P_SYN_ON] = 0.0f;
+    }
+}
+
 static int state_keeps(const one_t *s, int i) {
     if (!KEYS[i][0] || s->val[i] == s->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD ||
         i == P_SYN_SOLO) return 0;
@@ -345,14 +377,14 @@ static int get_state(inst_t *in, char *buf, int n) {
     for (int c = 0; c < NSYN; c++) positions_capture(in->syn[c]);   /* LOAD SAVED POS: the wheel and pad now */
     for (v2 = 0; v2 < 2; v2++) {   /* every Synth in v=1, else in v=2 */
         prev[0] = 0;
-        used = snprintf(buf, n, v2 ? "v=2" : "v=1");
+        used = snprintf(buf, n, v2 ? "v=2;dv=%d" : "v=1;dv=%d", STATE_DV);
         for (int c = 0; c < NSYN; c++) used = state_synth(in->syn[c], v2, prev, buf, n, used);
         if (used < n) break;
     }
     while (used >= n && last > 0) {   /* too long even so: the last Synths left out */
         last--;
         prev[0] = 0;
-        used = snprintf(buf, n, "v=2");
+        used = snprintf(buf, n, "v=2;dv=%d", STATE_DV);
         for (int c = 0; c <= last; c++) used = state_synth(in->syn[c], 1, prev, buf, n, used);
     }
     if (used >= n) {
@@ -410,6 +442,7 @@ static void set_state(inst_t *in, const char *str) {
         sq_clear(&in->syn[c]->sq.q);   /* and one saved without a sequence has none, */
         tun_clear(&in->syn[c]->tun);   /* nor a scale */
     }
+    if (state_dv(str) < 1) legacy_defaults(in);   /* (saved before 2026-10-30: what it leaves out, as then) */
     state_walk(in, str, state_value, 0);
     for (int c = 0; c < NSYN; c++) {
         one_t *s = in->syn[c];
@@ -446,8 +479,9 @@ static void synth_load(inst_t *in, int c, const char *str) {
     float keep[P_COUNT];
     memcpy(keep, s->val, sizeof keep);
     load_defaults(s);
-    for (int k = 0; k < P_COUNT; k++)
-        if (load_skip(k)) s->val[k] = keep[k];
+    for (int k = 0; k < P_COUNT; k++)   /* a sound is written against Synth 1's defaults (synth_state): those, not */
+        s->val[k] = load_skip(k) ? keep[k] : in->syn[0]->def[k];   /* this Synth's own Init (2026-10-30) */
+    if (state_dv(str) < 1) legacy_s1(s);   /* (a sound saved before 2026-10-30: no aftertouch / pad / ribbon rows) */
     sq_clear(&s->sq.q);
     tun_clear(&s->tun);
     state_walk(in, str, load_value, c);
@@ -464,7 +498,7 @@ static int synth_state(inst_t *in, int c, char *buf, int n) {
     one_t *s = in->syn[c];
     const one_t *s0 = in->syn[0];
     positions_capture(s);   /* LOAD SAVED POS: the wheel and pad as they are now */
-    int used = snprintf(buf, n, "v=1");
+    int used = snprintf(buf, n, "v=1;dv=%d", STATE_DV);
     for (int i = 0; i < P_COUNT; i++) {
         if (!KEYS[i][0] || load_skip(i) || s->val[i] == s0->def[i] || i == P_SEQ_PLAY || i == P_SEQ_REC
             || i == P_SEQ_STEP_MOD)

@@ -9,7 +9,11 @@ unprefixed keys are Synth 1's, so every project, patch and preset made before st
 Order (the VST index, which saved projects and automation rely on): Synth 1 and the shared params as written in
 params.json, then every s2_ copy, then every s3_ copy. Run again after adding a param to Synth 1: copies already there
 keep their places and the new ones go at the very end (s2_ then s3_), so no existing index moves.
-Defaults are Synth 1's, except SYNTH_DEFAULTS (Synths 2 and 3 start switched off, on MIDI channels 2 and 3).
+Defaults are Synth 1's, except SYNTH_DEFAULTS: Synths 2 and 3 on MIDI channels 2 and 3, and (2026-10-30) switched ON,
+with an Init of their own (Synth 2 an octave down, Synth 3 a soft triangle an octave up, both quieter), so a new
+instance plays a three-layer sound. Before 2026-10-30 they started switched off with Synth 1's sound: old_default()
+gives what every changed default was, for make_presets.py (the factory sounds stay as designed); the engine reads an
+older state the same way (src/synths.h LEGACY_S1, legacy_defaults()).
 src/engine.c knows the same split (engine_global(); test/offline_check.c checks they agree).
     python3 ports/one-ish/presets/make_synths.py   (then make_presets.py, then gen_vst.py --params-h)"""
 import json
@@ -21,7 +25,26 @@ PREFIXES = ("s2_", "s3_")
 GLOBAL_PREFIX = ("dly_", "rev_", "link_")   # the master effect slots' controls; the window's LINKs (2026-10-30)
 GLOBAL = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune", "fine_tune", "midi_ch",
           "learn_mode", "master_level", "seq_all", "gen_follow_tempo"}
-SYNTH_DEFAULTS = {"s2_": {"syn_on": "Off", "syn_ch": "2"}, "s3_": {"syn_on": "Off", "syn_ch": "3"}}
+SYNTH_DEFAULTS = {"s2_": {"syn_on": "On", "syn_ch": "2", "o1_oct": "16'", "volume": 45},
+                  "s3_": {"syn_on": "On", "syn_ch": "3", "o1_oct": "4'", "o1_wave": "Tri", "volume": 35}}
+# (2026-10-30) Synth 1's defaults that changed that day, with their values before: the aftertouch, X/Y pad and ribbon
+# rows (matrix rows 13-16: Aftertouch -> Pitch LFO1 Amt (vibrato), Pad X -> Ladder Cutoff, Pad Y -> Ladder Res,
+# Ribbon -> Pitch). Synths 2 and 3 had Synth 1's (old) defaults but for their channel, and were off. (LINK SENDS and
+# the master slots' own ON are On for every sound, old ones too: no engine effect / today's sound.)
+OLD_S1 = {"mod%d_%s" % (r, f): v for r in (13, 14, 15, 16) for f, v in (("src", "Off"), ("dst", "Off"), ("amt", 0))}
+OLD_SYNTH = {"s2_": {"syn_on": "Off", "syn_ch": "2"}, "s3_": {"syn_on": "Off", "syn_ch": "3"}}
+
+
+def old_default(key, by_key):
+    """the default `key` had before 2026-10-30 (its default now if that did not change); by_key: params by key"""
+    for pre in PREFIXES:
+        if key.startswith(pre):
+            k = key[3:]
+            if k in OLD_SYNTH[pre]:
+                return OLD_SYNTH[pre][k]
+            return old_default(k, by_key)
+    p = by_key[key]
+    return OLD_S1.get(key, p.get("default", p.get("min", 0)))
 
 
 def is_global(key):

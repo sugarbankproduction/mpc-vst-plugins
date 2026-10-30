@@ -3,7 +3,10 @@
 patch's changes), so loading one never leaves a value from the last. A patch is Synth 1's sound (Synths 2 and 3 off);
 PERFORMANCES at the end put patches into Synths 2 and 3 too (multitimbral: synth() below). Patches are written in musical units and turned
 into each knob's 0..100 position here: envelope times in ms, cutoffs and LFO rates in Hz, tempo divisions by name.
-The first preset is the plugin's default sound. Original sounds, not copies of any manufacturer's factory presets.
+The first preset is the plugin's default sound: every default, so it is what a new instance plays (2026-10-30: all
+three Synths on, each its own Init, the X/Y pad and the ribbon wired). Every other preset fills what its patch leaves
+out with the defaults as they were before 2026-10-30 (make_synths.old_default: Synths 2 and 3 off, no pad rows), so
+the factory sounds stay as designed. Original sounds, not copies of any manufacturer's factory presets.
     python3 ports/one-ish/presets/make_presets.py"""
 import json
 import math
@@ -12,7 +15,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from make_synths import is_global   # noqa: E402  (the shared params: one copy, Synth 1's)
+from make_synths import is_global, old_default   # noqa: E402  (the shared params: one copy, Synth 1's)
 PARAMS = json.load(open(os.path.join(HERE, "..", "params.json"), encoding="utf-8"))["params"]
 DIVS = ["4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"]   # engine.c SYNC_DIV
 LFO_DIVS = ["16 bars", "8 bars", "4 bars", "2 bars", "1 bar", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128",
@@ -361,7 +364,10 @@ def main():
         for p in sorted(PARAMS, key=lambda p: first.index(p["key"]) if p["key"] in first else len(first)):   # VST order
             if p.get("display") == "string":   # a readout (seq_pos), not a setting
                 continue
-            v = pv.get(p["key"], p.get("default", p.get("min", 0)))
+            if name == "Init":
+                v = pv.get(p["key"], p.get("default", p.get("min", 0)))
+            else:   # (the defaults these sounds were made with)
+                v = pv.get(p["key"], old_default(p["key"], by_key))
             if "options" in p and isinstance(v, (int, float)):
                 v = p["options"][int(v)]
             values[p["key"]] = v
