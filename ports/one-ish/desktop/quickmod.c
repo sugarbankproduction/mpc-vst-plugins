@@ -141,7 +141,7 @@ static int area_at(POINT pt) {
 }
 
 /* ---- the destinations: a panel key -> its matrix destination (MD_*) ---- */
-static const char *const FX_KEY[MDF_COUNT] = {   /* modmatrix.h's MDF_* order (src/engine.c FXMD_SLOT) */
+static const char *const FX_KEY[] = {   /* modmatrix.h's MDF_* order (src/engine.c FXMD_SLOT) */
     "modfx_mix", "modfx_gain", "modfx_ctrl1", "modfx_ctrl2", "modfx_rate", "modfx_rate_r", "modfx_depth",
     "modfx_fb", "modfx_fb_r", "modfx_time", "modfx_time_r", "modfx_dtime", "modfx_dfb", "modfx_tone",
     "modfx_spread", "modfx_sweep", "modfx_noise", "modfx_vrate", "modfx_vdepth", "modfx_flutter", "modfx_wow",
@@ -164,7 +164,9 @@ static const char *const FX_KEY[MDF_COUNT] = {   /* modmatrix.h's MDF_* order (s
     "rev_srate", "rev_reso", "rev_cut1", "rev_cut2", "rev_cut3", "rev_lvl1", "rev_lvl2", "rev_lvl3",
     "modfx_spray", "modfx_prand", "modfx_reverse",   /* (2026-10-30) GRAINS' */
     "dly_gpos", "dly_gdens", "dly_genv", "dly_gspray", "dly_gprand", "dly_greverse",
-    "rev_gpos", "rev_gdens", "rev_genv", "rev_gspray", "rev_gprand", "rev_greverse"};
+    "rev_gpos", "rev_gdens", "rev_genv", "rev_gspray", "rev_gprand", "rev_greverse",
+    "modfx_sibil", "modfx_sens", "dly_sibil", "dly_sens", "rev_sibil", "rev_sens"};   /* (2026-10-30) the vocoders' */
+_Static_assert(sizeof FX_KEY / sizeof FX_KEY[0] == MDF_COUNT, "a panel key per effect destination");
 static const struct { const char *key; short dst; } DST[] = {
     {"o1_freq", MD_O1_PITCH}, {"o2_freq", MD_O2_PITCH}, {"o3_freq", MD_O3_PITCH},
     {"o1_level", MD_O1_LEVEL}, {"o2_level", MD_O2_LEVEL}, {"o3_level", MD_O3_LEVEL}, {"noise_level", MD_NOISE_LEVEL},

@@ -358,6 +358,97 @@ static void vocoders(void) {
     }
 }
 
+/* (2026-10-30) SIBILANCE and SENSITIVITY as matrix destinations (the synth effect's and each master slot's, appended
+ * at the very end of the destination list): named in every destination list; a Constant slot at +100% with the knob
+ * at 0 plays as the knob at 100% (the same samples once the effect modulation's smoothing has settled), and the knob at
+ * 0 alone sounds different (the vocoder's part: a master slot's dry voices taken off). CTRL 2 on Auto (SIBILANCE for the vocoders) moved by the matrix: finite, and it changes
+ * the sound (before this, that path wrote outside the effect pass's dirty bits). The input: a 300 Hz tone and hiss,
+ * so both the bands and the sibilance filter hear something (for SENSITIVITY, the gate, a quiet one). */
+static void voc_dst_render(void *e, float *dst, int frames, double g) {   /* g: the input's gain */
+    float in[256], out[256];
+    uint32_t rng = 12345;
+    long t = 0;
+    for (int at = 0; at < frames; at += 128) {
+        for (int i = 0; i < 128; i++, t++) {
+            rng = rng * 1664525u + 1013904223u;
+            in[2 * i] = in[2 * i + 1] = (float)(g * (0.2 * sin(2 * M_PI * 300 * t / SR) + 0.15 * ((rng >> 8) / 8388608.0 - 1.0)));
+        }
+        one_ish_set_input(e, in, 128);
+        one_ish_render_float(e, out, 128);
+        for (int i = 0; i < 128 && at + i < frames; i++) dst[at + i] = out[2 * i];
+    }
+}
+static void *voc_dst_patch(int place, const char *knob, double v) {   /* place 0 the synth effect, 1 / 2 a master slot */
+    void *e = E->create(NULL);
+    set(e, "mfx_on", place > 0);
+    if (place == 0) { set(e, "modfx_on", 1); set(e, "modfx_type", SFX_VOC16); set(e, "modfx_mix", 100); }
+    else if (place == 1) { set(e, "dly_type", MFX_VOC16); set(e, "mfx_send1", 100); set(e, "mfx_send2", 0); set(e, "dly_mix", 100); }
+    else { set(e, "rev_type", MFX_VOC16); set(e, "mfx_send2", 100); set(e, "mfx_send1", 0); set(e, "rev_mix", 100); }
+    set(e, knob, v);
+    for (int n = 0; n < 3; n++) note(e, 1, 48 + 7 * n, 100);
+    return e;
+}
+static double voc_diff_db(const float *a, const float *b, int from, int to) {   /* the difference against a's level */
+    double d = 0, s = 0;
+    for (int i = from; i < to; i++) { d += (double)(a[i] - b[i]) * (a[i] - b[i]); s += (double)a[i] * a[i]; }
+    return 10 * log10(d / (s + 1e-30) + 1e-30);
+}
+static void voc_matrix(void) {
+    char what[300];
+    static const char *const NAME[6] = {"Synth FX Sibilance", "Synth FX Sensitivity", "FX1 Sibilance", "FX1 Sensitivity",
+                                        "FX2 Sibilance", "FX2 Sensitivity"};
+    static const char *const KNOB[6] = {"modfx_sibil", "modfx_sens", "dly_sibil", "dly_sens", "rev_sibil", "rev_sens"};
+    int lists = 0, named = 0;
+    for (int i = 0; i < NPARAMS; i++)
+        if (PARAMS[i].nopts == MD_COUNT) {
+            lists++;
+            int ok = 1;
+            for (int k = 0; k < 6; k++) ok &= !strcmp(PARAMS[i].opts[md_of_fxk(MDF_VOC_SIBIL + k)], NAME[k]);
+            named += ok;
+        }
+    snprintf(what, sizeof what, "vocoder destinations: the six at the end of the list (%d .. %d of %d), named in %d of %d "
+             "destination lists", md_of_fxk(MDF_VOC_SIBIL), md_of_fxk(MDF_F2_SENS), MD_COUNT, named, lists);
+    check(lists == 51 && named == lists && md_of_fxk(MDF_F2_SENS) == MD_COUNT - 1, what);
+    enum { VN = SR };
+    static float a[VN], b[VN], c[VN], d[VN];
+    for (int k = 0; k < 6; k++) {
+        int place = k / 2;
+        double g = k % 2 ? 0.005 : 1.0;   /* SENSITIVITY: a quiet input (-50 dBFS or so), which the gate shuts at 0% */
+        void *e = voc_dst_patch(place, KNOB[k], 100);
+        voc_dst_render(e, a, VN, g);
+        E->destroy(e);
+        e = voc_dst_patch(place, KNOB[k], 0);
+        slot_set(e, 2, MS_CONST, md_of_fxk(MDF_VOC_SIBIL + k), 100);
+        voc_dst_render(e, b, VN, g);
+        E->destroy(e);
+        e = voc_dst_patch(place, KNOB[k], 0);
+        voc_dst_render(e, c, VN, g);
+        E->destroy(e);
+        e = voc_dst_patch(place, KNOB[k], 100);   /* no input: the dry voices alone (a master slot's), taken off */
+        voc_dst_render(e, d, VN, 0.0);
+        E->destroy(e);
+        for (int i = 0; i < VN; i++) { a[i] -= d[i]; b[i] -= d[i]; c[i] -= d[i]; }
+        double same = voc_diff_db(a, b, VN / 2, VN), apart = voc_diff_db(a, c, VN / 2, VN), lvl = ext_rms(a, VN / 2, VN);
+        snprintf(what, sizeof what, "vocoder destination %-20s: knob 0 + Constant +100%% against the knob at 100%% %.1f dB "
+                 "apart; the knob at 0 alone %.1f dB (rms %.3g)", NAME[k], same, apart, lvl);
+        check(same < -60 && apart > -40 && lvl > 1e-5, what);
+    }
+    {   /* CTRL 2 on Auto (the vocoders' SIBILANCE) moved by a Constant slot */
+        for (int k = 0; k < 2; k++) {
+            void *e = voc_dst_patch(0, "modfx_sibil", 0);
+            if (k) slot_set(e, 2, MS_CONST, MD_FX_FIRST + MDF_CTRL2, 100);
+            voc_dst_render(e, k ? b : a, VN, 1.0);
+            E->destroy(e);
+        }
+        int bad = 0;
+        for (int i = 0; i < VN; i++) bad += !isfinite(b[i]);
+        double apart = voc_diff_db(a, b, VN / 2, VN);
+        snprintf(what, sizeof what, "vocoder: CTRL 2 (Auto: SIBILANCE) moved by the matrix: finite (%d not), %.1f dB from "
+                 "the unmoved sound", bad, apart);
+        check(!bad && apart > -40, what);
+    }
+}
+
 static void voc_bench(void) {
     static float mod[SR], car[SR], out[SR];
     uint32_t rng = 99;
