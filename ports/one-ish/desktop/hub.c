@@ -207,6 +207,20 @@ void hub_all_off(ed_t *e) {
     lib_hold(e, -1);
     if (e->wnd) InvalidateRect(e->wnd, NULL, FALSE);
 }
+/* PANIC (2026-10-30, the owner's choice): with the notes, every sequence stops (PLAY ALL and each Synth's PLAY) and
+ * every generator goes off, as GEN OFF does, so GEN OFF can bring them back. One undo step. */
+void hub_panic_stop(ed_t *e) {
+    int all = key_ix("seq_all"), play = key_ix("seq_play");
+    lib_hold(e, 1);
+    lib_touch(e, "Panic");
+    if (all >= 0 && e->fx->getParameter(e->fx, all) > 0.5f) ed_edit_abs(e, all, 0.0f);
+    for (int c = 0; c < NSYNTHS && play >= 0; c++) {
+        int i = synth_param(play, c);
+        if (e->fx->getParameter(e->fx, i) > 0.5f) ed_edit_abs(e, i, 0.0f);
+    }
+    if (any_on(e)) hub_all_off(e);   /* (only off: when all are off already, GEN OFF's restore is not pressed) */
+    lib_hold(e, -1);
+}
 
 /* ---- TEMPO ---- */
 int tempo_host_bpm(ed_t *e, double *bpm) {

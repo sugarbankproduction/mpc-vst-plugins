@@ -440,6 +440,7 @@ int hub_press(ed_t *e, int z);                 /* 1: z was the hub's */
 int hub_on(ed_t *e, int row, int c);           /* HUB[row] on in Synth c */
 int hub_restore_n(ed_t *e);                    /* generators GEN OFF would bring back (0: it switches off) */
 void hub_all_off(ed_t *e);                     /* GEN OFF / ALL OFF: every generator off in all 3 Synths, or back */
+void hub_panic_stop(ed_t *e);                  /* PANIC: every sequence stopped, every generator off (2026-10-30) */
 void tempo_text(ed_t *e, char *out, int n);    /* the readout: "120.0" */
 int tempo_host_bpm(ed_t *e, double *bpm);      /* the host's tempo (1: it gives one) */
 void tempo_press(ed_t *e, int y);              /* a click on the readout: a drag (M_TEMPO) starts */

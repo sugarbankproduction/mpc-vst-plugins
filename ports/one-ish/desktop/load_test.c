@@ -2936,6 +2936,20 @@ static void oct_panic_test(AEffect *fx, HWND child, float s) {
     for (int k = 0; k < n; k++) off += (log[k][0] & 0xF0) == 0xB0 && log[k][1] == 123;
     snprintf(what, sizeof what, "PANIC: a plain click sends All Notes Off on every channel (%d of 16)", off);
     check(off == 16, what);
+    {   /* (2026-10-30) PANIC also stops the sequences and switches the generators off */
+        int ip = rnd_key("seq_play"), ig = rnd_key("phys_balls_on"), ig2 = rnd_key("s2_life_on");
+        if (ip < NPARAMS) fx->setParameter(fx, ip, 1.0f);
+        if (ig < NPARAMS) fx->setParameter(fx, ig, 1.0f);
+        if (ig2 < NPARAMS) fx->setParameter(fx, ig2, 1.0f);
+        play(fx, 4, 512);
+        click_zone(child, s, ZONE_PANIC);
+        play(fx, 4, 512);
+        float p = ip < NPARAMS ? fx->getParameter(fx, ip) : -1, g = ig < NPARAMS ? fx->getParameter(fx, ig) : -1,
+              g2 = ig2 < NPARAMS ? fx->getParameter(fx, ig2) : -1;
+        snprintf(what, sizeof what, "PANIC also stops the sequence (PLAY %.0f) and switches the generators off (balls %.0f, "
+                 "Synth 2's Life %.0f)", p, g, g2);
+        check(p == 0.0f && g == 0.0f && g2 == 0.0f, what);
+    }
 }
 
 /* every console button and part of the controller explains itself on the help line (not the page's general text) */

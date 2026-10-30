@@ -1176,9 +1176,11 @@ static void press(ed_t *e, int x, int y) {
         set_octave(e, (k < 0 ? 0 : k > 4 ? 4 : k) - 2);
         return;
     }
-    case Z_PANIC:   /* the computer keyboard's notes too; the held keys drawn up again */
+    case Z_PANIC:   /* the computer keyboard's notes too; the held keys drawn up again; the sequences and generators
+                     * stopped (the owner's choice, 2026-10-30: MIDI's All Notes Off from a host leaves them running) */
         qk_all_off(e);
         panic(e);
+        hub_panic_stop(e);
         InvalidateRect(e->wnd, NULL, FALSE);
         return;
     case Z_KEYS: e->mode = M_KEY; break;

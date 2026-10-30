@@ -325,7 +325,8 @@ static const char *zone_help(ed_t *e, int z) {
                "default octave, 2 s PANIC.";
     case Z_OCT_PICK: return "Octave LEDs: the keyboard's octave (lit). Click one to go straight to it; 0 is the default.";
     case Z_PANIC: return "PANIC: stops every note at once (all notes and sounds off on every MIDI channel, the pedals up). "
-                         "Use it when a note hangs. Shortcut: hold an OCTAVE button for 2 s.";
+                         "It also stops every sequence and switches the generators off (GEN OFF brings them back). Use it when a note "
+                         "hangs. Shortcut: hold an OCTAVE button for 2 s.";
     case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the factory presets, then your own "
                            "patches; click it for the patch list.";
     case Z_PREV: case Z_NEXT: return "PRESET < >: the previous / next preset: the factory presets (F), then your own (U). "
