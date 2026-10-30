@@ -266,8 +266,8 @@ user patch files (2026-10-27, offline).
 | Moog One feature | Range / options (manual) | Status | ONE-ish today | Effort | CPU per voice |
 |---|---|---|---|---|---|
 | MASTER VOLUME, HEADPHONES (global, never stored) [HW] | 0 to 10 (p53) | Missing | The host's fader and the sound card | - | none |
-| Per-Synth routing to MAIN and SUB outputs [MULTI] | on/off each (p54) | Missing | One stereo output; a desktop VST2 can declare more output pairs (multi-out) | M (with parts) | none |
-| SUB VOLUME [MULTI] | -96 dB to +22 dB (p54) | Missing | (a level on a second output pair) | S (with multi-out) | none |
+| Per-Synth routing to MAIN and SUB outputs [MULTI] | on/off each (p54) | Have (desktop) | 2026-10-30, offline and the desktop DLL: eight outputs, MAIN (1-2) and a pair per Synth (3-4, 5-6, 7-8) rather than one shared SUB; each Synth's OUTPUT (`syn_out`: Main, Own Pair, Main + Own; SETUP page and SYNTH OUTPUT's MORE page). The master effects' returns stay on MAIN. The MPC build has one stereo output: every Synth on it | - | none/voice; converters while used (PLAN.md item 36) |
+| SUB VOLUME [MULTI] | -96 dB to +22 dB (p54) | Partial | Each Synth's own pair carries its VOLUME and the master level; the host's fader on that pair is the SUB VOLUME | - | none |
 | Per-Synth routing to INSERT 1-4, one Synth per insert; EXT 1/4" to Insert 3, EXT XLR to Insert 4 [HW] | on/off (p54-55) | Missing | - | - | none |
 | INSERT 1-4 VOLUME [HW] | -96 dB to +22 dB (p55) | Missing | - | - | none |
 | Synth Effect applied before the insert send [HW] | p56 | Missing | - | - | none |
@@ -862,7 +862,7 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 8. Envelopes (p40-45) | 21 | 0 | 0 | 0 | 0 |
 | 9. LFOs (p46-49) | 23 | 0 | 0 | 0 | 0 |
 | 10. VCA (p50-52) | 5 | 0 | 0 | 0 | 0 |
-| 11. Output (p53-56) | 0 | 0 | 6 | 4 | 0 |
+| 11. Output (p53-56) | 1 | 1 | 4 | 4 | 0 |
 | 12. Performance Sets and text entry (p57-60) | 5 | 0 | 0 | 0 | 0 |
 | 13. Master Clock (p60-62) | 5 | 0 | 3 | 3 | 0 |
 | 14. Voice allocation: Hold, Chord, Polyphony (p63-66) | 12 | 0 | 0 | 0 | 0 |
@@ -875,7 +875,7 @@ rows are (the window can offer them). Rows tagged both [UI] and [MULTI] count as
 | 21. Editing and saving (p122-123) | 4 | 0 | 0 | 0 | 0 |
 | 22. Settings (p124-139) | 15 | 2 | 14 | 11 | 1 |
 | 24. Appendices A and B (p143-158) | 5 | 0 | 1 | 1 | 0 |
-| **Total** | **424** | **15** | **36** | **27** | **4** |
+| **Total** | **425** | **16** | **34** | **27** | **4** |
 
 Rows are features or parameters, so the totals weigh a 33-row sequencer the same as 33 oscillator parameters; read
 them per module, not as one score.
@@ -1114,7 +1114,8 @@ effect: up to 3 synth effects and 2 master effects at once).
   and sequencer; ON, key range, MIDI channel per Synth; one 16-voice pool with each Synth's poly count; a synth effect
   and two sends per Synth into the shared master effects; Panel Focus with multi-select and Shift/Ctrl+F5-F7; a SETUP
   page; INTO S1/2/3 and SAVE S1/2/3 on the PATCHES page; PLAY ALL; the randomiser per Synth; three factory
-  performances. Solo and M | S buttons done 2026-10-29. Left: per-Synth outputs (MAIN / SUB), setting a range by pressing a key, sequencer OUTPUT to
+  performances. Solo and M | S buttons done 2026-10-29. Per-Synth outputs done 2026-10-30 (desktop: MAIN and a pair per Synth,
+  PLAN.md item 36). Left: setting a range by pressing a key, sequencer OUTPUT to
   another Synth, the sustain pedal's target, timbre names on the home line, the master effects moved by Synth 2 and
   3's matrices (NRPN for Synths 2 and 3: done with package 14a, 2026-10-29).
 - Three timbres per preset, each with every sound setting, its own arp and sequencer; split, layer and zones (per
