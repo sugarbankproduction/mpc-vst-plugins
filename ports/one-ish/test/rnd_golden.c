@@ -8,7 +8,7 @@
  * Calls: RANDOMISE from the defaults, and MUTATE (40%) from the defaults, at WILD 0, 50 and 100%, with no tick button
  * and with ARPEGGIATOR + SEQUENCER lit, 20 seeds each. Left out of the hash, the deliberate changes of 2026-10-30:
  *   - matrix rows 13-16: the aftertouch, X/Y pad and ribbon rows RANDOMISE always wires (MUTATE leaves them alone)
- *   - the ANALOG page (drift, an_*): never changed by the randomiser now
+ *   - the ANALOG page (drift, an_*) and SPREAD: never changed by the randomiser now
  *   - the master effect sends and the synth effect's mix: RANDOMISE makes the effects clearly heard
  *   - params added that day (NEWER), and the Synth 2 / 3 copies (never touched)
  * Every other param, and the seed after each call, must be the same: nothing else drifted.
@@ -22,7 +22,7 @@
 #include "randomize.h"
 
 static const char *const NEWER[] = {"dly_on", "rev_on"};   /* (2026-10-30) the master effect slots' own ON */
-static const char *const CHANGED[] = {"drift", "mfx_send1", "mfx_send2", "modfx_mix"};
+static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix"};
 
 static int skipped(const char *k) {
     if (k[0] == 's' && k[1] >= '2' && k[1] <= '9' && k[2] == '_') return 1;
