@@ -1133,6 +1133,8 @@ static void patches_action(ed_t *e, int a) {
                             e->focus + 1, e->focus + 1);
         break;
     case PA_SAVE_SYNTH: ui_save_synth(e); break;
+    case PA_M1P: m1p_ui_import(e); break;   /* (2026-10-31) */
+    case PA_REPORT: m1p_ui_report(e); break;
     }
     redraw(e);
 }
@@ -1161,8 +1163,17 @@ int patches_subs(ed_t *e) {
     return a > b ? (a > 1 ? a : 1) : (b > 1 ? b : 1);
 }
 
+static RECT entry_rect(int col, int row);
+enum { ROW_ACTS = PA_M1P };   /* the button row's; IMPORT .M1P and REPORT sit on the USER column's heading line */
 static RECT action_rect(int a) {   /* the button row on the column-heads line */
-    int gap = sc(4), bw = (rw(&L.head) - gap * (PA_COUNT - 1)) / PA_COUNT;
+    if (a >= ROW_ACTS) {   /* (2026-10-31) right-aligned on the USER heading, where the imports land */
+        RECT h = entry_rect(1, 0);
+        int gap = sc(4), bw = sc(a == PA_M1P ? 72 : 44), right = h.right;
+        if (a == PA_M1P) right -= sc(44) + gap;
+        RECT r = {right - bw, h.top + sc(1), right, h.bottom - sc(2)};
+        return r;
+    }
+    int gap = sc(4), bw = (rw(&L.head) - gap * (ROW_ACTS - 1)) / ROW_ACTS;
     RECT r = {L.head.left + a * (bw + gap), L.head.top, L.head.left + a * (bw + gap) + bw, L.head.bottom - sc(1)};
     return r;
 }
@@ -1287,11 +1298,13 @@ static void label(HDC dc, RECT r, const char *s, HFONT f, COLORREF c, UINT fmt) 
 
 void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_draw.c draws */
     static const char *const ACT[PA_COUNT] = {"SAVE", "SAVE AS", "RENAME", "DELETE", "IMPORT", "EXPORT", "INTO S%d",
-                                              "SAVE S%d"};
+                                              "SAVE S%d", "IMPORT .M1P", "REPORT"};
+    int have_report = m1p_have_report();
     patches_t *p = &e->pt;
     for (int a = 0; a < PA_COUNT; a++) {
         RECT r = action_rect(a);
-        int hot = e->hover == Z_PATCH_ACT + a, live = (a != PA_RENAME && a != PA_DELETE) || p->bank == BANK_USER;
+        int hot = e->hover == Z_PATCH_ACT + a, live = a == PA_REPORT ? have_report
+                                                    : (a != PA_RENAME && a != PA_DELETE) || p->bank == BANK_USER;
         int lit = (a == PA_SAVE && p->edited) || (a == PA_INTO && p->into);   /* SAVE glows with changes to keep */
         char t[16];
         snprintf(t, sizeof t, ACT[a], e->focus + 1);
@@ -1318,7 +1331,9 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
                      lib_view_count(e, col), col ? p->count : nf);
         else
             snprintf(h, sizeof h, col ? "USER  (%d)" : "FACTORY  (%d)", col ? p->count : nf);
-        label(dc, r, h, font_tiny, P_DIM, DT_LEFT);
+        RECT hr = r;
+        if (col) hr.right = action_rect(PA_M1P).left - sc(4);   /* (IMPORT .M1P and REPORT at its right) */
+        label(dc, hr, h, font_tiny, P_DIM, DT_LEFT);
         RECT line = {r.left, r.bottom - 1, r.right, r.bottom};
         fill(dc, line, P_FRAME);
         for (int row = 1; row <= PER; row++) {
@@ -1371,6 +1386,10 @@ const char *patches_zone_help(int z) {
                          "setup, the other Synths and the shared effects stay). Pick SYNTH 1/2/3 first.";
     case PA_SAVE_SYNTH: return "SAVE SYNTH: saves the focused Synth's sound alone as a user patch (SAVE and SAVE AS "
                                "keep the whole performance: all three Synths).";
+    case PA_M1P: return "IMPORT .M1P: converts Moog One preset files you have (pick one or many, Ctrl+A for a whole "
+                        "folder) into user patches, GROUP Imported. What didn't convert is listed in the REPORT.";
+    case PA_REPORT: return "REPORT: opens the last import's report (Import report.txt beside your patches): for each "
+                           "preset, what converted, what is a best guess, and what Moo Won has no equivalent for.";
     }
     if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS)
         return z == Z_PATCH_CAT ? "ALL: the list shows every category (the TAGS page's other filters still apply)."
@@ -1402,6 +1421,7 @@ intptr_t patches_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case PT_COUNT: patches_rescan(e); return e->pt.count;
     case PT_DIR: return patch_dir(buf, 1024, 0);
     case PT_MESSAGE: snprintf(buf, 1024, "%s", e->pt.msg); return 1;
+    case PT_M1P_PICK: case PT_M1P_IMPORT: case PT_M1P_REPORT: case PT_M1P_OPENED: return m1p_test(e, op, buf, opt);
     }
     return 0;
 }

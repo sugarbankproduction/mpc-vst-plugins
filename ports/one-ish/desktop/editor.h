@@ -680,3 +680,9 @@ int patches_import_named(ed_t *e, const char *src, const char *as, int overwrite
 int patches_import_choice(ed_t *e, const char *file);   /* IMPORT with DUPLICATE NAMES' choice */
 int patches_free_name(const char *name, char *out);     /* "Name 2", "Name 3" ...: one no patch has */
 int patches_factory_state(int p, char *out, int n, const char **name);   /* factory preset p as a state (0: none) */
+/* (2026-10-31) Moog One presets (m1p_import.c): IMPORT .M1P's dialog and import, REPORT, the load_test hooks */
+void m1p_ui_import(ed_t *e);
+void m1p_ui_report(ed_t *e);
+int m1p_have_report(void);
+int m1p_import_list(ed_t *e, const char *const *paths, int np, int dup);
+intptr_t m1p_test(ed_t *e, intptr_t op, char *buf, float opt);
