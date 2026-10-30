@@ -2455,6 +2455,7 @@ static void triangle_sub_test(AEffect *fx, HWND child, float s, const char *bmp,
 
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
+static void nav_tests(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
@@ -2463,6 +2464,7 @@ static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     master_test(fx, child, s, bmp, w, h);
     triangle_sub_test(fx, child, s, bmp, w, h);
     plain_test(fx, child, s, bmp, w, h);   /* (2026-10-30) every hidden gesture's visible way */
+    nav_tests(fx, child, s, bmp, w, h);    /* (2026-10-30) BACK / FWD, the generator tabs, the overview */
 }
 
 /* ---- (2026-10-30) the plain-click pass: what a modifier key, a double-click, a right-click or a keyboard key did,
@@ -2834,6 +2836,184 @@ static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
     undo_buttons_test(fx, child, s);
     qm_plain_test(fx, child, s, bmp, w, h);
     seq_plain_test(fx, child, s, bmp, w, h);
+}
+
+/* ---- (2026-10-30) getting around the screen (desktop/nav.c): BACK / FWD, the generator tabs, the overview; none of it
+ * may change the sound ---- */
+#define TEST_NAV 0x4F314E56   /* as editor.h */
+enum { NT_BACK_N = 1, NT_FWD_N, NT_TABS, NT_TILES, NT_TILE_XY, NT_TILE_ROW, NT_TAB_XY, NT_TAB_DOT, NT_OV_SYNTH, NT_TICKS,
+       NT_XY };
+enum { T_SCR_INDEX = -2, T_SCR_GENALL = -41, TZ_NAV_BACK = 680000, TZ_NAV_FWD, TZ_NAV_ALL, TZ_NAV_SYN = 680010 };
+static intptr_t nt(AEffect *fx, int op, float opt) { return fx->dispatcher(fx, 50, TEST_NAV, op, NULL, opt); }
+static void nav_click(AEffect *fx, HWND child, int op, int k) {   /* a click on what NT_*_XY places */
+    intptr_t xy = nt(fx, op, (float)k);
+    if (xy >= 0) qm_click_xy(child, xy);
+}
+static void nav_hover(AEffect *fx, HWND child, int op, int k) {
+    intptr_t xy = nt(fx, op, (float)k);
+    if (xy >= 0) SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)(xy & 0xFFFF), (int)(xy >> 16)));
+}
+static void pump(int ms) {   /* the window's timers run (the overview's tiles repaint on the rate timer) */
+    DWORD t0 = GetTickCount();
+    MSG m;
+    while (GetTickCount() - t0 < (DWORD)ms) {
+        while (PeekMessageA(&m, NULL, 0, 0, PM_REMOVE)) { TranslateMessage(&m); DispatchMessageA(&m); }
+        Sleep(5);
+    }
+}
+static int px_diff(const unsigned char *a, const unsigned char *b, int w, RECT r) {   /* pixels that differ in r */
+    int stride = (w * 3 + 3) & ~3, n = 0;
+    for (int y = r.top; y < r.bottom; y++)
+        for (int x = r.left; x < r.right; x++)
+            n += memcmp(a + y * stride + 3 * x, b + y * stride + 3 * x, 3) != 0;
+    return n;
+}
+
+static void nav_tests(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    float before[NPARAMS], after[NPARAMS];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone */
+    int p0 = (int)fx->dispatcher(fx, 3 /* effGetProgram */, 0, 0, NULL, 0);
+    snapshot(fx, before);
+    /* BACK / FWD: BALLS (its second sub-page), then the MORE list, then the matrix; back, back, forward */
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    click_more(child, s, PG_BALLS);
+    SendMessageA(child, WM_KEYDOWN, VK_RIGHT, 0);   /* (BALLS' sub-page 2: BACK comes back to it) */
+    int sub_b = (int)ht(fx, HT_SUB, 0);
+    click_zone(child, s, ZONE_TAB_MORE);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    int nb = (int)nt(fx, NT_BACK_N, 0), nf0 = (int)nt(fx, NT_FWD_N, 0);
+    nav_click(fx, child, NT_XY, TZ_NAV_BACK);
+    int s1 = screen_now(fx);
+    nav_click(fx, child, NT_XY, TZ_NAV_BACK);
+    int s2 = screen_now(fx), sub2 = (int)ht(fx, HT_SUB, 0), nf = (int)nt(fx, NT_FWD_N, 0);
+    nav_click(fx, child, NT_XY, TZ_NAV_FWD);
+    int s3 = screen_now(fx);
+    SendMessageA(child, WM_SYSKEYDOWN, VK_LEFT, 0);   /* the shortcut: Alt+Left */
+    int s4 = screen_now(fx);
+    snprintf(what, sizeof what, "BACK / FWD: after BALLS (sub-page %d), MORE and MATRIX, BACK shows MORE (%d), BACK again "
+             "BALLS at its sub-page (%d, %d); FWD MORE again (%d); Alt+Left BALLS (%d); %d back to start, %d forward then",
+             sub_b + 1, s1, s2, sub2 + 1, s3, s4, nb, nf);
+    check(sub_b == 1 && s1 == T_SCR_INDEX && s2 == PG_BALLS && sub2 == 1 && s3 == T_SCR_INDEX && s4 == PG_BALLS &&
+          nb >= 2 && nf0 == 0 && nf >= 1, what);
+    for (int k = 0; k < 20; k++) {   /* a long way round: the history keeps the last 16 */
+        click_zone(child, s, k % 2 ? ZONE_TAB_MORE : ZONE_TAB_SETUP);
+    }
+    int nmax = (int)nt(fx, NT_BACK_N, 0);
+    snprintf(what, sizeof what, "BACK keeps the last 16 pages (after 20 changes between SETUP and MORE, %d of them "
+             "another page than the one shown)", nmax);
+    check(nmax == 8, what);
+    /* help: BACK names where it goes; the preset arrows say PRESET */
+    nav_hover(fx, child, NT_XY, TZ_NAV_BACK);
+    const char *hb = help_fresh(fx);
+    snprintf(what, sizeof what, "BACK's help names the page it goes to and says the sound stays (\"%.90s...\")", hb);
+    check(!strncmp(hb, "BACK: back to", 13) && strstr(hb, "never the sound"), what);
+    hover_at(child, s, ZONE_SCREEN[0] + 8 + 34 + 10, ZONE_SCREEN[1] + 6 + 17);   /* the PRESET box's < */
+    const char *hp = help_fresh(fx);
+    check(strstr(hp, "PRESET < >") != NULL, "the arrows in the name's box are the PRESET arrows (their help says so)");
+    if (bmp) shot(child, w, h, bmp, "_nav_back");
+    hover_at(child, s, 10, 10);
+
+    /* the tabs: on the hub and every generator page; each jumps to its page; a dot while the generator is on */
+    click_zone(child, s, ZONE_TAB_GEN);
+    int tabs_hub = (int)nt(fx, NT_TABS, 0), jumped = 0, ntab = NHUB_TAB + 2;
+    for (int k = ntab - 1; k >= 0; k--) {   /* (from ALL back to HUB: each one from the page of the one before) */
+        nav_click(fx, child, NT_TAB_XY, k);
+        int want = k == 0 ? T_SCR_GEN : k <= NHUB_TAB ? HUB_TAB[k - 1].page : T_SCR_GENALL;
+        jumped += screen_now(fx) == want && nt(fx, NT_TABS, 0) == 1;
+    }
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    int tabs_matrix = (int)nt(fx, NT_TABS, 0);
+    snprintf(what, sizeof what, "generator tabs: %d tabs (HUB, %d generator pages, ALL); each jumps to its page and the tabs "
+             "stay (%d of %d); the hub shows them (%d), the matrix not (%d)", ntab, NHUB_TAB, jumped, ntab, tabs_hub,
+             tabs_matrix);
+    check(NHUB_TAB >= 8 && jumped == ntab && tabs_hub == 1 && tabs_matrix == 0, what);
+    int tb = -1, tp = -1;   /* the BALLS and PARTICLES tabs */
+    for (int k = 0; k < NHUB_TAB; k++) {
+        if (HUB_TAB[k].page == PG_BALLS) tb = k + 1;
+        if (HUB_TAB[k].page == PG_PARTICLES) tp = k + 1;
+    }
+    setkey(fx, "phys_balls_on", 1); setkey(fx, "s2_phys_parts_on", 1);
+    click_more(child, s, PG_BALLS);
+    int db = (int)nt(fx, NT_TAB_DOT, (float)tb), dp = (int)nt(fx, NT_TAB_DOT, (float)tp);
+    snprintf(what, sizeof what, "tab dots: BALLS on in Synth 1 lights its dot (%d); PARTICLES on only in Synth 2 not (%d)", db, dp);
+    check(tb > 0 && tp > 0 && db == 1 && dp == 0, what);
+    if (bmp) shot(child, w, h, bmp, "_gen_tabs");
+    setkey(fx, "s2_phys_parts_on", 0);
+
+    /* the overview: every generator on in Synth 1, drawn small; they move; a click opens a page */
+    static const char *const ON[] = {"gen_euclid_on", "gen_tm_on", "phys_balls_on", "phys_parts_on", "life_on", "orb_on",
+                                     "pend_on", "rain_on", "mkv_on"};
+    int non = 0;
+    for (unsigned k = 0; k < sizeof ON / sizeof ON[0]; k++)
+        if (rnd_key(ON[k]) < NPARAMS) { setkey(fx, ON[k], 1); non++; }
+    click_zone(child, s, ZONE_TAB_GEN);
+    nav_click(fx, child, NT_XY, TZ_NAV_ALL);   /* the hub's ALL RUNNING */
+    int scr = screen_now(fx), tiles = (int)nt(fx, NT_TILES, 0);
+    snprintf(what, sizeof what, "the hub's ALL RUNNING opens the overview (%d) with a tile for each of the %d generators on "
+             "(%d)", scr, non, tiles);
+    check(scr == T_SCR_GENALL && tiles == non && non == NHUB, what);
+    int key = 60;
+    send_midi(fx, 0x90, (unsigned char)key, 100);   /* (held keys, for the ones that play from them) */
+    play(fx, 60, 512);
+    unsigned ticks0 = (unsigned)nt(fx, NT_TICKS, 0);
+    unsigned char *a = grab(child, w, h);
+    play(fx, 30, 512);
+    pump(250);
+    unsigned char *b = grab(child, w, h);
+    unsigned ticks1 = (unsigned)nt(fx, NT_TICKS, 0);
+    int moved = 0, n_tiles = tiles < 9 ? tiles : 9;
+    for (int k = 0; k < n_tiles && a && b; k++) {   /* each tile's own area */
+        intptr_t xy = nt(fx, NT_TILE_XY, (float)k);
+        int cx = (int)(xy & 0xFFFF), cy = (int)(xy >> 16), hw = (int)(40 * s), hh = (int)(18 * s);
+        RECT r = {cx - hw, cy - hh, cx + hw, cy + hh};
+        int d = px_diff(a, b, w, r), row = (int)nt(fx, NT_TILE_ROW, (float)k);
+        moved += d > 0;
+        if (!d) printf("     (tile %d, %s: no change)\n", k, HUB[row].label);
+    }
+    free(a); free(b);
+    snprintf(what, sizeof what, "the overview's tiles move as the engine plays (%d of %d tiles changed; the pictures with "
+             "a live view: balls, particles, life, orbits, pendulums, rain, markov), repainted on the rate timer (%u -> %u)",
+             moved, n_tiles, ticks0, ticks1);
+    check(moved >= 5 && ticks1 > ticks0, what);
+    if (bmp) shot(child, w, h, bmp, "_gen_all");
+    send_midi(fx, 0x80, (unsigned char)key, 0);
+    int pick = 4 < tiles ? 4 : 0, row = (int)nt(fx, NT_TILE_ROW, (float)pick);
+    nav_click(fx, child, NT_TILE_XY, pick);
+    snprintf(what, sizeof what, "a click on the overview's %s tile opens its page (%d, want %d); BACK comes back to the "
+             "overview", row >= 0 ? HUB[row].label : "?", screen_now(fx), row >= 0 ? HUB[row].page : -9);
+    int opened = row >= 0 && screen_now(fx) == HUB[row].page;
+    nav_click(fx, child, NT_XY, TZ_NAV_BACK);
+    check(opened && screen_now(fx) == T_SCR_GENALL, what);
+    /* SYNTH 2 on the overview: its own generators (none, then RAIN); a tile opens the page in Synth 2 */
+    nav_click(fx, child, NT_XY, TZ_NAV_SYN + 1);
+    int ov = (int)nt(fx, NT_OV_SYNTH, 0), t2 = (int)nt(fx, NT_TILES, 0);
+    if (bmp) shot(child, w, h, bmp, "_gen_all_empty");
+    setkey(fx, "s2_rain_on", 1); setkey(fx, "s2_orb_on", 1);
+    int t2b = (int)nt(fx, NT_TILES, 0);
+    if (bmp) shot(child, w, h, bmp, "_gen_all_two");
+    row = (int)nt(fx, NT_TILE_ROW, 0);
+    nav_click(fx, child, NT_TILE_XY, 0);
+    int fo = focus_now(fx) % 4, sc2 = screen_now(fx);
+    snprintf(what, sizeof what, "the overview's SYNTH 2: its generators only (%d, %d with two on); a tile opens that page "
+             "(%d) in Synth 2 (focus %d)", t2, t2b, sc2, fo + 1);
+    check(ov == 1 && t2 == 0 && t2b == 2 && row >= 0 && sc2 == HUB[row].page && fo == 1, what);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    setkey(fx, "s2_rain_on", 0); setkey(fx, "s2_orb_on", 0);
+    for (unsigned k = 0; k < sizeof ON / sizeof ON[0]; k++) setkey(fx, ON[k], 0);
+    nav_click(fx, child, NT_XY, TZ_NAV_SYN + 0);
+    /* none of it changed the sound: the same preset, every value as it was (the generators set back) */
+    for (unsigned k = 0; k < sizeof ON / sizeof ON[0]; k++)   /* (what the test itself switched) */
+        if (rnd_key(ON[k]) < NPARAMS) before[rnd_key(ON[k])] = 0.0f;
+    snapshot(fx, after);
+    int changed = 0, first = -1;
+    for (int i = 0; i < NPARAMS; i++)
+        if (fabsf(after[i] - before[i]) > 1e-6f && !strstr(PARAMS[i].key, "_on")) { changed++; if (first < 0) first = i; }
+    int p1 = (int)fx->dispatcher(fx, 3, 0, 0, NULL, 0);
+    snprintf(what, sizeof what, "BACK, FWD, the tabs and the overview change no preset (%d -> %d) and no value (%d changed%s%s)",
+             p0, p1, changed, first >= 0 ? ", first " : "", first >= 0 ? PARAMS[first].key : "");
+    check(p1 == p0 && changed == 0, what);
+    click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
 static void reload_test(const char *path, HMODULE old) {

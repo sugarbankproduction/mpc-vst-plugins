@@ -1765,10 +1765,7 @@ static void draw_tabs(HDC dc, ed_t *e) {
     if (subs <= 1) return;
     char n[16];
     snprintf(n, sizeof n, "%d / %d", e->sub + 1, subs);
-    RECT nr = {L.sub_prev.right, L.tabline.top, L.sub_next.left, L.tabline.bottom};
-    label(dc, nr, n, font_tiny, C_LCD, DT_CENTER);
-    label(dc, L.sub_prev, "<", font_screen, e->hover == Z_SUB_PREV ? C_HOT : C_LCD, DT_CENTER);
-    label(dc, L.sub_next, ">", font_screen, e->hover == Z_SUB_NEXT ? C_HOT : C_LCD, DT_CENTER);
+    sub_pager_draw(dc, e, n);   /* (2026-10-30) the same PAGE < > as every page's (editor_draw.c) */
 }
 static void draw_set(HDC dc, ed_t *e) {
     lib_t *L_ = LIB(e);

@@ -297,6 +297,7 @@ static const char *zone_help(ed_t *e, int z) {
     if (seq_zone(z)) return seq_zone_help(e, z);   /* the step editor, the page LEDs */
     if (z >= Z_QM && z < Z_QM_END) return qm_zone_help(e, z);   /* a DEST button (quickmod.c) */
     if (z >= Z_HUB_ON && z < Z_HUB_END) return hub_zone_help(e, z);   /* the hub page, the console's third row */
+    if (z >= Z_NAV_BACK && z < Z_NAV_END) return nav_zone_help(e, z);   /* BACK / FWD, the tabs, the overview (nav.c) */
     if (z >= Z_SET_BASE && z < Z_SET_END) return settings_zone_help(e, z);   /* the SETTINGS page */
     if (z == Z_TAB_SETTINGS) return "SETTINGS: the instrument's own settings, kept apart from the sounds: preset "
                                     "autoload, MIDI clock and channels, pedals, MIDI learn, the library and tuning.";
@@ -327,7 +328,9 @@ static const char *zone_help(ed_t *e, int z) {
                          "Use it when a note hangs. Shortcut: hold an OCTAVE button for 2 s.";
     case Z_ENCODER: return "Preset knob: drag up/down or scroll to step through the factory presets, then your own "
                            "patches; click it for the patch list.";
-    case Z_PREV: case Z_NEXT: return "Previous / next patch: the factory presets (F), then your own (U).";
+    case Z_PREV: case Z_NEXT: return "PRESET < >: the previous / next preset: the factory presets (F), then your own (U). "
+                                     "These change the sound. To go back to the page shown before, use BACK (top left of "
+                                     "the screen) instead.";
     case Z_NAME: return "The patch playing now (F: factory, U: yours; * = changed since it was loaded or saved). Click "
                         "for the patch list, where you can also save, rename, delete, import and export.";
     case Z_TAB_MATRIX: return "MATRIX: the 16 mod matrix rows, 8 at a time (click again, or scroll over the screen, for the others). "
@@ -372,7 +375,8 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_RND_REDO: return "REDO: forward again after UNDO.";
     case Z_RND_ALL: return "ALL 3 SYNTHS: lit, RANDOMISE and MUTATE give all three Synths a new sound (each its own; ON, "
                            "channels and key ranges stay). Keys: R randomise, M mutate, Shift+R / Shift+M all three.";
-    case Z_SUB_PREV: case Z_SUB_NEXT: return "The previous / next part of this page.";
+    case Z_SUB_PREV: case Z_SUB_NEXT: return "PAGE < >: the previous / next part of this page (the number says which). "
+                                             "Keys: Left / Right. The sound and the page stay the same.";
     case Z_EUCLID: return "The Euclidean pattern (STEPS, HITS, ROTATE): one dot per step, step 1 at the top, lit = the step "
                           "plays. The middle shows hits / steps. Click for the GENERATIVE page.";
     }
@@ -756,10 +760,24 @@ static void title_line(HDC dc, ed_t *e, const char *t, int subs) {
     char n[16];
     if (e->screen == SCR_MATRIX) snprintf(n, sizeof n, "%d-%d", e->sub * ROWS + 1, e->sub * ROWS + ROWS);   /* rows */
     else snprintf(n, sizeof n, "%d / %d", e->sub + 1, subs);
+    sub_pager_draw(dc, e, n);
+}
+
+/* (2026-10-30) the sub-page control: small solid triangles either side of "n / m" in a thin box, unlike the PRESET
+ * box's arrows and the BACK / FWD buttons */
+void sub_pager_draw(HDC dc, ed_t *e, const char *n) {
+    RECT box = {L.sub_prev.left, L.tabline.top + sc(1), L.sub_next.right, L.tabline.bottom - sc(1)};
+    gfx_frame((float)box.left, (float)box.top, (float)rw(&box), (float)rh(&box), 1.0f, 0xFF27404E);
     RECT nr = {L.sub_prev.right, L.tabline.top, L.sub_next.left, L.tabline.bottom};
     text(dc, &nr, n, font_tiny, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    text(dc, &L.sub_prev, "<", font_screen, e->hover == Z_SUB_PREV ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    text(dc, &L.sub_next, ">", font_screen, e->hover == Z_SUB_NEXT ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    for (int k = 0; k < 2; k++) {
+        const RECT *a = k ? &L.sub_next : &L.sub_prev;
+        int hot = e->hover == (k ? Z_SUB_NEXT : Z_SUB_PREV);
+        float cx = (a->left + a->right) / 2.0f, cy = (a->top + a->bottom) / 2.0f, d = (k ? 1.0f : -1.0f) * 3.0f * L.s;
+        if (hot) gfx_rect((float)a->left + 1, (float)a->top + 2, (float)rw(a) - 2, (float)rh(a) - 4, 0x3096D7E8);
+        gpt_t t[3] = {{cx + d, cy}, {cx - d, cy - 4.0f * L.s}, {cx - d, cy + 4.0f * L.s}};
+        gfx_poly(t, 3, hot ? 0xFFFFFFFF : 0xFF96D7E8);
+    }
 }
 
 static void draw_matrix(HDC dc, ed_t *e, int subs) {
@@ -793,12 +811,22 @@ static void draw_matrix(HDC dc, ed_t *e, int subs) {
     }
 }
 
+/* a part drawn by another file on its own GDI+ surface (this one's is closed meanwhile) */
+static void foreign(HDC dc, ed_t *e, void (*fn)(HDC, ed_t *)) {
+    gfx_end();
+    skin_bind(NULL);
+    fn(dc, e);
+    gfx_begin(dc);
+    skin_bind(gfx_g);
+}
+
 static void draw_page(HDC dc, ed_t *e, int subs) {
     int items[512], n = page_items(e, e->screen, items);
     char t[128];
     snprintf(t, sizeof t, "MORE:  %s", PAGES[e->screen].title);
     title_line(dc, e, t, subs);
-    text(dc, &L.head, PAGES[e->screen].note, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (nav_tabs_shown(e)) foreign(dc, e, nav_tabs_draw);   /* a generator's page: the tabs (its note: the help line) */
+    else text(dc, &L.head, PAGES[e->screen].note, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     int per = page_slots(e->screen);
     for (int j = e->sub * per; j < n && j < (e->sub + 1) * per; j++) {
         const lay_item_t *it = &ITEMS[items[j]];
@@ -881,8 +909,9 @@ static void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, H
  * their LINKs, ALL OFF and what is on */
 static void draw_hub(HDC dc, ed_t *e) {
     title_line(dc, e, "GENERATIVE:  the generators, KEY and SCALE", 1);
-    text(dc, &L.head, "ON: the Synth in focus (1 2 3: the Synths it is on in). Click a name for its page.", font_tiny,
-         T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    if (nav_tabs_shown(e)) foreign(dc, e, nav_tabs_draw);   /* (2026-10-30) the generator tabs (nav.c) */
+    else text(dc, &L.head, "ON: the Synth in focus (1 2 3: the Synths it is on in). Click a name for its page.", font_tiny,
+              T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     int on_n[NSYNTHS] = {0, 0, 0};
     for (int k = 0; k < NHUB; k++) {
         RECT on = hub_rect(Z_HUB_ON + k), op = hub_rect(Z_HUB_OPEN + k);
@@ -926,11 +955,12 @@ static void draw_hub(HDC dc, ed_t *e) {
     screen_button(dc, a, back ? "BRING BACK (ALL 3 SYNTHS)" : "ALL OFF (ALL 3 SYNTHS)", 0, e->hover == Z_HUB_ALLOFF,
                   font_cell);
     char st[96];
-    if (on_n[0] + on_n[1] + on_n[2])
-        snprintf(st, sizeof st, "On: Synth 1 %d, Synth 2 %d, Synth 3 %d", on_n[0], on_n[1], on_n[2]);
+    if (on_n[0] + on_n[1] + on_n[2])   /* (shorter, 2026-10-30: ALL RUNNING sits at the row's end) */
+        snprintf(st, sizeof st, "On: %d / %d / %d", on_n[0], on_n[1], on_n[2]);   /* (Synth 1 / 2 / 3) */
     else snprintf(st, sizeof st, back ? "All off (%d to bring back)." : "All off.", back);
-    RECT sr = {a.right + sc(8), a.top, L.row[0].right, a.bottom};
+    RECT sr = {a.right + sc(8), a.top, L.row[0].right - sc(108), a.bottom};
     text(dc, &sr, st, font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    foreign(dc, e, nav_hub_draw);   /* ALL RUNNING: the overview (nav.c) */
 }
 
 /* the randomiser page: which sound of the history is playing, what it is, the buttons, the amount and the locks */
@@ -1033,12 +1063,18 @@ void help_line(ed_t *e, char *out, int n) {
         settings_help(e, help, sizeof help);
     } else if (e->screen == SCR_GEN) {
         hub_help(e, help, sizeof help);
+    } else if (e->screen == SCR_GENALL) {
+        nav_help(e, help, sizeof help);
     } else if (e->screen == SCR_SEQ) {
         seq_help(e, help, sizeof help);
     } else if (e->screen == SCR_MATRIX) {
         snprintf(help, sizeof help, "Each row: SOURCE x AMOUNT moves DESTINATION. VIA scales it by a second source "
                                     "(V.AMT: how much); XFORM reshapes the source (X.AMT: how strongly). Click a value "
                                     "for its list, drag an amount sideways. MATRIX again: rows 9-16.");
+    } else if (e->screen >= 0 && e->screen < NPAGES && nav_tabs_shown(e)) {   /* a generator's page: its note first */
+        snprintf(help, sizeof help, "%s Drag a value sideways or scroll over it; click a list for its options. The tabs "
+                                    "above: the other generators (a lit dot: on). BACK: the page before.",
+                 PAGES[e->screen].note);
     } else {
         snprintf(help, sizeof help, "Drag a knob up/down or scroll to nudge (Shift: fine; double-click: back to its default). "
                                     "Click a red button to step, an LED to pick. A corner triangle shows the module's MORE "
@@ -1058,14 +1094,31 @@ static void draw_screen(HDC dc, ed_t *e) {
         nr.bottom -= sc(10);
         text(dc, &hr, home, font_tiny, T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
     }
-    text(dc, &nr, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    text(dc, &L.prev, "<", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-    text(dc, &L.next, ">", font_big, T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    nr.left = L.prev.right;   /* (2026-10-30) inside the PRESET box, between its arrows */
+    nr.right = L.next.left;
+    text(dc, &nr, title, font_big, e->hover == Z_NAME ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    for (int k = 0; k < 2; k++) {   /* the preset's < >: solid arrows in the box, a rule between them and the name */
+        const RECT *a = k ? &L.next : &L.prev;
+        int hot = e->hover == (k ? Z_NEXT : Z_PREV);
+        float cx = (a->left + a->right) / 2.0f, cy = (a->top + a->bottom) / 2.0f, d = (k ? 1.0f : -1.0f) * 4.5f * L.s;
+        if (hot) gfx_rect((float)a->left, (float)a->top, (float)rw(a), (float)rh(a), 0x3096D7E8);
+        float rx = k ? (float)a->left : (float)a->right;
+        gfx_line(rx, a->top + 6.0f * L.s, rx, a->bottom - 6.0f * L.s, 1.0f, 0xFF3E6273);
+        gpt_t t[3] = {{cx + d, cy}, {cx - d, cy - 7.0f * L.s}, {cx - d, cy + 7.0f * L.s}};
+        gfx_poly(t, 3, hot ? 0xFFFFFFFF : 0xFFDCE6EE);
+    }
+    {   /* the box's name on its top edge: PRESET */
+        RECT lg = {(L.name.left + L.name.right) / 2 - sc(24), L.name.top - sc(6), (L.name.left + L.name.right) / 2 + sc(24),
+                   L.name.top + sc(5)};
+        gfx_rect((float)lg.left + sc(4), (float)L.name.top - 1.5f * L.s, (float)rw(&lg) - sc(8), 3.0f * L.s, C_SCREEN);
+        text(dc, &lg, "PRESET", font_tiny, RGB(220, 230, 238), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    foreign(dc, e, nav_top_draw);   /* BACK / FWD at the two ends (nav.c) */
     if (e->screen >= NPAGES) e->screen = SCR_MATRIX;
     int subs = screen_subs(e);
     if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
     int striped = e->screen >= 0 && e->screen < NPAGES ? page_rows(e->screen) : ROWS;   /* (not under a picture) */
-    for (int r = 0; r < striped && e->screen != SCR_SEQ; r++)   /* (the step editor has its own rows) */
+    for (int r = 0; r < striped && e->screen != SCR_SEQ && e->screen != SCR_GENALL; r++)   /* (the step editor has its own rows) */
         if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0x109CC8E6);
     if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
     else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
@@ -1080,6 +1133,10 @@ static void draw_screen(HDC dc, ed_t *e) {
     else if (lib_screen(e->screen)) lib_draw(dc, e);   /* PATCHES and the library's pages, with their tabs */
     else if (e->screen == SCR_SETUP) draw_setup(dc, e, subs);
     else if (e->screen == SCR_GEN) draw_hub(dc, e);   /* (hub.c) */
+    else if (e->screen == SCR_GENALL) {   /* (2026-10-30) the generators overview (nav.c) */
+        foreign(dc, e, nav_tabs_draw);
+        foreign(dc, e, nav_overview_draw);
+    }
     else if (e->screen == SCR_QMOD) {   /* MOD FROM <source> while one is picked (quickmod.c: its own surface) */
         char t[96];
         qm_page_title(e, t, sizeof t);
