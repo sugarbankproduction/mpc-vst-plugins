@@ -969,3 +969,32 @@ void qm_pick(ed_t *e, int s) {   /* a source's jack clicked: quick assign from s
     if (e->qm.src == s) { arm(e, 0); say(e, "Quick assign from %s done.", src_name(s)); return; }
     arm(e, s);
 }
+int qm_connect(ed_t *e, int s, int d, float amt, int *how) {   /* (2026-10-31) a cable dropped on a knob (cables.c) */
+    int row[NSYNTHS], fresh[NSYNTHS] = {0}, h = 0;
+    for (int c = 0; c < NSYNTHS; c++) {
+        row[c] = -1;
+        if (!(e->focus_mask >> c & 1u) && c != e->focus) continue;
+        row[c] = find_row(e, c, s, d, &fresh[c]);
+        if (row[c] < 0) h |= 2 << c;
+    }
+    if (how) *how = h;
+    if (s <= 0 || d <= 0 || row[e->focus] < 0) return -1;
+    char what[64];
+    snprintf(what, sizeof what, "Cable %s > %s", src_name(s), dst_name(d));
+    lib_hold(e, 1);   /* one undo step */
+    lib_touch(e, what);
+    for (int c = 0; c < NSYNTHS; c++) {
+        int m = row[c];
+        if (m < 0) continue;
+        if (fresh[c]) {
+            row_make(e, m, c, s, d);
+            put_once(e, cell(m, MX_AMT, c), amt_norm(cell(m, MX_AMT, c), amt));
+        }
+        if (MATRIX_ON[m] >= 0) put_once(e, synth_param(MATRIX_ON[m], c), 1.0f);   /* (a row switched off: on again) */
+    }
+    lib_hold(e, -1);
+    if (how && fresh[e->focus]) *how |= 1;
+    e->qm.last_row = row[e->focus];   /* (a Ctrl-drag on that knob turns this one) */
+    e->qm.last_dst = d;
+    return row[e->focus];
+}

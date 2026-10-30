@@ -1193,6 +1193,13 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
     }
 }
 
+int ed_hit(ed_t *e, int x, int y) {   /* (2026-10-31) the panel under a cable being dragged (cables.c) */
+    e->cb.probe = 1;   /* (not the cables' own parts) */
+    int h = hit(e, x, y);
+    e->cb.probe = 0;
+    return h;
+}
+
 static void press(ed_t *e, int x, int y) {
     int i = hit(e, x, y);
     if (cb_press(e, i, x, y)) return;   /* the CABLES view (cables.c): its button, a cable, a knob, X, a jack */
@@ -1354,7 +1361,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         }
         if (e->mode == M_SEQ) { seq_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode == M_QMOD) { qm_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
-        if (e->mode == M_CABLE) { cb_drag(e, y, (wp & MK_SHIFT) != 0); return 0; }
+        if (e->mode == M_CABLE) { cb_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode != M_NONE) { controller_move(e, x, y); return 0; }
         int h = hit(e, x, y);
         if (h != e->hover) {
@@ -1452,8 +1459,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             lib_commit(e);
         } else if (e->mode == M_QMOD) {
             qm_release(e);
-        } else if (e->mode == M_CABLE) {
-            cb_release(e);
+        } else if (e->mode == M_CABLE) {   /* (let go: a drop there; the capture lost: cancelled) */
+            cb_release(e, msg == WM_LBUTTONUP, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
         } else if (e->mode == M_PARAM) {
             if (e->drag >= 0) begin_edit(e, e->drag, 1);
             e->drag = -1;
