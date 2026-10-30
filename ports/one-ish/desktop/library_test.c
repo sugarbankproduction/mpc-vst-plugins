@@ -14,6 +14,7 @@
 #include "params.h"
 #include "patches.h"
 #include "seq_page.h"
+#include "factory_tags.h"   /* the factory presets' tags (presets/make_presets.py) */
 #define TEST_FOCUS 0x4F314643   /* as editor.h */
 
 typedef struct AEffect AEffect;
@@ -578,6 +579,66 @@ static void snapshot_tests(void) {
 }
 
 /* ---- tags and notes ---- */
+static int factory_in(const char *cat) {   /* the factory presets of a category (factory_tags.h, as the plugin's) */
+    int n = 0;
+    for (int p = 0; p < NFACTORY_TAGS && p < fx->numPrograms; p++) n += !strcmp(FACTORY_TAG[p].cat, cat);
+    return n;
+}
+static int tab_of(const char *cats, const char *cat, int *count) {   /* LT_CATS's text: the tab's index and count */
+    const char *s = strchr(cats, '|');
+    for (int k = 0; s && *++s; k++) {
+        size_t l = strcspn(s, "=");
+        if (l == strlen(cat) && !strncmp(s, cat, l)) { *count = atoi(s + l + 1); return k; }
+        s = strchr(s, ';');
+    }
+    return -1;
+}
+/* (2026-10-30) the PATCHES page's category tabs: a plain click lists one category, its count on the tab, a preset
+ * loads from there, the mouse wheel and the page arrows page through it, ALL lists everything again */
+static void category_tabs(void) {
+    char what[400], cats[1024], t[1024];
+    click_z(Z_LIB_TAB + 0);
+    int ntabs = (int)lt(LT_CATS, 0, cats), count = 0, pad = tab_of(cats, "Pad", &count), all = 0;
+    tab_of(cats, "ALL", &all);
+    snprintf(what, sizeof what, "PATCHES: %d category tabs, ALL %d, Pad %d (tab %d): %.200s", ntabs, all, count, pad, cats);
+    check(ntabs > 8 && all == fx->numPrograms + (int)pt(PT_COUNT, NULL, NULL, 0) && pad > 0 &&
+          count >= factory_in("Pad") && tab_of(cats, "Generative", &(int){0}) > 0, what);
+    shot("_lib_patches_cats");
+    click_z(Z_PATCH_CAT + pad);
+    int v = (int)lt(LT_VIEW, 0, NULL);
+    lt(LT_CATS, 0, cats);
+    snprintf(what, sizeof what, "PATCHES: the Pad tab lists the %d Pad presets (%d factory, %d yours; page %.8s)",
+             count, v / 1000, v % 1000, cats);
+    check(v / 1000 == factory_in("Pad") && v / 1000 + v % 1000 == count && !strncmp(cats, "0/", 2), what);
+    shot("_lib_patches_pad");
+    int first = -1;
+    for (int p = 0; p < NFACTORY_TAGS && first < 0; p++)
+        if (!strcmp(FACTORY_TAG[p].cat, "Pad")) first = p;
+    click_z(Z_PATCH_ITEM + first);
+    lt(LT_META, 0, t);
+    char want[64];
+    snprintf(want, sizeof want, "F %03d  %s", first + 1, FACTORY_TAG[first].name);
+    snprintf(what, sizeof what, "PATCHES: a click in the Pad list loads %s (tags \"%.60s\")", want, t);
+    check(title_starts(want) && strstr(t, "|Pad|") != NULL, what);
+    /* paging: the wheel over the list, then the page arrow */
+    int x, y;
+    if (where(Z_PATCH_ITEM + first, &x, &y)) {
+        POINT sp = {x, y};
+        ClientToScreen(child, &sp);
+        SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(0, -120), MAKELPARAM(sp.x, sp.y));
+    }
+    lt(LT_CATS, 0, cats);
+    int subs = atoi(strchr(cats, '/') + 1);
+    snprintf(what, sizeof what, "PATCHES: the mouse wheel shows the Pad list's next page (%.8s)", cats);
+    check(subs > 1 && !strncmp(cats, "1/", 2), what);
+    click_base(ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8 - 55, ZONE_SCREEN[1] + 6 + 36 + 9);   /* the title line's < */
+    lt(LT_CATS, 0, cats);
+    check(!strncmp(cats, "0/", 2), "PATCHES: the page arrow goes back a page");
+    click_z(Z_PATCH_CAT + 0);   /* ALL */
+    v = (int)lt(LT_VIEW, 0, NULL);
+    check(v / 1000 == fx->numPrograms && v % 1000 == (int)pt(PT_COUNT, NULL, NULL, 0), "PATCHES: ALL lists everything again");
+    click_z(Z_LIB_TAB + 5);   /* (back to the TAGS page for the tests after) */
+}
 static void tag_tests(void) {
     char what[300], buf[1024];
     static const answer_t save = {"Save as", "Tagged Lead", "Use the mod wheel.", {"Single", "Lead", "Bright", "Live"}, IDOK, "_lib_save_box"},
@@ -607,7 +668,7 @@ static void tag_tests(void) {
     click_z(Z_TAG_ITEM + 1000 * 1 + 1);   /* CATEGORY Lead */
     int v = (int)lt(LT_VIEW, 0, NULL);
     snprintf(what, sizeof what, "TAGS: CATEGORY Lead filters the list: %d factory presets, %d of yours", v / 1000, v % 1000);
-    check(v == 5 * 1000 + 1, what);
+    check(v == factory_in("Lead") * 1000 + 1, what);
     shot("_lib_tags");
     click_z(Z_LIB_TAB + 0);
     shot("_lib_patches_filtered");
@@ -620,6 +681,7 @@ static void tag_tests(void) {
     click_z(Z_TAG_ITEM + 1000 * 1 + 1);   /* again: off */
     v = (int)lt(LT_VIEW, 0, NULL);
     check(v / 1000 == fx->numPrograms && v % 1000 == (int)pt(PT_COUNT, NULL, NULL, 0), "TAGS: a second click takes the filter off");
+    category_tabs();
 
     /* the lists: add, rename, delete; TAG PATCH */
     click_z(Z_TAG_ITEM + 2000 + 0);   /* MOOD Bright (selected; filtered) */

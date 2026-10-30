@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "library.h"
+#include "factory_tags.h"   /* (presets/make_presets.py) */
 
 #define SNAP_EXT ".oneishsnap"
 static const char SNAP_HEADER[] = "ONE-ish snapshot", SETS_HEADER[] = "ONE-ish sets", TAGS_HEADER[] = "ONE-ish tags";
@@ -35,7 +36,7 @@ static const char *const TAG_KEY[TAG_KINDS] = {"type", "category", "mood", "grou
 static const char *const TAG_TITLE[TAG_KINDS] = {"TYPE", "CATEGORY", "MOOD", "GROUP"};
 static const char *const TYPES[] = {"Single", "Layer", "Split", "Multi"};
 static const char *const DEF_CAT[] = {"Bass", "Lead", "Pad", "Keys", "Strings", "Brass", "Bells", "Pluck", "Arp",
-                                      "Sequence", "Drum", "FX"};
+                                      "Sequence", "Drum", "FX", "Performance", "Generative"};
 static const char *const DEF_MOOD[] = {"Bright", "Dark", "Warm", "Soft", "Aggressive", "Dirty", "Clean", "Evolving"};
 static const char *const DEF_GROUP[] = {"Favourites", "Live", "Studio", "Work in progress"};
 enum { PER_SNAPS = ROWS, PER_TAGS = ROWS - 1, PER_SETS = 2 * ROWS };
@@ -583,39 +584,15 @@ void lib_meta_lines(const meta_t *m, char *out, int n) {
         snprintf(out + used, n - used, "notes=%s\n", en);
     }
 }
-/* the factory presets' tags (written for ONE-ish's own presets) */
-static const struct { const char *name, *type, *cat, *mood; } FACTORY_TAGS[] = {
-    {"Fat Bass", "Single", "Bass", "Dark"}, {"Pluck Bass", "Single", "Bass", "Clean"},
-    {"Acid Line", "Single", "Bass", "Aggressive"}, {"Sync Lead", "Single", "Lead", "Aggressive"},
-    {"Brass Stack", "Single", "Brass", "Bright"}, {"Warm Pad", "Single", "Pad", "Warm"},
-    {"Glass Keys", "Single", "Keys", "Bright"}, {"Hollow Strings", "Single", "Strings", "Soft"},
-    {"Wobble Bass", "Single", "Bass", "Aggressive"}, {"Self-Osc Whistle", "Single", "FX", "Clean"},
-    {"Noise Hat", "Single", "Drum", "Bright"}, {"Notch Sweep", "Single", "FX", "Evolving"},
-    {"FM Bell", "Single", "Bells", "Bright"}, {"Ring Clang", "Single", "Bells", "Dirty"},
-    {"PWM Strings", "Single", "Strings", "Warm"}, {"Angle Lead", "Single", "Lead", "Bright"},
-    {"Unison Lead", "Single", "Lead", "Aggressive"}, {"Vowel Pair", "Single", "Pad", "Evolving"},
-    {"FM Growl", "Single", "Bass", "Dirty"}, {"Wind Spread", "Single", "FX", "Soft"},
-    {"Pulse Pad", "Single", "Pad", "Warm"}, {"Morph Motion", "Single", "Pad", "Evolving"},
-    {"Ensemble Strings", "Single", "Strings", "Warm"}, {"Tape Echo Lead", "Single", "Lead", "Warm"},
-    {"Crushed Keys", "Single", "Keys", "Dirty"}, {"Vintage Poly Pad", "Single", "Pad", "Warm"},
-    {"Arp Cascade", "Single", "Arp", "Bright"}, {"Euclid Turing Bells", "Single", "Sequence", "Evolving"},
-    {"Macro String", "Single", "Strings", "Clean"}, {"Macro Wave Pad", "Single", "Pad", "Evolving"},
-    {"Macro FM Keys", "Single", "Keys", "Clean"}, {"Modal Bells", "Single", "Bells", "Soft"},
-    {"Grain Cloud", "Single", "FX", "Evolving"}, {"Tape Bass", "Single", "Bass", "Warm"},
-    {"Seq Bass Line", "Single", "Sequence", "Dark"}, {"Seq Chord Stabs", "Single", "Sequence", "Bright"},
-    {"Split Bass + Lead", "Split", "Lead", "Bright"}, {"Layer Pad + Pluck", "Layer", "Pad", "Warm"},
-    {"Split Bass, Pad + Bells", "Split", "Pad", "Soft"}};
+/* the factory presets' tags: presets.json's, through factory_tags.h (presets/make_presets.py writes both, in program
+ * order; 2026-10-30) */
 static void factory_meta(ed_t *e, int p, meta_t *m) {
-    char nm[PATCH_NAME_MAX + 1];
     memset(m, 0, sizeof *m);
-    prog_name(e, p, nm);
     snprintf(m->tag[TAG_TYPE], sizeof m->tag[0], "Single");
-    for (int k = 0; k < N_OF(FACTORY_TAGS); k++)
-        if (!strcmp(nm, FACTORY_TAGS[k].name)) {
-            snprintf(m->tag[TAG_TYPE], sizeof m->tag[0], "%s", FACTORY_TAGS[k].type);
-            snprintf(m->tag[TAG_CAT], sizeof m->tag[0], "%s", FACTORY_TAGS[k].cat);
-            snprintf(m->tag[TAG_MOOD], sizeof m->tag[0], "%s", FACTORY_TAGS[k].mood);
-        }
+    if (p < 0 || p >= NFACTORY_TAGS || p >= nfactory(e)) return;
+    snprintf(m->tag[TAG_TYPE], sizeof m->tag[0], "%s", FACTORY_TAG[p].type);
+    snprintf(m->tag[TAG_CAT], sizeof m->tag[0], "%s", FACTORY_TAG[p].cat);
+    snprintf(m->tag[TAG_MOOD], sizeof m->tag[0], "%s", FACTORY_TAG[p].mood);
 }
 /* TYPE from the three Synths: one on Single; their key ranges apart Split, all overlapping Layer, else Multi */
 static const char *auto_type(ed_t *e) {
@@ -715,13 +692,30 @@ static int tags_path(char *out, int n, int create) {
     char d[MAX_PATH];
     return patch_dir(d, sizeof d, create) && snprintf(out, n, "%s\\tags.oneishtags", d) < n;
 }
+static int list_has(lib_t *L, int k, const char *tag) {
+    for (int j = 0; j < L->nlist[k]; j++)
+        if (!_stricmp(L->list[k][j], tag)) return 1;
+    return 0;
+}
+/* every category and mood a factory preset has is in the lists (an older tags file, a new factory bank) */
+static void lists_add_factory(ed_t *e) {
+    lib_t *L = LIB(e);
+    for (int p = 0; p < NFACTORY_TAGS && p < nfactory(e); p++) {
+        const char *t[2] = {FACTORY_TAG[p].cat, FACTORY_TAG[p].mood};
+        for (int i = 0; i < 2; i++) {
+            int k = i ? TAG_MOOD : TAG_CAT;
+            if (t[i][0] && !list_has(L, k, t[i]) && L->nlist[k] < TAG_LIST_MAX)
+                snprintf(L->list[k][L->nlist[k]++], TAG_LEN + 1, "%s", t[i]);
+        }
+    }
+}
 static void lists_read(ed_t *e) {
     lib_t *L = LIB(e);
     char path[MAX_PATH];
     lists_defaults(L);
     L->lists_read = 1;
     char *t = tags_path(path, sizeof path, 0) ? pt_read(path) : NULL;
-    if (!t) return;
+    if (!t) { lists_add_factory(e); return; }
     for (int k = 1; k < TAG_KINDS; k++) L->nlist[k] = 0;
     for (char *s = t; *s;) {
         char *eol = strchr(s, '\n');
@@ -737,6 +731,7 @@ static void lists_read(ed_t *e) {
         s = eol ? eol + 1 : s + strlen(s);
     }
     free(t);
+    lists_add_factory(e);
 }
 static void lists_ensure(ed_t *e) { if (!LIB(e)->lists_read) lists_read(e); }
 static int lists_write(ed_t *e) {
@@ -843,6 +838,65 @@ int lib_view_index(ed_t *e, int pos) {   /* where list position pos is in its co
     for (int k = 0; k < n; k++)
         if (lib_view_pos(e, col, k) == pos) return k;
     return -1;
+}
+/* (2026-10-30) the PATCHES page's category tabs: every category a factory preset or user patch has (in the CATEGORY
+ * list's order, then any other), and how many patches each lists with the other filters as they are; [0] is ALL */
+static int match_but(lib_t *L, char tags[TAG_KINDS][TAG_LEN + 1], int skip) {
+    for (int k = 0; k < TAG_KINDS; k++)
+        if (k != skip && L->filter[k][0] && _stricmp(L->filter[k], tags[k])) return 0;
+    return 1;
+}
+static void cat_count(char (*names)[TAG_LEN + 1], int *counts, int *n, int max, const char *cat) {
+    int j = 1;
+    while (j < *n && _stricmp(names[j], cat)) j++;
+    if (j == *n) {
+        if (*n >= max) return;
+        snprintf(names[j], TAG_LEN + 1, "%s", cat);
+        counts[j] = 0;
+        (*n)++;
+    }
+    counts[j]++;
+}
+int lib_cats(ed_t *e, char (*names)[TAG_LEN + 1], int *counts, int max) {
+    lib_t *L = LIB(e);
+    if (!L || max < 1) return 0;
+    lists_ensure(e);
+    int n = 1;
+    snprintf(names[0], TAG_LEN + 1, "ALL");
+    counts[0] = 0;
+    for (int j = 0; j < L->nlist[TAG_CAT] && n < max; j++) {   /* the list's order first (counted below) */
+        snprintf(names[n], TAG_LEN + 1, "%s", L->list[TAG_CAT][j]);
+        counts[n++] = 0;
+    }
+    int nf = nfactory(e);
+    for (int p = 0; p < nf + e->pt.count; p++) {
+        meta_t m;
+        if (p < nf) factory_meta(e, p, &m);
+        else if (p - nf < L->nlm) memcpy(m.tag, L->lm[p - nf].tag, sizeof m.tag);
+        else continue;
+        if (!match_but(L, m.tag, TAG_CAT)) continue;
+        counts[0]++;
+        if (m.tag[TAG_CAT][0]) cat_count(names, counts, &n, max, m.tag[TAG_CAT]);
+    }
+    int out = 1;   /* only the categories some patch has (and the one filtered by), in order */
+    for (int j = 1; j < n; j++) {
+        if (!counts[j] && _stricmp(names[j], L->filter[TAG_CAT])) continue;
+        if (out != j) snprintf(names[out], TAG_LEN + 1, "%s", names[j]);
+        counts[out++] = counts[j];
+    }
+    return out;
+}
+const char *lib_cat_filter(ed_t *e) { return LIB(e) ? LIB(e)->filter[TAG_CAT] : ""; }
+void lib_cat_pick(ed_t *e, const char *cat) {   /* a tab: list only that category ("" or ALL: every one) */
+    lib_t *L = LIB(e);
+    if (!L) return;
+    snprintf(L->filter[TAG_CAT], sizeof L->filter[TAG_CAT], "%s", _stricmp(cat, "ALL") ? cat : "");
+    views(e);
+    if (L->filter[TAG_CAT][0])
+        say(e, "PATCHES lists only %s (%d factory, %d yours). ALL lists everything.", L->filter[TAG_CAT],
+            lib_view_count(e, 0), lib_view_count(e, 1));
+    else
+        say(e, "PATCHES lists every category.");
 }
 int lib_step_filtered(ed_t *e, int d) {
     if (!lib_filtering(e)) return 0;
@@ -2121,6 +2175,13 @@ intptr_t lib_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case LT_NOTES_SHOWN: return lib_notes_help(e, buf, 1024);
     case LT_TICK: lib_tick(e); return 1;
     case LT_FORGET: lib_commit(e); clear_stack(L_->undo, &L_->nundo); clear_stack(L_->redo, &L_->nredo); return 1;
+    case LT_CATS: {
+        static char names[PATCH_CATS][TAG_LEN + 1];
+        static int counts[PATCH_CATS];
+        int nc = lib_cats(e, names, counts, PATCH_CATS), u = snprintf(buf, 1024, "%d/%d|", e->sub, lib_subs(e));
+        for (int j = 0; j < nc && u < 1000; j++) u += snprintf(buf + u, 1024 - u, "%s=%d;", names[j], counts[j]);
+        return nc;
+    }
     }
     return 0;
 }

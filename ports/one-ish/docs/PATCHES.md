@@ -11,12 +11,18 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
   before this feature). A `*` after the name means the sound has changed since it was loaded or saved.
 - **The PRESET box's `<` `>`** (inside the box round the name, labelled PRESET on its top edge, since 2026-10-30;
   BACK / FWD at the box's two ends only change the page the screen shows, never the sound), **PREV / NEXT and the
-  PRESET knob** step through the factory presets (168 with bank A, 2026-10-30), then your patches A to Z. With
+  PRESET knob** step through the factory presets (296 on 2026-10-30: the first 40, bank A, then bank B), then your patches A to Z. With
   PRESET AUTOLOAD off (SETTINGS page, `docs/SETTINGS.md`, 2026-10-29) they only point (`> F 004  Name ?`); a click on
   the PRESET knob or the name then loads it.
 - **Click the name** (or click the PRESET knob) for the PATCHES page: factory presets on the left, yours on the right,
-  7 at a time (the PAGE `<` `>` at its title line's right end, or the mouse wheel, for more). Click one to load it. Click the name again to
+  8 at a time (the PAGE `<` `>` at its title line's right end, or the mouse wheel over the list, for more). Click one to load it. Click the name again to
   go back to the matrix.
+- **Category tabs** (2026-10-30, desktop window; load_test `category_tabs`): two lines of tabs over the list, ALL and
+  every category a factory preset or user patch has (BASS, LEAD, PAD, KEYS, STRINGS, BRASS, BELLS, PLUCK, ARP, SEQ, DRUM, FX,
+  PERF, GEN, ORGAN ...; made from the tags, so a new category shows up by itself), each with how many patches it lists. A plain
+  click lists only that category, from its first page; ALL lists everything. A tab is the CATEGORY filter of the TAGS
+  page (the same one: the TAGS page shows it, CLEAR clears it), and the other filters (TYPE, MOOD, GROUP) still apply
+  to the list and to the counts.
 - **The buttons on that page:**
   - SAVE: stores the sound over the current user patch. On a factory preset or an unsaved sound it asks for a name
     (factory presets are never changed). It lights up while there are changes to keep.
@@ -50,8 +56,8 @@ brightens; pad X shapes the timbre and pad Y the space or dirt; the ribbon bends
 preset's one-line description is in the file (`ABOUT`).
 
 Loudness: `LEVEL` in the file trims every preset's volume so the bank plays at one level (past 100% volume, a matrix row
-Constant > Amp Level adds the rest). `test/bank_check.c` (in the offline checks; alone: `offline_check banka
-<dir>/demo.wav`) plays each preset a phrase for its category (bass line, melody, chords; a split adds bass notes, a
+Constant > Amp Level adds the rest). `test/bank_check.c` (in the offline checks, with bank B's; alone: `offline_check banka
+<dir>/demo.wav`, `bankb` bank B, `banks` both) plays each preset a phrase for its category (bass line, melody, chords; a split adds bass notes, a
 sequenced preset holds a key), then again with the wheel and aftertouch full, and fails on a peak above -1 dBFS,
 silence, non-finite samples or a loudness 6 dB away from the bank's median. 2026-10-30, offline: median -18 dB, every preset within
 -21 .. -17.3 dB (the loudest 300 ms of RMS; the lowest, Strung Air, uses the MACRO string model, which varies by a
@@ -86,7 +92,8 @@ layer); `bank_a_demo.wav` in `test/out` has them all.
 - **The save box** (SAVE AS, and SAVE of a sound that isn't a user patch yet) asks for the name, TYPE (Single, Layer,
   Split, Multi; it starts from what the Synths do: one on Single, key ranges apart Split, all overlapping Layer, else
   Multi), CATEGORY, MOOD, GROUP and notes. SAVE over a user patch keeps its tags and notes. A sound saved from a factory
-  preset starts with that preset's tags (the factory presets carry ONE-ish's own tags).
+  preset starts with that preset's tags (the factory presets carry ONE-ish's own tags: since 2026-10-30 they come from
+  presets.json's `tags`, which `presets/make_presets.py` writes along with `desktop/factory_tags.h`, the window's copy).
 - **The TAGS page:** four columns, TYPE, CATEGORY, MOOD and GROUP. A click on a tag filters the PATCHES page (and PREV
   / NEXT) by it, one tag per column (again: off; the column title says `(filter)`); a small square marks the current
   patch's tags. TAG PATCH puts the selected tag on the current user patch (again: off); ADD (asks a name, into the
@@ -112,7 +119,7 @@ layer); `bank_a_demo.wav` in `test/out` has them all.
 The host's MIDI reaches user patches and sets:
 
 - Bank select MSB (CC 0) **0**, LSB (CC 32) **n**, then a program change **p**: position 128 x n + p of the list,
-  factory presets first, then your patches A to Z (with 168 factory presets, bank 1 program 40 is your first patch: 128 + 40).
+  factory presets first, then your patches A to Z (with 296 factory presets, bank 2 program 40 is your first patch: 256 + 40).
 - MSB **1**, LSB **n**, program **p** (0-63): performance set n + 1, number p (0 = A1, 7 = A8, 8 = B1 ... 63 = H8).
 - Other MSBs are ignored. Any MIDI channel. The host's own program list (`effSetProgram`) still picks factory presets.
 - The program change is noted on the host's thread (no file touched there) and loaded on the window's thread: by the
@@ -181,8 +188,9 @@ the old file:
   patch file (the sequences included). The file names sort by time; `-auto` marks an autosave.
 - `tags.oneishtags`: `ONE-ish tags 1`, then `category=`, `mood=`, `group=` lines, one tag each, in list order (TYPE's
   four are fixed). Missing: the default lists (CATEGORY Bass, Lead, Pad, Keys, Strings, Brass, Bells, Pluck, Arp,
-  Sequence, Drum, FX; MOOD Bright, Dark, Warm, Soft, Aggressive, Dirty, Clean, Evolving; GROUP Favourites, Live,
-  Studio, Work in progress).
+  Sequence, Drum, FX, Performance, Generative; MOOD Bright, Dark, Warm, Soft, Aggressive, Dirty, Clean, Evolving; GROUP Favourites, Live,
+  Studio, Work in progress). A category or mood a factory preset has is added to the lists when they are read
+  (2026-10-30), so an older file still lists the new banks' tags.
 - `sets.oneishsets`: `ONE-ish sets 1`, `current=<set number>`, then per set `[set]`, `name=`, `notes=` (escaped) and one
   line per filled number, `A1=U,0,Bright Pad` or `B3=F,3,Acid Line` (a factory preset by name first, its program
   number if the name is gone).

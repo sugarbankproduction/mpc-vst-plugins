@@ -30,4 +30,5 @@ TEST="$P/test/golden_check.c $P/test/golden_rng.cc" build "$P/build/obj_o2" "$P/
 gcc -std=gnu11 -Wall -Wextra -O1 "${INC[@]}" "$P/test/rnd_golden.c" -lm -o "$P/build/rnd_golden"
 "$P/build/rnd_golden" check "$P/test/rnd_golden.txt"
 "$P/build/rnd_golden" stats
+# (the factory banks, test/bank_check.c, run inside offline_check above: both banks' tables and bank_*_demo.wav)
 "$P/build/offline_bench" bench

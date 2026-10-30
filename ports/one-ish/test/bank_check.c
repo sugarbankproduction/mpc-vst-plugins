@@ -7,8 +7,11 @@
  * and the CPU (microseconds per 128-frame block on this build: the ASan one in test/run.sh, the -O2 one in the bench).
  * Fails on a peak above -1 dBFS, silence, a non-finite sample (the engine's "heals") or a loudness more than 6 dB
  * from the bank's median. Writes <dir>/bank_<x>_demo.wav, every preset's phrase in program order, to listen to.
- * The category of each preset comes from presets.json's tags (read at ports/one-ish/presets.json: the checks run
- * from the repo root). Included from offline_check.c (its helpers: E, check, failures, SR, put16, put32). */
+ * Bank B's presets are played their own way (further down). A bank's presets, their category and type are found by
+ * desktop/factory_tags.h (written by presets/make_presets.py with presets.json). Both banks measure loudness with one
+ * helper, bk_loudest_db(). Included from offline_check.c (its helpers: E, check, failures, SR, put16, put32,
+ * write_wav); bank_checks_all() runs every bank. */
+#include "../desktop/factory_tags.h"
 
 void one_ish_render_float(void *inst, float *out_lr, int frames);   /* src/synths.h: render() as floats */
 
@@ -17,37 +20,22 @@ void one_ish_render_float(void *inst, float *out_lr, int frames);   /* src/synth
 #define BK_PLAIN_MS 2100     /* the plain part (loudness is measured here); the wheel and aftertouch part follows */
 #define BK_FRAMES (SR * BK_PHRASE_MS / 1000)
 
-typedef struct { char name[64], type[16], cat[24]; } bk_tag_t;
-static bk_tag_t bk_tags[BK_MAX];
-static int bk_ntags;
-
-static int bk_field(const char *line, const char *key, char *out, int n) {   /* "key": "value" on one line */
-    const char *p = strstr(line, key);
-    if (!p) return 0;
-    p += strlen(key);
-    int k = 0;
-    while (*p && *p != '"' && k < n - 1) out[k++] = *p++;
-    out[k] = 0;
-    return k > 0;
+static double bk_energy(const float *lr, int i) {   /* frame i's L*L + R*R, a non-finite sample as 0 */
+    float l = lr[2 * i], r = lr[2 * i + 1];
+    return (isfinite(l) ? (double)l * l : 0) + (isfinite(r) ? (double)r * r : 0);
 }
 
-/* presets.json has one preset per line ({"name": ..., "values": {...}, "tags": {...}}) */
-static int bk_read_tags(void) {
-    FILE *f = fopen("ports/one-ish/presets.json", "r");
-    if (!f) return 0;
-    static char line[1 << 20];
-    bk_ntags = 0;
-    while (fgets(line, sizeof line, f) && bk_ntags < BK_MAX) {
-        bk_tag_t *t = &bk_tags[bk_ntags];
-        if (!bk_field(line, "{\"name\": \"", t->name, sizeof t->name)) continue;
-        const char *tg = strstr(line, "\"tags\": {");
-        if (!tg) continue;
-        bk_field(tg, "\"type\": \"", t->type, sizeof t->type);
-        bk_field(tg, "\"category\": \"", t->cat, sizeof t->cat);
-        bk_ntags++;
+/* the loudness both banks use: the loudest `win` frames of RMS (both channels) among frames [0, frames) of the
+ * interleaved stereo lr, in dB (a non-finite sample counts as 0); `hop`: the step between windows (1: every frame) */
+static double bk_loudest_db(const float *lr, int frames, int win, int hop) {
+    double best = 0, e2 = 0;
+    for (int i = 0; i < frames; i++) {   /* a running sum over the window ending at frame i */
+        e2 += bk_energy(lr, i);
+        if (i >= win) e2 -= bk_energy(lr, i - win);
+        int s = i - win + 1;   /* the window's first frame */
+        if (s >= 0 && s % hop == 0 && e2 > best) best = e2;
     }
-    fclose(f);
-    return 1;
+    return 10 * log10(best / (2.0 * win) + 1e-18);
 }
 
 static const char *bk_value(int p, const char *key) {   /* preset p's value for key (an option's index), or NULL */
@@ -166,16 +154,8 @@ static bk_stats_t bk_play(int p, int kind, int split, float *lr) {
         if (!isfinite(lr[i])) { st.finite = 0; continue; }
         if (fabsf(lr[i]) > peak) peak = fabsf(lr[i]);
     }
-    enum { WIN = SR * 3 / 10, HOP = SR / 20 };
-    double loud = 0;
-    for (int s = 0; s + WIN <= SR * BK_PLAIN_MS / 1000; s += HOP) {
-        double e2 = 0;
-        for (int i = s; i < s + WIN; i++) e2 += lr[2 * i] * lr[2 * i] + lr[2 * i + 1] * lr[2 * i + 1];
-        e2 = sqrt(e2 / (2.0 * WIN));
-        if (e2 > loud) loud = e2;
-    }
     st.peak_db = bk_db(peak);
-    st.loud_db = bk_db(loud);
+    st.loud_db = bk_loudest_db(lr, SR * BK_PLAIN_MS / 1000, SR * 3 / 10, SR / 20);   /* 300 ms windows, 50 ms apart */
     return st;
 }
 
@@ -186,31 +166,29 @@ static int bk_cmp(const void *a, const void *b) {
 
 static int16_t bk_pcm(float x) { x = x > 1 ? 1 : x < -1 ? -1 : isfinite(x) ? x : 0; return (int16_t)lrintf(x * 32767.0f); }
 
-/* every preset whose category is one of cats: the table, the checks, <dir of demo_path>/<wav_name> (NULL: no WAV).
- * bench: only the CPU summary (the -O2 build's bench run), no checks. */
-static void bank_checks(const char *label, const char *const *cats, const char *demo_path, const char *wav_name,
-                        int bench) {
+/* every preset of factory bank `bank` (desktop/factory_tags.h) whose category is one of cats: the table, the checks,
+ * <dir of demo_path>/<wav_name> (NULL: no WAV). bench: only the CPU summary (the -O2 build's bench run), no checks. */
+static void bank_checks(const char *label, const char *bank, const char *const *cats, const char *demo_path,
+                        const char *wav_name, int bench) {
     static float lr[2 * BK_FRAMES];
     static int16_t pcm[2 * BK_FRAMES];
     static bk_stats_t stats[BK_MAX];
     static int idx[BK_MAX];
     static double sorted[BK_MAX];
     char what[256];
-    if (!bk_read_tags()) { check(0, "banks: ports/one-ish/presets.json can be read (run from the repo root)"); return; }
+    check(NFACTORY_TAGS == NPRESETS, "banks: desktop/factory_tags.h lists every program (make_presets.py wrote both)");
     int np = 0;
-    for (int t = 0; t < bk_ntags; t++) {
+    for (int p = 0; p < NPRESETS && p < NFACTORY_TAGS && np < BK_MAX; p++) {
+        if (strcmp(FACTORY_TAG[p].bank, bank)) continue;
         int in = 0;
-        for (int c = 0; cats[c]; c++) in |= !strcmp(bk_tags[t].cat, cats[c]);
-        if (!in) continue;
-        int p = -1;
-        for (int i = 0; i < NPRESETS; i++)
-            if (!strncmp(PRESETS[i].name, bk_tags[t].name, 24)) { p = i; break; }
-        if (p < 0) {
-            snprintf(what, sizeof what, "%s: preset \"%.60s\" of presets.json is in the program list", label, bk_tags[t].name);
+        for (int c = 0; cats[c]; c++) in |= !strcmp(FACTORY_TAG[p].cat, cats[c]);
+        if (!in) {
+            snprintf(what, sizeof what, "%s: preset \"%.60s\" has one of the bank's categories (%s)", label,
+                     FACTORY_TAG[p].name, FACTORY_TAG[p].cat);
             check(0, what);
             continue;
         }
-        idx[np++] = t * 1000 + p;   /* (tag, program) */
+        idx[np++] = p;
     }
     snprintf(what, sizeof what, "%s: %d presets found", label, np);
     check(np > 0, what);
@@ -232,8 +210,8 @@ static void bank_checks(const char *label, const char *const *cats, const char *
     if (!bench) printf("%s: %-24s %-8s %-6s %8s %8s %8s\n", label, "preset", "category", "type", "peak dB", "loud dB",
                        "us/blk");
     for (int k = 0; k < np; k++) {
-        const bk_tag_t *t = &bk_tags[idx[k] / 1000];
-        int p = idx[k] % 1000;
+        const factory_tag_t *t = &FACTORY_TAG[idx[k]];
+        int p = idx[k];
         int kind = !strcmp(t->cat, "Bass") ? BK_LINE : !strcmp(t->cat, "Lead") ? BK_MELODY : BK_CHORDS;
         stats[k] = bk_play(p, kind, !strcmp(t->type, "Split"), lr);
         sorted[k] = stats[k].loud_db;
@@ -256,11 +234,11 @@ static void bank_checks(const char *label, const char *const *cats, const char *
     }
     printf("%s: %d presets, loudness median %.1f dB (range %.1f .. %.1f), loudest peak %.1f dBFS, CPU mean %.1f us, "
            "max %.1f us per 128-frame block (%s)\n", label, np, median, sorted[0], sorted[np - 1], peak_max, us_sum / np,
-           us_max, bk_tags[idx[worst] / 1000].name);
+           us_max, FACTORY_TAG[idx[worst]].name);
     if (bench) return;
     int bad_peak = 0, bad_loud = 0, bad_quiet = 0, bad_nan = 0;
     for (int k = 0; k < np; k++) {
-        const char *nm = bk_tags[idx[k] / 1000].name;
+        const char *nm = FACTORY_TAG[idx[k]].name;
         if (stats[k].peak_db > -1.0) { printf("     %s: peak %.1f dBFS\n", nm, stats[k].peak_db); bad_peak++; }
         if (stats[k].loud_db < -50.0) { printf("     %s: silent (%.1f dB)\n", nm, stats[k].loud_db); bad_quiet++; }
         else if (fabs(stats[k].loud_db - median) > 6.0) {
@@ -282,5 +260,196 @@ static void bank_checks(const char *label, const char *const *cats, const char *
 
 /* bank A (presets/banks/bank_a.py): basses, leads, keys, brass, plucks, organs */
 static const char *const BANK_A_CATS[] = {"Bass", "Lead", "Keys", "Brass", "Pluck", "Organ", NULL};
-static void bank_a_checks(const char *demo_path) { bank_checks("bank A", BANK_A_CATS, demo_path, "bank_a_demo.wav", 0); }
-static void bank_a_bench(void) { bank_checks("bench: bank A", BANK_A_CATS, NULL, NULL, 1); }
+static void bank_a_checks(const char *demo_path) { bank_checks("bank A", "A", BANK_A_CATS, demo_path, "bank_a_demo.wav", 0); }
+static void bank_a_bench(void) { bank_checks("bench: bank A", "A", BANK_A_CATS, NULL, NULL, 1); }
+
+/* ======================================================================== bank B */
+/* Each preset of bank B (presets/banks/bank_b.py) played by its kind: a phrase then a chord (most), eighth-note hits
+ * (Drum), or nothing at all for 4 s (Generative: it must play by itself; if it doesn't, a held C major chord, and the
+ * report says so). Measured: the peak (fails over -1 dBFS), the loudness (bk_loudest_db over 400 ms; fails more than
+ * 6 dB from the bank's median), silence, NaN / infinity, and the render time per 128-frame block.
+ * bank_b_demo.wav (next to demo_path): every preset in program order. */
+enum { BB_SECS = 4, BB_FRAMES = BB_SECS * SR, BB_WIN = SR * 4 / 10, BB_MAX = 160, BB_BLK = 128 };
+typedef struct { double peak, loud, us, us_max; int notes, nonfinite, held; } bb_res_t;
+
+static double bb_now_us(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1e6 + t.tv_nsec / 1e3;
+}
+static void bb_midi(void *e, int st, int n, int v) {
+    uint8_t m[3] = {(uint8_t)st, (uint8_t)n, (uint8_t)v};
+    E->midi(e, m, 3);
+}
+static int bb_count_notes(void *e) {   /* the note-ons the Synths' generators made since the last call */
+    static const char *const KEY[3] = {"gen_log", "s2_gen_log", "s3_gen_log"};
+    static char b[8192];
+    int n = 0;
+    for (int c = 0; c < 3; c++) {
+        if (E->get_param(e, KEY[c], b, sizeof b) <= 0) continue;
+        for (char *p = b; *p;) {
+            long long t;
+            int nt, v, used;
+            if (sscanf(p, "%lld:%d:%d;%n", &t, &nt, &v, &used) != 3) break;
+            n += v > 0;
+            p += used;
+        }
+    }
+    return n;
+}
+/* the events of the kind at block b: 0 phrase + chord, 1 drum hits, 2 nothing (generative), 3 a held chord */
+static void bb_events(void *e, int kind, int b) {
+    int t0 = b * BB_BLK, t1 = t0 + BB_BLK;
+#define AT(sec) ((int)((sec) * SR) >= t0 && (int)((sec) * SR) < t1)
+    if (kind == 0) {
+        static const int line[4] = {48, 55, 60, 67}, chord[4] = {48, 60, 64, 67};
+        for (int k = 0; k < 4; k++) {
+            if (AT(0.3 * k)) bb_midi(e, 0x90, line[k], 100);
+            if (AT(0.3 * k + 0.28)) bb_midi(e, 0x80, line[k], 0);
+            if (AT(1.25)) bb_midi(e, 0x90, chord[k], 100);
+            if (AT(2.9)) bb_midi(e, 0x80, chord[k], 0);
+        }
+    } else if (kind == 1) {
+        for (int k = 0; k < 12; k++) {
+            if (AT(0.25 * k)) bb_midi(e, 0x90, 48, k % 2 ? 80 : 115);
+            if (AT(0.25 * k + 0.1)) bb_midi(e, 0x80, 48, 0);
+        }
+    } else if (kind == 3) {
+        static const int chord[3] = {48, 52, 55};
+        for (int k = 0; k < 3; k++) {
+            if (AT(0.0)) bb_midi(e, 0x90, chord[k], 100);
+            if (AT(3.4)) bb_midi(e, 0x80, chord[k], 0);
+        }
+    }
+#undef AT
+}
+static void *bb_load(int p) {
+    void *e = E->create(NULL);
+    E->set_param(e, "lfo_bpm", "120");
+    for (int i = 0; i < PRESETS[p].n; i++) E->set_param(e, PARAMS[PRESETS[p].values[i].param].key, PRESETS[p].values[i].value);
+    return e;
+}
+static bb_res_t bb_play(int p, int kind, int16_t *pcm) {
+    static float f[2 * BB_FRAMES];
+    bb_res_t r = {0};
+    void *e = bb_load(p);
+    bb_count_notes(e);
+    for (int b = 0; b < BB_FRAMES / BB_BLK; b++) {
+        bb_events(e, kind, b);
+        double t = bb_now_us();
+        one_ish_render_float(e, f + 2 * b * BB_BLK, BB_BLK);
+        t = bb_now_us() - t;
+        r.us += t;
+        if (t > r.us_max) r.us_max = t;
+        r.notes += bb_count_notes(e);
+    }
+    r.us /= BB_FRAMES / BB_BLK;
+    E->destroy(e);
+    for (int i = 0; i < BB_FRAMES; i++) {
+        float l = f[2 * i], rr = f[2 * i + 1];
+        if (!isfinite(l) || !isfinite(rr)) { r.nonfinite++; l = rr = 0; }
+        if (fabsf(l) > r.peak) r.peak = fabsf(l);
+        if (fabsf(rr) > r.peak) r.peak = fabsf(rr);
+        if (pcm) {
+            pcm[2 * i] = bk_pcm(l);
+            pcm[2 * i + 1] = bk_pcm(rr);
+        }
+    }
+    r.loud = bk_loudest_db(f, BB_FRAMES, BB_WIN, 1);   /* the loudest 400 ms */
+    return r;
+}
+
+/* bench: only the CPU summary (the -O2 build's bench run), no checks and no WAV */
+static void bank_b_run(const char *demo_path, int bench) {
+    static int idx[BB_MAX];
+    static bb_res_t res[BB_MAX];
+    static double louds[BB_MAX];
+    int n = 0;
+    for (int p = 0; p < NPRESETS && p < NFACTORY_TAGS; p++)
+        if (!strcmp(FACTORY_TAG[p].bank, "B") && n < BB_MAX) idx[n++] = p;
+    char what[400];
+    snprintf(what, sizeof what, "bank B: %d presets (128 wanted), names matching the program list", n);
+    int names = 1;
+    for (int k = 0; k < n; k++) names &= !strcmp(PRESETS[idx[k]].name, FACTORY_TAG[idx[k]].name);
+    if (!bench) check(n == 128 && names, what);
+    int16_t *pcm = bench ? NULL : malloc((size_t)n * BB_FRAMES * 2 * sizeof *pcm);
+    double us_all = 0, us_top = 0;
+    const char *top = "";
+    int own = 0, held = 0, gens = 0;
+    for (int k = 0; k < n; k++) {
+        int p = idx[k];
+        const char *cat = FACTORY_TAG[p].cat;
+        int gen = !strcmp(cat, "Generative"), kind = gen ? 2 : !strcmp(cat, "Drum") ? 1 : 0;
+        res[k] = bb_play(p, kind, pcm ? pcm + (size_t)k * BB_FRAMES * 2 : NULL);
+        if (gen) {
+            gens++;
+            if (res[k].notes > 0) own++;
+            else {
+                res[k] = bb_play(p, 3, pcm ? pcm + (size_t)k * BB_FRAMES * 2 : NULL);
+                res[k].held = 1;
+                held += res[k].notes > 0;
+            }
+        }
+        louds[k] = res[k].loud;
+        us_all += res[k].us;
+        if (res[k].us > us_top) { us_top = res[k].us; top = PRESETS[p].name; }
+    }
+    if (bench) {
+        printf("bench: bank B: %d presets, CPU mean %.1f us, max %.1f us per 128-frame block (%s)\n", n,
+               n ? us_all / n : 0, us_top, top);
+        return;
+    }
+    double sorted[BB_MAX];
+    memcpy(sorted, louds, n * sizeof *sorted);
+    qsort(sorted, n, sizeof *sorted, bk_cmp);
+    double med = n ? sorted[n / 2] : 0;
+    printf("     bank B: preset (category): peak dBFS, loudness dBFS (loudest 400 ms), CPU us per 128-frame block "
+           "(mean / worst), generator notes\n");
+    int clip = 0, quiet = 0, bad = 0, off = 0;
+    for (int k = 0; k < n; k++) {
+        int p = idx[k];
+        bb_res_t *r = &res[k];
+        double pk = 20 * log10(r->peak + 1e-20);
+        int is_gen = !strcmp(FACTORY_TAG[p].cat, "Generative");
+        snprintf(what, sizeof what, "%3d %-24s (%s): peak %6.1f, loud %6.1f (%+5.1f), CPU %5.1f / %5.1f us", p + 1,
+                 PRESETS[p].name, FACTORY_TAG[p].cat, pk, r->loud, r->loud - med, r->us, r->us_max);
+        if (is_gen)
+            snprintf(what + strlen(what), sizeof what - strlen(what), ", %d notes %s", r->notes,
+                     r->held ? "with a held chord" : "on its own");
+        int ok = pk <= -1.0 && r->loud > -60 && !r->nonfinite && fabs(r->loud - med) <= 6.0 && (!is_gen || r->notes > 0);
+        clip += pk > -1.0;
+        quiet += r->loud <= -60;
+        bad += r->nonfinite > 0;
+        off += fabs(r->loud - med) > 6.0;
+        check(ok, what);
+    }
+    snprintf(what, sizeof what, "bank B: no preset clips (%d over -1 dBFS), none silent (%d), no NaN or infinity (%d), "
+             "all within 6 dB of the median loudness %.1f dBFS (%d outside)", clip, quiet, bad, med, off);
+    check(!clip && !quiet && !bad && !off, what);
+    snprintf(what, sizeof what, "bank B: the %d generative presets make notes: %d on their own, %d with a held chord", gens,
+             own, held);
+    check(own + held == gens, what);
+    printf("     bank B CPU on this PC: %.1f us per 128-frame block on average (%.1f%% of the 2902 us a block lasts), the "
+           "most %.1f us (%s)\n", n ? us_all / n : 0, n ? 100 * us_all / n / 2902.0 : 0, us_top, top);
+    if (pcm && demo_path) {
+        char path[512];
+        const char *sl = strrchr(demo_path, '/');
+        snprintf(path, sizeof path, "%.*sbank_b_demo.wav", sl ? (int)(sl - demo_path + 1) : 0, demo_path);
+        write_wav(path, pcm, (uint32_t)((size_t)n * BB_FRAMES));
+        printf("     wrote %s (%d presets, %d s each)\n", path, n, BB_SECS);
+    }
+    free(pcm);
+}
+static void bank_b_checks(const char *demo_path) { bank_b_run(demo_path, 0); }
+static void bank_b_bench(void) { bank_b_run(NULL, 1); }
+/* ======================================================================== end of bank B */
+
+/* every factory bank (offline_check runs it; offline_check banks <dir>/demo.wav: the banks alone) */
+static void bank_checks_all(const char *demo_path) {
+    bank_a_checks(demo_path);
+    bank_b_checks(demo_path);
+}
+static void bank_bench_all(void) {
+    bank_a_bench();
+    bank_b_bench();
+}

@@ -576,6 +576,18 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      once) sent the 257th event of a block ahead of the 256 queued, so a note-off could beat its note-on. No event is
      ever dropped: the MPC build passes each event straight to the engine; the desktop's rate converter (EVQ 512) sends
      what it holds, in order, when full. Old sounds unchanged (golden check). Nothing new in the audio path.
+  32. (2026-10-30) Factory bank B and browsing by category. Done 2026-10-30 (offline and the desktop window): 128
+     original presets in `presets/banks/bank_b.py` (pads 28, strings 16, bells 12, effects 14, arps 12, sequences 12,
+     drums 8, performances 14, generative 12), most played from aftertouch, the mod wheel, velocity, Pad X / Y and the
+     ribbon; `test/bank_check.c` (`bank_b_checks`; since the merge with bank A, run inside offline_check with `bank_a_checks`, one loudness helper for both; alone: `offline_check bankb <dir>/demo.wav`) plays each one: no peak over -1 dBFS, none
+     silent, no NaN, every one within 6 dB of the bank's median loudness (a TRIM table in the bank evens them out), the
+     generative ones make notes (ten by themselves, two from a held chord), and its CPU on the PC (about 52 us per
+     128-frame block on average, 1.8% of a block); `test/out/bank_b_demo.wav` to listen to. The factory presets' tags
+     now come from presets.json (`make_presets.py` writes `desktop/factory_tags.h`; the first 40's tags moved there
+     from library.c). The PATCHES page: category tabs (ALL and every category with its count, plain clicks), 8 patches
+     a column, pages by the arrows or the wheel. Bank A (`presets/banks/bank_a.py`: 128 basses, leads, keys, brass,
+     plucks and organs; `docs/PATCHES.md`) is merged with it: 296 factory presets, the ORGAN tab from bank A's tags.
+     Left: listening on Carla, the MPC (the generative presets' CPU there).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.

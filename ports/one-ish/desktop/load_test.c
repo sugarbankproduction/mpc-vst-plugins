@@ -99,18 +99,30 @@ static double play(AEffect *fx, int blocks, int frames) {   /* rms of `blocks` h
 
 enum { SR = 44100, BLOCK = 512, PHRASE_BLOCKS = 8 * SR / BLOCK / 2 };   /* 4 s per preset */
 
+static void wav_header(FILE *f, uint32_t frames) {   /* 16-bit stereo at SR */
+    uint32_t bytes = frames * 4, v32;
+    uint16_t v16;
+    fwrite("RIFF", 1, 4, f); v32 = 36 + bytes; fwrite(&v32, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f);
+    v32 = 16; fwrite(&v32, 4, 1, f); v16 = 1; fwrite(&v16, 2, 1, f); v16 = 2; fwrite(&v16, 2, 1, f);
+    v32 = SR; fwrite(&v32, 4, 1, f); v32 = SR * 4; fwrite(&v32, 4, 1, f); v16 = 4; fwrite(&v16, 2, 1, f);
+    v16 = 16; fwrite(&v16, 2, 1, f); fwrite("data", 1, 4, f); fwrite(&bytes, 4, 1, f);
+}
+
 /* every preset through the DLL's program list: a short line then a chord. Each must sound and stay off the limiter's
- * ceiling. With a path, all of them go into one WAV to listen to, in program order (2026-10-30: every preset, no longer
- * the first 64; the WAV's buffer is allocated only when asked for). */
+ * ceiling. With a path, all of them go into one WAV to listen to, in program order (written as it plays: 2026-10-30,
+ * every preset of the factory banks, not the first 64). */
 static void audition(AEffect *fx, const char *wav) {
+    static int16_t pcm[BLOCK * 2];
     static const unsigned char line[] = {48, 55, 60, 67}, chord[] = {48, 60, 64, 67};
     float l[BLOCK], r[BLOCK], *out[2] = {l, r};
-    int np = fx->numPrograms, frames = 0;
-    int16_t *pcm = wav ? malloc((size_t)np * PHRASE_BLOCKS * BLOCK * 2 * sizeof *pcm) : NULL;
-    if (wav && !pcm) { printf("FAIL no memory for %s\n", wav); failures++; wav = NULL; }
+    int np = fx->numPrograms;
+    uint32_t frames = 0;
     char what[160];
     snprintf(what, sizeof what, "%d presets in the program list", fx->numPrograms);
     check(fx->numPrograms > 1, what);
+    FILE *f = wav ? fopen(wav, "wb") : NULL;
+    if (wav && !f) { printf("FAIL cannot write %s\n", wav); failures++; }
+    if (f) wav_header(f, 0);
     for (int p = 0; p < np; p++) {
         char name[64] = "";
         fx->dispatcher(fx, 2 /* effSetProgram */, 0, p, NULL, 0);
@@ -131,30 +143,21 @@ static void audition(AEffect *fx, const char *wav) {
             for (int i = 0; i < BLOCK; i++) {
                 e += l[i] * l[i];
                 if (fabsf(l[i]) > peak) peak = fabsf(l[i]);
-                if (pcm) {
-                    pcm[2 * frames] = (int16_t)(l[i] * 32767.0f);
-                    pcm[2 * frames + 1] = (int16_t)(r[i] * 32767.0f);
-                }
-                frames++;
+                pcm[2 * i] = (int16_t)(l[i] * 32767.0f);
+                pcm[2 * i + 1] = (int16_t)(r[i] * 32767.0f);
             }
+            if (f) fwrite(pcm, 4, BLOCK, f);
+            frames += BLOCK;
         }
         send_midi(fx, 0xb0, 123, 0);   /* all notes off between presets */
         double rms = sqrt(e / (PHRASE_BLOCKS * BLOCK));
         snprintf(what, sizeof what, "preset %2d \"%s\": rms %.3f, peak %.2f", p, name, rms, peak);
         check(rms > 0.005 && peak < 0.999, what);
     }
-    if (!wav) return;
-    FILE *f = fopen(wav, "wb");
-    if (!f) { printf("FAIL cannot write %s\n", wav); failures++; free(pcm); return; }
-    uint32_t bytes = (uint32_t)frames * 4, v32;
-    uint16_t v16;
-    fwrite("RIFF", 1, 4, f); v32 = 36 + bytes; fwrite(&v32, 4, 1, f); fwrite("WAVEfmt ", 1, 8, f);
-    v32 = 16; fwrite(&v32, 4, 1, f); v16 = 1; fwrite(&v16, 2, 1, f); v16 = 2; fwrite(&v16, 2, 1, f);
-    v32 = SR; fwrite(&v32, 4, 1, f); v32 = SR * 4; fwrite(&v32, 4, 1, f); v16 = 4; fwrite(&v16, 2, 1, f);
-    v16 = 16; fwrite(&v16, 2, 1, f); fwrite("data", 1, 4, f); fwrite(&bytes, 4, 1, f);
-    fwrite(pcm, 4, frames, f);
+    if (!f) return;
+    fseek(f, 0, SEEK_SET);
+    wav_header(f, frames);   /* (the length, now that it is known) */
     fclose(f);
-    free(pcm);
     printf("     wrote %s (%d presets, %.0f s)\n", wav, np, frames / (double)SR);
 }
 
@@ -459,8 +462,9 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         check(got[0] == 0 + 4 * 1 && got[1] == 1 + 4 * 2 && got[2] == 2 + 4 * 4, what);
         SendMessageA(child, WM_KEYDOWN, '1', 1);   /* (back to Synth 1) */
         /* the computer keyboard as a music keyboard: A plays C4, its release ends it, Z an octave down (on the first
-         * preset: the R test above left a random sound, which may be a slow pad) */
-        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);   /* (2026-10-30: via another, so Init loads again) */
+         * preset: the R test above left a random sound, which may be a slow pad; program 1 first, since the wrapper
+         * skips re-picking the program it has, and the random sound may have come while that was 0) */
+        fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);
         fx->dispatcher(fx, 2 /* effSetProgram */, 0, 0, NULL, 0);
         play(fx, 200, 512);
         double quiet = play(fx, 20, 512);

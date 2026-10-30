@@ -35,8 +35,9 @@
 
 #define EXT ".oneish"
 static const char HEADER[] = "ONE-ish patch";
-/* FILE_MAX: a whole state, one value per line, and room for the rest; PER: list entries per column (row 0: its heading) */
-enum { FORMAT_VERSION = 2, FILE_MAX = PATCH_STATE_MAX + 65536, PER = ROWS - 1 };
+/* FILE_MAX: a whole state, one value per line, and room for the rest; PER: list entries per column (under the category
+ * tabs and the column heads, entry_rect) */
+enum { FORMAT_VERSION = 2, FILE_MAX = PATCH_STATE_MAX + 65536, PER = 8 };
 enum { ID_PROMPT = 100, ID_EDIT, ID_WHY };
 enum { effGetProgram_ = 3, effGetProgramNameIndexed_ = 29 };
 
@@ -1122,11 +1123,49 @@ static RECT action_rect(int a) {   /* the button row on the column-heads line */
     return r;
 }
 
+/* (2026-10-30) the page's rows: two lines of category tabs (ALL, PAD, BASS ... with their counts), the column heads,
+ * then PER entries a column, a little closer together than the other pages' rows */
+enum { CAT_LINE = 17, HEAD_LINE = 15 };
 static RECT entry_rect(int col, int row) {   /* column 0 factory, 1 user; row 0 the heading */
-    RECT nm, c;
-    slot_rects(col * ROWS + row, &nm, &c);
-    RECT r = {nm.left, nm.top + sc(1), c.right, nm.bottom - sc(1)};
+    int half = (rw(&L.row[0]) - sc(8)) / 2, x = L.row[0].left + col * (half + sc(8));
+    int head = L.row[0].top + sc(2 * CAT_LINE + 3), body = head + sc(HEAD_LINE);
+    int h = (L.row[ROWS - 1].bottom - body) / PER;
+    RECT r = {x, head, x + half, body};
+    if (row > 0) SetRect(&r, x, body + (row - 1) * h + sc(1), x + half, body + row * h - sc(1));
     return r;
+}
+
+/* the category tabs: their names (Sequence as SEQ, Performance PERF, Generative GEN) and counts, laid out on two lines,
+ * each tab as wide as its text */
+static char cat_name[PATCH_CATS][TAG_LEN + 1];
+static int cat_n[PATCH_CATS];
+static int cats(ed_t *e) { return lib_cats(e, cat_name, cat_n, PATCH_CATS); }
+static void cat_label(int k, char *out, int n) {
+    static const char *const SHORT[][2] = {{"Sequence", "SEQ"}, {"Performance", "PERF"}, {"Generative", "GEN"}};
+    const char *s = cat_name[k];
+    for (int j = 0; j < (int)(sizeof SHORT / sizeof SHORT[0]); j++)
+        if (!_stricmp(s, SHORT[j][0])) s = SHORT[j][1];
+    char u[TAG_LEN + 1];
+    int i = 0;
+    for (; s[i] && i < 8; i++) u[i] = (char)toupper((unsigned char)s[i]);
+    u[i] = 0;
+    snprintf(out, n, "%s %d", u, cat_n[k]);
+}
+static RECT cat_rect(int ncat, int k) {   /* tab k of ncat (call cats() first) */
+    int first = (ncat + 1) / 2, line = k >= first, a = line ? first : 0, b = line ? ncat : first, total = 0, x = 0;
+    int gap = sc(3), y = L.row[0].top + line * sc(CAT_LINE);
+    char t[48];
+    for (int j = a; j < b; j++) { cat_label(j, t, sizeof t); total += (int)strlen(t) + 3; }
+    float unit = (rw(&L.row[0]) - gap * (b - a - 1)) / (float)(total ? total : 1);
+    for (int j = a; j < k; j++) { cat_label(j, t, sizeof t); x += (int)((strlen(t) + 3) * unit) + gap; }
+    cat_label(k, t, sizeof t);
+    RECT r = {L.row[0].left + x, y + sc(1), L.row[0].left + x + (int)((strlen(t) + 3) * unit), y + sc(CAT_LINE) - sc(1)};
+    if (k == b - 1) r.right = L.row[0].right;   /* (the line ends square) */
+    return r;
+}
+static int cat_on(ed_t *e, int k) {   /* the tab showing now */
+    const char *f = lib_cat_filter(e);
+    return k == 0 ? !f[0] : !_stricmp(cat_name[k], f);
 }
 
 static int entry_pos(ed_t *e, int col, int row) {   /* the list position shown at col/row of this sub-page, or -1 */
@@ -1140,8 +1179,12 @@ int patches_hit(ed_t *e, POINT pt) {
         RECT r = action_rect(a);
         if (PtInRect(&r, pt)) return Z_PATCH_ACT + a;
     }
+    for (int k = 0, n = cats(e); k < n; k++) {
+        RECT r = cat_rect(n, k);
+        if (PtInRect(&r, pt)) return Z_PATCH_CAT + k;
+    }
     for (int col = 0; col < 2; col++)
-        for (int row = 1; row < ROWS; row++) {
+        for (int row = 1; row <= PER; row++) {
             RECT r = entry_rect(col, row);
             int pos = entry_pos(e, col, row);
             if (pos >= 0 && PtInRect(&r, pt)) return Z_PATCH_ITEM + pos;
@@ -1152,6 +1195,17 @@ int patches_hit(ed_t *e, POINT pt) {
 int patches_press(ed_t *e, int z) {   /* 1: z was the page's */
     if (lib_press(e, z)) return 1;   /* COMPARE, SNAPSHOT, the library's pages (library.c) */
     if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { patches_action(e, z - Z_PATCH_ACT); return 1; }
+    if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS) {   /* a category tab: the list shows that category */
+        patches_rescan(e);
+        int k = z - Z_PATCH_CAT;
+        if (k < cats(e)) {
+            lib_cat_pick(e, cat_name[k]);
+            e->sub = 0;
+            follow(e);   /* (the current patch's page, when it is in the category) */
+        }
+        redraw(e);
+        return 1;
+    }
     if (z >= Z_PATCH_ITEM && z < Z_PATCH_ITEM + 10000) {
         patches_rescan(e);
         if (e->pt.into) patches_into_pos(e, z - Z_PATCH_ITEM);   /* into the focused Synth only */
@@ -1201,6 +1255,16 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
         frame(dc, r, hot || lit ? P_FRAME_HOT : P_FRAME);
         label(dc, r, t, font_tiny, !live ? P_DIM : hot || lit ? P_HOT : P_LCD, DT_CENTER);
     }
+    for (int k = 0, n = cats(e); k < n; k++) {   /* the category tabs */
+        RECT r = cat_rect(n, k);
+        int hot = e->hover == Z_PATCH_CAT + k, on = cat_on(e, k);
+        char t[48];
+        cat_label(k, t, sizeof t);
+        if (on) fill(dc, r, P_SEL);
+        else if (hot) fill(dc, r, P_FILL_HOT);
+        frame(dc, r, hot || on ? P_FRAME_HOT : P_FRAME);
+        label(dc, r, t, font_tiny, hot || on ? P_HOT : P_LCD, DT_CENTER);
+    }
     int pos_now = patches_pos(e), nf = e->fx->numPrograms;
     for (int col = 0; col < 2; col++) {
         char h[48];
@@ -1213,7 +1277,7 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
         label(dc, r, h, font_tiny, P_DIM, DT_LEFT);
         RECT line = {r.left, r.bottom - 1, r.right, r.bottom};
         fill(dc, line, P_FRAME);
-        for (int row = 1; row < ROWS; row++) {
+        for (int row = 1; row <= PER; row++) {
             int pos = entry_pos(e, col, row);
             if (pos < 0) continue;
             RECT er = entry_rect(col, row), tr = {er.left + sc(6), er.top, er.right - sc(4), er.bottom};
@@ -1242,8 +1306,9 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
 void patches_help(ed_t *e, char *out, int n) {   /* the page's own help, when the mouse is on nothing */
     char dir[MAX_PATH];
     if (!patch_dir(dir, sizeof dir, 0)) snprintf(dir, sizeof dir, "(no Documents or AppData folder found)");
-    snprintf(out, n, "Click a patch to load it. SAVE keeps your changes in the current user patch, SAVE AS under a "
-                     "new name. Your patches are files in %s", dir);
+    snprintf(out, n, "Click a patch to load it, a category tab to list only that kind (< > or the wheel: more pages). "
+                     "SAVE keeps your changes in the current user patch, SAVE AS under a new name. Your patches are "
+                     "files in %s", dir);
     (void)e;
 }
 
@@ -1263,6 +1328,10 @@ const char *patches_zone_help(int z) {
     case PA_SAVE_SYNTH: return "SAVE SYNTH: saves the focused Synth's sound alone as a user patch (SAVE and SAVE AS "
                                "keep the whole performance: all three Synths).";
     }
+    if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS)
+        return z == Z_PATCH_CAT ? "ALL: the list shows every category (the TAGS page's other filters still apply)."
+                                : "Click: the list shows only this category (the number: how many). ALL shows them all. "
+                                  "Page through with < > or the mouse wheel.";
     if (z >= Z_PATCH_ITEM) return "Click to load this patch. The sound you have now is replaced: SAVE it first to keep "
                                   "your changes.";
     return NULL;
@@ -1296,8 +1365,14 @@ intptr_t patches_test(ed_t *e, intptr_t op, char *buf, float opt) {
 /* where zone z of the PATCHES page is (load_test's clicks, library.c) */
 int patches_zone_rect(ed_t *e, int z, RECT *r) {
     if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { *r = action_rect(z - Z_PATCH_ACT); return 1; }
+    if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS) {
+        int n = cats(e);
+        if (z - Z_PATCH_CAT >= n) return 0;
+        *r = cat_rect(n, z - Z_PATCH_CAT);
+        return 1;
+    }
     for (int col = 0; col < 2; col++)
-        for (int row = 1; row < ROWS; row++)
+        for (int row = 1; row <= PER; row++)
             if (entry_pos(e, col, row) == z - Z_PATCH_ITEM && z >= Z_PATCH_ITEM) { *r = entry_rect(col, row); return 1; }
     return 0;
 }
