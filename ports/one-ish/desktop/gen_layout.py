@@ -725,12 +725,12 @@ def build(lay):
     L.ctl("link_ribbon", "toggle", 387, 615, 54, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     # (2026-11-02, owner) a stack beside the knob: glide's ON, its LINK; HOLD, its LINK
-    L.ctl("glide", "toggle", 236, 630, 48, 14, "ON", SIDE)
-    L.ctl("link_glide", "toggle", 236, 646, 48, 14, "LINK", SIDE)
+    L.ctl("glide", "toggle", 252, 630, 48, 14, "ON", SIDE)
+    L.ctl("link_glide", "toggle", 252, 646, 48, 14, "LINK", SIDE)
     L.ctl("glide_type", "leds", 318, 624, 52, 66, "TYPE")   # (2026-11-01, owner: moved right)
     # (2026-11-01, owner) the Synth's HOLD, here from the POLYPHONY panel, under glide's LINK, with a LINK of its own
-    L.ctl("hold", "toggle", 236, 670, 48, 14, "HOLD", SIDE)
-    L.ctl("link_hold", "toggle", 236, 686, 48, 14, "LINK", SIDE)
+    L.ctl("hold", "toggle", 252, 670, 48, 14, "HOLD", SIDE)
+    L.ctl("link_hold", "toggle", 252, 686, 48, 14, "LINK", SIDE)
     # (2026-11-01, owner) OCTAVE's LINK, beside its name: lit, the buttons move the keyboard (every Synth together); out,
     # the Synth in focus's own OCTAVE (octave_shift), so each Synth can sit in its own (editor.c set_octave)
     L.ctl("link_octave", "toggle", 94, 682, 44, 14, "LINK", SIDE)   # (2026-11-02: both left-justified, off the knob)
