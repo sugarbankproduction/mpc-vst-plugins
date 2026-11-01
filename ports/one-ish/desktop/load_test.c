@@ -671,6 +671,8 @@ static void rg_keylock_test(AEffect *fx, HWND child, float s, const char *bmp, i
              (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0), moved);
     check(fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0) == 0 && moved, what);
 }
+enum { RG_UNDO_FULL = 100 };   /* (library.c UNDO_MAX: with the undo list full a new step drops the oldest; the UNDO
+                                * checks below show it is one step) */
 static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     static float before[NPARAMS], after[NPARAMS], all[NPARAMS], undone[NPARAMS];
     char what[300], lb[1024];
@@ -693,7 +695,7 @@ static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, 
     for (int g = 0; g < RND_NGEN; g++) on += fx->getParameter(fx, rnd_key(RND_GEN_ON[g])) > 0.5f;
     snprintf(what, sizeof what, "RANDOMISE GENERATORS: %d generator settings of Synth 1 changed, %d other settings (0), "
              "%d of Synths 2 / 3 (0); %d generator(s) on; one undo step (%d -> %d)", gens, other, others, on, st0, st1);
-    check(gens > 0 && other == 0 && others == 0 && on >= 1 && st1 == st0 + 1, what);
+    check(gens > 0 && other == 0 && others == 0 && on >= 1 && (st1 == st0 + 1 || st0 == RG_UNDO_FULL), what);
     {   /* (2026-11-01) KEY and SCALE linked: both LINKs lit, the three Synths in Synth 1's new KEY and SCALE */
         int kr = rnd_key("key_root"), ks = rnd_key("key_scale"), same = 1;
         for (int i = 0; i < NPARAMS; i++)
@@ -714,7 +716,7 @@ static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, 
     }
     snprintf(what, sizeof what, "RANDOMISE GENERATORS ALL: generator settings changed in Synth 1 / 2 / 3 (%d %d %d), "
              "nothing else (%d), one undo step (%d -> %d)", per[0], per[1], per[2], nongen, st1, st2);
-    check(per[0] > 0 && per[1] > 0 && per[2] > 0 && nongen == 0 && st2 == st1 + 1, what);
+    check(per[0] > 0 && per[1] > 0 && per[2] > 0 && nongen == 0 && (st2 == st1 + 1 || st1 == RG_UNDO_FULL), what);
     if (bmp) {   /* a picture of the page, the mouse over RANDOMISE GENERATORS (its help under it) */
         float x, y;
         rnd_point(RP_GENS, 0, &x, &y);
