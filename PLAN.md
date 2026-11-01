@@ -195,6 +195,13 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      reverb picked, RANDOMISE now sets MASTER EFFECTS' SERIES (`mfx_series`) 60% of the time (was 25%) at 12-35%, up to
      55% at WILD 100%; WILD's own pass sets it 45% x WILD of the time (was 25%) at 20-40% rising to 40-80%; the cap is
      60% + 25% x WILD (was 60%). The randomiser golden was made again for it (test/rnd_golden.c).
+     OSCILLATOR TUNING (2026-11-01, owner: a slight detune is the warm, fat analog sound; over a semitone only musical
+     intervals unless WILD is high): RANDOMISE detunes oscillators 2 and 3 by up to 0.9 st (45% gently, 0.04-0.3 st;
+     17% wider, 0.3-0.9 st; was 0.03-0.15 st), or sets a musical interval (3rds, 4th, 5th, or a minor / major 7th or 9th
+     made with the octave footage one up), or leaves them in tune. Below WILD 50% every oscillator offset of a semitone or
+     more is snapped to a musical interval (also after MUTATE and WILD's own pass); from WILD 50% any semitone may come.
+     A hard-synced oscillator is left as it is (its offset is a timbre). Golden made again; checked offline: at WILD 0 no
+     non-musical interval in 160 calls.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27

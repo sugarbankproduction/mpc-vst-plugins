@@ -20,7 +20,10 @@
  * call that differed had an effect type change; none differed without one.
  * (2026-11-01, SERIES: RANDOMISE sets the master effects' SERIES more often and higher with WILD, the cap rises with WILD)
  * made again: 42 of the 240 calls differ. Checked before remaking it, against the randomiser before the change
- * (RND_GOLDEN_DUMP, param by param): every call that differed has another mfx_series; none differed without one. */
+ * (RND_GOLDEN_DUMP, param by param): every call that differed has another mfx_series; none differed without one.
+ * (2026-11-01, oscillator tuning: detunes up to 0.9 st, intervals a semitone or more only musical ones below WILD 50%,
+ * 7ths and the 9th through the octave footage) made again: 109 of the 240 calls differ. Checked the same way: every
+ * call that differed has another o2 / o3 freq (or oct); none differed without one. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
