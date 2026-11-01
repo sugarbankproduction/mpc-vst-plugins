@@ -31,6 +31,9 @@ are compiled exactly as for Windows, against a small stand-in for the parts of W
 | `web/full/serve.py` | A local server with the two headers the page needs (below); `POST /__shot` saves a canvas picture for checks |
 | `web/site/index.html`, `full.js`, `full.css`, `ring_worklet.js` | The page: canvas, input, menus and dialogs as HTML, file pickers and downloads, the sound thread, MIDI |
 | `web/site/sections.js` | The phone and narrow-window view: the panel's sections on tabs, the keyboard at the bottom |
+| `web/site/camera.js` | The whole panel's camera: pinch, pan, PANEL ZOOM (below) |
+| `web/full/gen_panels.py` | Run by the build: writes `web/site/panels.js` (not in git), PANEL ZOOM's rectangles, from the generated `layout.h` |
+| `web/full/touch.c` | For fingers in the CABLES view: tells the page its state, lands a press on a nearby cable part (below) |
 
 **Threads.** The page (the browser's main thread) only shows things and passes input on. An *editor thread* runs the
 Windows message loop and makes every plugin call except sound, as a Windows UI thread does. An *audio thread* renders
@@ -57,13 +60,47 @@ browser: a file is downloaded instead, a folder gives a message.
 
 **Phones and narrow windows** (2026-11-01, the owner's pick of four mock-ups: "B could be cool for mobile"; `web/site/
 sections.js`): the panel's own sections one at a time on tabs (SCREEN, OSC, LFO, ARP, FILTER, ENV, FX, PLAY), each as
-large as the screen allows (at most 1.5 times full size; a tab taller than the screen scrolls), with the keyboard and
+large as the screen allows (at most 1.5 times full size; since 2026-11-02 fitted to the room, it never scrolls), with the keyboard and
 the ribbon always at the bottom (`<` `>` move it an octave; from C4 at first) and WHOLE PANEL to switch back (SECTIONS
 VIEW, under the whole panel, switches again; the choice is remembered). It starts by itself on a screen under 600
 pixels wide, or under 1000 and upright. The editor still draws the whole panel; this view copies the parts it shows
 and sends touches back at the panel's own coordinates (a drag stays on the piece it started on), and menus open where
 the tap was. Sections come from the module boxes in `desktop/gen_layout.py` (base pixels). Checked in the built-in
 browser at 375 x 812 (2026-11-01): every tab draws, a tapped key plays, tabs switch. Not on a real phone yet.
+
+**Fingers, 2026-11-02** (offline; the engine, the sound and the editor are unchanged, the additions are in the page and
+`web/full`. Nobody has tried any of this on a real phone yet: see "Checked" below).
+
+- *The page is the screen.* Once playing it fills the window inside the safe areas (a notch, a home bar), never scrolls
+  sideways, and the browser's own zoom is off (`viewport`, `touch-action`, and on iPhones `gesturestart`). A rotation
+  lays everything out again, no reload (a `ResizeObserver` on the stage and on the sections view).
+- *Sections view on its side* (a screen under 520 px tall): the tabs go down the left; the keys are shorter, 20% of the
+  height, and still at the bottom; the KEYS button hides them for a bigger section (remembered). A tab's rectangles are
+  fitted to the room, stacked or in one line, whichever comes out larger.
+- *The camera* (`camera.js`, the whole panel only): the canvas is moved and scaled by a CSS transform, so nothing about
+  drawing or sound changes; a touch still maps back through the canvas's on-screen rectangle. Two fingers always pinch
+  and pan, wherever they land (3 screen pixels per panel pixel at most; never smaller than the whole panel; the panel
+  can't leave the screen). One finger is the control under it. So that two fingers never press a button, a control hears
+  of a finger only after 90 ms or as soon as it moves or lifts; the keyboard hears at once (notes aren't late), and a
+  second finger after that lets go of what the first held. Visible buttons on the bar do the same: `-`, `+`, SHOW ALL. A
+  mouse is never held back and its wheel still turns knobs.
+- *PANEL ZOOM* (the bar's button, remembered): a tap on a panel glides the camera to frame it, whatever the screen's
+  shape. **Tap versus focus: the focused panel's controls work at once; a tap anywhere else only focuses that panel, and a
+  drag anywhere else pans** (with one finger; a tap never turns or presses anything outside the focus). `<` `>` go to the
+  panel before and after, so a panel filling the screen isn't a dead end; SHOW ALL, or PANEL ZOOM again, is the whole
+  panel. The rest of the panel is dimmed. A panel too wide for the screen at half size (the keyboard, upright) is shown
+  at half size around the tap and panned with two fingers. The panels are the layout's own, plus the keyboard
+  (`gen_panels.py`, so they follow the layout); taps between panels frame the big block around them.
+- *CABLES on touch.* A CABLES button on the bar and beside the sections view's keys does what the key C does (the MATRIX
+  page with its cables, again: hidden). Cables run across the whole panel, so from the sections view it goes to the whole
+  panel and says so, and back when they are hidden. With a finger, a press lands on the nearest jack, cable knob, end dot,
+  X or box control within about a fingertip (18 screen pixels, 20 panel base pixels at most; a jack wins over an end dot;
+  `touch.c`, asked of the editor through the calls `load_test` uses, on the editor thread). The "+" dots are left exact, so
+  a knob under them still turns. A cable dragged within 44 pixels of the screen's edge moves the camera, so it reaches
+  the whole panel while zoomed in, and a second finger is ignored while a cable is in the hand. A double tap on a cable
+  removes it, as a double-click does (UNDO brings it back).
+- Not on touch: the cable's right-click menu has no long press (its box has ON / OFF and X; the row is on the MATRIX
+  page). The selected cable's box can land partly off screen when zoomed in: two fingers pan to it.
 
 **Bundled libraries** (2026-11-01): Steveo's six banks (`docs/PATCHES.md`, "The bundled libraries") are built into
 the module (`--embed-file libraries@/bundled`, about 1.4 MB more) and copied into the browser's library folder on the
@@ -92,6 +129,23 @@ receives them in the browser).
   made again when another thread grows it. Checked again in the browser after the fixes.
 - Not yet checked: by ear, with a real MIDI keyboard, on a phone or tablet, in Safari or Firefox, the m1p importer,
   the tuning (Scala) loader.
+
+### Checked (2026-11-02, the fingers above, offline in the app's built-in browser)
+
+All with **synthetic pointer events** sent from the page's console at 740 x 360 and 375 x 812 (the tools can't pinch).
+No real finger or phone yet, so how it feels, and iPhone Safari above all, is untested. Animation and the edge's camera
+move were checked with a timer in place of the browser's frame callback for part of it, the pane being in the background.
+
+- Two fingers on knobs: zoomed, panned, stopped at the panel's edges, zoomed back out to the whole panel; the plugin
+  received nothing. One finger: a press after the 90 ms, at once when it moves or lifts; on the keyboard at once. A second
+  finger on a held control: released once, nothing more sent.
+- PANEL ZOOM: oscillators, keyboard, screen and hand controls framed; a tap outside focused, sent nothing; a drag panned;
+  a tap inside pressed; `<` `>`, SHOW ALL; rotated with a panel focused: framed again for the new shape.
+- CABLES (the bar's button): new cable from a jack to a knob from 4 pixels off (zoomed in), the end dot dragged to another
+  knob, a tap on a cable's knob and wire (selected, its box), the X from 5 pixels off (removed), across the panel by the
+  screen's edge; from the sections view it went to the whole panel and back.
+- Rotating both ways in both views, no sideways scroll. A real mouse at desktop size: wheel, knob drag, switch click, a
+  key, the hover help as before. The audio thread's load and gaps meter unchanged (1-2%, no gaps).
 
 ### Build and try
 
