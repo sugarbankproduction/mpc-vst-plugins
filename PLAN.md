@@ -1039,6 +1039,15 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        KEY / SCALE; the sound stays. The big part the Synth in focus, ALL each of the three; one undo step each (the
        console's UNDO). The page's help line moved under it in the smaller font (as on the SEQ page). load_test: only
        Synth 1's generator settings move, then all three Synths', nothing else, one step each, UNDO takes both back.
+     - Generators FREE by default ("Can the default for Euclid and Turing be FREE, same with RAIN; all of the
+       generative defaults should be that"): every KEYS setting (`gen_keys`, `phys_keys`, `rain_keys`, `mkv_keys`,
+       `life_keys`, `orb_keys`, `pend_keys`) already defaulted to Free, in a new instance and Init. Not FREE were: the
+       factory sounds' Euclid / Turing KEYS (Held Keys, the default they were made with) and the owner's Carla project
+       (`Moo Won.carxp`, saved 2026-10-31: Euclid/Turing Keys Held, FOLLOW KEYS off, SCALE Minor, which Carla restores
+       over the defaults; Init, or the project saved again from Init, starts FREE and in C major). Now every factory
+       sound with Euclid and Turing off gets Free (`make_presets.unused_gen_keys`: Held did nothing there, so no sound
+       changes), so switching them on plays free; Euclid Turing Bells and Euclid Turing Night keep Held Keys (they play
+       from the key held, as designed) and Held Rain its Held rain. Offline (presets.json; bank checks).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

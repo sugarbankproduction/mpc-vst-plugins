@@ -401,6 +401,17 @@ def write_tags_h(entries, tags, bank_of):   # desktop/factory_tags.h: every pres
         f.write("\n".join(rows) + "\n};\n#define NFACTORY_TAGS %d\n" % len(rows))
 
 
+def unused_gen_keys(key, pv):
+    """(2026-11-01, owner: "the default for Euclid and Turing be FREE ... all of the generative defaults") gen_keys, in
+    a sound that leaves it out and has neither Euclid nor Turing on in that Synth: the old default (Held Keys) did
+    nothing there (the engine plays HELD with both off: engine.c apply_perf), so it takes today's (Free) and switching
+    Euclid or Turing on in a factory sound plays it free, as in Init. A sound with one of them on keeps Held Keys."""
+    pre = key[:3] if key[:3] in ("s2_", "s3_") else ""
+    if key[len(pre):] != "gen_keys":
+        return False
+    return all(pv.get(pre + k, "Off") in ("Off", 0) for k in ("gen_euclid_on", "gen_tm_on"))
+
+
 def main():
     by_key = {p["key"]: p for p in PARAMS}
     presets = []
@@ -431,8 +442,12 @@ def main():
                 continue
             if name == "Init":
                 v = pv.get(p["key"], p.get("default", p.get("min", 0)))
+            elif p["key"] in pv:
+                v = pv[p["key"]]
+            elif unused_gen_keys(p["key"], pv):   # (2026-11-01) FREE, as today's default: no sound changes
+                v = p["default"]
             else:   # (the defaults these sounds were made with)
-                v = pv.get(p["key"], old_default(p["key"], by_key))
+                v = old_default(p["key"], by_key)
             if "options" in p and isinstance(v, (int, float)):
                 v = p["options"][int(v)]
             values[p["key"]] = v
