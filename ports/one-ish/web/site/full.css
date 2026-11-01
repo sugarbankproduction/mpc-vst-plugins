@@ -29,16 +29,27 @@ button.small { padding: 4px 10px; font-size: 12px; }
 /* the sections view (sections.js): tabs at the top, the section in the middle (it scrolls), the keys at the bottom */
 #sections { height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: #121314; }
 body.sections-mode #bar { display: none; }
-.sec-tabs { display: flex; gap: 4px; padding: 6px; overflow-x: auto; flex: none; scrollbar-width: none; }
+.sec-tabs { display: flex; gap: 4px; padding: 6px; overflow-x: auto; flex: none; scrollbar-width: none; touch-action: pan-x; }
 .sec-tabs button { flex: 1 0 auto; padding: 8px 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; background: #2c2e32; border-color: #3a3d42; }
 .sec-tabs button.on { background: var(--red); border-color: #6a0c06; color: #fff; }
-.sec-body { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.sec-body { flex: 1 1 0; min-height: 0; min-width: 0; overflow: hidden; }
 .sec-view, .sec-keys { display: block; touch-action: none; outline: none; }
 .sec-kbar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; flex: none; background: #1d1f22; color: var(--text); font-size: 13px; }
 .sec-kbar .sec-oct { padding: 4px 12px; }
 .sec-kbar .sec-octlabel { min-width: 2.5em; text-align: center; }
-.sec-kbar .sec-whole { margin-left: auto; padding: 4px 10px; font-size: 11px; }
+.sec-kbar .sec-whole { margin-left: auto; }
+.sec-kbar .sec-small { padding: 4px 8px; font-size: 11px; }
+.sec-kbar .sec-small.on { background: var(--red); border-color: #6a0c06; color: #fff; }
+@media (pointer: coarse) { .sec-kbar button { min-height: 36px; } }
 .sec-keys { flex: none; }
+/* a phone on its side: the tabs down the left, the section and the keys beside them (sections.js fits both to the room) */
+@media (orientation: landscape) and (max-height: 520px) {
+  #sections { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; }
+  .sec-tabs { grid-row: 1 / 4; flex-direction: column; overflow: hidden auto; padding: 4px; touch-action: pan-y; }
+  .sec-tabs button { flex: 0 1 auto; padding: 4px 8px; }
+  .sec-kbar { padding: 2px 8px; }
+  .sec-kbar button { min-height: 30px; padding-top: 2px; padding-bottom: 2px; }
+}
 
 /* menus, message boxes and dialogs the panel asks for (Windows-like, light, as on the desktop) */
 #ui-layer { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
