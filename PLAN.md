@@ -1035,12 +1035,13 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      a plain click sets where it lands, a drag moves it, the wheel steps 1%, a double-click 100%; its help), the
      page's 11 items under it (editor.h `page_top`). Tests: `test/analog_check.c` (`offline_check analog`: 0% with
      everything up = the page at 0 sample for sample; 200% = 100% with the page doubled; states dv=2 / dv=1 / none;
-     LOAD INTO SYNTH), golden check (61 old sounds the same), load_test `analog_amt_test`, `analog_keep_test`.
+     LOAD INTO SYNTH), golden check (320 old sounds the same), load_test `analog_amt_test`, `analog_keep_test`.
      Measured offline (a 4-note two-saw chord into the ladder, 2 s): RMS -0.9 dB against all 0 (the voices' phases
      drift apart, so the chord's beating sums lower), brightness -4%; one note played on 8 voices in turn: levels
-     within 0.12 dB of each other (0 digital), brightness spread 3% (0 digital), on average -0.4 dB. CPU on the PC (O2,
-     8 voices of a busy two-saw patch, best of 7, the PC busy with other builds): 8.9 us a voice at 0%, 9.0-9.2 at
-     100% and 200%: about +1-3%, within the noise. Screenshot: `build/png/analog_amount.png` (load_test's
+     within 0.12 dB of each other (0 digital), brightness spread 3% (0 digital), on average -0.4 dB and about 15%
+     brighter. CPU on the PC (O2, 8 voices of a busy two-saw patch, best of 7, the PC busy with other builds; three
+     runs): 8.9-9.1 us a voice at 0%, 9.0-9.6 at 100%, 9.0-10.0 at 200%: about +1-6% at the default, too noisy here to
+     pin down; on-device `tools/bench.sh` still to do at the MPC milestone. Screenshot: `build/png/analog_amount.png` (load_test's
      `_analog_amount`).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
