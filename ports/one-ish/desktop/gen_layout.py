@@ -944,6 +944,7 @@ def emit(lay, zones, out):
                  "   /* pic_key: the key prefix of what the picture shows (an envelope's \"fenv_\") */")
     items, prow = [], []
     for pid, title, note, got, pic in pages:
+        assert len(got) <= 512, "page %s: more items than the window's lists hold (int items[512])" % title
         prow.append("{%s, %s, %d, %d, %d, %s}" % (c_str(title), c_str(note), len(items), len(got),
                                                   PICS[pic[0]] if pic else 0, c_str(pic[1] if pic else "")))
         for key, label, cond, types in got:
