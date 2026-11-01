@@ -885,7 +885,14 @@ static void draw_matrix(HDC dc, ed_t *e, int subs) {
             sub_pager_draw(dc, e, mx_filtering(e) ? pn : e->sub ? "9-16" : "1-8");
         }
     }
-    screen_button(dc, cb_button_rect(), "CABLES", e->cb.on, e->hover == Z_CB_BTN, font_tiny);   /* (cables.c) */
+    {   /* (cables.c) (2026-11-01, owner: red to draw the eye, green while the cables show) */
+        RECT r = cb_button_rect();
+        int on = e->cb.on, hot = e->hover == Z_CB_BTN;
+        gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), on ? 0xFF3FB56A : 0xFFC8443A);
+        gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f,
+                  hot ? 0xFFFFFFFF : on ? 0xFF7FE0A0 : 0xFFF07A6E);
+        text(dc, &r, "CABLES", font_tiny, on ? RGB(8, 28, 14) : RGB(255, 255, 255), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
     static const char *const head[] = {"#", "SOURCE", "DESTINATION", "AMOUNT", "VIA", "V.AMT", "XFORM", "X.AMT"};
     for (int c = 0; c < MX_COLS + 1; c++) {
         RECT h = {L.head.left + sc(MXC[c]), L.head.top, L.head.left + sc(MXC[c + 1]) - sc(4), L.head.bottom};
