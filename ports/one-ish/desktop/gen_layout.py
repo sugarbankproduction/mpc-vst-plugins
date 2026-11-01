@@ -452,8 +452,10 @@ def build(lay):
         ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves"), ("key_root", "Key"), ("link_key", "Link Key"),
         ("key_scale", "Scale"), ("link_scale", "Link Scale")] +
         [it for it in (("gen_eu_notes", "Euclid Notes"), ("gen_octave", "Low Octave")) if it[0] in L.index] + gen_more)
-    # (2026-10-30) BALLS and PARTICLES on the third line, each its ON and its MORE triangle
-    for k, (key, label, pid) in enumerate((("phys_balls_on", "BALLS", "BALLS"), ("phys_parts_on", "PARTICLES", "PARTICLES"))):
+    # (2026-10-30) two more generators on the third line, each its ON and its MORE triangle: BALLS and PARTICLES until
+    # 2026-11-01, then (owner: "Yes, swap them") MARKOV and RAIN, so the module covers groove (EUCLID), loop (TURING),
+    # melody (MARKOV) and atmosphere (RAIN); the balls and particles stay on the screen's GENERATIVE pages
+    for k, (key, label, pid) in enumerate((("mkv_on", "MARKOV", "MARKOV"), ("rain_on", "RAIN", "RAIN"))):
         y0 = YX - 2 + 22 * k
         L.ctl(key, "toggle", 480, y0 + 2, 110, 14, label, SIDE)
         L.panel(476, y0 - 7, 140, 14, "", style="caption", keys=[key], more=pid)

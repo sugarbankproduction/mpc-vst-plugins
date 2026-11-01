@@ -2654,8 +2654,8 @@ static void triangle_sub_test(AEffect *fx, HWND child, float s, const char *bmp,
     char what[300];
     static const struct { int page; const char *name; } P[] = {
         {PG_PITCHMOD, "pitchmod"}, {PG_RINGMOD, "ringmod"}, {PG_WAVEMOD, "wavemod"}, {PG_FMMOD, "fmmod"},
-        {PG_NOISE, "noise"}, {PG_CUTMOD, "cutmod"}, {PG_OUTPUT, "output"}, {PG_BEND, "bend"}, {PG_BALLS, "balls_tri"},
-        {PG_PARTICLES, "particles_tri"}};
+        {PG_NOISE, "noise"}, {PG_CUTMOD, "cutmod"}, {PG_OUTPUT, "output"}, {PG_BEND, "bend"}, {PG_MARKOV, "markov_tri"},
+        {PG_RAIN, "rain_tri"}};   /* (2026-11-01: MARKOV and RAIN on the panel's GENERATIVE, where BALLS and PARTICLES were) */
     int ok = 0;
     for (unsigned k = 0; k < sizeof P / sizeof P[0]; k++) {
         click_zone(child, s, ZONE_TAB_MATRIX);
@@ -2667,8 +2667,26 @@ static void triangle_sub_test(AEffect *fx, HWND child, float s, const char *bmp,
         if (bmp && found && k < 8) shot(child, w, h, bmp, suf);
     }
     snprintf(what, sizeof what, "the new MORE triangles: %d of %d open their pages (pitch mod, ring mod, waveform mod, freq "
-             "mod, noise, cutoff mod, synth output, bend range, balls, particles)", ok, (int)(sizeof P / sizeof P[0]));
+             "mod, noise, cutoff mod, synth output, bend range, markov, rain)", ok, (int)(sizeof P / sizeof P[0]));
     check(ok == (int)(sizeof P / sizeof P[0]), what);
+    {   /* (2026-11-01) the panel's GENERATIVE: MARKOV and RAIN, a plain click each switches it in Synth 1, again off;
+         * BALLS and PARTICLES are not on the panel now (their pages stay, from the screen) */
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        float m0 = fx->getParameter(fx, rnd_key("mkv_on")), r0 = fx->getParameter(fx, rnd_key("rain_on"));
+        click_ctl(child, s, "mkv_on");
+        click_ctl(child, s, "rain_on");
+        float m1 = fx->getParameter(fx, rnd_key("mkv_on")), r1 = fx->getParameter(fx, rnd_key("rain_on"));
+        if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_module"); }
+        click_ctl(child, s, "mkv_on");
+        click_ctl(child, s, "rain_on");
+        int balls = 0;
+        for (int k = 0; k < NMORES; k++) balls += MORES[k].page == PG_BALLS || MORES[k].page == PG_PARTICLES;
+        snprintf(what, sizeof what, "the panel's MARKOV and RAIN switch on (%.0f -> %.0f, %.0f -> %.0f) and off again "
+                 "(%.0f %.0f); no BALLS / PARTICLES triangle on the panel (%d)", m0, m1, r0, r1,
+                 fx->getParameter(fx, rnd_key("mkv_on")), fx->getParameter(fx, rnd_key("rain_on")), balls);
+        check(m0 < 0.5f && m1 > 0.5f && r0 < 0.5f && r1 > 0.5f && fx->getParameter(fx, rnd_key("mkv_on")) < 0.5f &&
+              fx->getParameter(fx, rnd_key("rain_on")) < 0.5f && balls == 0, what);
+    }
     /* the screen's sub-pages: the title line's > and <, the keys Right / Left; the step editor keeps its arrows */
     float sx = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f - 9.0f, sy = ZONE_SCREEN[1] + 6.0f + 36.0f + 9.0f;
     float px = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f - 55.0f;
@@ -3638,7 +3656,7 @@ static void nav_tests(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     snapshot(fx, before);
     /* BACK / FWD: BALLS (its second sub-page), then the MORE list, then the matrix; back, back, forward */
     click_zone(child, s, ZONE_TAB_MATRIX);
-    click_more(child, s, PG_BALLS);
+    open_page(child, s, PG_BALLS);   /* (2026-11-01: from the MORE index; its panel triangle went to MARKOV) */
     SendMessageA(child, WM_KEYDOWN, VK_RIGHT, 0);   /* (BALLS' sub-page 2: BACK comes back to it) */
     int sub_b = (int)ht(fx, HT_SUB, 0);
     click_zone(child, s, ZONE_TAB_MORE);

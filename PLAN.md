@@ -420,7 +420,7 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      (since 2026-11-01 it reads GEN ON, lit, while any generator is on: see the owner requests of that day).
      MASTER in SYNTH OUTPUT: lit, its knob is the shared master level (a view, not saved). New MORE triangles and
      pages: PITCH MODULATION, RING MOD, WAVEFORM MOD, FREQ MOD, NOISE, CUTOFF MODULATION, SYNTH OUTPUT, BEND RANGE;
-     BALLS and PARTICLES (their ON and triangle) in GENERATIVE. The screen's sub-pages: the < > on the title line, and
+     BALLS and PARTICLES (their ON and triangle) in GENERATIVE (MARKOV and RAIN there since 2026-11-01). The screen's sub-pages: the < > on the title line, and
      now the keys Left / Right (PgUp / PgDn) everywhere but the step editor; the < > by the patch name, PREV / NEXT
      and the PRESET knob step presets as before. No CPU cost (nothing in the audio path).
   25. (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS (the GENERATIVE section, beyond the Moog One). Done
@@ -1054,6 +1054,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        generator's own page (where it read "Off" / "On" as text). The generator tabs' dot is red while that generator
        is off (it was a faint ring). A plain click still switches it. load_test reads the ON button's colour (red
        off, lit on). (The ALL RUNNING page shows only the generators that are on.)
+     - The panel's GENERATIVE module: MARKOV and RAIN where BALLS and PARTICLES were (owner: "Yes, swap them"):
+       EUCLID the rhythm, TURING the looping melody, MARKOV a phrase-like melody, RAIN a sparse ambient texture, so
+       the four cover groove, loop, melody and atmosphere (BALLS and PARTICLES were both physics). The same buttons:
+       a plain click switches that generator in the Synth in focus, lit while on; their MORE triangles open the
+       MARKOV MELODY and RAIN AND RIPPLES pages. BALLS and PARTICLES stay on the centre screen (the GENERATIVE page,
+       the tabs, the MORE index). `desktop/gen_layout.py`; load_test clicks both and their triangles.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
