@@ -514,9 +514,9 @@ def build(lay):
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
     L.cells([("voices", "VOICES", 56, "button"), ("uni_detune", "DETUNE", 56, "knob")],   # (HOLD: the hand controls)
-            622, YL, HL, size=24)
+            626, YL + 6, HL, size=24)
     # (2026-11-01) LINK on the third line: every setting of this panel and its page the same in all 3 Synths
-    L.ctl("link_poly", "toggle", 626, YX, 50, 14, "LINK", SIDE)
+    L.ctl("link_poly", "toggle", 690, YB + HB - 20, 48, 14, "LINK", SIDE)   # (2026-11-02, owner: the panel's lower right)
     L.page("POLY", "POLYPHONY", "How notes share the voices.", [
         ("voices", "Voices"), ("note_priority", "Mono Priority"), ("steal_mode", "Voice Stealing"), ("hold", "Hold"),
         ("unison", "Unison"), ("uni_count", "Unison Voices"), ("uni_detune", "Unison Detune"),
@@ -724,15 +724,16 @@ def build(lay):
     L.panel(384, 612, 120, 20, "", style="frame", keys=["link_ribbon"])   # (2026-11-01: 60 wider, HOLD too)
     L.ctl("link_ribbon", "toggle", 387, 615, 54, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
-    L.ctl("glide", "toggle", 236, 640, 42, 36, "ON")   # (2026-10-31: 20 px shorter, the button where it was)
-    L.ctl("link_glide", "toggle", 274, 645, 44, 14, "LINK", SIDE)   # (2026-11-01, owner: beside its ON)
+    # (2026-11-02, owner) a stack beside the knob: glide's ON, its LINK; HOLD, its LINK
+    L.ctl("glide", "toggle", 236, 630, 48, 14, "ON", SIDE)
+    L.ctl("link_glide", "toggle", 236, 646, 48, 14, "LINK", SIDE)
     L.ctl("glide_type", "leds", 318, 624, 52, 66, "TYPE")   # (2026-11-01, owner: moved right)
     # (2026-11-01, owner) the Synth's HOLD, here from the POLYPHONY panel, under glide's LINK, with a LINK of its own
-    L.ctl("hold", "toggle", 236, 691, 50, 14, "HOLD", SIDE)
-    L.ctl("link_hold", "toggle", 292, 691, 46, 14, "LINK", SIDE)
+    L.ctl("hold", "toggle", 236, 670, 48, 14, "HOLD", SIDE)
+    L.ctl("link_hold", "toggle", 236, 686, 48, 14, "LINK", SIDE)
     # (2026-11-01, owner) OCTAVE's LINK, beside its name: lit, the buttons move the keyboard (every Synth together); out,
     # the Synth in focus's own OCTAVE (octave_shift), so each Synth can sit in its own (editor.c set_octave)
-    L.ctl("link_octave", "toggle", 136, 682, 44, 14, "LINK", SIDE)
+    L.ctl("link_octave", "toggle", 94, 682, 44, 14, "LINK", SIDE)   # (2026-11-02: both left-justified, off the knob)
     L.column([("glide_legato", "LEGATO"), ("glide_gated", "GATED"), ("glissando", "GLISS")], 298, 706, 72, 22,
              "toggle", SIDE)   # the other glide options, beside the pad
     L.panel(298, 770, 72, 12, "BEND RANGE", style="caption", keys=["bend_up", "bend_down"])

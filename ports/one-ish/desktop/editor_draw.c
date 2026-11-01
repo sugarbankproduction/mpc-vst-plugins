@@ -1611,7 +1611,8 @@ static void controller_static(HDC dc) {
     gpt_t g[3] = {{L.oct_up.right + 5 * L.s + t, ty}, {L.oct_up.right + 5 * L.s, ty - t}, {L.oct_up.right + 5 * L.s, ty + t}};
     gfx_poly(l, 3, 0xFFB4B4B8);
     gfx_poly(g, 3, 0xFFB4B4B8);
-    text_c(dc, (L.oct_down.left + L.oct_up.right) / 2, L.oct_down.bottom + sc(3), sc(80), sc(14), "OCTAVE", font_label, T_LABEL);
+    RECT ot = {L.oct_leds.left - sc(2), L.oct_down.bottom + sc(3), L.oct_leds.left + sc(46), L.oct_down.bottom + sc(17)};   /* (left-justified, its LINK after it) */
+    text(dc, &ot, "OCTAVE", font_label, T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     wheel_static(&L.pitch, 1);
     wheel_static(&L.modw, 0);
     RECT *p = &L.pad;   /* the X/Y pad: a matte touch surface sunk into the panel, a faint printed grid */
