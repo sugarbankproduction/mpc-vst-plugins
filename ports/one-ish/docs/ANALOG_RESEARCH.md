@@ -1,6 +1,7 @@
 # Making Moo Won's analog modelling more accurate: research report
 
-Research only, 2026-11-02. No code was changed, nothing here has been built, and nothing has been listened to.
+Research written 2026-11-02, before any of it was built. What has been built since, and what it measured, is in
+section 9; nothing has been listened to yet.
 Every CPU figure marked "est." is a paper estimate, worked out from the bench numbers already in `PLAN.md`. It needs
 measuring before anyone relies on it. Paper titles and links may name the original filter; our code, params and
 presets must not.
@@ -373,3 +374,66 @@ it and it is not about this.
 (arXiv 2210.12554, text unreadable); D'Angelo's Aalto dissertation (refused); Bilbao et al.'s 2017 ADAA paper (not
 opened); and pages on saw-core reset times on Modwiggler and Synth-DIY (refused), so **the reset-time and reverse-charge
 claims I saw in search snippets are not used here**.
+
+## 9. Built and measured (branch `one-ish-analog`, offline, 2026-11-02)
+
+Nothing here has been heard. Every number is from the offline tools on this PC.
+
+### The measuring kit (section 5): `test/analog_measure.c`
+
+`offline_check measure` prints it (`test/run.sh` runs it). The reference model solves the published ladder equations
+in doubles at 16 steps a sample; 32 steps changes its pitch by 0.000 cents and its level by 0.000 dB at 8 kHz. Quiet,
+at k 4, its fundamental is -13.7 dB against the textbook's -14.0, and it starts oscillating at k 4.001. The scale
+between it and the plugin (u = 0.625 x, y4 = 1 as 1.6) is a choice, read from the non-linear ladder's constants. It is
+the truth of the equations with perfectly matched parts, not of an instrument.
+
+**Today's ladder, before anything changed:**
+
+| Self-oscillation (k 4.4) | 110 Hz | 1 kHz | 4 kHz | 8 kHz | 15 kHz |
+|---|---|---|---|---|---|
+| Linear: cents, rms dB | -0.1, -7.2 | -0.1, -7.2 | 0.0, -7.2 | 0.0, -7.5 | 0.0, -9.4 |
+| Non-linear: cents, rms dB | -29.5, -15.7 | -20.5, -16.1 | -3.5, -16.6 | -5.2, -15.8 | -17.4, -16.4 |
+| Reference: cents, rms dB | -35.8, -15.4 | -35.8, -15.4 | -35.8, -15.4 | -35.8, -15.4 | -35.8, -15.4 |
+
+| Level against resonance (fundamental, dB against k 0, a quiet saw) | k 1 | k 2 | k 3 | k 4 |
+|---|---|---|---|---|
+| 1/(1+k) | -6.0 | -9.5 | -12.0 | -14.0 |
+| Linear and non-linear ladder | -2.2 | -3.2 | -3.8 | -4.2 |
+| Reference | -5.7 | -9.2 | -11.7 | -13.7 |
+
+| Compression: gain at the cutoff, resonance 90% | -40 dB in | -20 | -6 | 0 | +12 |
+|---|---|---|---|---|---|
+| Linear ladder | +28.8 | +16.1 | +5.9 | +1.0 | -10.1 |
+| Non-linear ladder | +22.7 | +9.0 | -2.2 | -7.6 | -19.3 |
+| Reference | +18.9 | +6.2 | -4.0 | -8.8 | -19.6 |
+| SVF (linear) | +10.8 | +10.8 | +10.8 | +10.8 | +10.8 |
+
+| 3rd harmonic against the fundamental, resonance 0, a 200 Hz sine | -20 dB in | -6 | 0 | +6 | +12 |
+|---|---|---|---|---|---|
+| Linear ladder | -91 | -63 | -51 | -40 | -29 |
+| Non-linear ladder | -67 | -39 | -28 | -18 | -15 |
+| Reference | -66 | -38 | -27 | -18 | -14 |
+
+Aliasing (whole engine, the driven non-linear ladder, Off / 2x / 4x): note 91 -45.0 / -64.2 / -87.1 dB, note 96
+-28.5 / -51.8 / -80.5, note 100 -24.2 / -41.2 / -77.9. Null of 1x against 4x (level and delay matched, a saw through
+the ladder at resonance 50%): linear -54.5 dB at note 36, -53.6 at note 72; non-linear -40.7 and -37.0; non-linear
+with drive 100% and resonance 90%, -32.5. Second harmonics: none in any of them, the reference included (-134 dB or
+lower), as the symmetric equations say.
+
+**What the kit found (reported, not changed):**
+
+1. The report's suspicion is answered: **the non-linear ladder's quiet, flat self-oscillation is what the equations
+   do**, not a scaling mistake. The reference sits 8 dB under the linear ladder and 36 cents flat too. Its level is
+   within about 1.2 dB of ours at every cutoff measured.
+2. The real mismatch in self-oscillation is pitch across the range: the reference is a steady -35.8 cents, ours runs
+   from -30 at low cutoffs to -3.5 at 4 kHz. That is a difference of 32 cents at 4 kHz.
+3. Harmonics at no resonance match the reference within about 1 dB. So the shared saturation scale in item 4 has no
+   case at resonance 0.
+4. With resonance, ours and the reference part ways by the bass make-up alone (+6.4 dB at 50%, +9.5 dB at 90%): ours
+   goes into saturation sooner. A choice, as item 4 says; the "Ladder Bass" control there is what would offer the
+   circuit's.
+5. Sweep over a quiet saw: 7-8% of frames sit on a harmonic in all three (about 5% by chance), so **no sign of
+   pitch-locking** at 1x in this test.
+6. Item 8's gate: the 16-sample cutoff steps against every sample (time-aligned): ladder -21 dB on a 1 ms envelope,
+   -38 on 5 ms, -51 on 25 ms; SVF -35, -48, -60. That is above the -70 dB the report said to drop it at, so it is
+   **not ruled out**; a null is not an ear test either.

@@ -34,3 +34,5 @@ gcc -std=gnu11 -Wall -Wextra -O1 "${INC[@]}" "$P/test/rnd_golden.c" -lm -o "$P/b
 "$P/build/rnd_golden" stats
 # (the factory banks, test/bank_check.c, run inside offline_check above: both banks' tables and bank_*_demo.wav)
 "$P/build/offline_bench" bench
+# (2026-11-02) the analog measuring kit: numbers against the reference model (test/analog_measure.c)
+"$P/build/offline_bench" measure

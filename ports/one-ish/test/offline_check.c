@@ -115,6 +115,7 @@
  *   multiout  (test/multiout_check.c, 2026-10-30) each Synth's OUTPUT: all at Main gives MAIN exactly as before and
  *             silent pairs; Own Pair and Main + Own put the Synth where they say; the master effects stay on MAIN;
  *             stereo callers keep everything on their one output; saved, kept by LOAD INTO SYNTH (with multi)
+ *   measure  (argv[1] == "measure", test/analog_measure.c, 2026-11-02) the analog measuring kit and its reference model
  *   bench    (argv[1] == "bench") microseconds per 128-frame block at 1, 4 and 8 voices on this machine, and with the
  *             MACRO channel at each model; NOT the MPC's number
  * Build and run: win/run.sh bash ports/one-ish/test/run.sh */
@@ -5229,6 +5230,7 @@ static void arp_wav(const char *demo_path) {
 #include "m1p_check.c"   /* (2026-10-31) the Moog One preset importer's converter (desktop/m1p.c) */
 #include "links_check.c"     /* (2026-10-31) LINK on the mod wheel, the pitch wheel, the ribbon */
 #include "analog_check.c"    /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT */
+#include "analog_measure.c"  /* (2026-11-02) the measuring kit and its reference model: offline_check measure */
 #include "own_keys_check.c"  /* (2026-11-02) each generator's own KEY and SCALE */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
@@ -6071,6 +6073,11 @@ int main(int argc, char **argv) {
         return failures != 0;
     }
     if (argc > 1 && !strcmp(argv[1], "analogbench")) { analog_bench(); return 0; }   /* (2026-11-01) */
+    if (argc > 1 && !strcmp(argv[1], "measure")) {   /* (2026-11-02) the measuring kit (test/analog_measure.c) */
+        analog_measure();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "links")) {   /* (2026-10-31) just the wheels' and the ribbon's LINKs */
         links_checks();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);

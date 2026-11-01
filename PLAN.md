@@ -1186,6 +1186,11 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      look-up per note; `offline_bench bench`, old and new in turn, shows no difference above the noise (8 voices 81.2 /
      77.2 us old, 82.2 / 78.5 new; all three of LIFE, ORBITS, PENDULUMS 54.6 / 52.5 old, 51.7 / 51.5 new). That measures
      Follow; a custom pick takes the same path.
+  50. (2026-11-02) Analog modelling (owner: "make a branch with the new ideas for analog"; the ideas:
+     `docs/ANALOG_RESEARCH.md`, on branch `one-ish-analog`). Offline only; nothing heard by ear, not in Carla, not on a
+     device; section 9 of that report has the numbers. The measuring kit: `test/analog_measure.c` (`offline_check
+     measure`, run by `test/run.sh`): the ladder's reference model and the tables, with today's numbers recorded. No
+     change to the sound.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
