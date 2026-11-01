@@ -18,7 +18,7 @@ static void keyscale_checks(void) {
     set(e, "key_root", 2); set(e, "s2_key_root", 7); set(e, "s3_key_scale", 9);
     snprintf(what, sizeof what, "each Synth has its own KEY and SCALE (%.0f %.0f %.0f, %.0f %.0f %.0f)", get(e, "key_root"),
              get(e, "s2_key_root"), get(e, "s3_key_root"), get(e, "key_scale"), get(e, "s2_key_scale"), get(e, "s3_key_scale"));
-    check(get(e, "key_root") == 2 && get(e, "s2_key_root") == 7 && get(e, "s3_key_root") == 0 && get(e, "key_scale") == 1 &&
-          get(e, "s3_key_scale") == 9, what);
+    check(get(e, "key_root") == 2 && get(e, "s2_key_root") == 7 && get(e, "s3_key_root") == 0 && get(e, "key_scale") == 0 &&
+          get(e, "s3_key_scale") == 9, what);   /* (2026-11-01: SCALE defaults to Major, 0; Minor, 1, before) */
     E->destroy(e);
 }
