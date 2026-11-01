@@ -2,4 +2,5 @@ site/moowon.wasm
 site/moowon_full.js
 site/moowon_full.wasm
 site/moowon_full.worker.js
+site/panels.js
 site/.vercel

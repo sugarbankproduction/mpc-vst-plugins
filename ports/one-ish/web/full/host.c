@@ -70,6 +70,7 @@ typedef struct {
     int32_t failed;                 /* 36: why it couldn't start (0: it did) */
     int32_t underruns;              /* 40: the sound thread counts blocks it had to leave silent */
     float render_ms;                /* 44: the audio thread's average time per block, for the page's CPU meter */
+    int32_t cables[4];              /* 48: the CABLES view: shown, the drag going on, how many cables, the row selected */
 } info_t;
 static info_t INFO;
 static float RING_BUF[RING * 2];
@@ -187,6 +188,8 @@ static void state_load(void) {
     fclose(f);
 }
 
+static void cables_poll(HWND w, UINT m, UINT_PTR id, DWORD t) { touch_state(INFO.cables); }
+
 void web_files_changed(void) {
     MAIN_THREAD_ASYNC_EM_ASM({ if (Module.mwSync) Module.mwSync(); });
 }
@@ -211,6 +214,8 @@ static void *editor_main(void *arg) {
     HWND root = win32_root(w, h);
     if (!root || !fx->dispatcher(fx, effEditOpen, 0, 0, root, 0)) { INFO.failed = 3; return NULL; }
     SetTimer(root, 0x5A5E, 3000, state_save);
+    touch_init(fx);
+    SetTimer(root, 0x5A5F, 50, cables_poll);
     INFO.pres = win32_pres();
     INFO.w = w;
     INFO.h = h;

@@ -2,8 +2,10 @@
 // sends it the mouse and keys, shows the menus, message boxes, dialogs and file pickers it asks for, plays its sound
 // (ring_worklet.js) and passes MIDI keyboards through. Files the plugin saves live in the browser (IndexedDB).
 import { createSections } from "./sections.js";
+import { createCamera } from "./camera.js";
+import { BASE_W, BASE_H, PANELS } from "./panels.js";
 const $ = (id) => document.getElementById(id);
-const EV = { MOVE: 1, DOWN: 2, UP: 3, WHEEL: 4, LEAVE: 5, KEYDOWN: 6, KEYUP: 7, RESULT: 8, BLUR: 9 };
+const EV = { MOVE: 1, DOWN: 2, UP: 3, WHEEL: 4, LEAVE: 5, KEYDOWN: 6, KEYUP: 7, RESULT: 8, BLUR: 9, SNAP: 10 };
 const UI = { MENU: 1, MSGBOX: 2, DIALOG: 3, OPEN: 4, SAVE: 5 };
 const params = new URLSearchParams(location.search);
 
@@ -81,8 +83,8 @@ const wholeView = {
 };
 const mods = (e) => (e.shiftKey ? 1 : 0) | (e.ctrlKey || e.metaKey ? 2 : 0) | (e.altKey ? 4 : 0);
 let mainPointer = null, heldPiece = null, wheelAcc = 0;
-function attachPointer(el, viewOf) {
-  el.addEventListener("pointerdown", (e) => {
+function attachPointer(el, viewOf, route = null) {   // route: someone else decides which events reach the control
+  const down = (e) => {
     if (mainPointer !== null && e.pointerId !== mainPointer) return;   // one finger plays the mouse
     const at = viewOf().locate(el, e, null);
     if (!at) return;
@@ -94,13 +96,13 @@ function attachPointer(el, viewOf) {
     M._web_event(EV.MOVE, at.x, at.y, e.pointerType === "mouse" ? e.buttons & ~bit : 0, mods(e));
     M._web_event(EV.DOWN, at.x, at.y, e.pointerType === "mouse" ? e.button : 0, mods(e));
     e.preventDefault();
-  });
-  el.addEventListener("pointermove", (e) => {
+  };
+  const move = (e) => {
     if (mainPointer !== null && e.pointerId !== mainPointer) return;
     const at = viewOf().locate(el, e, mainPointer !== null ? heldPiece : null);
     if (!at) return;
     M._web_event(EV.MOVE, at.x, at.y, e.pointerType === "mouse" ? e.buttons : (mainPointer !== null ? 1 : 0), mods(e));
-  });
+  };
   const up = (e) => {
     if (e.pointerId !== mainPointer) return;
     const at = viewOf().locate(el, e, heldPiece) || { x: 0, y: 0 };
@@ -108,8 +110,13 @@ function attachPointer(el, viewOf) {
     heldPiece = null;
     M._web_event(EV.UP, at.x, at.y, e.pointerType === "mouse" ? e.button : 0, mods(e));
   };
-  el.addEventListener("pointerup", up);
-  el.addEventListener("pointercancel", up);
+  if (route) route({ down, move, up });
+  else {
+    el.addEventListener("pointerdown", down);
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  }
   el.addEventListener("pointerleave", () => { if (mainPointer === null) M._web_event(EV.LEAVE, 0, 0, 0, 0); });
   el.addEventListener("contextmenu", (e) => e.preventDefault());
   el.addEventListener("wheel", (e) => {
@@ -124,8 +131,22 @@ function attachPointer(el, viewOf) {
     M._web_event(EV.WHEEL, at.x, at.y, -notches * 120, mods(e));
   }, { passive: false });
 }
+// a finger on the panel in the CABLES view lands on a cable's part this near it (touch.c): about a fingertip on the
+// screen, at most SNAP_MAX base pixels, so a knob's middle still means the knob
+const SNAP_CSS = 18, SNAP_MAX = 20;
 function setupInput() {
-  attachPointer(canvas, () => wholeView);
+  attachPointer(canvas, () => wholeView, (control) => {
+    camera = createCamera({
+      stage: $("stage"), canvas, ring: $("focus-ring"), baseW: BASE_W, baseH: BASE_H, panels: PANELS, control, isTouch,
+      cableDragging,
+      beforePress(e, k) {
+        if (!cablesOn()) return;
+        const at = wholeView.locate(canvas, e), s = panelW / BASE_W;
+        M._web_event(EV.SNAP, at.x, at.y, Math.round(Math.min(SNAP_CSS / k, SNAP_MAX) * s), 0);
+      },
+      onChange: showCameraState,
+    });
+  });
   for (const el of sections.elements) attachPointer(el, () => sections);
   // keys go to the panel from anywhere on the page, but not while typing in a box or with a menu or dialog open
   const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement ||
@@ -148,7 +169,8 @@ function setupInput() {
 }
 
 // ---- whole panel or sections (layout B: phones and narrow windows) ----
-let sections = null, mode = "whole";
+let sections = null, camera = null, mode = "whole";
+const isTouch = navigator.maxTouchPoints > 0 || matchMedia("(pointer: coarse)").matches;
 const wantsSections = () => innerWidth < 600 || (innerWidth < 1000 && innerHeight > innerWidth);
 function setMode(m) {
   mode = m;
@@ -157,11 +179,72 @@ function setMode(m) {
   $("to-sections").hidden = m !== "whole";
   document.body.classList.toggle("sections-mode", m === "sections");
   if (m === "sections") sections.layout();
+  else if (camera) camera.layout();
 }
 function toggleMode() {
   const m = mode === "whole" ? "sections" : "whole";
   try { localStorage.setItem("mw.view", m); } catch { /* (not kept) */ }
   setMode(m);
+}
+// ---- the bar's camera buttons, a short message, the CABLES view (it spans the whole panel) ----
+function showCameraState() {
+  if (!camera) return;
+  $("panel-zoom").classList.toggle("on", camera.panelZoom);
+  $("pz-steps").hidden = !camera.panelZoom;
+  $("pz-name").textContent = camera.focusName || "tap a panel";
+  $("show-all").disabled = !camera.zoomed;
+}
+let toastTimer = 0;
+function toast(text) {
+  const t = $("toast");
+  t.textContent = text;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { t.hidden = true; }, 4000);
+}
+function setupCameraButtons() {
+  $("panel-zoom").addEventListener("click", () => {
+    const on = !camera.panelZoom;
+    camera.setPanelZoom(on);
+    try { localStorage.setItem("mw.pz", on ? "1" : ""); } catch { /* (not kept) */ }
+    if (on) toast("Tap a panel to zoom to it. Inside it, the controls work; tap outside it, or use < >, to move on.");
+  });
+  $("zoom-in").addEventListener("click", () => camera.zoomBy(1.5));
+  $("zoom-out").addEventListener("click", () => camera.zoomBy(1 / 1.5));
+  $("show-all").addEventListener("click", () => camera.showAll());
+  $("pz-prev").addEventListener("click", () => camera.step(-1));
+  $("pz-next").addEventListener("click", () => camera.step(1));
+  $("cables").addEventListener("click", toggleCables);
+  let pz = false;
+  try { pz = localStorage.getItem("mw.pz") === "1"; } catch { /* (none) */ }
+  if (pz) camera.setPanelZoom(true);
+  showCameraState();
+  // the view follows the CABLES view: it needs the whole panel, so from the sections view it goes there and comes back
+  let was = false, cameFromSections = false;
+  setInterval(() => {
+    const on = cablesOn();
+    if (on === was) return;
+    was = on;
+    $("cables").classList.toggle("on", on);
+    sections.setCables(on);
+    if (on && mode === "sections") {
+      cameFromSections = true;
+      setMode("whole");
+      toast("Cables run across the whole panel, so this is the whole panel. Pinch to zoom; CABLES again goes back.");
+    } else if (!on && cameFromSections) {
+      cameFromSections = false;
+      if (mode === "whole") setMode("sections");
+    }
+  }, 100);
+}
+const cablesOn = () => infoPtr !== 0 && heap().I32[(infoPtr >> 2) + 12] !== 0;
+function cableDragging() {   // a cable in the hand (cables.c: CD_NEW, CD_DST, CD_SRC, CD_REV)
+  const d = infoPtr ? heap().I32[(infoPtr >> 2) + 13] : 0;
+  return d === 3 || d === 4 || d === 5 || d === 7;
+}
+function toggleCables() {   // what the key C does: the MATRIX page with its cables, again: hidden
+  M._web_event(EV.KEYDOWN, 67, 0, 0, 0);
+  M._web_event(EV.KEYUP, 67, 0, 0, 0);
 }
 function browserKey(e) {   // keys left to the browser
   if (["F5", "F11", "F12"].includes(e.key)) return true;
@@ -544,7 +627,7 @@ async function start() {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     // (drawn at least at full size and shrunk by the browser: below 1 the panel's labels crowd, as on a small screen)
     const asked = Number(params.get("scale"));
-    const zoomed = wantsSections() ? dpr * 1.25 : 0;   // (the sections view shows pieces up to 1.5x: draw sharper)
+    const zoomed = wantsSections() || isTouch ? dpr * 1.25 : 0;   // (pieces shown up to 1.5x, the camera closer: draw sharper)
     const scale = asked ? clamp(asked, 0.5, 2) : clamp(Math.max((innerWidth * dpr) / 2162, zoomed), 1, 2);
     const latency = clamp(Math.round(Number(params.get("latency")) || 1024), 256, 3072);
     if (!M._web_start(ctx.sampleRate, scale, latency)) throw new Error("the plugin could not start");
@@ -572,12 +655,16 @@ async function start() {
     await ctx.resume();
     $("start-box").hidden = true;
     $("bar").hidden = false;
-    sections = createSections({ source: canvas, scale: panelW / 2162, root: $("sections"), onToggle: toggleMode });
+    document.body.classList.add("running");
+    document.body.classList.toggle("mouse", !isTouch);
+    sections = createSections({ source: canvas, scale: panelW / 2162, root: $("sections"), onToggle: toggleMode, onCables: toggleCables });
     $("to-sections").addEventListener("click", toggleMode);
     let saved = null;
     try { saved = localStorage.getItem("mw.view"); } catch { /* (none) */ }
     setMode(saved === "whole" || saved === "sections" ? saved : wantsSections() ? "sections" : "whole");
     setupInput();
+    setupCameraButtons();
+    window.mooWonCamera = camera;   // (for checking from the browser's console)
     requestAnimationFrame(present);
     canvas.focus({ preventScroll: true });
     setupMidi();
@@ -594,4 +681,9 @@ async function start() {
   }
 }
 $("start").addEventListener("click", start);
+// the browser's own page zoom stays out of it: iPhones ignore the viewport's no-zoom and touch-action on some gestures
+document.addEventListener("gesturestart", (e) => e.preventDefault());
+document.addEventListener("touchmove", (e) => {
+  if (document.body.classList.contains("running") && (e.touches.length > 1 || e.target.closest("#stage, #bar"))) e.preventDefault();
+}, { passive: false });
 load().catch((err) => { $("status").textContent = `The synth could not load: ${err instanceof Error ? err.message : err}`; });

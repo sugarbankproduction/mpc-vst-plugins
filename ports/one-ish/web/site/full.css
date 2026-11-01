@@ -21,24 +21,59 @@ button.red { background: var(--red); border-color: #6a0c06; color: #fff; }
 button.red:hover { background: var(--red-hot); }
 button.big { font-size: 20px; padding: 14px 32px; }
 button:disabled { opacity: 0.5; cursor: default; }
-#stage { width: 100%; }
-#panel { display: block; width: 100%; height: auto; outline: none; touch-action: none; image-rendering: auto; }
-#bar { display: flex; gap: 16px; justify-content: space-between; align-items: center; padding: 6px 12px; color: var(--dim); font-size: 12px; }
+/* once it's playing the page is the screen, edge to edge inside the safe areas (a notch, rounded corners, a home bar);
+   nothing scrolls and the browser's own zoom stays out: the camera (camera.js) does that */
+html:has(body.running) { overflow: hidden; overscroll-behavior: none; }
+body.running {
+  position: fixed; inset: 0; overflow: hidden; display: flex; flex-direction: column; overscroll-behavior: none;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+#stage { position: relative; flex: 1 1 0; min-height: 0; width: 100%; overflow: hidden; touch-action: none; }
+/* with a mouse the stage is the panel's own shape, the bar right under it, as it always was */
+body.mouse #stage { flex: 0 1 auto; height: calc(100vw * 856 / 2162); }
+/* (the canvas is laid out at the panel's base size and moved by a transform: camera.js) */
+#panel { position: absolute; left: 0; top: 0; transform-origin: 0 0; outline: none; touch-action: none; image-rendering: auto; }
+#focus-ring { position: absolute; left: 0; top: 0; pointer-events: none; border: 2px solid #f4f2ee99; border-radius: 6px; box-shadow: 0 0 0 100vmax #0007; }
+#bar { flex: none; display: flex; gap: 4px 16px; justify-content: space-between; align-items: center; flex-wrap: wrap; padding: 6px 12px; color: var(--dim); font-size: 12px; touch-action: none; }
+#midi-status, #cpu { flex: 1 1 0; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#cpu { text-align: right; }
+.bar-btns, #pz-steps { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 6px; }
+#pz-name { min-width: 6em; max-width: 12em; text-align: center; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 button.small { padding: 4px 10px; font-size: 12px; }
+button.small.on { background: var(--red); border-color: #6a0c06; color: #fff; }
+@media (pointer: coarse) { button.small { min-height: 36px; min-width: 36px; } }
+@media (max-width: 760px) { #midi-status, #cpu { display: none; } #bar { justify-content: center; padding: 4px; } }
+#toast {
+  position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 10px); transform: translateX(-50%); z-index: 5; width: max-content;
+  max-width: calc(100vw - 32px); padding: 8px 12px; background: #000d; color: var(--text); border: 1px solid var(--edge); border-radius: 6px;
+  font-size: 13px; text-align: center; pointer-events: none;
+}
 
 /* the sections view (sections.js): tabs at the top, the section in the middle (it scrolls), the keys at the bottom */
-#sections { height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: #121314; }
+#sections { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; background: #121314; touch-action: none; }
 body.sections-mode #bar { display: none; }
-.sec-tabs { display: flex; gap: 4px; padding: 6px; overflow-x: auto; flex: none; scrollbar-width: none; }
+.sec-tabs { display: flex; gap: 4px; padding: 6px; overflow-x: auto; flex: none; scrollbar-width: none; touch-action: pan-x; }
 .sec-tabs button { flex: 1 0 auto; padding: 8px 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; background: #2c2e32; border-color: #3a3d42; }
 .sec-tabs button.on { background: var(--red); border-color: #6a0c06; color: #fff; }
-.sec-body { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.sec-body { flex: 1 1 0; min-height: 0; min-width: 0; overflow: hidden; }
 .sec-view, .sec-keys { display: block; touch-action: none; outline: none; }
 .sec-kbar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; flex: none; background: #1d1f22; color: var(--text); font-size: 13px; }
 .sec-kbar .sec-oct { padding: 4px 12px; }
 .sec-kbar .sec-octlabel { min-width: 2.5em; text-align: center; }
-.sec-kbar .sec-whole { margin-left: auto; padding: 4px 10px; font-size: 11px; }
+.sec-kbar .sec-whole { margin-left: auto; }
+.sec-kbar .sec-small { padding: 4px 8px; font-size: 11px; }
+.sec-kbar .sec-small.on { background: var(--red); border-color: #6a0c06; color: #fff; }
+@media (pointer: coarse) { .sec-kbar button { min-height: 36px; } }
 .sec-keys { flex: none; }
+/* a phone on its side: the tabs down the left, the section and the keys beside them (sections.js fits both to the room) */
+@media (orientation: landscape) and (max-height: 520px) {
+  #sections { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; }
+  .sec-tabs { grid-row: 1 / 4; flex-direction: column; overflow: hidden auto; padding: 4px; touch-action: pan-y; }
+  .sec-tabs button { flex: 0 1 auto; padding: 4px 8px; }
+  .sec-kbar { padding: 2px 8px; }
+  .sec-kbar button { min-height: 30px; padding-top: 2px; padding-bottom: 2px; }
+}
 
 /* menus, message boxes and dialogs the panel asks for (Windows-like, light, as on the desktop) */
 #ui-layer { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
@@ -47,6 +82,7 @@ body.sections-mode #bar { display: none; }
 .menu {
   position: fixed; background: var(--menu); color: var(--menu-text); border: 1px solid #999; box-shadow: 2px 3px 10px #0007;
   padding: 3px 0; font: 13px/1.2 "Segoe UI", system-ui, sans-serif; display: flex; pointer-events: auto; max-height: 96vh;
+  max-width: calc(100vw - 8px); overflow-x: auto; touch-action: pan-x pan-y;
 }
 .menu .col { display: flex; flex-direction: column; min-width: 140px; overflow-y: auto; }
 .menu .col + .col { border-left: 1px solid #ccc; }
@@ -59,7 +95,8 @@ body.sections-mode #bar { display: none; }
 .menu .sep { height: 1px; background: #ccc; margin: 3px 2px; }
 .box {
   background: var(--menu); color: var(--menu-text); border-radius: 6px; box-shadow: 0 8px 30px #000a; min-width: 280px;
-  max-width: min(520px, 100%); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; pointer-events: auto;
+  max-width: min(520px, 100%); max-height: 100%; overflow: auto; font: 14px/1.45 "Segoe UI", system-ui, sans-serif; pointer-events: auto;
+  -webkit-user-select: text; user-select: text; touch-action: pan-x pan-y;
 }
 .box .title { padding: 10px 14px; font-weight: 600; border-bottom: 1px solid #ddd; }
 .box .body { padding: 14px; white-space: pre-wrap; }

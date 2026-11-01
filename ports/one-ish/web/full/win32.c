@@ -680,7 +680,12 @@ static double last_down_t;
 static POINT last_down_pt;
 static int last_down_btn = -1;
 
-static void mouse_event(const ev_t *e) {
+static int snap_dx, snap_dy;   /* (a finger near a cable's part: touch.c; until the press ends) */
+static void mouse_event(const ev_t *in) {
+    ev_t shifted = *in;
+    const ev_t *e = &shifted;
+    if (in->type == EV_MOVE || in->type == EV_DOWN || in->type == EV_UP) { shifted.x += snap_dx; shifted.y += snap_dy; }
+    if (in->type == EV_UP) snap_dx = snap_dy = 0;
     mouse_pt = (POINT){e->x, e->y};
     if (!root || modal_depth) return;
     win_t *w = capture ? capture : window_at(root, e->x, e->y);
@@ -771,6 +776,7 @@ static void dispatch(const ev_t *e) {
     switch (e->type) {
     case EV_MOVE: case EV_DOWN: case EV_UP: case EV_WHEEL: case EV_LEAVE: mouse_event(e); break;
     case EV_KEYDOWN: case EV_KEYUP: key_event(e); break;
+    case EV_SNAP: touch_snap(e->x, e->y, e->a, &snap_dx, &snap_dy); break;
     case EV_RESULT:
         for (int k = 0; k < nwaits; k++)
             if (WAITS[k]->token == e->x) {

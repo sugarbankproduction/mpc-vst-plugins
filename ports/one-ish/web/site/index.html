@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Moo Won</title>
 <meta name="description" content="Moo Won, a three-synth instrument with its full panel, playing in your browser.">
 <link rel="stylesheet" href="full.css">
@@ -15,13 +15,27 @@
 </div>
 <div id="stage" hidden>
   <canvas id="panel" tabindex="0" aria-label="Moo Won panel"></canvas>
+  <div id="focus-ring" hidden></div>
 </div>
 <div id="sections" hidden></div>
 <div id="bar" hidden>
   <span id="midi-status"></span>
-  <button id="to-sections" class="small" hidden>SECTIONS VIEW</button>
+  <span class="bar-btns">
+    <button id="to-sections" class="small" hidden>SECTIONS VIEW</button>
+    <button id="cables" class="small">CABLES</button>
+    <button id="panel-zoom" class="small">PANEL ZOOM</button>
+    <span id="pz-steps" hidden>
+      <button id="pz-prev" class="small" aria-label="Panel before">&lt;</button>
+      <span id="pz-name"></span>
+      <button id="pz-next" class="small" aria-label="Panel after">&gt;</button>
+    </span>
+    <button id="zoom-out" class="small" aria-label="Zoom out">&minus;</button>
+    <button id="zoom-in" class="small" aria-label="Zoom in">+</button>
+    <button id="show-all" class="small">SHOW ALL</button>
+  </span>
   <span id="cpu"></span>
 </div>
+<div id="toast" hidden></div>
 <div id="ui-layer"></div>
 <script src="moowon_full.js"></script>
 <script type="module" src="full.js"></script>
