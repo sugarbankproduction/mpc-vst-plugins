@@ -4120,8 +4120,61 @@ static void gen_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     hover_at(child, s, 0, 0);
 }
 
+/* (2026-11-02) each generator's page: its own Key and Scale rows in place of the main ones, Follow to start; a plain click on
+ * the row opens its list, an item sets that generator's own, not the main ones, not Synth 2's */
+static void own_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[400];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone in focus */
+    const struct { int page; const char *key, *scale; } P[] = {
+        {PG_GEN, "gen_own_key", "gen_own_scale"}, {PG_BALLS, "phys_ball_own_key", "phys_ball_own_scale"},
+        {PG_PARTICLES, "phys_part_own_key", "phys_part_own_scale"}, {PG_RAIN, "rain_own_key", "rain_own_scale"},
+        {PG_MARKOV, "mkv_own_key", "mkv_own_scale"}, {PG_LIFE, "life_own_key", "life_own_scale"},
+        {PG_ORBITS, "orb_own_key", "orb_own_scale"}, {PG_PEND, "pend_own_key", "pend_own_scale"}};
+    for (unsigned g = 0; g < sizeof P / sizeof P[0]; g++) {
+        int on = page_has(fx, P[g].page, P[g].key) && page_has(fx, P[g].page, P[g].scale),
+            main_gone = !page_has(fx, P[g].page, "key_root") && !page_has(fx, P[g].page, "key_scale");
+        int follow = !strcmp(PARAMS[rnd_key(P[g].key)].opts[0], "Follow") && !strcmp(PARAMS[rnd_key(P[g].scale)].opts[0], "Follow") &&
+                     getkey(fx, P[g].key) == 0.0f && getkey(fx, P[g].scale) == 0.0f;
+        snprintf(what, sizeof what, "%s: on its page (%d), the main KEY and SCALE rows gone (%d), Follow to start (%d)", P[g].key,
+                 on, main_gone, follow);
+        check(on && main_gone && follow, what);
+    }
+    /* the GENERATIVE page (no picture, 8 rows a column; both rows on its first sub-page): a plain click, an item */
+    static const struct { const char *key; int downs; float want; } PICK[] = {
+        {"gen_own_key", 3, 2.0f / 12}, {"gen_own_scale", 3, 2.0f / 14}};
+    float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
+    float main_k = getkey(fx, "key_root"), main_s = getkey(fx, "key_scale");
+    for (unsigned p = 0; p < 2; p++) {
+        int slot = -1, n = 0;
+        for (int k = PAGES[PG_GEN].first; k < PAGES[PG_GEN].first + PAGES[PG_GEN].count; k++) {
+            if (!page_has(fx, PG_GEN, PARAMS[ITEMS[k].param].key)) continue;
+            if (ITEMS[k].param == rnd_key(PICK[p].key)) slot = n;
+            n++;
+        }
+        check(slot >= 0 && slot < PT_SLOTS, "the GENERATIVE page's own KEY and SCALE rows: on its first sub-page");
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        open_page(child, s, PG_GEN);
+        float x = x0 + slot / PT_ROWS * (half + 8.0f) + half * 0.75f, y = ZONE_SCREEN[1] + 80.0f + 22.0f * (slot % PT_ROWS) + 11.0f;
+        hover_at(child, s, x, y);
+        int helped = strstr(help_fresh(fx), "this generator's own") != NULL;
+        short z[4] = {(short)lroundf(x) - 1, (short)lroundf(y) - 1, 2, 2};
+        int menu = click_menu(child, s, z, PICK[p].downs);
+        float v = getkey(fx, PICK[p].key), v2 = getkey(fx, p ? "s2_gen_own_scale" : "s2_gen_own_key");
+        snprintf(what, sizeof what, "%s: a plain click on its row opens its list (%s), item %d sets it (%.3f, want %.3f), not Synth 2's "
+                 "(%.3f), its help (%d)", PICK[p].key, menu ? "shown" : "NOT shown", PICK[p].downs, v, PICK[p].want, v2, helped);
+        check(menu && fabsf(v - PICK[p].want) < 1e-3f && v2 == 0.0f && helped, what);
+        if (bmp && p == 1) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_more_gen_own_key"); }
+    }
+    check(getkey(fx, "key_root") == main_k && getkey(fx, "key_scale") == main_s, "... and the main KEY and SCALE stay as they were");
+    setkey(fx, "gen_own_key", 0.0f);
+    setkey(fx, "gen_own_scale", 0.0f);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+    hover_at(child, s, 0, 0);
+}
+
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     gen_keys_ui_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
+    own_keys_ui_test(fx, child, s, bmp, w, h);   /* (2026-11-02) */
     zone_help_test(fx, child, s);
     seq_output_ui_test(fx, child, s, bmp, w, h);
     oct_panic_test(fx, child, s);

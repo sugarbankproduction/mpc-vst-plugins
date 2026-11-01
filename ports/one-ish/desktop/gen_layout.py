@@ -445,6 +445,11 @@ def build(lay):
         L.euclid_at = (476, YL, 58, HL)
     L.column([("gen_steps", "STEPS"), ("gen_hits", "HITS")], 534, YL, 41, HL // 2, "small")
     L.column([("gen_rot", "ROTATE"), ("gen_prob", "CHANCE")], 575, YL, 41, HL // 2, "small")
+    # (2026-11-02, owner: "custom ones on generators ... a menu setting for each generator") each generator page's Key and
+    # Scale rows are that generator's own, Follow = the Synth's main ones (engine.c gen_key_in). The main ones and their
+    # LINKs: the row along the screen's bottom and the GENERATIVE hub (no page row, so they are placed here)
+    own_key = lambda pre: [(pre + "_key", "Key"), (pre + "_scale", "Scale")]
+    L.placed.update(k for k in ("key_root", "key_scale", "link_key", "link_scale") if k in L.index)
     # (2026-10-30) KEYS (FREE / HELD / LAUNCH), FOLLOW KEYS and GEN TEMPO: every generator page lists them (gen_more)
     gen_more = [it for it in (("gen_follow_keys", "Follow Keys"), ("gen_tempo_src", "Gen Tempo"),
                               ("gen_bpm", "Own BPM", "gen_tempo_src", [1])) if it[0] in L.index]
@@ -453,8 +458,7 @@ def build(lay):
         ("gen_steps", "Euclid Steps"), ("gen_hits", "Euclid Hits"),
         ("gen_rot", "Euclid Rotation"), ("gen_prob", "Step Probability"), ("gen_vel_rand", "Velocity Random"),
         ("gen_tm_on", "Turing On"), ("gen_tm_len", "Turing Length"), ("gen_tm_change", "Turing Change"),
-        ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves"), ("key_root", "Key"), ("link_key", "Link Key"),
-        ("key_scale", "Scale"), ("link_scale", "Link Scale")] +
+        ("gen_scale", "Turing Scale"), ("gen_range", "Turing Octaves")] + own_key("gen_own") +
         [it for it in (("gen_eu_notes", "Euclid Notes"), ("gen_octave", "Low Octave")) if it[0] in L.index] + gen_more)
     # (2026-10-30) two more generators on the third line, each its ON and its MORE triangle: BALLS and PARTICLES until
     # 2026-11-01, then (owner: "Yes, swap them") MARKOV and RAIN, so the module covers groove (EUCLID), loop (TURING),
@@ -466,7 +470,7 @@ def build(lay):
     # the bouncing balls and particles (2026-10-29): two pages (the MORE index lists them), each with the box moving
     shared = [("phys_max", "Max Notes/s"), ("phys_dyn", "Dynamics"), ("phys_len", "Note Length"), ("phys_sync", "Sync"),
               ("phys_keys", "Keys"), ("phys_restart", "Key Restarts"), ("phys_octave", "Low Octave"),
-              ("phys_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")]
+              ("phys_range", "Octaves")]
     world = [("phys_speed", "Speed"), ("phys_gravity", "Gravity"), ("phys_size", "Box Size"), ("phys_bounce", "Bounce")]
     follow = [("gen_follow_tempo", "Follow Tempo")] if "gen_follow_tempo" in L.index else []   # (2026-10-30, shared)
     world = world[:1] + follow + world[1:]
@@ -476,40 +480,41 @@ def build(lay):
                                       ("phys_right", "Right Wall")) if k in L.index]
     shared += [("phys_follow_oct", "Follow Octave")] if "phys_follow_oct" in L.index else []
     L.page("BALLS", "BOUNCING BALLS", "Balls bounce in a box: each wall they hit plays a note in the KEY.",
-           [("phys_balls_on", "Balls On"), ("phys_balls", "Balls")] + link + world + shared + gen_more, pic=("PHYS", "phys_"))
+           [("phys_balls_on", "Balls On"), ("phys_balls", "Balls")] + link + world + shared + own_key("phys_ball_own") +
+           gen_more, pic=("PHYS", "phys_"))
     L.page("PARTICLES", "PARTICLES", "Particles fall from the top: the LINE, a collision or their end plays a note.",
            [("phys_parts_on", "Particles On"), ("phys_rate", "Rate"), ("phys_spread", "Spread"), ("phys_life", "Life"),
-            ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + link + world + shared + gen_more, pic=("PHYS", "phys_"))
+            ("phys_attract", "Attraction"), ("phys_trigger", "Plays On")] + link + world + shared + own_key("phys_part_own") +
+           gen_more, pic=("PHYS", "phys_"))
     # (2026-10-30) rain and ripples, the Markov melody: a page each (in the MORE index), its picture moving
     L.page("RAIN", "RAIN AND RIPPLES", "Drops fall on a pond: each plays a note in the KEY; meeting rings echo softly.", [
         ("rain_on", "Rain On"), ("rain_rate", "Rate")] + follow + [("rain_sync", "Sync"), ("rain_spread", "Drop Size Spread"),
         ("rain_speed", "Ripple Speed"), ("rain_life", "Ripple Life"), ("rain_echo", "Echo"), ("rain_stones", "Stones"),
         ("rain_max", "Max Notes/s"), ("rain_len", "Note Length"), ("rain_keys", "Keys"), ("rain_octave", "Low Octave"),
-        ("rain_range", "Octaves"), ("key_root", "Key"), ("key_scale", "Scale")] + gen_more, pic=("RAIN", "rain_"))
+        ("rain_range", "Octaves")] + own_key("rain_own") + gen_more, pic=("RAIN", "rain_"))
     L.page("MARKOV", "MARKOV MELODY", "Learns from what you play into this Synth, then improvises in that style.", [
         ("mkv_on", "Markov On"), ("mkv_learn", "Learn"), ("mkv_forget", "Forget (Clear)"), ("mkv_order", "Order"),
         ("mkv_creat", "Creativity"), ("mkv_rhythm", "Rhythm"), ("mkv_rate", "Rate"), ("mkv_gate", "Note Length"),
-        ("mkv_quant", "In Key"), ("mkv_range", "Octaves"), ("mkv_max", "Max Notes/s"), ("mkv_keys", "Keys"),
-        ("key_root", "Key"), ("key_scale", "Scale")] + gen_more, pic=("MARKOV", "mkv_"))
+        ("mkv_quant", "In Key"), ("mkv_range", "Octaves"), ("mkv_max", "Max Notes/s"), ("mkv_keys", "Keys")] +
+        own_key("mkv_own") + gen_more, pic=("MARKOV", "mkv_"))
     # (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS: a page each (the MORE index lists them), each picture moving
-    scale = [("key_root", "Key"), ("key_scale", "Scale")]
     L.page("LIFE", "GAME OF LIFE", "Cells live and die by the RULE; births or a scanning playhead play notes in the KEY.",
            [("life_on", "Life On"), ("life_mode", "Plays"), ("life_rate", "Rate"), ("life_speed", "Free Rate", "life_rate", [6])] +
            [it + ("life_rate", [6]) for it in follow] + [
             ("life_reseed", "Reseed"), ("life_rule", "Rule"), ("life_density", "Density"), ("life_seed", "Seed"),
             ("life_wrap", "Wrap Edges"),
             ("life_notes", "Notes per Step"), ("life_max", "Max Notes/s"), ("life_len", "Note Length"), ("life_keys", "Keys"),
-            ("life_octave", "Low Octave"), ("life_range", "Octaves")] + scale + gen_more, pic=("LIFE", "life_"))
+            ("life_octave", "Low Octave"), ("life_range", "Octaves")] + own_key("life_own") + gen_more, pic=("LIFE", "life_"))
     L.page("ORBITS", "GRAVITY ORBITS", "Planets circle a sun: crossing a spoke plays a note in the KEY.",
            [("orb_on", "Orbits On"), ("orb_planets", "Planets"), ("orb_speed", "Speed")] + follow + [("orb_gravity", "Gravity"),
             ("orb_ecc", "Eccentricity"), ("orb_spread", "Spread"), ("orb_spokes", "Spokes"), ("orb_planet_to", "Planets As"),
             ("orb_quant", "Sync"), ("orb_max", "Max Notes/s"), ("orb_len", "Note Length"), ("orb_keys", "Keys"),
-            ("orb_octave", "Low Octave"), ("orb_range", "Octaves")] + scale + gen_more, pic=("ORBITS", "orb_"))
+            ("orb_octave", "Low Octave"), ("orb_range", "Octaves")] + own_key("orb_own") + gen_more, pic=("ORBITS", "orb_"))
     L.page("PEND", "PENDULUMS", "Pendulums drift out of step and meet again each CYCLE; each plays its note as it swings.",
            [("pend_on", "Pendulums On"), ("pend_count", "Pendulums"), ("pend_cycle", "Cycle"), ("pend_speed", "Swings"),
             ("pend_spread", "Spread"), ("pend_damp", "Damping"), ("pend_trigger", "Plays At"), ("pend_restart", "Key Restarts"),
             ("pend_max", "Max Notes/s"), ("pend_dyn", "Dynamics"), ("pend_len", "Note Length"), ("pend_keys", "Keys"),
-            ("pend_octave", "Low Octave")] + scale + gen_more, pic=("PEND", "pend_"))
+            ("pend_octave", "Low Octave")] + own_key("pend_own") + gen_more, pic=("PEND", "pend_"))
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
