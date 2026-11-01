@@ -68,6 +68,7 @@ static void analog_checks(void) {
     E->destroy(b);
     /* a new instance at ANALOG AMOUNT 0 (the new page's defaults): the old all-0 sound too */
     a = an_solo(E_REAL);
+    set(a, "spread", 0);   /* (2026-11-02: SPREAD is not the ANALOG page's; new sounds start at 50%) */
     b = an_solo(E);
     set(a, "analog_amt", 0);
     int same_new0 = an_hash(a) == an_hash(b);

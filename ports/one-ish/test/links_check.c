@@ -4,6 +4,22 @@
  * Read back with the "hands_now" readout (wheel, bend, ribbon target, ribbon touch). */
 static void links_checks(void) {
     char what[600];
+    {   /* (2026-11-02) HOLD's ADD: a new key under HOLD joins what it holds */
+        static const int k3[3] = {48, 52, 55};
+        double db[3];
+        void *e = held_patch(3);
+        set(e, "hold", 1);
+        set(e, "hold_add", 1);
+        note(e, 1, 48, 100); note(e, 0, 48, 0);
+        note(e, 1, 52, 100); note(e, 0, 52, 0);
+        note(e, 1, 55, 100); note(e, 0, 55, 0);
+        key_powers(e, k3, 3, db);
+        snprintf(what, sizeof what, "HOLD's ADD: three keys one after the other all stay (%.0f, %.0f, %.0f dB)", db[0], db[1], db[2]);
+        check(db[0] > -6 && db[1] > -6 && db[2] > -6, what);
+        set(e, "hold", 0);
+        check(silent_after(e, 500), "HOLD's ADD: HOLD off lets them all go");
+        E->destroy(e);
+    }
     static const char *const LINK[3] = {"link_mod", "link_bend", "link_ribbon"};
     for (int which = 0; which < 3; which++)
         for (int link = 0; link < 2; link++) {

@@ -2005,3 +2005,6 @@ link_poly
 link_arp_all
 link_hold
 link_octave
+s2_hold_add
+s3_hold_add
+hold_add

@@ -889,6 +889,17 @@ int lib_cats(ed_t *e, char (*names)[TAG_LEN + 1], int *counts, int max) {
     return out;
 }
 const char *lib_cat_filter(ed_t *e) { return LIB(e) ? LIB(e)->filter[TAG_CAT] : ""; }
+const char *lib_type_filter(ed_t *e) { return LIB(e) ? LIB(e)->filter[TAG_TYPE] : ""; }
+void lib_type_pick(ed_t *e, const char *type) {
+    lib_t *L = LIB(e);
+    if (!L) return;
+    int off = !_stricmp(L->filter[TAG_TYPE], type);
+    snprintf(L->filter[TAG_TYPE], sizeof L->filter[TAG_TYPE], "%s", off ? "" : type);
+    views(e);
+    if (off) say(e, "PATCHES lists every type.");
+    else say(e, "PATCHES lists only %s sounds (%d factory, %d yours). Click it again for all.", type,
+             lib_view_count(e, 0), lib_view_count(e, 1));
+}
 void lib_cat_pick(ed_t *e, const char *cat) {   /* a tab: list only that category ("" or ALL: every one) */
     lib_t *L = LIB(e);
     if (!L) return;

@@ -352,11 +352,12 @@ static inline float rnd_bell(rnd_ctx_t *c, float lo, float hi) { return lo + (hi
 static inline float rnd_logr(rnd_ctx_t *c, float lo, float hi) { return lo * powf(hi / lo, rnd_u(c)); }   /* log-uniform */
 static inline int rnd_chance(rnd_ctx_t *c, float p) { return rnd_u(c) < p; }
 /* (2026-11-01) a whole-semitone offset of an oscillator to the nearest musical interval in the knob's +-7 st: unison,
- * minor / major 3rd, 4th, 5th (up or down); 7ths and 9ths come through the octave footage (rnd_gen_osc) */
-static inline float rnd_musical(float st) {
-    static const float OK[] = {-7, -5, -4, -3, 0, 3, 4, 5, 7};
+ * minor / major 3rd, 4th, 5th (up or down). up: the oscillator's footage is above oscillator 1's, so -2, -1 and +2 are
+ * musical too: the minor 7th, the major 7th and the 9th (2026-11-02: they were snapped away) */
+static inline float rnd_musical(float st, int up) {
+    static const float OK[] = {-7, -5, -4, -3, 0, 3, 4, 5, 7, -2, -1, 2};
     float best = 0.0f;
-    for (unsigned k = 0; k < sizeof OK / sizeof OK[0]; k++)
+    for (unsigned k = 0; k < (up ? 12u : 9u); k++)
         if (fabsf(OK[k] - st) < fabsf(best - st) || (fabsf(OK[k] - st) == fabsf(best - st) && fabsf(OK[k]) < fabsf(best)))
             best = OK[k];
     return best;
@@ -540,9 +541,13 @@ static inline void rnd_gen_osc(rnd_ctx_t *c) {
      * 7ths and the 9th an octave up through the footage), or in tune (a beat frequency may still move it) */
     for (int n = 2; n <= 3; n++) {
         float r = rnd_u(c), f = 0.0f, sign = rnd_chance(c, 0.5f) ? 1.0f : -1.0f;
-        if (r < 0.45f) f = sign * rnd_range(c, 0.04f, 0.3f);
-        else if (r < 0.62f) f = sign * rnd_range(c, 0.3f, 0.9f);
-        else if (r < 0.8f) {
+        /* (2026-11-02, owner: "just small differences between 0 and 0.9 st when WILD is lower, a mixture of lower st and
+         * musical intervals when it's higher") WILD 0: 40% gentle, 40% wider, 20% in tune, no interval; an interval
+         * takes 50% x WILD of them, from the rest in those shares */
+        float iv = 0.5f * c->wild, rest = iv < 1.0f ? (r - iv) / (1.0f - iv) : 0.0f;
+        if (r >= iv && rest < 0.4f) f = sign * rnd_range(c, 0.05f, 0.3f);
+        else if (r >= iv && rest < 0.8f) f = sign * rnd_range(c, 0.3f, 0.9f);
+        else if (r < iv) {
             /* semitones, then octaves up: 5th, 4th, 4th below, minor 3rd, major 3rd, 5th below, minor 7th, major 7th,
              * 9th (the last three: the semitones below the octave above, and two above it) */
             static const float IV[] = {7, 5, -5, 3, 4, -7, -2, -1, 2};
@@ -1019,7 +1024,7 @@ static inline void rnd_gen_wild(rnd_ctx_t *c, float s) {
             if (n > 1 && rnd_chance(c, 0.3f * s)) {   /* far apart: any footage, any interval (kept in tune) */
                 rnd_seti(c, rnd_keyf("o%d_oct", n), (float)((int)(rnd_u(c) * 5) % 5));
                 float st = roundf(rnd_range(c, -7, 7));   /* (2026-11-01) any semitone from WILD 50% up */
-                rnd_seti(c, rnd_keyf("o%d_freq", n), c->wild >= 0.5f ? st : rnd_musical(st));
+                rnd_seti(c, rnd_keyf("o%d_freq", n), c->wild >= 0.5f ? st : rnd_musical(st, 0));
             }
         }
     }
@@ -1460,7 +1465,7 @@ static inline void rnd_safety(rnd_ctx_t *c) {
         if (fabsf(v) < 1.0f) rnd_seti(c, f, rnd_clamp(v, -0.9f, 0.9f));
         else if (!synced) {
             float whole = roundf(v), d = rnd_clamp(v - whole, -0.25f, 0.25f);
-            if (c->wild < 0.5f) whole = rnd_musical(whole);
+            if (c->wild < 0.5f) whole = rnd_musical(whole, c->w[rnd_keyf("o%d_oct", n)] > c->w[rnd_key("o1_oct")]);
             rnd_seti(c, f, whole + d);
         }
         rnd_seti(c, b, rnd_clamp(c->w[b], -3.0f, 3.0f));
@@ -1489,6 +1494,9 @@ static inline void rnd_safety(rnd_ctx_t *c) {
     }
     /* heard at all: something reaches the filter whose output is heard */
     rnd_route_t r = rnd_route(c);
+    /* (2026-11-02) a high-pass into a low-pass in series: below it, or little passes (offline_check: rms 0.001) */
+    if (r.series && rnd_open(c, RS_FILTER) && (int)rnd_get(c, "svf_mode") == 2 && rnd_get(c, "flt_mode") < 0.5f)
+        rnd_max(c, "svf_cut", fmaxf(rnd_get(c, "flt_cut") - 10.0f, 5.0f));
     if (rnd_heard(&r) < 40.0f) {
         if (rnd_open(c, RS_MIX)) {   /* osc 1 up and into the side the filter mix listens to */
             rnd_min(c, "o1_level", 75.0f);
@@ -1739,7 +1747,7 @@ static inline int rnd_mutate_x(const float *cur, float *out, float amount, unsig
         if (span <= 0.0f) continue;
         /* (2026-11-01) the ANALOG page (drift, an_*; never changed, rnd_finish) drawn as if off, its default until
          * that day: its numbers, and so every other param's, never depend on what the page is set to */
-        if (rnd_kept(i) && strcmp(p->key, "spread")) v = r->z;
+        if (rnd_kept(i)) v = r->z;   /* (SPREAD too since it starts at 50%: 2026-11-02) */
         if (r->pz > 0.0f && fabsf(v - r->z) < 1e-6f * span) {   /* off (or centred): mostly stays so */
             if (!rnd_chance(&c, amount * (0.15f + 0.5f * w))) continue;
         } else if (!rnd_chance(&c, pm)) {

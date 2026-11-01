@@ -107,7 +107,8 @@ static const char *help_for(int i) {
         {"link_mod", "LINK (mod wheel): lit, the mod wheel (CC 1) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"link_ribbon", "LINK (ribbon): lit, the ribbon (CC 16 and 17) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"link_arp_all", "LINK ALL (ARPEGGIATOR): lit, every arpeggiator setting set from the panel or its page (ON, LATCH, SYNC, PATTERN, OCT, DIRECTION, RATE, GATE, SWING and the page's) goes to all three Synths. LINK under RATE links the rate alone. Saved with the sound."},
-        {"link_hold", "LINK (HOLD): lit, HOLD set from the panel goes to all three Synths."},
+        {"hold_add", "ADD (HOLD): lit, a new key you press joins the notes HOLD is holding. Out, a new key replaces them. HOLD off lets them all go."},
+        {"link_hold", "LINK (HOLD): lit, HOLD and its ADD set from the panel go to all three Synths."},
         {"link_octave", "LINK (OCTAVE): lit, OCTAVE moves the keyboard, every Synth together. Out: OCTAVE sets the Synth in focus's own, so each Synth can sit in its own octave (pick a Synth, then press OCTAVE)."},
         {"link_poly", "LINK (POLYPHONY): lit, this panel's settings set from the panel or its page (VOICES, UNISON and its voices, DETUNE, HOLD, PITCH VARIANCE, MONO PRIORITY, VOICE STEALING) go to all three Synths. Saved with the sound."},
         {"link_glide", "LINK (glide): lit, glide's settings set from the panel (ON, RATE, TYPE, LEGATO, GATED, GLISS) go to all three Synths. Saved with the sound."},
@@ -434,9 +435,7 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_RND_GENS: return "RANDOMISE GENERATORS: new settings for every generator of the Synth in focus, in musical ranges, "
                             "with one switched on (sometimes two), and a new KEY and SCALE, linked: all three Synths play "
                             "in it. The sound itself stays. One undo step (the console's UNDO). ALL: all three Synths.";
-    case Z_RND_KEYLOCK: return "LOCK KEY + SCALE (lit): RANDOMISE, MUTATE and RANDOMISE GENERATORS (here and on the "
-                               "GENERATIVE page) keep the KEY and SCALE you set; the rest is randomised as usual (the "
-                               "three Synths are still linked, to your key). The same button as the GENERATIVE page's.";
+    case Z_RND_KEYLOCK: case Z_RND_KEYLOCK + 1: case Z_RND_KEYLOCK + 2: case Z_RND_KEYLOCK + 3: return keylock_help(z - Z_RND_KEYLOCK);
     case Z_RND_GENS_ALL: return "ALL (RANDOMISE GENERATORS): the generators of all three Synths, each its own, in one KEY "
                                 "and SCALE (linked); their sounds stay. One undo step (the console's UNDO).";
     case Z_RND_ALSO + 2: return "SEQUENCER (lit): RANDOMISE and MUTATE also set the sequencer's settings (on, division, length, "
@@ -1103,7 +1102,29 @@ static void draw_setup(HDC dc, ed_t *e, int subs) {
 void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f) {   /* (also hub_gens.c) */
     gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), lit ? 0xFF96D7E8 : 0xFF0F2230);
     gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f, hot ? 0xFFFFFFFF : lit ? 0xFF96D7E8 : 0xFF3E6273);
-    text(dc, &r, label, f, lit ? RGB(11, 22, 33) : hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    text(dc, &r, label, f, lit ? RGB(11, 22, 33) : hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+}
+/* (2026-11-02) KEY and SCALE, as they are now (a click: the list), with a LOCK each */
+void keylock_draw(HDC dc, ed_t *e) {
+    int z0 = Z_RND_KEYLOCK;
+    char t[48], v[32];
+    RECT k0 = keylock_rect(KL_KEY), cap = {L.row[0].left, k0.top, k0.left - sc(4), k0.bottom};
+    text(dc, &cap, "GENERATORS", font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+    param_text(e, rnd_key("key_root"), v, sizeof v);
+    snprintf(t, sizeof t, "KEY %s", v);
+    screen_button(dc, keylock_rect(KL_KEY), t, 0, e->hover == z0 + KL_KEY, font_tiny);
+    screen_button(dc, keylock_rect(KL_KEY_LOCK), "LOCK", e->rnd_keylock & 1, e->hover == z0 + KL_KEY_LOCK, font_tiny);
+    param_text(e, rnd_key("key_scale"), v, sizeof v);
+    screen_button(dc, keylock_rect(KL_SCALE), v, 0, e->hover == z0 + KL_SCALE, font_tiny);
+    screen_button(dc, keylock_rect(KL_SCALE_LOCK), "LOCK", (e->rnd_keylock & 2) != 0, e->hover == z0 + KL_SCALE_LOCK, font_tiny);
+}
+const char *keylock_help(int part) {
+    switch (part) {
+    case KL_KEY: return "KEY: the generators' key. Click for the list (with its LINK lit: all three Synths).";
+    case KL_SCALE: return "SCALE: the generators' scale. Click for the list (with its LINK lit: all three Synths).";
+    case KL_KEY_LOCK: return "LOCK (KEY, lit): RANDOMISE, MUTATE and the generators' RANDOM keep the KEY you set. Not saved with the sound.";
+    default: return "LOCK (SCALE, lit): RANDOMISE, MUTATE and the generators' RANDOM keep the SCALE you set. Not saved with the sound.";
+    }
 }
 /* (2026-11-01, owner: "if a generator isn't on, shouldn't it say OFF and maybe be red") a generator's ON on the
  * screen: ON lit as a screen button, or OFF in the panel's red (the MORE triangles' and MUTE's) */
@@ -1262,8 +1283,6 @@ static void draw_random(HDC dc, ed_t *e) {
     RECT g = rnd_rect(Z_RND_GENS), ga = rnd_rect(Z_RND_GENS_ALL);
     screen_button(dc, g, "RANDOMISE GENERATORS", 0, e->hover == Z_RND_GENS, font_cell);
     screen_button(dc, ga, "ALL", 0, e->hover == Z_RND_GENS_ALL, font_cell);
-    /* (2026-11-01) LOCK KEY + SCALE beside it (the GENERATIVE page shows the same setting) */
-    screen_button(dc, rnd_rect(Z_RND_KEYLOCK), "LOCK KEY + SCALE", e->rnd_keylock, e->hover == Z_RND_KEYLOCK, font_cell);
 }
 
 /* the screen's glass, bezel, stripes and rules: static */
@@ -1416,11 +1435,12 @@ static void draw_screen(HDC dc, ed_t *e) {
     char help[480];   /* help: what the control under the mouse does */
     help_line(e, help, sizeof help);
     /* (the step editor uses the top of it; the RANDOM page too, for RANDOMISE GENERATORS: 2026-11-01) */
-    int small = e->screen == SCR_SEQ || e->screen == SCR_RANDOM || e->screen == SCR_GEN;   /* (GEN: LOCK KEY + SCALE) */
+    int small = e->screen == SCR_SEQ || e->screen == SCR_RANDOM;   /* (GEN: LOCK KEY + SCALE) */
     RECT hr = e->screen == SCR_SEQ ? seq_help_rect()
-            : e->screen == SCR_RANDOM || e->screen == SCR_GEN ? rnd_help_rect() : L.help;
+            : e->screen == SCR_RANDOM ? rnd_help_rect() : L.help;
     gfx_line((float)hr.left, hr.top - 4.0f, (float)hr.right, hr.top - 4.0f, 1.0f, 0xFF27404E);
     text(dc, &hr, help, small ? font_cell : font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
+    keylock_draw(dc, e);   /* (2026-11-02) on every page */
     skin_glare(L.screen.left, L.screen.top, rw(&L.screen), rh(&L.screen));
 }
 

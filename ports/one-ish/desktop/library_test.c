@@ -637,6 +637,31 @@ static void category_tabs(void) {
     check(!strncmp(cats, "0/", 2), "PATCHES: the page arrow goes back a page");
     click_z(Z_PATCH_CAT + 0);   /* ALL */
     v = (int)lt(LT_VIEW, 0, NULL);
+    {   /* (2026-11-02) the bottom row's TYPE buttons: each lists its type, stays over a category tab, again: all */
+        static const char *const TY[4] = {"Single", "Layer", "Split", "Multi"};
+        int good = 1, kept = 0, off = 0;
+        char tn[120] = "";
+        for (int k = 0; k < 4; k++) {
+            int want = 0;
+            for (int p = 0; p < NFACTORY_TAGS; p++) want += !strcmp(FACTORY_TAG[p].type, TY[k]);
+            click_z(Z_PATCH_TYPE + k);
+            int got = (int)lt(LT_VIEW, 0, NULL) / 1000;
+            good &= got == want;
+            snprintf(tn + strlen(tn), sizeof tn - strlen(tn), " %s %d/%d", TY[k], got, want);
+            if (k == 0) {   /* a category tab doesn't take it off */
+                int single_pad = 0;
+                for (int p = 0; p < NFACTORY_TAGS; p++) single_pad += !strcmp(FACTORY_TAG[p].type, "Single") && !strcmp(FACTORY_TAG[p].cat, "Pad");
+                click_z(Z_PATCH_CAT + pad);
+                kept = (int)lt(LT_VIEW, 0, NULL) / 1000 == single_pad;
+                click_z(Z_PATCH_CAT + 0);
+            }
+            click_z(Z_PATCH_TYPE + k);
+            off += (int)lt(LT_VIEW, 0, NULL) / 1000 == fx->numPrograms;
+        }
+        snprintf(what, sizeof what, "PATCHES: the bottom row's filters list their type (factory:%s), over a category tab too "
+                 "(%d), and again list all (%d of 4)", tn, kept, off);
+        check(good && kept && off == 4, what);
+    }
     check(v / 1000 == fx->numPrograms && v % 1000 == (int)pt(PT_COUNT, NULL, NULL, 0), "PATCHES: ALL lists everything again");
     click_z(Z_LIB_TAB + 5);   /* (back to the TAGS page for the tests after) */
 }

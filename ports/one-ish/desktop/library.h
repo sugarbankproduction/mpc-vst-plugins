@@ -122,6 +122,8 @@ int lib_load_pos(ed_t *e, int pos);          /* patches_load_pos with autosave a
 int lib_view_index(ed_t *e, int pos);        /* where list position pos is in its column after the filters (-1) */
 int lib_cats(ed_t *e, char (*names)[TAG_LEN + 1], int *counts, int max);   /* the category tabs: ALL, then each */
 const char *lib_cat_filter(ed_t *e);         /* the CATEGORY filter ("" none) */
+const char *lib_type_filter(ed_t *e);        /* (2026-11-02) the TYPE filter ("" none) */
+void lib_type_pick(ed_t *e, const char *type); /* the bottom row's SINGLE, LAYER, SPLIT, MULTI: again, off */
 void lib_cat_pick(ed_t *e, const char *cat); /* a category tab clicked ("ALL": no CATEGORY filter) */
 void lib_end_compare(ed_t *e);               /* COMPARE off (the edit back) before a save reads the sound */
 int lib_save_dialog(ed_t *e, char *name, meta_t *m);   /* the save box: name, tags, notes; 0 cancelled */

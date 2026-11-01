@@ -279,7 +279,7 @@ static void ribbon_test(AEffect *fx, HWND child, float s) {
  * MONO, POLY where the toggle was */
 enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK, RP_ALSO, RP_WILD, RP_MUT_ALL, RP_VOICE,
        RP_GENS, RP_GENS_ALL,     /* (2026-11-01) RANDOMISE GENERATORS | ALL, under the columns */
-       RP_KEYLOCK };             /* (2026-11-01) LOCK KEY + SCALE, beside them */
+       RP_KEYLOCK, RP_SCALELOCK };   /* (2026-11-02) KEY's and SCALE's LOCKs, beside them */
 static void rnd_point(int what, int k, float *x, float *y) {   /* k: a lock's section, a tick (0-2), WILD in % */
     float x0 = ZONE_SCREEN[0] + 8.0f, x1 = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f, top = ZONE_SCREEN[1] + 6.0f + 36 + 20 + 18;
     float half = (x1 - x0 - 8) / 2, xr = x0 + half + 8, cw = (x1 - x0 - 16) / 3, q = (cw - 6) / 2;
@@ -294,7 +294,8 @@ static void rnd_point(int what, int k, float *x, float *y) {   /* k: a lock's se
     case RP_ALL: *x = x0 + half - 23; *y = top + 22; break;
     case RP_GENS: *x = x0 + (half - 50) / 2; *y = top + 22 * 8 + 8 + 5; break;   /* (the help's top, less 4, 18 tall) */
     case RP_GENS_ALL: *x = x0 + half - 23; *y = top + 22 * 8 + 8 + 5; break;
-    case RP_KEYLOCK: *x = xr + half / 2; *y = top + 22 * 8 + 8 + 5; break;
+    case RP_KEYLOCK: *x = x0 + (x1 - x0) * 0.48f; *y = ZONE_SCREEN[1] + ZONE_SCREEN[3] - 14.0f; break;   /* (the row along the screen's bottom) */
+    case RP_SCALELOCK: *x = x0 + (x1 - x0) * 0.93f; *y = ZONE_SCREEN[1] + ZONE_SCREEN[3] - 14.0f; break;
     case RP_ALSO: *x = col2 + cw / 2; *y = top + 22 * (4 + k) + 11; break;
     case RP_WILD: *x = x0 + 54 + (half - 94) * k / 100.0f; *y = top + 22 * 2 + 11; break;
     default: *x = (k < 4 ? x0 : col1) + cw / 2; *y = top + 22 * (4 + k % 4) + 11; break;
@@ -635,6 +636,7 @@ static void rg_keylock_test(AEffect *fx, HWND child, float s, const char *bmp, i
     }
     rg_keys(fx, k0);
     rnd_click(child, s, RP_KEYLOCK, 0);
+    rnd_click(child, s, RP_SCALELOCK, 0);
     int lk1 = (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0);
     if (bmp) {
         float x, y;
@@ -657,17 +659,36 @@ static void rg_keylock_test(AEffect *fx, HWND child, float s, const char *bmp, i
     rg_keys(fx, k1);
     for (int j = 0; j < 6; j++) kept &= k1[j] == k0[j];
     rnd_click(child, s, RP_ALSO, 1);
-    snprintf(what, sizeof what, "LOCK KEY + SCALE: off at first (%d), lit by a click (%d); RANDOMISE GENERATORS / ALL, "
-             "RANDOMISE and MUTATE with GENERATIVE keep D Dorian in all three Synths (%d)", lk0, lk1, kept);
-    check(lk0 == 0 && lk1 == 1 && kept, what);
+    snprintf(what, sizeof what, "KEY's and SCALE's LOCKs: off at first (%d), both lit by a click each (%d); RANDOMISE "
+             "GENERATORS / ALL, RANDOMISE and MUTATE with GENERATIVE keep D Dorian in all three Synths (%d)", lk0, lk1, kept);
+    check(lk0 == 0 && lk1 == 3 && kept, what);
+    rnd_click(child, s, RP_SCALELOCK, 0);   /* the KEY's alone: the KEY stays, the SCALE may move */
+    {
+        int key_kept = 1, scale_moved = 0;
+        for (int t = 0; t < 8; t++) {
+            rnd_click(child, s, RP_GENS, 0);
+            rg_keys(fx, k1);
+            key_kept &= k1[0] == k0[0];
+            scale_moved |= k1[1] != k0[1];
+        }
+        snprintf(what, sizeof what, "KEY's LOCK alone: RANDOMISE GENERATORS keeps the KEY (%d), the SCALE moves (%d)", key_kept, scale_moved);
+        check(key_kept && scale_moved, what);
+    }
     rnd_click(child, s, RP_KEYLOCK, 0);   /* off: new KEY / SCALE again */
+    for (int c = 0; c < 3; c++) {   /* (D Dorian again, as k0) */
+        char a[24], b[24];
+        snprintf(a, sizeof a, c ? "s%d_key_root" : "key_root", c + 1);
+        snprintf(b, sizeof b, c ? "s%d_key_scale" : "key_scale", c + 1);
+        fx->setParameter(fx, rnd_key(a), 2.0f / 11);
+        fx->setParameter(fx, rnd_key(b), 2.0f / 13);
+    }
     int moved = 0;
     for (int t = 0; t < 6 && !moved; t++) {
         rnd_click(child, s, RP_GENS, 0);
         rg_keys(fx, k1);
         for (int j = 0; j < 6; j++) moved |= k1[j] != k0[j];
     }
-    snprintf(what, sizeof what, "LOCK KEY + SCALE off (%d): RANDOMISE GENERATORS picks another KEY or SCALE again (%d)",
+    snprintf(what, sizeof what, "Both LOCKs off (%d): RANDOMISE GENERATORS picks another KEY or SCALE again (%d)",
              (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0), moved);
     check(fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0) == 0 && moved, what);
 }
@@ -1694,6 +1715,7 @@ static void settings_page_test(AEffect *fx, HWND child, float s, const char *bmp
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);
 static void learn_shows_test(AEffect *fx, HWND child, float s, int w, int h);   /* (2026-10-30) */
 static void matrix_page_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-10-30) */
+static int holds_now(AEffect *fx);
 static void editor(AEffect *fx, const char *bmp) {
     char what[128];
     check(fx->flags & 1, "the plugin says it has an editor window");
@@ -1707,6 +1729,12 @@ static void editor(AEffect *fx, const char *bmp) {
     intptr_t ok = fx->dispatcher(fx, 14 /* effEditOpen */, 0, 0, parent, 0);
     HWND child = GetWindow(parent, GW_CHILD);
     check(ok && child, "the editor window opens inside the host's window");
+    if (child) {   /* (2026-11-02) the X/Y pad's and the ribbon's HOLD start lit; put out for the tests of letting go */
+        float s0 = w / 2162.0f;
+        check(holds_now(fx) == 3, "HOLD (X/Y pad, ribbon): both lit in a new window");
+        click_zone(child, s0, ZONE_PAD_HOLD);
+        click_zone(child, s0, ZONE_RIB_HOLD);
+    }
     if (child) paint_timing(fx, child, w, h);
     if (child) rate_led_test(fx, child, w, h);
     if (child) {   /* play the on-screen keyboard: a click on a white key must sound, letting go must stop it */
@@ -3093,7 +3121,7 @@ static void hold_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     float ph0 = pv(fx, "pad_hold"), rm0 = pv(fx, "ribbon_mode");
     setkey(fx, "ribbon_mode", 0);   /* SPRING and X/Y HOLD On, the defaults */
     setkey(fx, "pad_hold", 1);
-    check(holds_now(fx) == 0, "HOLD (X/Y pad, ribbon): both out in a new window");
+    check(holds_now(fx) == 0, "HOLD (X/Y pad, ribbon): both put out by a click each (lit at the start: checked at the start)");
     /* the pad, HOLD out: as before */
     play(fx, 2, 512);
     midi_log(fx, &off, &at);
@@ -3172,6 +3200,31 @@ static void hold_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
 static void hold_octave_test(AEffect *fx, HWND child, float s) {
     char what[400];
     fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    {   /* (2026-11-02) the R key itself: oscillators 2 and 3 often detuned by under a semitone, some by 0.3 st or more */
+        int under = 0, wide = 0, iv = 0, n = 0, odd = 0;
+        float sp = pv(fx, "spread");
+        int sp_kept = 1;
+        for (int k = 0; k < 30; k++) {
+            SendMessageA(child, WM_KEYDOWN, 'R', 1);
+            sp_kept &= pv(fx, "spread") == sp;
+            for (int c = 0; c < 2; c++) {
+                float st = (pv(fx, c ? "o3_freq" : "o2_freq") - 0.5f) * 14.0f, a = fabsf(st);
+                n++;
+                under += a > 0.01f && a < 1.0f;
+                wide += a >= 0.3f && a < 0.95f;
+                iv += a >= 1.0f;
+                if (a >= 1.0f && pv(fx, c ? "o3_sync" : "o2_sync") < 0.5f) {   /* (WILD 0: musical; hard sync: a timbre) */
+                    int w = (int)lroundf(a);
+                    int up = pv(fx, c ? "o3_oct" : "o2_oct") > pv(fx, "o1_oct");   /* (the footage up: 7ths and the 9th) */
+                    odd += w != 3 && w != 4 && w != 5 && w != 7 && !(up && (w == 1 || w == 2));
+                }
+            }
+        }
+        snprintf(what, sizeof what, "RANDOMISE (the R key, 30 times): of %d oscillators %d detuned under a semitone, %d of "
+                 "them by 0.3-0.9 st, %d on an interval (%d not musical); SPREAD kept: %d", n, under, wide, iv, odd, sp_kept);
+        check(under >= n / 2 && wide >= n / 10 && odd == 0 && sp_kept, what);
+        for (int i = 0; i < NPARAMS; i++) fx->setParameter(fx, i, PARAMS[i].def);
+    }
     snprintf(what, sizeof what, "HOLD's and OCTAVE's LINKs start lit (%d %d)", pv(fx, "link_hold") > 0.5f,
              pv(fx, "link_octave") > 0.5f);
     check(pv(fx, "link_hold") > 0.5f && pv(fx, "link_octave") > 0.5f, what);
@@ -3540,9 +3593,12 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     }
     {   /* (2026-11-01) the page's LOCK KEY + SCALE (the RANDOM page's setting): lit, RANDOM keeps KEY and SCALE */
         float kx, ky, kr0 = getkey(fx, "key_root"), ks0 = getkey(fx, "key_scale"), gx, gy;
+        float sx, sy;
         rnd_point(RP_KEYLOCK, 0, &kx, &ky);   /* (the same place as on the RANDOM page) */
+        rnd_point(RP_SCALELOCK, 0, &sx, &sy);
         click(child, s, kx, ky);
-        int lit = (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0);
+        click(child, s, sx, sy);
+        int lit = (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0) == 3;
         if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_keylock"); }
         gens_xy(0, 0, &gx, &gy);
         int kept = 1;
@@ -3551,7 +3607,8 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
             kept &= getkey(fx, "key_root") == kr0 && getkey(fx, "key_scale") == ks0;
         }
         click(child, s, kx, ky);
-        snprintf(what, sizeof what, "GENERATIVE page LOCK KEY + SCALE: lit (%d), RANDOM three times keeps KEY and SCALE "
+        click(child, s, sx, sy);
+        snprintf(what, sizeof what, "GENERATIVE page's LOCKs: lit (%d), RANDOM three times keeps KEY and SCALE "
                  "(%d), off again (%d)", lit, kept, (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0));
         check(lit == 1 && kept && fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0) == 0, what);
         snapshot(fx, b);   /* (what follows compares with the sound now) */

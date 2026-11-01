@@ -14,7 +14,8 @@
  * Build and run: test/run.sh (check against test/golden_states.txt).
  * (2026-11-01, owner's go-ahead) made again with the voice's DC filter (src/engine.c, before the amp: a 5 Hz one-pole
  * high-pass): it changes every sample slightly on purpose. Made from this engine, now with all 296
- * factory presets (the fixture before had the first 61). */
+ * factory presets (the fixture before had the first 61).
+ * (2026-11-02) made again: SPREAD at 50% for new sounds; checked first: of the 320, Init as a program alone differed. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

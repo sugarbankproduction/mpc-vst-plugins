@@ -1237,10 +1237,33 @@ static int entry_pos(ed_t *e, int col, int row) {   /* the list position shown a
     return lib_view_pos(e, col, k);   /* (through the tag filters) */
 }
 
+/* (2026-11-02, owner) the bottom row, there whatever the category tabs list: SINGLE, LAYER, SPLIT, MULTI (the TAGS page's
+ * TYPE filter), then the library of user patches (Steveo's banks among them) with its < > */
+static const char *const TYPE_TAG[4] = {"Single", "Layer", "Split", "Multi"}, *const TYPE_BTN[4] = {"SINGLE", "LAYER", "SPLIT", "MULTI"};
+static RECT type_rect(int k) {
+    int y = L.screen.bottom - sc(44), w = sc(44), gap = sc(3);   /* (just over the KEY and SCALE row) */
+    RECT r = {L.row[0].left + k * (w + gap), y, L.row[0].left + k * (w + gap) + w, y + sc(17)};
+    return r;
+}
+static RECT lib_arrow_rect(int next) {
+    RECT t = type_rect(3), r = t;
+    if (next) { r.right = L.row[0].right; r.left = r.right - sc(18); }
+    else { r.left = t.right + sc(8); r.right = r.left + sc(18); }
+    return r;
+}
+
 int patches_hit(ed_t *e, POINT pt) {
     for (int a = 0; a < PA_COUNT; a++) {
         RECT r = action_rect(a);
         if (PtInRect(&r, pt)) return Z_PATCH_ACT + a;
+    }
+    for (int k = 0; k < 4; k++) {
+        RECT r = type_rect(k);
+        if (PtInRect(&r, pt)) return Z_PATCH_TYPE + k;
+    }
+    for (int k = 0; k < 2; k++) {
+        RECT r = lib_arrow_rect(k);
+        if (PtInRect(&r, pt)) return k ? Z_PATCH_LIB_NEXT : Z_PATCH_LIB_PREV;
     }
     for (int k = 0, n = cats(e); k < n; k++) {
         RECT r = cat_rect(n, k);
@@ -1258,6 +1281,21 @@ int patches_hit(ed_t *e, POINT pt) {
 int patches_press(ed_t *e, int z) {   /* 1: z was the page's */
     if (lib_press(e, z)) return 1;   /* COMPARE, SNAPSHOT, the library's pages (library.c) */
     if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { patches_action(e, z - Z_PATCH_ACT); return 1; }
+    if (z >= Z_PATCH_TYPE && z < Z_PATCH_TYPE + 4) {   /* a TYPE button: only that type; again: all */
+        patches_rescan(e);
+        lib_type_pick(e, TYPE_TAG[z - Z_PATCH_TYPE]);
+        e->sub = 0;
+        follow(e);
+        redraw(e);
+        return 1;
+    }
+    if (z == Z_PATCH_LIB_PREV || z == Z_PATCH_LIB_NEXT) {   /* another library's patches in the USER column */
+        parts_lib_step(e, z == Z_PATCH_LIB_NEXT ? 1 : -1);
+        patches_rescan(e);
+        e->sub = 0;
+        redraw(e);
+        return 1;
+    }
     if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS) {   /* a category tab: the list shows that category */
         patches_rescan(e);
         int k = z - Z_PATCH_CAT;
@@ -1330,6 +1368,27 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
         frame(dc, r, hot || on ? P_FRAME_HOT : P_FRAME);
         label(dc, r, t, font_tiny, hot || on ? P_HOT : P_LCD, DT_CENTER);
     }
+    for (int k = 0; k < 4; k++) {   /* the bottom row */
+        RECT r = type_rect(k);
+        int hot = e->hover == Z_PATCH_TYPE + k, on = !_stricmp(lib_type_filter(e), TYPE_TAG[k]);
+        if (on) fill(dc, r, P_SEL);
+        else if (hot) fill(dc, r, P_FILL_HOT);
+        frame(dc, r, hot || on ? P_FRAME_HOT : P_FRAME);
+        label(dc, r, TYPE_BTN[k], font_tiny, hot || on ? P_HOT : P_LCD, DT_CENTER);
+    }
+    for (int k = 0; k < 2; k++) {
+        RECT r = lib_arrow_rect(k);
+        int hot = e->hover == (k ? Z_PATCH_LIB_NEXT : Z_PATCH_LIB_PREV);
+        if (hot) fill(dc, r, P_FILL_HOT);
+        frame(dc, r, hot ? P_FRAME_HOT : P_FRAME);
+        label(dc, r, k ? ">" : "<", font_tiny, hot ? P_HOT : P_LCD, DT_CENTER);
+    }
+    {
+        RECT a = lib_arrow_rect(0), b = lib_arrow_rect(1), r = {a.right + sc(3), a.top, b.left - sc(3), a.bottom};
+        char t[96];
+        parts_lib_label(t, sizeof t);
+        label(dc, r, t, font_tiny, P_LCD, DT_CENTER);
+    }
     int pos_now = patches_pos(e), nf = e->fx->numPrograms;
     for (int col = 0; col < 2; col++) {
         char h[48];
@@ -1399,6 +1458,12 @@ const char *patches_zone_help(int z) {
     case PA_REPORT: return "REPORT: opens the last import's report (Import report.txt beside your patches): for each "
                            "preset, what converted, what is a best guess, and what Moo Won has no equivalent for.";
     }
+    if (z >= Z_PATCH_TYPE && z < Z_PATCH_TYPE + 4)
+        return "TYPE: the list shows only sounds of this type: SINGLE one Synth, LAYER Synths stacked, SPLIT apart on the "
+               "keyboard, MULTI any other mix. Click again for all. It stays while you click through the categories.";
+    if (z == Z_PATCH_LIB_PREV || z == Z_PATCH_LIB_NEXT)
+        return "LIB: < > the library shown in the USER column on the right: your patches, or a bundled bank (CLASSICS, KING, "
+               "MOO MOO, POLYPHONIC DESTINATIONS, STEREO FUTURES, TRANSFORMERS: Steveo's sounds).";
     if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS)
         return z == Z_PATCH_CAT ? "ALL: the list shows every category (the TAGS page's other filters still apply)."
                                 : "Click: the list shows only this category (the number: how many). ALL shows them all. "
@@ -1437,6 +1502,8 @@ intptr_t patches_test(ed_t *e, intptr_t op, char *buf, float opt) {
 /* where zone z of the PATCHES page is (load_test's clicks, library.c) */
 int patches_zone_rect(ed_t *e, int z, RECT *r) {
     if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { *r = action_rect(z - Z_PATCH_ACT); return 1; }
+    if (z >= Z_PATCH_TYPE && z < Z_PATCH_TYPE + 4) { *r = type_rect(z - Z_PATCH_TYPE); return 1; }
+    if (z == Z_PATCH_LIB_PREV || z == Z_PATCH_LIB_NEXT) { *r = lib_arrow_rect(z == Z_PATCH_LIB_NEXT); return 1; }
     if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS) {
         int n = cats(e);
         if (z - Z_PATCH_CAT >= n) return 0;

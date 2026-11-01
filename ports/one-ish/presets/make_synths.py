@@ -41,6 +41,8 @@ OLD_S1.update({"gen_keys": "Held Keys", "gen_follow_keys": "Off"})
 # (2026-11-01) the Synth's SCALE (key_scale: what the generators play in) was Minor until 2026-11-01, Major for new
 # sounds since; the factory sounds keep Minor (src/synths.h state_absent reads a missing key_scale as Minor too)
 OLD_S1.update({"key_scale": "Minor"})
+# (2026-11-02) SPREAD at 12 o'clock for new sounds (it was 0); the factory sounds keep 0 (src/synths.h state_absent too)
+OLD_S1.update({"spread": 0})
 # (2026-11-01) the ANALOG page's spreads and drift, 0 (exact) until that day; since then a gentle analog feel by default
 # (src/synths.h LEGACY_AN: a state saved before, dv < 2, reads them as 0 too)
 OLD_S1.update({k: 0 for k in ("drift", "an_cut", "an_env", "an_lvl", "an_tune", "an_res")})

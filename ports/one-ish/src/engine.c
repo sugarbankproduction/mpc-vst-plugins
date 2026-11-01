@@ -299,6 +299,7 @@ enum {
     P_ANALOG_AMT,
     P_LINK_POLY,     /* (2026-11-01) the POLYPHONY panel's LINK (the window's kind, as glide's): stored */
     P_LINK_HOLD, P_LINK_OCTAVE,   /* (2026-11-01) the hand controls' HOLD and OCTAVE LINKs (the window's kind): stored */
+    P_HOLD_ADD,      /* (2026-11-02) HOLD's ADD: a new key joins what HOLD latched instead of replacing it */
     P_LINK_ARP_ALL,  /* (2026-11-01) the ARPEGGIATOR panel's LINK ALL (the window's kind): stored */
     P_COUNT
 };
@@ -469,6 +470,7 @@ static const char *const KEYS[P_COUNT] = {
     "analog_amt",   /* (2026-11-01) ANALOG AMOUNT */
     "link_poly",    /* (2026-11-01) */
     "link_hold", "link_octave",   /* (2026-11-01) */
+    "hold_add",     /* (2026-11-02) */
     "link_arp_all", /* (2026-11-01) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
@@ -1733,7 +1735,8 @@ static int uni_take(one_t *s, int note, int *idx) {
 }
 
 static void note_on(one_t *s, int note, int vel) {
-    if (s->nheld == 0) release_held(s, 0);   /* a non-legato note under HOLD (no pedal down) replaces what it latched */
+    /* a non-legato note under HOLD (no pedal down) replaces what it latched; with HOLD's ADD (2026-11-02) it joins them */
+    if (s->nheld == 0) release_held(s, s->val[P_HOLD_ADD] > 0.5f);
     forget(s, note);              /* a repeated key moves to the top instead of being held twice */
     if (s->nheld == MAX_HELD) forget(s, s->held[0]);   /* drop the oldest key */
     s->held[s->nheld++] = note;

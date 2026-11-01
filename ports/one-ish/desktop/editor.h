@@ -65,8 +65,8 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_RND_VOICE,           /* + 0..2: the RANDOM page's BOTH, MONO, POLY (RV_*) */
        Z_RND_GENS = 100056,   /* (2026-11-01) the RANDOM page's RANDOMISE GENERATORS (the Synth in focus) ... */
        Z_RND_GENS_ALL,        /* ... and its ALL (all three Synths): the generators only (ed_rnd_gens) */
-       Z_RND_KEYLOCK,         /* (2026-11-01) LOCK KEY + SCALE (the same as the GENERATIVE page's Z_GEN_KEYLOCK) */
        Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
+       Z_RND_KEYLOCK = 100090,   /* (2026-11-02) + KL_: KEY, its LOCK, SCALE, its LOCK */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
 enum { SCR_SETUP = -11, NSYNTHS = 3 };   /* the centre screen's SETUP page (the three Synths side by side) */
@@ -83,8 +83,9 @@ enum { Z_HUB_ON = 670000,        /* + row: a generator's ON (HUB[row]) */
         * its ALL half: all three Synths); SYNC over the filters' ALL 3 (both cutoffs of every Synth to the focus's) */
        Z_GEN_RND = 670250, Z_GEN_RND_ALL, Z_GEN_MUT, Z_GEN_MUT_ALL, Z_GEN_RESET, Z_GEN_RESET_ALL, Z_SYNC_CUT,
        Z_HUB_BPM_DOWN, Z_HUB_BPM_UP,   /* (2026-10-30) the hub page's GEN TEMPO < and > (the Synth's own BPM) */
-       Z_GEN_KEYLOCK,                  /* (2026-11-01) LOCK KEY + SCALE (one setting with the RANDOM page's) */
        Z_HUB_END = 670300 };
+/* (2026-11-02) the chains that run up to an explicit number mustn't reach it (one did: LOCK's zones took the KEY row's) */
+_Static_assert(Z_RIB_HOLD < Z_RND_GO_ALL && Z_RND_VOICE + 2 < Z_RND_GENS && Z_RND_GENS_ALL < Z_RND_LOCK, "zone numbers collide");
 #define TEST_HUB 0x4F314842   /* VENDOR_SPECIFIC index: value = HT_ op (hub.c) */
 enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 1000) */
        HT_OWN,                /* 1: TEMPO is OWN (RECEIVE MIDI CLOCK off) */
@@ -99,7 +100,7 @@ enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 100
        HT_RND_VOICING,        /* (2026-10-30) the RANDOM page's MONO / POLY / BOTH (RV_*) */
        HT_PEEK,               /* (2026-10-30) an engine readout: ptr in, its key; out, its text (1 KB) */
        HT_GEN_LIT,            /* (2026-11-01) 1: the console's GEN ON is lit (a generator on in any Synth) */
-       HT_KEYLOCK,          /* (2026-11-01) 1: LOCK KEY + SCALE is lit */
+       HT_KEYLOCK,          /* (2026-11-01) bit 0: KEY's LOCK lit, bit 1: SCALE's */
        HT_HOLDS };            /* (2026-11-01) the HOLDs lit: 1 the X/Y pad's, 2 the ribbon's; 4, 8 their touch held */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
@@ -303,7 +304,7 @@ typedef struct {
     int together;                              /* TOGETHER lit: SYNTH buttons add / remove Synths (never saved) */
     nav_ui_t nav;                              /* (2026-10-30) BACK / FWD, the overview's Synth (nav.c) */
     int rnd_voicing;                           /* (2026-10-30) the RANDOM page's BOTH / MONO / POLY (RV_*) */
-    int rnd_keylock;                           /* (2026-11-01) LOCK KEY + SCALE: the randomisers keep them */
+    int rnd_keylock;                           /* (2026-11-02) bit 0: KEY's LOCK, bit 1: SCALE's: the randomisers keep them */
     int no_link;                               /* (2026-10-30) the randomiser's edits: no LINK to the other Synths */
     int gens_arm;                              /* (2026-10-30) RESET (hub_gens.c): the half clicked once (0: none) */
     unsigned gens_arm_t;                       /* ... and when (GetTickCount): a second click within 4 s resets */
@@ -340,7 +341,11 @@ RECT matrix_cell(int r, int col);             /* the matrix on the screen: row r
 RECT rnd_rect(int z);                         /* the randomiser page: where control z (Z_RND_*) sits */
 RECT rnd_col(int col);                        /* the randomiser page: its three columns of buttons (0-2) */
 RECT rnd_help_rect(void);                     /* the randomiser page: its help, under RANDOMISE GENERATORS */
-RECT keylock_rect(void);                      /* (2026-11-01) LOCK KEY + SCALE, on the RANDOM and GENERATIVE pages */
+enum { KL_KEY, KL_KEY_LOCK, KL_SCALE, KL_SCALE_LOCK, KL_PARTS };
+RECT keylock_rect(int part);                  /* (2026-11-02) KEY and SCALE with a LOCK each, along the screen's bottom */
+void keylock_press(ed_t *e, int part);        /* a click: a list of KEYs or SCALEs, or a LOCK */
+void keylock_draw(HDC dc, ed_t *e);
+const char *keylock_help(int part);
 RECT focus_part(int c, int part);             /* SYNTH c's button: its cap (0), M (1) and S (2) halves */
 int synth_muted(ed_t *e, int c);              /* SYNTH c off (its ON) / soloed (never saved) */
 int synth_soloed(ed_t *e, int c);
@@ -704,6 +709,8 @@ int parts_hit(ed_t *e, POINT pt);              /* the PARTS page */
 int parts_subs(ed_t *e);
 void parts_open(ed_t *e, int slot);            /* the PARTS page on slot (-1: as it was) */
 void parts_draw(HDC dc, ed_t *e);
+void parts_lib_label(char *out, int n);        /* (2026-11-02) the library in use, for the PATCHES page */
+void parts_lib_step(ed_t *e, int d);           /* the next or previous library */
 void parts_help(ed_t *e, char *out, int n);
 int parts_press(ed_t *e, int z);               /* 1: z was parts.c's */
 const char *parts_zone_help(ed_t *e, int z);

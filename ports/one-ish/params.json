@@ -390,7 +390,7 @@
   {"key": "noise_r", "name": "Noise Env Release", "min": 0, "max": 100, "default": 50, "dynamic_display": true},
   {"key": "noise_sus", "name": "Noise Env Sustain", "options": ["Off", "On"], "default": "On"},
   {"key": "pan", "name": "Pan", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
-  {"key": "spread", "name": "Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "spread", "name": "Spread", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
   {"key": "drift", "name": "Analog Drift", "min": 0, "max": 100, "unit": "%", "default": 25, "display": "int"},
   {"key": "an_cut", "name": "Voice Cutoff Spread", "min": 0, "max": 100, "unit": "%", "default": 25, "display": "int"},
   {"key": "an_env", "name": "Voice Env Time Spread", "min": 0, "max": 100, "unit": "%", "default": 30, "display": "int"},
@@ -1147,7 +1147,7 @@
   {"key": "s2_noise_r", "name": "S2 Noise Env Release", "min": 0, "max": 100, "default": 50, "dynamic_display": true},
   {"key": "s2_noise_sus", "name": "S2 Noise Env Sustain", "options": ["Off", "On"], "default": "On"},
   {"key": "s2_pan", "name": "S2 Pan", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
-  {"key": "s2_spread", "name": "S2 Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "s2_spread", "name": "S2 Spread", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
   {"key": "s2_drift", "name": "S2 Analog Drift", "min": 0, "max": 100, "unit": "%", "default": 25, "display": "int"},
   {"key": "s2_an_cut", "name": "S2 Voice Cutoff Spread", "min": 0, "max": 100, "unit": "%", "default": 25, "display": "int"},
   {"key": "s2_an_env", "name": "S2 Voice Env Time Spread", "min": 0, "max": 100, "unit": "%", "default": 30, "display": "int"},
@@ -1615,7 +1615,7 @@
   {"key": "s3_noise_r", "name": "S3 Noise Env Release", "min": 0, "max": 100, "default": 50, "dynamic_display": true},
   {"key": "s3_noise_sus", "name": "S3 Noise Env Sustain", "options": ["Off", "On"], "default": "On"},
   {"key": "s3_pan", "name": "S3 Pan", "min": -100, "max": 100, "unit": "%", "default": 0, "display": "int"},
-  {"key": "s3_spread", "name": "S3 Spread", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "s3_spread", "name": "S3 Spread", "min": 0, "max": 100, "unit": "%", "default": 50, "display": "int"},
   {"key": "s3_drift", "name": "S3 Analog Drift", "min": 0, "max": 100, "unit": "%", "default": 25, "display": "int"},
   {"key": "s3_an_cut", "name": "S3 Voice Cutoff Spread", "min": 0, "max": 100, "unit": "%", "default": 25, "display": "int"},
   {"key": "s3_an_env", "name": "S3 Voice Env Time Spread", "min": 0, "max": 100, "unit": "%", "default": 30, "display": "int"},
@@ -2007,7 +2007,10 @@
   {"key": "link_poly", "name": "Link Polyphony (3 Synths)", "options": ["Off", "On"], "default": "Off"},
   {"key": "link_arp_all", "name": "Link Arpeggiator (3 Synths)", "options": ["Off", "On"], "default": "Off"},
   {"key": "link_hold", "name": "Link Hold (3 Synths)", "options": ["Off", "On"], "default": "On"},
-  {"key": "link_octave", "name": "Link Octave (3 Synths)", "options": ["Off", "On"], "default": "On"}
+  {"key": "link_octave", "name": "Link Octave (3 Synths)", "options": ["Off", "On"], "default": "On"},
+  {"key": "s2_hold_add", "name": "S2 Hold Adds Notes", "options": ["Off", "On"], "default": "Off"},
+  {"key": "s3_hold_add", "name": "S3 Hold Adds Notes", "options": ["Off", "On"], "default": "Off"},
+  {"key": "hold_add", "name": "Hold Adds Notes", "options": ["Off", "On"], "default": "Off"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},

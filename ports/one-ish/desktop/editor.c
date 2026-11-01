@@ -217,7 +217,7 @@ static void layout(void) {
     SetRect(&L.head, x0, y, x1, y + sc(18));
     y += sc(18);
     for (int r = 0; r < ROWS; r++, y += sc(22)) SetRect(&L.row[r], x0, y, x1, y + sc(22));
-    SetRect(&L.help, x0, y + sc(8), x1, L.screen.bottom - sc(6));
+    SetRect(&L.help, x0, y + sc(8), x1, L.screen.bottom - sc(27));   /* (2026-11-02: over the KEY and SCALE row) */
     L.tab_matrix = zone(ZONE_TAB_MATRIX);
     L.tab_more = zone(ZONE_TAB_MORE);
     L.tab_analog = zone(ZONE_TAB_ANALOG);
@@ -334,8 +334,8 @@ RECT rnd_rect(int z) {
         int y = L.help.top - sc(4);
         if (z == Z_RND_GENS) SetRect(&r, xl, y, xl + half - sc(50), y + sc(18));
         else SetRect(&r, xl + half - sc(46), y, xl + half, y + sc(18));
-    } else if (z == Z_RND_KEYLOCK) {
-        r = keylock_rect();
+    } else if (z >= Z_RND_KEYLOCK && z < Z_RND_KEYLOCK + KL_PARTS) {
+        r = keylock_rect(z - Z_RND_KEYLOCK);
     }
     return r;
 }
@@ -344,10 +344,23 @@ RECT rnd_help_rect(void) {   /* (2026-11-01) the RANDOM and GENERATIVE pages' he
     r.top += sc(20);
     return r;
 }
-RECT keylock_rect(void) {   /* (2026-11-01) LOCK KEY + SCALE: that row's right half (the RANDOM and GENERATIVE pages) */
-    int half = (rw(&L.row[0]) - sc(8)) / 2, xr = L.row[0].left + half + sc(8), y = L.help.top - sc(4);
-    RECT r = {xr, y, xr + half, y + sc(18)};
+static void pick_option(ed_t *e, int i, RECT r);
+/* (2026-11-02, owner: "very easy to access ... locked to the main UI window as a lower row") a row along the bottom of
+ * the centre screen on every page: the generators' KEY, its LOCK, SCALE, its LOCK */
+RECT keylock_rect(int part) {
+    static const float X[5] = {0.24f, 0.42f, 0.54f, 0.86f, 1.0f};
+    int w = rw(&L.row[0]), y = L.screen.bottom - sc(23), g = sc(2);
+    RECT r = {L.row[0].left + (int)(w * X[part]), y, L.row[0].left + (int)(w * X[part + 1]) - (part < 3 ? g : 0), y + sc(18)};
     return r;
+}
+void keylock_press(ed_t *e, int part) {
+    if (part == KL_KEY_LOCK || part == KL_SCALE_LOCK) {
+        e->rnd_keylock ^= part == KL_KEY_LOCK ? 1 : 2;
+    } else {
+        int i = rnd_key(part == KL_KEY ? "key_root" : "key_scale");
+        if (i < NPARAMS) pick_option(e, i, keylock_rect(part));
+    }
+    InvalidateRect(e->wnd, NULL, FALSE);
 }
 
 /* SYNTH c's button (the Panel Focus): its select cap on the left, the M | S split cap beside it (MUTE: the Synth's ON
@@ -393,6 +406,7 @@ static void invalidate(ed_t *e, const RECT *r) {
     if (e->wnd) InvalidateRect(e->wnd, r, FALSE);
 }
 static int on_screen(ed_t *e, int i) {   /* does the centre screen's current page show param i (or depend on it)? */
+    if (i == rnd_key("analog_amt")) return 1;   /* (2026-11-02) ANALOG AMOUNT's bar isn't one of the page's items */
     if (e->screen == SCR_MATRIX) {   /* (filtered, any row's change may show or hide rows) */
         int rows[NMATRIX], n = mx_view(e, rows), f = mx_filtering(e);
         for (int j = f ? 0 : e->sub * ROWS; j < (f ? n : (e->sub + 1) * ROWS) && j < n; j++)
@@ -411,6 +425,8 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
 static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control, the screen, what shows it */
     if (i < 0 || i >= NPARAMS) { invalidate(e, NULL); return; }
     if (i == rnd_key("link_octave") || i == rnd_key("octave_shift")) invalidate(e, &L.oct_leds);
+    if (i == rnd_key("key_root") || i == rnd_key("key_scale"))   /* the row along the screen's bottom */
+        for (int p = 0; p < KL_PARTS; p++) { RECT r = keylock_rect(p); invalidate(e, &r); }
     qm_matrix_changed(e, i);   /* a matrix row: the knobs' modulation rings (quickmod.c) */
     if (i == rnd_key("syn_on") || i == rnd_key("syn_solo"))   /* the SYNTH buttons' M | S */
         for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]);
@@ -455,6 +471,12 @@ static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control
 static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z: it and the help line */
     if (z < 0) return;
     if (z < NPARAMS) { invalidate_param(e, z); return; }
+    if (z >= Z_RND_KEYLOCK && z < Z_RND_KEYLOCK + KL_PARTS) {
+        RECT k = keylock_rect(z - Z_RND_KEYLOCK);
+        invalidate(e, &k);
+        invalidate(e, &L.help);
+        return;
+    }
     const RECT *r = NULL;
     switch (z) {
     case Z_KEYS: r = &L.keys; break;
@@ -702,12 +724,11 @@ static void rnd_apply(ed_t *e, const float *target) {
     e->no_link = 0;
 }
 /* (2026-11-01, owner: "a lock setting for the KEY and SCALE so I can mutate and randomise but it will not change the
- * key and scale I've set") LOCK KEY + SCALE lit: what the randomiser made keeps cur's KEY and SCALE */
+ * key and scale I've set") a LOCK lit (2026-11-02: one each): what the randomiser made keeps cur's KEY, SCALE */
 static void keylock_keep(ed_t *e, const float *cur, float *out) {
-    if (!e->rnd_keylock) return;
     int kr = rnd_key("key_root"), ks = rnd_key("key_scale");
-    if (kr < NPARAMS) out[kr] = cur[kr];
-    if (ks < NPARAMS) out[ks] = cur[ks];
+    if ((e->rnd_keylock & 1) && kr < NPARAMS) out[kr] = cur[kr];
+    if ((e->rnd_keylock & 2) && ks < NPARAMS) out[ks] = cur[ks];
 }
 /* a new sound for the focused Synth: RANDOMISE (0) or MUTATE (1) of cur; returns the archetype (RANDOMISE). SEQUENCER
  * lit: its notes (the hook), then its modulation lanes go to the engine here, the settings with the rest of out. */
@@ -925,6 +946,10 @@ static int key_at(ed_t *e, int x, int y, int *vel) {   /* the note under (x, y) 
 
 static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on the centre screen, or -1 */
     if (!PtInRect(&L.screen, pt)) return -1;
+    for (int p = 0; p < KL_PARTS; p++) {   /* (2026-11-02) KEY and SCALE with a LOCK each: on every page */
+        RECT k = keylock_rect(p);
+        if (PtInRect(&k, pt)) return Z_RND_KEYLOCK + p;
+    }
     if (PtInRect(&L.sub_prev, pt) && screen_subs(e) > 1) return Z_SUB_PREV;
     if (PtInRect(&L.sub_next, pt) && screen_subs(e) > 1) return Z_SUB_NEXT;
     if (lib_screen(e->screen)) return lib_hit(e, pt);   /* the patch list and the library's pages (library.c) */
@@ -935,7 +960,7 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (e->screen == SCR_RANDOM) {
         static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_GO_ALL, Z_RND_MUT_ALL, Z_RND_AMOUNT, Z_RND_WILD, Z_RND_UNDO,
                                 Z_RND_REDO, Z_RND_VOICE, Z_RND_VOICE + 1, Z_RND_VOICE + 2,
-                                Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2, Z_RND_GENS, Z_RND_GENS_ALL, Z_RND_KEYLOCK};
+                                Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2, Z_RND_GENS, Z_RND_GENS_ALL};
         for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
             RECT r = rnd_rect(Z[k]);
             if (Z[k] == Z_RND_AMOUNT || Z[k] == Z_RND_WILD) InflateRect(&r, sc(4), sc(4));   /* easier to catch */
@@ -1313,9 +1338,8 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         rnd_action(e, z == Z_RND_MUTATE || z == Z_RND_MUT_ALL, z == Z_RND_GO_ALL || z == Z_RND_MUT_ALL);
     } else if (z == Z_RND_GENS || z == Z_RND_GENS_ALL) {   /* (2026-11-01) the generators only: the sound stays */
         ed_rnd_gens(e, 0, z == Z_RND_GENS_ALL);
-    } else if (z == Z_RND_KEYLOCK) {   /* (2026-11-01) LOCK KEY + SCALE */
-        e->rnd_keylock = !e->rnd_keylock;
-        InvalidateRect(e->wnd, NULL, FALSE);
+    } else if (z >= Z_RND_KEYLOCK && z < Z_RND_KEYLOCK + KL_PARTS) {   /* (2026-11-02) KEY, SCALE and a LOCK each */
+        keylock_press(e, z - Z_RND_KEYLOCK);
     } else if (z >= Z_RND_VOICE && z < Z_RND_VOICE + RV_COUNT) {   /* (2026-10-30) BOTH / MONO / POLY */
         e->rnd_voicing = z - Z_RND_VOICE;
         InvalidateRect(e->wnd, NULL, FALSE);
@@ -1958,6 +1982,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->ribbon_cc = -1;
         e->rnd_amount = 0.2f;   /* (WILD 0, no ticks: rnd_wild and rnd_also start at 0) */
         e->vol_master = master_param() >= 0;   /* (owner, 2026-11-01) SYNTH OUTPUT's MASTER starts lit */
+        e->hold_pad = e->hold_rib = 1;   /* (owner, 2026-11-02) the X/Y pad's and the ribbon's HOLD start lit */
         e->qm.dst = e->qm.ctl = e->qm.last_row = e->qm.last_dst = e->qm.mark = -1;   /* (quick assign: nothing yet) */
         e->nav.ov_synth = -1;   /* (the overview: the Synth in focus) */
         e->cb.sel = -1;         /* (the CABLES view: hidden, nothing selected) */

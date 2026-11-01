@@ -953,6 +953,13 @@ static void arrows_row(HDC dc, ed_t *e, int row, int down, int up, const char *n
     if (hot) frame(dc, m, P_FRAME_HOT);
     label(dc, m, val, font_cell, P_LCD, DT_CENTER);
 }
+/* (2026-11-02) the PATCHES page's bottom row: the library in use, and < > through them */
+void parts_lib_label(char *out, int n) {
+    char cur[PATCH_NAME_MAX + 1];
+    settings_space(cur, sizeof cur);
+    snprintf(out, n, "LIB: %s (%d)", space_label(cur), count_patches(cur));
+}
+void parts_lib_step(ed_t *e, int d) { space_step(e, d); }
 void parts_lib_draw(HDC dc, ed_t *e) {
     char cur[PATCH_NAME_MAX + 1], v[96];
     settings_space(cur, sizeof cur);

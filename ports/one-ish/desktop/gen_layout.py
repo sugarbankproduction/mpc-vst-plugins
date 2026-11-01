@@ -519,6 +519,7 @@ def build(lay):
     L.ctl("link_poly", "toggle", 690, YB + HB - 20, 48, 14, "LINK", SIDE)   # (2026-11-02, owner: the panel's lower right)
     L.page("POLY", "POLYPHONY", "How notes share the voices.", [
         ("voices", "Voices"), ("note_priority", "Mono Priority"), ("steal_mode", "Voice Stealing"), ("hold", "Hold"),
+        ("hold_add", "Hold Adds Notes"),
         ("unison", "Unison"), ("uni_count", "Unison Voices"), ("uni_detune", "Unison Detune"),
         ("pitch_var", "Pitch Variance"), ("link_poly", "Link (3 Synths)")])
 
@@ -725,12 +726,13 @@ def build(lay):
     L.ctl("link_ribbon", "toggle", 387, 615, 54, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     # (2026-11-02, owner) a stack beside the knob: glide's ON, its LINK; HOLD, its LINK
-    L.ctl("glide", "toggle", 252, 630, 48, 14, "ON", SIDE)
-    L.ctl("link_glide", "toggle", 252, 646, 48, 14, "LINK", SIDE)
+    L.ctl("glide", "toggle", 252, 628, 48, 14, "ON", SIDE)
+    L.ctl("link_glide", "toggle", 252, 643, 48, 14, "LINK", SIDE)
     L.ctl("glide_type", "leds", 318, 624, 52, 66, "TYPE")   # (2026-11-01, owner: moved right)
     # (2026-11-01, owner) the Synth's HOLD, here from the POLYPHONY panel, under glide's LINK, with a LINK of its own
-    L.ctl("hold", "toggle", 252, 670, 48, 14, "HOLD", SIDE)
-    L.ctl("link_hold", "toggle", 252, 686, 48, 14, "LINK", SIDE)
+    L.ctl("hold", "toggle", 252, 660, 48, 14, "HOLD", SIDE)
+    L.ctl("hold_add", "toggle", 252, 675, 48, 14, "ADD", SIDE)   # (2026-11-02, owner) new keys join what HOLD holds
+    L.ctl("link_hold", "toggle", 252, 690, 48, 14, "LINK", SIDE)
     # (2026-11-01, owner) OCTAVE's LINK, beside its name: lit, the buttons move the keyboard (every Synth together); out,
     # the Synth in focus's own OCTAVE (octave_shift), so each Synth can sit in its own (editor.c set_octave)
     L.ctl("link_octave", "toggle", 94, 682, 44, 14, "LINK", SIDE)   # (2026-11-02: both left-justified, off the knob)
@@ -796,14 +798,14 @@ LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
                # (2026-10-31) the controller box: glide's settings; the pitch wheel's LINK also keeps BEND RANGE alike
                ("link_glide", ("glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando")),
                ("link_bend", ("bend_up", "bend_down")),
-               ("link_hold", ("hold",)),   # (2026-11-01; link_poly has it too: either lit links it)
+               ("link_hold", ("hold", "hold_add")),   # (2026-11-01; link_poly has them too: either lit links them)
                # (2026-11-01) the POLYPHONY panel: all it shows and its page
                # (2026-11-01) the ARPEGGIATOR panel's LINK ALL: everything it and its page show (RATE's
                # four keep LINK too: either lit links them, desktop/hub.c link_lit)
                ("link_arp_all", ("arp_on", "arp_latch", "arp_pattern", "arp_oct", "arp_dir", "arp_oct_order", "arp_pendulum",
                                  "arp_pend_mode", "arp_rnd_mode", "arp_sync", "arp_div", "arp_timing", "arp_rate",
                                  "arp_gate", "arp_swing", "arp_follow_swing", "arp_reset")),
-               ("link_poly", ("voices", "note_priority", "steal_mode", "hold", "unison", "uni_count", "uni_detune",
+               ("link_poly", ("voices", "note_priority", "steal_mode", "hold", "hold_add", "unison", "uni_count", "uni_detune",
                               "pitch_var"))] + \
               [("link_lfo%d" % n, tuple("lfo%d_%s" % (n, s) for s in ("rate", "sync", "timing"))) for n in range(1, 5)]
 
