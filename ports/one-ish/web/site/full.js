@@ -1,6 +1,7 @@
 // The page for the full plugin (web/full): starts the module (moowon_full.js), shows the panel the editor thread draws,
 // sends it the mouse and keys, shows the menus, message boxes, dialogs and file pickers it asks for, plays its sound
 // (ring_worklet.js) and passes MIDI keyboards through. Files the plugin saves live in the browser (IndexedDB).
+import { createSections } from "./sections.js";
 const $ = (id) => document.getElementById(id);
 const EV = { MOVE: 1, DOWN: 2, UP: 3, WHEEL: 4, LEAVE: 5, KEYDOWN: 6, KEYUP: 7, RESULT: 8, BLUR: 9 };
 const UI = { MENU: 1, MSGBOX: 2, DIALOG: 3, OPEN: 4, SAVE: 5 };
@@ -62,6 +63,7 @@ function present() {
         }
       }
       g2d.putImageData(imgBuf, x0, y0, 0, 0, cw, ch);
+      if (sections && mode === "sections") sections.draw();
     }
     if (Atomics.load(H, p + 3) === seq) Atomics.store(H, p + 4, seq);
   }
@@ -69,50 +71,67 @@ function present() {
 }
 
 // ---- the mouse, touch and keys ----
-function toPanel(e) {
-  const r = canvas.getBoundingClientRect();
-  return [Math.round((e.clientX - r.left) * panelW / r.width), Math.round((e.clientY - r.top) * panelH / r.height)];
-}
+// a view (the whole panel, or a piece of it in the sections view) turns a pointer position into panel pixels;
+// locate(el, e, held) -> {piece, x, y} or null (held: the piece the press started on)
+const wholeView = {
+  locate(el, e) {
+    const r = canvas.getBoundingClientRect();
+    return { piece: null, x: Math.round((e.clientX - r.left) * panelW / r.width), y: Math.round((e.clientY - r.top) * panelH / r.height) };
+  },
+};
 const mods = (e) => (e.shiftKey ? 1 : 0) | (e.ctrlKey || e.metaKey ? 2 : 0) | (e.altKey ? 4 : 0);
-let mainPointer = null, wheelAcc = 0;
-function setupInput() {
-  canvas.addEventListener("pointerdown", (e) => {
+let mainPointer = null, heldPiece = null, wheelAcc = 0;
+function attachPointer(el, viewOf) {
+  el.addEventListener("pointerdown", (e) => {
     if (mainPointer !== null && e.pointerId !== mainPointer) return;   // one finger plays the mouse
+    const at = viewOf().locate(el, e, null);
+    if (!at) return;
     mainPointer = e.pointerId;
-    canvas.focus({ preventScroll: true });
-    try { canvas.setPointerCapture(e.pointerId); } catch { /* (a pointer the browser no longer tracks) */ }
-    const [x, y] = toPanel(e);
+    heldPiece = at.piece;
+    el.focus({ preventScroll: true });
+    try { el.setPointerCapture(e.pointerId); } catch { /* (a pointer the browser no longer tracks) */ }
     const bit = [1, 4, 2, 8, 16][e.button] || 0;
-    M._web_event(EV.MOVE, x, y, e.pointerType === "mouse" ? e.buttons & ~bit : 0, mods(e));
-    M._web_event(EV.DOWN, x, y, e.pointerType === "mouse" ? e.button : 0, mods(e));
+    M._web_event(EV.MOVE, at.x, at.y, e.pointerType === "mouse" ? e.buttons & ~bit : 0, mods(e));
+    M._web_event(EV.DOWN, at.x, at.y, e.pointerType === "mouse" ? e.button : 0, mods(e));
     e.preventDefault();
   });
-  canvas.addEventListener("pointermove", (e) => {
+  el.addEventListener("pointermove", (e) => {
     if (mainPointer !== null && e.pointerId !== mainPointer) return;
-    const [x, y] = toPanel(e);
-    M._web_event(EV.MOVE, x, y, e.pointerType === "mouse" ? e.buttons : (mainPointer !== null ? 1 : 0), mods(e));
+    const at = viewOf().locate(el, e, mainPointer !== null ? heldPiece : null);
+    if (!at) return;
+    M._web_event(EV.MOVE, at.x, at.y, e.pointerType === "mouse" ? e.buttons : (mainPointer !== null ? 1 : 0), mods(e));
   });
   const up = (e) => {
     if (e.pointerId !== mainPointer) return;
+    const at = viewOf().locate(el, e, heldPiece) || { x: 0, y: 0 };
     mainPointer = null;
-    const [x, y] = toPanel(e);
-    M._web_event(EV.UP, x, y, e.pointerType === "mouse" ? e.button : 0, mods(e));
+    heldPiece = null;
+    M._web_event(EV.UP, at.x, at.y, e.pointerType === "mouse" ? e.button : 0, mods(e));
   };
-  canvas.addEventListener("pointerup", up);
-  canvas.addEventListener("pointercancel", up);
-  canvas.addEventListener("pointerleave", () => { if (mainPointer === null) M._web_event(EV.LEAVE, 0, 0, 0, 0); });
-  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
-  canvas.addEventListener("wheel", (e) => {
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+  el.addEventListener("pointerleave", () => { if (mainPointer === null) M._web_event(EV.LEAVE, 0, 0, 0, 0); });
+  el.addEventListener("contextmenu", (e) => e.preventDefault());
+  el.addEventListener("wheel", (e) => {
+    const at = viewOf().locate(el, e, null);
+    if (!at) return;   // (off the pieces: the page scrolls)
     e.preventDefault();
     const px = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
     wheelAcc += px;
     const notches = Math.trunc(wheelAcc / 50);
     if (!notches) return;
     wheelAcc -= notches * 50;
-    const [x, y] = toPanel(e);
-    M._web_event(EV.WHEEL, x, y, -notches * 120, mods(e));
+    M._web_event(EV.WHEEL, at.x, at.y, -notches * 120, mods(e));
   }, { passive: false });
-  canvas.addEventListener("keydown", (e) => {
+}
+function setupInput() {
+  attachPointer(canvas, () => wholeView);
+  for (const el of sections.elements) attachPointer(el, () => sections);
+  // keys go to the panel from anywhere on the page, but not while typing in a box or with a menu or dialog open
+  const typing = (e) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement ||
+    e.target instanceof HTMLSelectElement || layer.childElementCount > 0;
+  addEventListener("keydown", (e) => {
+    if (typing(e)) return;
     const vk = vkOf(e);
     if (!vk) return;
     if (!browserKey(e)) e.preventDefault();
@@ -124,8 +143,25 @@ function setupInput() {
     else if (e.key === "Tab") ch = 9;
     M._web_event(EV.KEYDOWN, vk, ch, e.repeat ? 1 : 0, mods(e));
   });
-  canvas.addEventListener("keyup", (e) => { const vk = vkOf(e); if (vk) M._web_event(EV.KEYUP, vk, 0, 0, mods(e)); });
-  canvas.addEventListener("blur", () => M._web_event(EV.BLUR, 0, 0, 0, 0));
+  addEventListener("keyup", (e) => { const vk = vkOf(e); if (vk) M._web_event(EV.KEYUP, vk, 0, 0, mods(e)); });
+  addEventListener("blur", () => M._web_event(EV.BLUR, 0, 0, 0, 0));   // (another window or tab: notes let go)
+}
+
+// ---- whole panel or sections (layout B: phones and narrow windows) ----
+let sections = null, mode = "whole";
+const wantsSections = () => innerWidth < 600 || (innerWidth < 1000 && innerHeight > innerWidth);
+function setMode(m) {
+  mode = m;
+  $("stage").hidden = m !== "whole";
+  $("sections").hidden = m !== "sections";
+  $("to-sections").hidden = m !== "whole";
+  document.body.classList.toggle("sections-mode", m === "sections");
+  if (m === "sections") sections.layout();
+}
+function toggleMode() {
+  const m = mode === "whole" ? "sections" : "whole";
+  try { localStorage.setItem("mw.view", m); } catch { /* (not kept) */ }
+  setMode(m);
 }
 function browserKey(e) {   // keys left to the browser
   if (["F5", "F11", "F12"].includes(e.key)) return true;
@@ -157,6 +193,7 @@ function vkOf(e) {
 // ---- menus, message boxes, dialogs, file pickers (Module.mwUI from the editor thread) ----
 const layer = $("ui-layer");
 const panelToPage = (x, y) => {
+  if (mode === "sections") return sections.pageOf(x, y) || [innerWidth / 2 - 100, innerHeight / 3];
   const r = canvas.getBoundingClientRect();
   return [r.left + x * r.width / panelW, r.top + y * r.height / panelH];
 };
@@ -486,7 +523,8 @@ async function start() {
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
     // (drawn at least at full size and shrunk by the browser: below 1 the panel's labels crowd, as on a small screen)
     const asked = Number(params.get("scale"));
-    const scale = asked ? clamp(asked, 0.5, 2) : clamp((innerWidth * dpr) / 2162, 1, 2);
+    const zoomed = wantsSections() ? dpr * 1.25 : 0;   // (the sections view shows pieces up to 1.5x: draw sharper)
+    const scale = asked ? clamp(asked, 0.5, 2) : clamp(Math.max((innerWidth * dpr) / 2162, zoomed), 1, 2);
     const latency = clamp(Math.round(Number(params.get("latency")) || 1024), 256, 3072);
     if (!M._web_start(ctx.sampleRate, scale, latency)) throw new Error("the plugin could not start");
     infoPtr = M._web_info();
@@ -512,8 +550,12 @@ async function start() {
     node.connect(ctx.destination);
     await ctx.resume();
     $("start-box").hidden = true;
-    $("stage").hidden = false;
     $("bar").hidden = false;
+    sections = createSections({ source: canvas, scale: panelW / 2162, root: $("sections"), onToggle: toggleMode });
+    $("to-sections").addEventListener("click", toggleMode);
+    let saved = null;
+    try { saved = localStorage.getItem("mw.view"); } catch { /* (none) */ }
+    setMode(saved === "whole" || saved === "sections" ? saved : wantsSections() ? "sections" : "whole");
     setupInput();
     requestAnimationFrame(present);
     canvas.focus({ preventScroll: true });

@@ -30,6 +30,7 @@ are compiled exactly as for Windows, against a small stand-in for the parts of W
 | `web/full/build.sh` | Builds it all into `web/site/moowon_full.js` and `.wasm` (about 16 MB) |
 | `web/full/serve.py` | A local server with the two headers the page needs (below); `POST /__shot` saves a canvas picture for checks |
 | `web/site/index.html`, `full.js`, `full.css`, `ring_worklet.js` | The page: canvas, input, menus and dialogs as HTML, file pickers and downloads, the sound thread, MIDI |
+| `web/site/sections.js` | The phone and narrow-window view: the panel's sections on tabs, the keyboard at the bottom |
 
 **Threads.** The page (the browser's main thread) only shows things and passes input on. An *editor thread* runs the
 Windows message loop and makes every plugin call except sound, as a Windows UI thread does. An *audio thread* renders
@@ -54,8 +55,18 @@ visit. IMPORT and the other open boxes copy the files you pick into `C:\Upload`;
 name and hand the file to the browser's downloads. Opening a folder (SETTINGS, the importer's report) can't work in a
 browser: a file is downloaded instead, a folder gives a message.
 
-**What is not there yet:** a layout for phones and narrow windows (the panel is only scaled down), MIDI clock and song
-position (the plugin's clock runs free), and the MIDI OUT notes (nothing receives them in the browser).
+**Phones and narrow windows** (2026-11-01, the owner's pick of four mock-ups: "B could be cool for mobile"; `web/site/
+sections.js`): the panel's own sections one at a time on tabs (SCREEN, OSC, LFO, ARP, FILTER, ENV, FX, PLAY), each as
+large as the screen allows (at most 1.5 times full size; a tab taller than the screen scrolls), with the keyboard and
+the ribbon always at the bottom (`<` `>` move it an octave; from C4 at first) and WHOLE PANEL to switch back (SECTIONS
+VIEW, under the whole panel, switches again; the choice is remembered). It starts by itself on a screen under 600
+pixels wide, or under 1000 and upright. The editor still draws the whole panel; this view copies the parts it shows
+and sends touches back at the panel's own coordinates (a drag stays on the piece it started on), and menus open where
+the tap was. Sections come from the module boxes in `desktop/gen_layout.py` (base pixels). Checked in the built-in
+browser at 375 x 812 (2026-11-01): every tab draws, a tapped key plays, tabs switch. Not on a real phone yet.
+
+**What is not there yet:** MIDI clock and song position (the plugin's clock runs free), and the MIDI OUT notes (nothing
+receives them in the browser).
 
 ### Checked (2026-11-01, Chromium in the app's built-in browser, offline from the device)
 

@@ -23,7 +23,22 @@ button.big { font-size: 20px; padding: 14px 32px; }
 button:disabled { opacity: 0.5; cursor: default; }
 #stage { width: 100%; }
 #panel { display: block; width: 100%; height: auto; outline: none; touch-action: none; image-rendering: auto; }
-#bar { display: flex; gap: 16px; justify-content: space-between; padding: 6px 12px; color: var(--dim); font-size: 12px; }
+#bar { display: flex; gap: 16px; justify-content: space-between; align-items: center; padding: 6px 12px; color: var(--dim); font-size: 12px; }
+button.small { padding: 4px 10px; font-size: 12px; }
+
+/* the sections view (sections.js): tabs at the top, the section in the middle (it scrolls), the keys at the bottom */
+#sections { height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: #121314; }
+body.sections-mode #bar { display: none; }
+.sec-tabs { display: flex; gap: 4px; padding: 6px; overflow-x: auto; flex: none; scrollbar-width: none; }
+.sec-tabs button { flex: 1 0 auto; padding: 8px 6px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; background: #2c2e32; border-color: #3a3d42; }
+.sec-tabs button.on { background: var(--red); border-color: #6a0c06; color: #fff; }
+.sec-body { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+.sec-view, .sec-keys { display: block; touch-action: none; outline: none; }
+.sec-kbar { display: flex; align-items: center; gap: 8px; padding: 4px 8px; flex: none; background: #1d1f22; color: var(--text); font-size: 13px; }
+.sec-kbar .sec-oct { padding: 4px 12px; }
+.sec-kbar .sec-octlabel { min-width: 2.5em; text-align: center; }
+.sec-kbar .sec-whole { margin-left: auto; padding: 4px 10px; font-size: 11px; }
+.sec-keys { flex: none; }
 
 /* menus, message boxes and dialogs the panel asks for (Windows-like, light, as on the desktop) */
 #ui-layer { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
