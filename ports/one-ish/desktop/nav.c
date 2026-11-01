@@ -146,11 +146,11 @@ void nav_tabs_draw(HDC dc, ed_t *e) {
         RECT t = r;
         if (k >= 1 && k <= NHUB_TAB) t.right -= sc(3);   /* (a little room for the dot) */
         txt(dc, t, tab_label(k), font_tiny, cur ? T_INK : hot ? T_HOT : T_LCD, DT_CENTER);
-        if (k >= 1 && k <= NHUB_TAB) {   /* the dot, at the right end: lit while it plays, a faint ring while it is off */
+        if (k >= 1 && k <= NHUB_TAB) {   /* the dot, at the right end: lit while it plays, red while it is off */
             float dx = r.right - 3.5f * L.s, dy = (r.top + r.bottom) / 2.0f;
             if (dot && !cur) gfx_disc(dx, dy, 3.4f * L.s, C_GLOW);
             if (dot) gfx_disc(dx, dy, 1.9f * L.s, cur ? 0xFF0B1621 : C_TRACE);
-            else gfx_circle(dx, dy, 1.6f * L.s, 1.0f, cur ? 0x800B1621 : 0xFF3E6273);
+            else gfx_disc(dx, dy, 1.7f * L.s, 0xFFE0301C);   /* (2026-11-01: was a faint ring; the panel's red) */
         }
     }
     gfx_end();

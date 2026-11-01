@@ -438,8 +438,9 @@ const char *hub_zone_help(ed_t *e, int z) {
     if (z == Z_VOL_MASTER) return "MASTER: lit, this section's knob is MASTER, the level of the whole instrument (all "
                                   "three Synths, saved with the sound). Off: VOLUME, the Synth in focus's own level. "
                                   "(Only what the knob shows: the button itself is not saved.)";
-    if (z >= Z_HUB_ON && z < Z_HUB_ON + NHUB) return "ON: this generator in the Synth in focus (LINKed Synths, and those "
-                                                     "edited TOGETHER, follow). The digits show which Synths have it on.";
+    if (z >= Z_HUB_ON && z < Z_HUB_ON + NHUB) return "ON (lit) / OFF (red): this generator in the Synth in focus; a click "
+                                                     "switches it (LINKed Synths, and those edited TOGETHER, follow). The "
+                                                     "digits show which Synths have it on.";
     if (z >= Z_HUB_OPEN && z < Z_HUB_OPEN + NHUB) return "Opens this generator's page.";
     if (z == Z_HUB_BPM_DOWN || z == Z_HUB_BPM_UP) return "< >: this Synth's generators' own BPM 1 down / up (Shift: 0.1), "
                                                          "and GEN TEMPO to OWN. Or drag the number sideways, or scroll.";

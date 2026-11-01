@@ -590,6 +590,8 @@ void sync_cutoffs(ed_t *e);                    /* SYNC: both cutoffs of all thre
 void ed_rnd_gens(ed_t *e, int mutate, int all);   /* (editor.c) the randomiser on the GENERATIVE section only */
 int gen_param(int i);                          /* a generator's setting (Synth 1's index; not KEY / SCALE, not shared) */
 void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f);   /* (editor_draw.c) */
+void screen_onoff(HDC dc, RECT r, int on, int hot, HFONT f);   /* (2026-11-01) a generator's ON lit / OFF red */
+int gen_on_param(int i);                       /* (2026-11-01) param i (any Synth's) is a generator's ON */
 void panel_button(HDC dc, const RECT *r, const char *label, int lit, int hot);
 /* cables.c (2026-10-30): the CABLES view. CABLES on the MATRIX page's title line (a plain click; again, CABLES OFF in
  * the jack bay, or Esc: hidden) dims the panel a little and draws each active matrix row of the Synth in focus as a

@@ -1048,6 +1048,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        sound with Euclid and Turing off gets Free (`make_presets.unused_gen_keys`: Held did nothing there, so no sound
        changes), so switching them on plays free; Euclid Turing Bells and Euclid Turing Night keep Held Keys (they play
        from the key held, as designed) and Held Rain its Held rain. Offline (presets.json; bank checks).
+     - OFF in red ("If a generator isn't on, shouldn't it say OFF and maybe be red so it's easy to see? In the middle
+       GUI window"): on the centre screen a generator that is off now reads OFF in the panel's red (the MORE
+       triangles' and MUTE's), on it reads ON lit as before: the GENERATIVE page's ON buttons, and the ON of each
+       generator's own page (where it read "Off" / "On" as text). The generator tabs' dot is red while that generator
+       is off (it was a faint ring). A plain click still switches it. load_test reads the ON button's colour (red
+       off, lit on). (The ALL RUNNING page shows only the generators that are on.)
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

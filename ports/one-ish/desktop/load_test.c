@@ -208,6 +208,20 @@ static void shot(HWND child, int w, int h, const char *bmp, const char *suffix) 
     SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
 }
 
+/* (2026-11-01) the colour the window draws at a point in base units (s: pixels per base unit), via WM_PRINTCLIENT */
+static COLORREF pixel_at(HWND child, float s, float x, float y) {
+    RECT cr;
+    GetClientRect(child, &cr);
+    HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
+    HBITMAP bm = CreateCompatibleBitmap(screen, cr.right, cr.bottom);
+    HGDIOBJ old = SelectObject(dc, bm);
+    SendMessageA(child, WM_PRINTCLIENT, (WPARAM)dc, PRF_CLIENT);
+    COLORREF c = GetPixel(dc, (int)lroundf(x * s), (int)lroundf(y * s));
+    SelectObject(dc, old); DeleteObject(bm); DeleteDC(dc); ReleaseDC(NULL, screen);
+    return c;
+}
+static int is_red(COLORREF c) { return GetRValue(c) > 140 && GetGValue(c) < 90 && GetBValue(c) < 90; }
+
 /* a click at a point given in the layout's base units (s: pixels per base unit) */
 static void click(HWND child, float s, float x, float y) {
     LPARAM at = MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s));
@@ -2421,6 +2435,19 @@ static void gen_hub_test(AEffect *fx, HWND child, float s, const char *bmp, int 
     snprintf(what, sizeof what, "GENERATIVE: the first row's ON switches %s in Synth 1 (on %.0f), not Synth 2 (%.0f), "
              "and again off (%.0f)", PARAMS[i].key, a, a2, fx->getParameter(fx, i));
     check(a > 0.5f && a2 < 0.5f && fx->getParameter(fx, i) < 0.5f, what);
+    {   /* (2026-11-01) a generator that is off says OFF in red; on, ON lit (light blue). The ON button's left end (its
+         * text in the middle), the mouse elsewhere */
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));
+        COLORREF off = pixel_at(child, s, x - 13, y);
+        click(child, s, x, y);
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));
+        COLORREF lit = pixel_at(child, s, x - 13, y);
+        if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_hub_onoff"); }
+        click(child, s, x, y);
+        snprintf(what, sizeof what, "GENERATIVE: an off generator's ON button is red (OFF: %06lx), on it is lit "
+                 "(%06lx), off again (%.0f)", (unsigned long)off, (unsigned long)lit, fx->getParameter(fx, i));
+        check(is_red(off) && !is_red(lit) && GetBValue(lit) > 180 && fx->getParameter(fx, i) < 0.5f, what);
+    }
     /* (2026-11-01) GEN ON / GEN OFF: lit while a generator is on in any Synth (Synth 3's alone too), not lit with none */
     {
         int lit0 = (int)ht(fx, HT_GEN_LIT, 0);

@@ -972,7 +972,11 @@ static void draw_page(HDC dc, ed_t *e, int subs) {
         slot_rects(page_slot(e->screen, j), &nm, &c);
         text(dc, &nm, it->label, font_cell, it->param == e->hover ? T_HOT : T_LCD_DIM,
              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-        if (PARAMS[it->param].nopts) screen_menu(dc, e, it->param, c, 1, font_cell);
+        if (gen_on_param(it->param)) {   /* (2026-11-01) a generator's ON: ON lit / OFF red, a click toggles it */
+            RECT b = {c.left, c.top + sc(1), c.left + sc(40), c.bottom - sc(1)};
+            screen_onoff(dc, b, option_of(e, it->param) > 0, it->param == e->hover && e->hit_screen, font_cell);
+        }
+        else if (PARAMS[it->param].nopts) screen_menu(dc, e, it->param, c, 1, font_cell);
         else screen_amount(dc, e, it->param, c, 1, 0);
     }
     if (PAGES[e->screen].pic) {   /* its picture under the items (more_pics.c: its own drawing surface) */
@@ -1046,6 +1050,19 @@ void screen_button(HDC dc, RECT r, const char *label, int lit, int hot, HFONT f)
     gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f, hot ? 0xFFFFFFFF : lit ? 0xFF96D7E8 : 0xFF3E6273);
     text(dc, &r, label, f, lit ? RGB(11, 22, 33) : hot ? T_HOT : T_LCD, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
 }
+/* (2026-11-01, owner: "if a generator isn't on, shouldn't it say OFF and maybe be red") a generator's ON on the
+ * screen: ON lit as a screen button, or OFF in the panel's red (the MORE triangles' and MUTE's) */
+void screen_onoff(HDC dc, RECT r, int on, int hot, HFONT f) {
+    if (on) { screen_button(dc, r, "ON", 1, hot, f); return; }
+    gfx_rect((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), hot ? 0xFFE0301C : 0xFFB81810);
+    gfx_frame((float)r.left, (float)r.top, (float)rw(&r), (float)rh(&r), 1.0f, hot ? 0xFFFFFFFF : 0xFFF06A50);
+    text(dc, &r, "OFF", f, RGB(255, 236, 228), DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+}
+int gen_on_param(int i) {   /* (2026-11-01) param i (any Synth's) is a generator's ON (a HUB row's) */
+    for (int k = 0; k < NHUB; k++)
+        if (HUB[k].on >= 0 && HUB[k].on == base_of(i)) return 1;
+    return 0;
+}
 
 /* the GENERATIVE hub page (hub.c): the generators with their ON and the Synths they are on in, KEY and SCALE with
  * their LINKs, ALL OFF and what is on */
@@ -1059,7 +1076,7 @@ static void draw_hub(HDC dc, ed_t *e) {
         RECT on = hub_rect(Z_HUB_ON + k), op = hub_rect(Z_HUB_OPEN + k);
         int hot = e->hover == Z_HUB_OPEN + k;
         if (HUB[k].on >= 0)
-            screen_button(dc, on, "ON", hub_on(e, k, e->focus), e->hover == Z_HUB_ON + k, font_cell);
+            screen_onoff(dc, on, hub_on(e, k, e->focus), e->hover == Z_HUB_ON + k, font_cell);   /* (OFF red) */
         gfx_frame((float)op.left, (float)op.top, (float)rw(&op), (float)rh(&op), 1.0f, hot ? 0xFF96D7E8 : 0xFF27404E);
         int ky = HUB[k].keys, dw = ky >= 0 ? 9 : 12, dx = ky >= 0 ? 30 : 52;   /* (2026-10-30: KEYS takes room) */
         RECT tr = {op.left + sc(6), op.top, op.right - sc(dx + 4), op.bottom};
