@@ -276,6 +276,29 @@ static void defaults_randomiser(void) {
           locked == n, what);
 }
 
+/* (2026-11-01, owner: "randomise shouldn't turn this on or off") FOLLOW KEYS (gen_follow_keys): RANDOMISE and MUTATE,
+ * with every tick lit and WILD 0 / 50 / 100%, and the generators alone, keep it as it was, On or Off */
+static void defaults_follow_keys(void) {
+    char what[300];
+    static float cur[NPARAMS], out[NPARAMS];
+    int fk = rnd_key("gen_follow_keys"), n = 0, kept = 0;
+    for (int i = 0; i < NPARAMS; i++) cur[i] = PARAMS[i].def;
+    for (int v = 0; v < 2; v++)
+        for (int s = 0; s < 30; s++) {
+            cur[fk] = (float)v;
+            uint32_t seed = 4100 + 17 * s + v;
+            rnd_opts_t o = {(s % 3) * 0.5f, (1u << RS_ARP) | (1u << RS_GEN) | (1u << RS_SEQ), 0, RV_BOTH};
+            if (s % 3 == 2) rnd_generate_x(cur, out, (1u << RS_COUNT) - 1u, &seed, &(rnd_opts_t){0.0f, 1u << RS_GEN, 0, RV_BOTH});
+            else if (s % 2) rnd_mutate_x(cur, out, 0.8f, 0, &seed, &o);
+            else rnd_generate_x(cur, out, 0, &seed, &o);
+            n++;
+            kept += out[fk] == cur[fk];
+        }
+    snprintf(what, sizeof what, "FOLLOW KEYS: RANDOMISE, MUTATE and the generators' RANDOMISE (every tick, any WILD) keep "
+             "it On or Off as it was (%d of %d); its default is On (%.0f)", kept, n, PARAMS[fk].def);
+    check(kept == n && PARAMS[fk].def == 1.0f, what);
+}
+
 /* the GENERATIVE section alone (the GENERATIVE page's RANDOMISE): one or two generators on, settings in range, heard,
  * finite and in the Synth's key and scale (Turing aside: it plays in its own SCALE) */
 static void defaults_gens(void) {
@@ -357,4 +380,5 @@ static void defaults_checks(void) {
     defaults_hands();
     defaults_randomiser();
     defaults_gens();
+    defaults_follow_keys();   /* (2026-11-01) */
 }

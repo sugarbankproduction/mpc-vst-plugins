@@ -412,6 +412,30 @@ def unused_gen_keys(key, pv):
     return all(pv.get(pre + k, "Off") in ("Off", 0) for k in ("gen_euclid_on", "gen_tm_on"))
 
 
+GEN_KEYS = (("gen_euclid_on", "gen_keys"), ("gen_tm_on", "gen_keys"), ("phys_balls_on", "phys_keys"),
+            ("phys_parts_on", "phys_keys"), ("rain_on", "rain_keys"), ("mkv_on", "mkv_keys"), ("life_on", "life_keys"),
+            ("orb_on", "orb_keys"), ("pend_on", "pend_keys"))
+
+
+def unused_follow_keys(key, pv, by_key):
+    """(2026-11-01, owner: "follow keys should be default on in the generators page") gen_follow_keys, in a sound that
+    leaves it out and has no generator on that plays from the keys (KEYS other than Free) in that Synth: Off did
+    nothing there (FOLLOW KEYS only moves notes a generator takes from the keys), so it takes today's default (On).
+    A sound with such a generator keeps Off, as it was made."""
+    pre = key[:3] if key[:3] in ("s2_", "s3_") else ""
+    if key[len(pre):] != "gen_follow_keys":
+        return False
+    for on, keys in GEN_KEYS:
+        if pv.get(pre + on, "Off") in ("Off", 0):
+            continue
+        mode = pv.get(pre + keys, old_default(pre + keys, by_key))
+        if pre + keys not in pv and keys == "gen_keys" and unused_gen_keys(pre + keys, pv):
+            mode = "Free"
+        if mode not in ("Free", 0):
+            return False
+    return True
+
+
 def main():
     by_key = {p["key"]: p for p in PARAMS}
     presets = []
@@ -444,8 +468,8 @@ def main():
                 v = pv.get(p["key"], p.get("default", p.get("min", 0)))
             elif p["key"] in pv:
                 v = pv[p["key"]]
-            elif unused_gen_keys(p["key"], pv):   # (2026-11-01) FREE, as today's default: no sound changes
-                v = p["default"]
+            elif unused_gen_keys(p["key"], pv) or unused_follow_keys(p["key"], pv, by_key):
+                v = p["default"]   # (2026-11-01) FREE / FOLLOW KEYS On, today's defaults: no sound changes
             else:   # (the defaults these sounds were made with)
                 v = old_default(p["key"], by_key)
             if "options" in p and isinstance(v, (int, float)):

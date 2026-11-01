@@ -1090,6 +1090,14 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        golden_check, which plays the old sounds, unchanged). The randomiser golden leaves the two out of its hash
        (`CHANGED`, as LINK SENDS): no rule touches them, the fixture stands. load_test: the tests that edit one Synth's
        KEY on its own unlight LINK KEY first.
+     - FOLLOW KEYS on, and left alone by the randomiser ("follow keys should be default on in the generators page,
+       randomise shouldn't turn this on or off"): `gen_follow_keys` already defaulted On (a new instance, Init); the
+       factory sounds had Off, the default they were made with. Now every factory sound without a generator that plays
+       from the keys (one on with KEYS other than Free) gets On (`make_presets.unused_follow_keys`: Off did nothing
+       there, so no sound changes); Euclid Turing Bells, Euclid Turing Night and Held Rain keep Off, as designed. The
+       randomiser has no rule for it, so RANDOMISE, MUTATE and the generators' randomisers never change it; an offline
+       check says so (`test/defaults_check.c defaults_follow_keys`: 60 calls, every tick, any WILD, from On and from
+       Off). The randomiser golden still leaves it out of its hash (NEWER).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
