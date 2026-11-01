@@ -355,6 +355,7 @@ static void undo_tests(void) {
         float x0 = ZONE_SCREEN[0] + 8, ty = ZONE_SCREEN[1] + 6 + 36 + 9, help = ZONE_SCREEN[1] + 6 + 36 + 20 + 18 + 176 + 8;
         float bw = (ZONE_SCREEN[2] - 16 - 4 * 7) / 8.0f;
         int kr = key("key_root"), kr2 = key("s2_key_root"), ks2 = key("s2_key_scale");
+        fx->setParameter(fx, key("link_key"), 0.0f);   /* (2026-11-01: LINK KEY is lit by default; unlit, Synth 2's own) */
         float k1 = fx->getParameter(fx, kr), k2 = fx->getParameter(fx, kr2);
         fx->dispatcher(fx, 50, TEST_FOCUS, 2, NULL, 1.0f);   /* Synth 2 */
         tick();

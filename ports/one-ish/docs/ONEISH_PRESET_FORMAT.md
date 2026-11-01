@@ -219,8 +219,8 @@ filter), `lad_kbd` (key tracking) and the filters' LFO amounts. See Appendix A: 
 - **Expression**: the matrix sources `Mod Wheel`, `Pitch Wheel`, `Aftertouch`, `Velocity`, `Ribbon`, `Pad X (CC 2)`,
   `Pad Y (CC 3)`, `Pad Gate (CC 18)`, `Exp 1 (CC 11)`, `Exp 2 (CC 4)`, `Sustain`. A good preset gives the mod wheel,
   aftertouch and the X/Y pad something musical to do, and says so in `notes=`.
-- **LINKs** (shared): `link_send` (on by default), `link_cut`, `link_lfoN`, `link_arp`, `link_seq`, `link_key`,
-  `link_scale` and others keep settings the same across the three Synths. `lfoN_share` makes Synths 2 and 3 play
+- **LINKs** (shared): `link_send`, `link_key`, `link_scale` (on by default), `link_cut`, `link_lfoN`, `link_arp`, `link_seq`
+  and others keep settings the same across the three Synths. `lfoN_share` makes Synths 2 and 3 play
   Synth 1's LFO N exactly, in step.
 - **Analog character** (section ANALOG): `drift`, the `an_*` settings, `an_hq` (2x / 4x oversampling: cleaner but
   costs CPU) and warm-up. Moo Won's RANDOMISE never changes these.
@@ -1278,8 +1278,8 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 774 ke
 | `eg_times` | EG Times | option: `1 ms, 11 Syncs` / `MIN, 13 Syncs` | `1 ms, 11 Syncs` | per Synth |
 | `arp_follow_swing` | Arp Follow Swing | option: `Off` / `On` | `Off` | per Synth |
 | `seq_host_ss` | Seq Host Start/Stop | option: `Off` / `On` | `Off` | per Synth |
-| `link_key` | Link Key | option: `Off` / `On` | `Off` | shared |
-| `link_scale` | Link Scale | option: `Off` / `On` | `Off` | shared |
+| `link_key` | Link Key | option: `Off` / `On` | `On` (2026-11-01) | shared |
+| `link_scale` | Link Scale | option: `Off` / `On` | `On` (2026-11-01) | shared |
 | `link_arp` | Link Arp Rate | option: `Off` / `On` | `Off` | shared |
 | `link_seq` | Link Seq Rate | option: `Off` / `On` | `Off` | shared |
 | `link_lfo1` | Link LFO 1 Rate | option: `Off` / `On` | `Off` | shared |

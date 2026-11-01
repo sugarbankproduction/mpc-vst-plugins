@@ -25,7 +25,8 @@
  * 7ths and the 9th through the octave footage) made again: 109 of the 240 calls differ. Checked the same way: every
  * call that differed has another o2 / o3 freq (or oct); none differed without one.
  * (2026-11-01) the Synth's SCALE (key_scale) defaults to Major now (Minor before): the inputs keep it at Minor, so the
- * fixture stands as it is (not made again). */
+ * fixture stands as it is (not made again). LINK KEY / LINK SCALE default On that day: left out of the hash (CHANGED;
+ * no randomiser rule reads or sets them). */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,7 +46,8 @@ static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the ma
     "mout_on", "mout_send", "mout_ch", "sus_pedal",   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (no rule: never touched) */
     "link_mod", "link_bend", "link_ribbon", "link_glide"};   /* (2026-10-31) the hands' LINKs (no rule: never touched) */
 static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
-                                      "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
+                                      "link_send",   /* (LINK SENDS: its default is On now; never randomised) */
+                                      "link_key", "link_scale"};   /* (2026-11-01: On by default too; never randomised) */
 
 static int skipped(const char *k) {
     if (k[0] == 's' && k[1] >= '2' && k[1] <= '9' && k[2] == '_') return 1;

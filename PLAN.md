@@ -1080,6 +1080,16 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        the window puts them back after the randomiser (`editor.c keylock_keep`). load_test: lit, four RANDOMISE
        GENERATORS / ALL, RANDOMISE and MUTATE with GENERATIVE, and the GENERATIVE page's RANDOM three times keep D
        Dorian in all three Synths; off, RANDOMISE GENERATORS picks another key again.
+     - LINK KEY / SCALE on by default ("for the generators let's have LINK on by default but not LOCK"): `link_key`
+       and `link_scale` default On (a new instance, Init and, made again with `make_presets.py`, every factory preset:
+       nothing else in them changed); LOCK KEY + SCALE starts off (a window setting). Checked first: a lit LINK has no
+       engine effect (no engine code reads it; it only sends the window's own edits of KEY / SCALE to all three
+       Synths, `editor.c edit_targets`), so a preset that the wrapper loads value by value, or a state or patch, lands
+       as written whatever the LINK; unlike `flt_link` (which moves a cutoff while it loads) it can stay On inside
+       the presets. A sound saved before that leaves the LINKs out now opens with them lit (window behaviour only:
+       golden_check, which plays the old sounds, unchanged). The randomiser golden leaves the two out of its hash
+       (`CHANGED`, as LINK SENDS): no rule touches them, the fixture stands. load_test: the tests that edit one Synth's
+       KEY on its own unlight LINK KEY first.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

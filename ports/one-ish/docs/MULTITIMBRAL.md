@@ -66,7 +66,9 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   goes to all three). (2026-11-01, owner) One exception: whenever the generators are randomised or mutated (RANDOMISE
   / MUTATE with the RANDOM page's GENERATIVE tick lit, the GENERATIVE page's RANDOM | ALL and MUTATE | ALL, the
   RANDOM page's RANDOMISE GENERATORS | ALL), LINK KEY and LINK SCALE light and all three Synths take the Synth in
-  focus's KEY and SCALE, in the same undo step, so the generators never clash.
+  focus's KEY and SCALE, in the same undo step, so the generators never clash. (2026-11-01, owner: "LINK on by
+  default but not LOCK") LINK KEY and LINK SCALE are lit in a new instance, Init and the factory presets; the
+  RANDOM / GENERATIVE pages' LOCK KEY + SCALE starts off.
 - **The controller box's LINKs** (2026-10-31, offline and the desktop window; `test/links_check.c`, load_test
   `hands_link_test`). Two kinds, each as an older LINK of its kind:
   - *Controllers* (in the engine, `src/synths.h` midi, as the X/Y pad's LINK `link_pad`): `link_mod` (the LINK under

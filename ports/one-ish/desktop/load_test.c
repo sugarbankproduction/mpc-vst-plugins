@@ -674,7 +674,7 @@ static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, 
     static float before[NPARAMS], after[NPARAMS], all[NPARAMS], undone[NPARAMS];
     char what[300], lb[1024];
     click_zone(child, s, ZONE_TAB_RANDOM);
-    /* (LINK KEY / SCALE off, their default: lit, Synth 1's new KEY / SCALE would go to the other two as well) */
+    /* (LINK KEY / SCALE off first, though lit by default since 2026-11-01: the randomise must light them itself) */
     fx->setParameter(fx, rnd_key("link_key"), 0.0f);
     fx->setParameter(fx, rnd_key("link_scale"), 0.0f);
     snapshot(fx, before);
@@ -2663,6 +2663,7 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     /* KEY on the hub page, with its LINK there; then the LINK survives the project's save and load */
     click_zone(child, s, ZONE_TAB_GEN);
     float x, y;
+    setkey(fx, "link_key", 0);   /* (2026-11-01: lit by default now, and by the generators' randomise: off first) */
     hub_key_xy(0, 1, &x, &y);
     click(child, s, x, y);
     hub_key_xy(0, 0, &x, &y);
