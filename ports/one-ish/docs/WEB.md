@@ -42,7 +42,8 @@ The plugin's own lock keeps the editor and audio threads apart, as on Windows. T
 **Drawing.** The editor draws into one framebuffer the size of the panel; after each paint the editor thread publishes
 the changed rectangle and the page copies it onto its canvas (`pres_t` in `win32_web.h`: a counter that is odd while a
 paint is going on, and the page's acknowledgement). The panel's scale is picked at start from the window width and
-the screen's pixel density (0.5 to 2; `?scale=` overrides it); after that the canvas is only stretched to fit.
+the screen's pixel density (1 to 2: drawn at least at full size, since below that the labels crowd, and shrunk by
+the browser to fit; `?scale=` overrides it, 0.5 to 2); after that the canvas is only stretched to fit.
 
 **Menus, dialogs, files.** A menu, message box, dialog or file picker the editor asks for is drawn by the page as HTML;
 the editor thread keeps running its message loop (timers and painting carry on) until the answer comes back, as a

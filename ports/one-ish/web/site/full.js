@@ -484,7 +484,9 @@ async function start() {
     await ctx.audioWorklet.addModule("ring_worklet.js");
     const dpr = window.devicePixelRatio || 1;
     const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
-    const scale = clamp(Number(params.get("scale")) || (innerWidth * dpr) / 2162, 0.5, 2);
+    // (drawn at least at full size and shrunk by the browser: below 1 the panel's labels crowd, as on a small screen)
+    const asked = Number(params.get("scale"));
+    const scale = asked ? clamp(asked, 0.5, 2) : clamp((innerWidth * dpr) / 2162, 1, 2);
     const latency = clamp(Math.round(Number(params.get("latency")) || 1024), 256, 3072);
     if (!M._web_start(ctx.sampleRate, scale, latency)) throw new Error("the plugin could not start");
     infoPtr = M._web_info();
