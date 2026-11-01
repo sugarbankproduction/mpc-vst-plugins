@@ -141,3 +141,17 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## plutovg (MIT) and the Selawik fonts (SIL Open Font License), web build only
+
+The full plugin in the browser (`web/full`, `docs/WEB.md`) draws the desktop editor's GDI and GDI+ calls with plutovg,
+a small C vector graphics library, and its text with Selawik, Microsoft's open stand-in for Segoe UI. Neither is part
+of the Windows or MPC builds.
+
+- plutovg 1.3.2: <https://github.com/sammycage/plutovg>, tag `v1.3.2`, copied unmodified to `plutovg/` (`source/`,
+  `include/`, `LICENSE`, `README.md`). Copyright 2020-2025 Samuel Ugochukwu, MIT. Its rasterizer is derived from
+  FreeType (`source/FTL.TXT`, the FreeType License) and it bundles stb_truetype, stb_image and stb_image_write (public
+  domain / MIT).
+- Selawik 1.01: <https://github.com/microsoft/Selawik/releases/tag/1.01>, the five TTF files of `Selawik_Release.zip`,
+  unmodified, in `../web/full/fonts/` with the licence (`OFL.txt`). Copyright 2015 Microsoft Corporation, with Reserved
+  Font Name Selawik, SIL Open Font License 1.1.

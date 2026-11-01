@@ -1,0 +1,1 @@
+plutovg v1.3.2 (https://github.com/sammycage/plutovg, MIT; source/FTL.TXT for the FreeType-derived rasterizer). Used by the web build only (web/full).
