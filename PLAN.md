@@ -211,6 +211,16 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      HAND CONTROLS (2026-11-01, owner): glide's TYPE moved right; PANIC to SYNTH OUTPUT's bottom right corner; HOLD (notes
      held, the `hold` param) from POLYPHONY to the hand controls with `link_hold`; `link_octave`: lit, OCTAVE moves the
      keyboard (every Synth), out, the Synth in focus's `octave_shift`. Both LINKs on by default and in LINK ALL.
+     KEY AND SCALE ROW (2026-11-02, owner): along the bottom of the centre screen on every page: the generators' KEY, its
+     LOCK, SCALE, its LOCK (`keylock_rect`; `rnd_keylock` bit 0 KEY, bit 1 SCALE; a window setting, off at first). A click
+     on KEY or SCALE lists them (LINK lit: all three Synths). It replaces LOCK KEY + SCALE on the RANDOM and GENERATIVE pages.
+     PATCHES' bottom row: SINGLE, LAYER, SPLIT, MULTI (the TAGS page's TYPE filter; they stay over the category tabs) and
+     LIB < > (the library in the USER column: the bundled banks, without going to SETTINGS).
+     HOLD's ADD (`hold_add`): a new key joins what HOLD holds instead of replacing it. The X/Y pad's and ribbon's HOLD
+     start lit. SPREAD starts at 50% for new sounds (factory sounds and sounds that leave it out: 0).
+     RANDOMISE's detune by WILD (owner, 2026-11-02): WILD 0: 40% gentle (0.05-0.3 st), 40% wider (0.3-0.9 st), 20% in tune,
+     no interval; a musical interval takes 50% x WILD of them. Offline over 2000 oscillators: WILD 0, 77% detuned, 4% a
+     semitone or more (hard sync); WILD 100%, 70% a semitone or more. A high-pass in series before a low-pass stays below it.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27
