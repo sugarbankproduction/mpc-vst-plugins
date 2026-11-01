@@ -3,6 +3,8 @@
  * the balls do (play_step: through chord memory and VELOCITY RANDOM, each note's end in the step clock's list). The pond
  * and the learned table themselves are src/gens_b.h.
  *
+ * (2026-11-02) Each plays in its own KEY and SCALE when it has them (rain_own_*, mkv_own_*; Follow: the Synth's).
+ *
  * RAIN: each drop's landing plays a degree of the Synth's KEY and SCALE by where across the pond it falls (left low,
  * right high, over OCTAVES octaves from LOW OCTAVE), its size its velocity (SIZE SPREAD 0: every drop the same); a
  * ring then spreads from it, and where two rings first meet, or a ring first reaches a stone, an echo plays (softer,
@@ -39,9 +41,9 @@ static float rn_rate(const float *p) { return 0.2f * powf(50.0f, p[P_RAIN_RATE] 
 static float rn_life(const float *p) { return 0.5f * powf(16.0f, p[P_RAIN_LIFE] * 0.01f); }      /* 0.5 .. 8 s */
 static float rn_len_ms(const float *p) { return 20.0f * powf(100.0f, p[P_RAIN_LEN] * 0.01f); }   /* 20 ms .. 2 s */
 static int mk_scale(const one_t *s) {   /* IN KEY: the Synth's scale, else every semitone */
-    return s->val[P_MKV_QUANT] > 0.5f ? ks_clamp_scale((int)s->val[P_KEY_SCALE]) : KS_CHROMATIC;
+    return s->val[P_MKV_QUANT] > 0.5f ? gen_scale_in(s->val, P_MKV_OWN_KEY) : KS_CHROMATIC;
 }
-static int gb_root(const one_t *s) { return (int)clampf(s->val[P_KEY_ROOT], 0, 11); }
+static int mk_root(const one_t *s) { return gen_key_in(s->val, P_MKV_OWN_KEY); }
 static float mk_beats(const one_t *s) { return MK_RATE_BEATS[(int)clampf(s->val[P_MKV_RATE], 0, 5)]; }
 
 /* a note as a degree of the scale (counted from the root below C-1's octave; never negative) */
@@ -53,7 +55,7 @@ static int mk_deg(int note, int root, int sc) {
     return oct * size + idx;
 }
 static int mk_note(const one_t *s, int d) {
-    int root = gb_root(s), sc = mk_scale(s);
+    int root = mk_root(s), sc = mk_scale(s);
     return ks_quantize(ks_degree(root, sc, 0, d < 0 ? 0 : d), root, sc);
 }
 
@@ -110,14 +112,14 @@ static uint32_t rn_seed(const one_t *s) { return (0x6c8e9cf5u * (uint32_t)(s->id
 /* a hit's note (its x across the pond as a degree) and velocity (its size or strength) */
 static void rn_hit_note(const one_t *s, const rn_hit_t *h, int *note, int *vel) {
     const float *p = s->val;
-    int root = gb_root(s), sc = ks_clamp_scale((int)p[P_KEY_SCALE]), size = KS_SIZE[sc];
+    int root = gen_key_in(p, P_RAIN_OWN_KEY), sc = gen_scale_in(p, P_RAIN_OWN_KEY), size = KS_SIZE[sc];
     int steps = size * ((int)clampf(p[P_RAIN_RANGE], 0, 3) + 1) + 1, d = (int)(h->x * steps);
     d = d < 0 ? 0 : d >= steps ? steps - 1 : d;
     int mode = s->gb.rn_mode, key = -1;
     if ((mode == GK_HELD || mode == GK_EMIT) && s->keys.n) key = gb_lowest_key(s);
     else if (mode == GK_LAUNCH && s->gb.rn_key >= 0) key = s->gb.rn_key;   /* (2026-10-30) */
     if (key >= 0) {   /* (2026-10-30) FOLLOW KEYS: in the key played */
-        root = gen_root_of(s, key);
+        root = gen_root_of(s, key, P_RAIN_OWN_KEY);
         *note = gen_follow_snap(s, ks_quantize(key + ks_degree(root, sc, 0, d) - root, root, sc));
     } else {
         *note = ks_quantize(ks_degree(root, sc, (int)clampf(p[P_RAIN_OCT], 0, 5) + 2, d), root, sc);   /* C1 = 24 */
@@ -166,16 +168,16 @@ static void mk_forget_all(one_t *s) {
     mk_builtin(&g->mt, KS_SIZE[mk_scale(s)]);
     g->l1 = g->l2 = g->l_gap = -1;
     g->vavg = 90.0f;
-    g->centre = (float)mk_deg(60 + gb_root(s), gb_root(s), mk_scale(s));   /* around the root above middle C */
+    g->centre = (float)mk_deg(60 + mk_root(s), mk_root(s), mk_scale(s));   /* around the root above middle C */
 }
 
 /* the degrees it plays between: OCTAVES octaves around the centre (HELD KEYS: up from the lowest key) */
 static void mk_window(one_t *s) {
     gb_run_t *g = &s->gb;
     int sc = mk_scale(s), span = KS_SIZE[sc] * ((int)clampf(s->val[P_MKV_RANGE], 0, 3) + 1);
-    int lo = g->mk_held && s->keys.n ? mk_deg(gb_lowest_key(s), gb_root(s), sc) : (int)lroundf(g->centre) - span / 2;
-    if (g->mk_mode == GK_LAUNCH && g->mk_key >= 0) lo = mk_deg(g->mk_key, gb_root(s), sc);   /* (2026-10-30) */
-    int top = mk_deg(127, gb_root(s), sc);
+    int lo = g->mk_held && s->keys.n ? mk_deg(gb_lowest_key(s), mk_root(s), sc) : (int)lroundf(g->centre) - span / 2;
+    if (g->mk_mode == GK_LAUNCH && g->mk_key >= 0) lo = mk_deg(g->mk_key, mk_root(s), sc);   /* (2026-10-30) */
+    int top = mk_deg(127, mk_root(s), sc);
     if (lo + span > top) lo = top - span;
     if (lo < 0) lo = 0;
     g->lo = lo;
@@ -202,7 +204,7 @@ static void mk_hear(one_t *s, int note, int vel) {
     if (s->val[P_MKV_LEARN] < 0.5f || g->mk_takes || !g->mk_init) return;
     int64_t dt = s->now - g->l_t;
     if (g->l1 >= 0 && dt < (int64_t)(MK_CHORD_S * SR)) return;   /* a chord's other notes */
-    int sc = mk_scale(s), size = KS_SIZE[sc], d = mk_deg(note, gb_root(s), sc);
+    int sc = mk_scale(s), size = KS_SIZE[sc], d = mk_deg(note, mk_root(s), sc);
     if (g->l1 < 0 || dt > (int64_t)(MK_PAUSE_S * SR)) {   /* a new phrase */
         g->l2 = g->l_gap = -1;
     } else {
@@ -272,7 +274,7 @@ static void mk_step(one_t *s, int64_t line) {
     if (key >= 0 && s->val[P_GEN_FOLLOW_KEYS] > 0.5f)   /* (2026-10-30) FOLLOW KEYS: the scale from the key played */
         n = gen_follow_snap(s, ks_quantize(key + ks_degree(0, sc, 0, d - g->lo), key % 12, sc));
     else if (key >= 0)
-        n = ks_quantize(key + mk_note(s, d) - mk_note(s, g->lo), gb_root(s), sc);
+        n = ks_quantize(key + mk_note(s, d) - mk_note(s, g->lo), mk_root(s), sc);
     gb_queue(s, line, n, vel, len, 0, 1);
     g->hist[g->hist_head].t = line;
     g->hist[g->hist_head].d = (int16_t)(d - g->lo);

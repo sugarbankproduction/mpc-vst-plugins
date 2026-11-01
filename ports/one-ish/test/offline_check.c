@@ -5229,6 +5229,7 @@ static void arp_wav(const char *demo_path) {
 #include "m1p_check.c"   /* (2026-10-31) the Moog One preset importer's converter (desktop/m1p.c) */
 #include "links_check.c"     /* (2026-10-31) LINK on the mod wheel, the pitch wheel, the ribbon */
 #include "analog_check.c"    /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT */
+#include "own_keys_check.c"  /* (2026-11-02) each generator's own KEY and SCALE */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -6092,6 +6093,11 @@ int main(int argc, char **argv) {
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "ownkeys")) {   /* (2026-11-02) just each generator's own KEY and SCALE */
+        own_keys_checks();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "gensb")) {   /* (2026-10-30) just the rain and the Markov melody */
         gens_b_checks();
         gens_b_bench();
@@ -6222,6 +6228,7 @@ int main(int argc, char **argv) {
     m1p_checks();   /* (2026-10-31) the .m1p converter (test/m1p_check.c) */
     links_checks();   /* (2026-10-31) the wheels' and the ribbon's LINKs (test/links_check.c) */
     analog_checks();   /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT (test/analog_check.c) */
+    own_keys_checks();   /* (2026-11-02) each generator's own KEY and SCALE (test/own_keys_check.c) */
     analog_stats();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");

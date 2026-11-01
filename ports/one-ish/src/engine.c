@@ -301,6 +301,10 @@ enum {
     P_LINK_HOLD, P_LINK_OCTAVE,   /* (2026-11-01) the hand controls' HOLD and OCTAVE LINKs (the window's kind): stored */
     P_HOLD_ADD,      /* (2026-11-02) HOLD's ADD: a new key joins what HOLD latched instead of replacing it */
     P_LINK_ARP_ALL,  /* (2026-11-01) the ARPEGGIATOR panel's LINK ALL (the window's kind): stored */
+    /* (2026-11-02) each generator's own KEY and SCALE (gen_key_in, gen_scale_in): a pair, the SCALE right after its KEY */
+    P_GEN_OWN_KEY, P_GEN_OWN_SCALE, P_BALL_OWN_KEY, P_BALL_OWN_SCALE, P_PART_OWN_KEY, P_PART_OWN_SCALE, P_RAIN_OWN_KEY,
+    P_RAIN_OWN_SCALE, P_MKV_OWN_KEY, P_MKV_OWN_SCALE, P_LIFE_OWN_KEY, P_LIFE_OWN_SCALE, P_ORB_OWN_KEY, P_ORB_OWN_SCALE,
+    P_PEND_OWN_KEY, P_PEND_OWN_SCALE,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -472,6 +476,9 @@ static const char *const KEYS[P_COUNT] = {
     "link_hold", "link_octave",   /* (2026-11-01) */
     "hold_add",     /* (2026-11-02) */
     "link_arp_all", /* (2026-11-01) */
+    "gen_own_key", "gen_own_scale", "phys_ball_own_key", "phys_ball_own_scale", "phys_part_own_key", "phys_part_own_scale",
+    "rain_own_key", "rain_own_scale", "mkv_own_key", "mkv_own_scale", "life_own_key", "life_own_scale", "orb_own_key",
+    "orb_own_scale", "pend_own_key", "pend_own_scale",   /* (2026-11-02) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -1987,14 +1994,28 @@ static double gen_bpm(const one_t *s) {
     return s->sp_bpm > 0.0 ? s->sp_bpm : (double)s->bpm;
 }
 
+/* (2026-11-02, owner: "custom ones on generators ... a menu setting for each generator") a generator's KEY and SCALE: its
+ * own (own: its P_*_OWN_KEY; the option after Follow is the first note or scale), else, on Follow (0), the Synth's main
+ * key_root and key_scale. Read per note, as the main ones are: a table look-up, nothing allocates or locks. */
+static int gen_key_in(const float *p, int own) {
+    int k = (int)p[own];
+    return k >= 1 && k <= 12 ? k - 1 : (int)clampf(p[P_KEY_ROOT], 0, 11);
+}
+static int gen_scale_in(const float *p, int own) {
+    int k = (int)p[own + 1];
+    return k >= 1 && k <= KS_COUNT ? k - 1 : ks_clamp_scale((int)p[P_KEY_SCALE]);
+}
+
 /* (2026-10-30) FOLLOW KEYS (gen_follow_keys, per Synth; On for new sounds, Off for those saved before): a generator
  * playing from the keys (HELD, KEY LAUNCH, KEY EMIT) plays in the key played instead of the Synth's KEY. One key: the
  * Synth's SCALE with that key as its root (D held in a Minor Synth: D minor). Two or more keys held (a chord): each
  * note goes to the nearest note of the chord's own notes in any octave (C E G held: only Cs, Es and Gs). Off: the
  * Synth's KEY and SCALE stay, the key only says where to start. gen_root_of: the root for notes from `key`;
- * gen_follow_snap: a note from the keys, to the chord's notes when one is held. */
-static int gen_root_of(const one_t *s, int key) {
-    return s->val[P_GEN_FOLLOW_KEYS] > 0.5f && key >= 0 ? key % 12 : (int)clampf(s->val[P_KEY_ROOT], 0, 11);
+ * gen_follow_snap: a note from the keys, to the chord's notes when one is held.
+ * (2026-11-02) A generator's own KEY and SCALE (own, gen_key_in): they stand in for the main ones here, so FOLLOW KEYS still
+ * takes the root from the key played, over an own KEY too, and the own SCALE stays. */
+static int gen_root_of(const one_t *s, int key, int own) {
+    return s->val[P_GEN_FOLLOW_KEYS] > 0.5f && key >= 0 ? key % 12 : gen_key_in(s->val, own);
 }
 static int gen_follow_snap(const one_t *s, int note) {
     if (s->val[P_GEN_FOLLOW_KEYS] < 0.5f || !s->running || s->keys.n < 2) return note;
@@ -2120,28 +2141,28 @@ static int arp_next(one_t *s, int *vel) {
 #define GEN_FREE_VEL 100
 static int gen_key_note(const one_t *s, int d, int tm_scale) {
     const float *p = s->val;
-    int launch = s->gk == GK_LAUNCH, root = gen_root_of(s, launch ? s->gl_key : -1);   /* (FOLLOW KEYS) */
+    int launch = s->gk == GK_LAUNCH, root = gen_root_of(s, launch ? s->gl_key : -1, P_GEN_OWN_KEY);   /* (FOLLOW KEYS) */
     int base = launch ? s->gl_key : 12 * ((int)clampf(p[P_GEN_OCT], 0, 5) + 2) + root;   /* C1 = 24 */
     if (tm_scale > 0 && tm_scale < SCALES) {
         int m = SCALE_SIZE[tm_scale], n = base + 12 * (d / m) + SCALE[tm_scale][d % m];
         while (n > 127) n -= 12;
         return launch ? gen_follow_snap(s, n) : n;
     }
-    int sc = ks_clamp_scale((int)p[P_KEY_SCALE]);
+    int sc = gen_scale_in(p, P_GEN_OWN_KEY);
     int n = ks_quantize(base - root + ks_degree(root, sc, 0, d), root, sc);
     return launch ? gen_follow_snap(s, n) : n;
 }
 /* the Turing machine's value (0..255) as a degree over its OCTAVES */
 static int gen_tm_note(const one_t *s, int v) {
     int scale = (int)s->val[P_GEN_SCALE], range = (int)clampf(s->val[P_GEN_RANGE], 0, 3) + 1;
-    int m = scale > 0 && scale < SCALES ? SCALE_SIZE[scale] : KS_SIZE[ks_clamp_scale((int)s->val[P_KEY_SCALE])];
+    int m = scale > 0 && scale < SCALES ? SCALE_SIZE[scale] : KS_SIZE[gen_scale_in(s->val, P_GEN_OWN_KEY)];
     return gen_key_note(s, v * m * range / 256, scale);
 }
 /* EUCLID NOTES: each hit the root, or the next degree up (then from the root again), up and down, or one at random,
  * over the Turing OCTAVES */
 static int gen_eu_note(one_t *s) {
     int mode = (int)clampf(s->val[P_GEN_EU_NOTES], EUN_ROOT, EUN_RANDOM), h = s->eu_hit++, d = 0;
-    int top = KS_SIZE[ks_clamp_scale((int)s->val[P_KEY_SCALE])] * ((int)clampf(s->val[P_GEN_RANGE], 0, 3) + 1);
+    int top = KS_SIZE[gen_scale_in(s->val, P_GEN_OWN_KEY)] * ((int)clampf(s->val[P_GEN_RANGE], 0, 3) + 1);
     if (mode == EUN_UP) d = h % top;
     else if (mode == EUN_UPDOWN) { d = h % (2 * top); if (d > top) d = 2 * top - d; }
     else if (mode == EUN_RANDOM) d = (int)(seq_rand(&s->grng) % (uint32_t)(top + 1));

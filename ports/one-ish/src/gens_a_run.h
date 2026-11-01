@@ -3,7 +3,8 @@
  * play_step, so through chord memory and VELOCITY RANDOM, each note's end in the step clock's list). The worlds
  * themselves are src/gens_a.h.
  *
- * What plays, each in the Synth's KEY and SCALE (key_root, key_scale), from LOW OCTAVE (or the lowest held key):
+ * What plays, each in the Synth's KEY and SCALE (key_root, key_scale) or its own (2026-11-02: ga_own), from LOW OCTAVE (or the
+ * lowest held key):
  *   LIFE: each step of RATE (a tempo division, or FREE at its own SPEED) the grid moves on. BIRTHS: every cell just
  *   born plays, its row the degree (bottom low, over OCTAVES), its column when within the step (a strum over the first
  *   quarter) and how loud (the beats' columns louder). SCAN COLUMN: a playhead steps across the columns and the live
@@ -84,10 +85,11 @@ static int ga_queue(ga_out_t *o, int64_t at, int note, int vel) {
     return 1;
 }
 
+static int ga_own(int bit) { return bit == GA_LIFE ? P_LIFE_OWN_KEY : bit == GA_ORB ? P_ORB_OWN_KEY : P_PEND_OWN_KEY; }   /* (2026-11-02) */
 /* scale degree d (0: the root at LOW OCTAVE, or at the lowest held key) as a note in the key */
 static int ga_note(const one_t *s, int bit, int oct_slot, int d) {
     const float *p = s->val;
-    int root = (int)clampf(p[P_KEY_ROOT], 0, 11), sc = ks_clamp_scale((int)p[P_KEY_SCALE]), note, key = -1;
+    int own = ga_own(bit), root = gen_key_in(p, own), sc = gen_scale_in(p, own), note, key = -1;
     if ((s->ga.held & bit) && s->keys.n) {
         key = s->keys.note[0];
         for (int i = 1; i < s->keys.n; i++) if (s->keys.note[i] < key) key = s->keys.note[i];
@@ -95,14 +97,14 @@ static int ga_note(const one_t *s, int bit, int oct_slot, int d) {
         key = s->ga.lkey[bit >> 1];
     }
     if (key >= 0) {   /* (2026-10-30) FOLLOW KEYS: in the key played */
-        root = gen_root_of(s, key);
+        root = gen_root_of(s, key, own);
         return gen_follow_snap(s, ks_quantize(key + ks_degree(root, sc, 0, d) - root, root, sc));
     } else {
         note = ks_degree(root, sc, (int)clampf(p[oct_slot], 0, 5) + 2, d);   /* C1 = 24 (middle C is C4) */
     }
     return ks_quantize(note, root, sc);
 }
-static int ga_scale_size(const one_t *s) { return KS_SIZE[ks_clamp_scale((int)s->val[P_KEY_SCALE])]; }
+static int ga_scale_size(const one_t *s, int bit) { return KS_SIZE[gen_scale_in(s->val, ga_own(bit))]; }
 static int ga_accent(int col) { return col % 4 == 0 ? 110 : col % 2 == 0 ? 90 : 76; }   /* the beats' columns louder */
 
 /* ---- the settings (after any param change): on and off, each world's start ---- */
@@ -221,7 +223,7 @@ static void lf_play(one_t *s, int64_t at, int64_t step_len) {
     const float *p = s->val;
     int mode = (int)clampf(p[P_LIFE_MODE], 0, 2), rule = (int)clampf(p[P_LIFE_RULE], 0, 2), wrap = p[P_LIFE_WRAP] > 0.5f;
     int max = (int)clampf(roundf(p[P_LIFE_NOTES]), 1, 8), n = 0;
-    int size = ga_scale_size(s), top = size * ((int)clampf(p[P_LIFE_RANGE], 0, 3) + 1);   /* the highest degree */
+    int size = ga_scale_size(s, GA_LIFE), top = size * ((int)clampf(p[P_LIFE_RANGE], 0, 3) + 1);   /* the highest degree */
     float dens = clampf(p[P_LIFE_DENSITY] * 0.01f, 0.05f, 0.8f);
     memset(r->llit, 0, sizeof r->llit);
     if (mode == LFM_BIRTHS) {   /* the grid moves on, then its births play */
@@ -303,7 +305,7 @@ static void ob_tick(one_t *s, int64_t t, int go, float tf) {   /* tf: FOLLOW TEM
     for (int k = 0; k < OB_SPOKES; k++) if (r->sflash[k]) r->sflash[k]--;
     if (!go) return;
     ob_hit_t h[OB_HITS];
-    int nh = ob_step(&r->ob, &r->oc, dt * ob_time(p) * tf, h), size = ga_scale_size(s);
+    int nh = ob_step(&r->ob, &r->oc, dt * ob_time(p) * tf, h), size = ga_scale_size(s, GA_ORB);
     int range = (int)clampf(p[P_ORB_RANGE], 0, 3) + 1, as_vel = p[P_ORB_PLANET_TO] > 0.5f;
     double g = GA_SYNC_BEATS[(int)clampf(p[P_ORB_QUANT], 0, 6)];
     for (int i = 0; i < nh; i++) {

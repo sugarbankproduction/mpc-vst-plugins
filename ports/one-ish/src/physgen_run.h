@@ -3,6 +3,8 @@
  * and the Turing machine do: play_step, so through chord memory and VELOCITY RANDOM, each note's end in the step
  * clock's list). The world itself (where the balls and particles are, what they hit) is src/physgen.h.
  *
+ * (2026-11-02) The balls and the particles each play in their own KEY and SCALE when they have them (phys_ball_own_*,
+ * phys_part_own_*; Follow: the Synth's, as this says).
  * What plays: BALLS, each wall a ball hits: the FLOOR a degree of the Synth's KEY and SCALE (key_root, key_scale) by
  * where along it the ball lands (left low, right high, over OCTAVES octaves from LOW OCTAVE), the CEILING the same an
  * octave up, the LEFT wall the root and the RIGHT wall the fifth (an octave up in their upper halves). PARTICLES, as
@@ -168,16 +170,16 @@ static void ph_keys_emit(one_t *s, float dt) {
 
 /* scale degree d (0: the root at LOW OCTAVE, or at the lowest held key, or at `key`: the ball's or particle's own,
  * KEY LAUNCH and EMIT; -1 none) as a note in the key */
-static int ph_note(const one_t *s, int d, int key) {
+static int ph_note(const one_t *s, int d, int key, int own) {   /* own (2026-11-02): the balls' or the particles' own KEY */
     const float *p = s->val;
-    int root = (int)clampf(p[P_KEY_ROOT], 0, 11), sc = ks_clamp_scale((int)p[P_KEY_SCALE]), note;
+    int root = gen_key_in(p, own), sc = gen_scale_in(p, own), note;
     if (key >= 0) {
-        root = gen_root_of(s, key);   /* (2026-10-30) FOLLOW KEYS */
+        root = gen_root_of(s, key, own);   /* (2026-10-30) FOLLOW KEYS */
         return gen_follow_snap(s, ks_quantize(key + ks_degree(root, sc, 0, d) - root, root, sc));
     } else if (s->ph.held && s->keys.n) {
         int low = s->keys.note[0];
         for (int i = 1; i < s->keys.n; i++) if (s->keys.note[i] < low) low = s->keys.note[i];
-        root = gen_root_of(s, low);
+        root = gen_root_of(s, low, own);
         return gen_follow_snap(s, ks_quantize(low + ks_degree(root, sc, 0, d) - root, root, sc));
     } else {
         int oct = (int)clampf(p[P_PH_OCT], 0, 5) + 2;   /* C1 = 24 (middle C is C4) */
@@ -190,21 +192,22 @@ static int ph_note(const one_t *s, int d, int key) {
 /* a hit's note and velocity */
 static void ph_hit_note(const one_t *s, const ph_hit_t *h, int *note, int *vel) {
     const float *p = s->val;
-    int size = KS_SIZE[ks_clamp_scale((int)p[P_KEY_SCALE])], steps = size * ((int)clampf(p[P_PH_RANGE], 0, 3) + 1) + 1;
+    int own = h->kind <= PH_RIGHT ? P_BALL_OWN_KEY : P_PART_OWN_KEY;   /* (a ball's hit: its walls; a particle's: the rest) */
+    int size = KS_SIZE[gen_scale_in(p, own)], steps = size * ((int)clampf(p[P_PH_RANGE], 0, 3) + 1) + 1;
     int d = (int)(h->x * steps), up = h->y > 0.5f ? size : 0;
     if (d >= steps) d = steps - 1;
     if (d < 0) d = 0;
     if (h->kind == PH_CEIL) d += size;
     else if (h->kind == PH_LEFT) d = up;
     else if (h->kind == PH_RIGHT) {   /* the fifth: the scale's 7 semitones up, else its middle degree */
-        const uint8_t *st = KS_STEPS[ks_clamp_scale((int)p[P_KEY_SCALE])];
+        const uint8_t *st = KS_STEPS[gen_scale_in(p, own)];
         int f = size / 2;
         for (int i = 0; i < size; i++) if (st[i] == 7) f = i;
         d = f + up;
     }
     int key = -1;   /* (2026-10-30) KEY LAUNCH and EMIT: from the ball's or particle's own key */
     if (s->ph.cfg.keyed) key = h->kind <= PH_RIGHT ? s->ph.w.b[h->who].key : s->ph.w.p[h->who].key;
-    *note = ph_note(s, d, key);
+    *note = ph_note(s, d, key, own);
     const ph_cfg_t *c = &s->ph.cfg;
     float ref = fmaxf(c->speed, sqrtf(2.0f * c->gravity)), t = ref > 0.0f ? fminf(1.0f, h->speed / ref) : 1.0f;
     float dyn = clampf(p[P_PH_DYN] * 0.01f, 0.0f, 1.0f);
