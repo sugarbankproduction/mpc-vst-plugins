@@ -1165,6 +1165,22 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      RATE's four settings are in both groups: hub.c now keeps a second LINK per setting, and either lit links it.
      Saved with the sound, never randomised (rnd_golden NEWER); the last param of params.json (no VST index moved);
      factory presets made again (`link_arp_all` Off, nothing else changed).
+  49. (2026-11-02) Each generator's own KEY and SCALE (owner: "having the option to set custom ones on generators would
+     still be cool, but maybe this is more of a menu setting for each generator"). Done 2026-11-02, offline and the
+     desktop window's tests; not played by ear, not in Carla, not on a device. Sixteen option params at the very end of
+     params.json with their s2_ / s3_ copies (2058 params; no VST index moved): `gen_own_*` (Euclid and Turing share one
+     pair, as they share one page, LOW OCTAVE and KEYS), `phys_ball_own_*`, `phys_part_own_*`, `rain_own_*`, `mkv_own_*`,
+     `life_own_*`, `orb_own_*`, `pend_own_*`, each `_key` and `_scale`, Follow by default. Their page's Key and Scale
+     rows are these now; the main ones stay on the row along the screen's bottom, LINK KEY and LINK SCALE on the
+     GENERATIVE page (no longer also on the Euclid / Turing page). Follow plays in the main ones: the golden check passes
+     with its fixture not remade, and the factory presets only gained the new params at Follow. FOLLOW KEYS still gives
+     the root from a key played, over an own KEY too; the own SCALE stays. TURING SCALE other than Held Notes still wins
+     over the SCALE, with the own KEY as its root; Euclid and Turing on HELD KEYS play from the keys as before and don't
+     read the pair. The step editor's GEN view stays on the main ones (it writes a pattern once, and shows them). Never
+     randomised (no rule; rnd_golden NEWER). Tests: `test/own_keys_check.c`, load_test `own_keys_ui_test`. CPU: a table
+     look-up per note; `offline_bench bench`, old and new in turn, shows no difference above the noise (8 voices 81.2 /
+     77.2 us old, 82.2 / 78.5 new; all three of LIFE, ORBITS, PENDULUMS 54.6 / 52.5 old, 51.7 / 51.5 new). That measures
+     Follow; a custom pick takes the same path.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
