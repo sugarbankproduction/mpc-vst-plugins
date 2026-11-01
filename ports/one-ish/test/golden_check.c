@@ -11,7 +11,10 @@
  * plays as a whole-stack one did), velocity, the sustain pedal, pitch bend, the mod wheel and a long release. Only the
  * engine API is used (mpc_engine()), so the same file builds against any version of the engine. Float output is
  * hashed bit for bit (FNV-1a 64): the test passes only when every sample is identical.
- * Build and run: test/run.sh (check against test/golden_states.txt). */
+ * Build and run: test/run.sh (check against test/golden_states.txt).
+ * (2026-11-01, owner's go-ahead) made again with the voice's DC filter (src/engine.c, before the amp: a 5 Hz one-pole
+ * high-pass): it changes every sample slightly on purpose. Made from this engine, now with all 296
+ * factory presets (the fixture before had the first 61). */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
