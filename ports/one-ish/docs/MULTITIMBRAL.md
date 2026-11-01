@@ -94,8 +94,9 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   letting go keeps the touch on, so the sound stays modulated where you left it; a new click or drag moves it on from
   there; clicking HOLD again lets go at once. What "kept touched" means: the pad keeps Pad X and Pad Y, keeps **Pad
   Gate** on (CC 18 stays 127) and keeps the **aftertouch** its Y sends (no channel pressure 0 on release). That matters
-  because most factory sounds use the pad only through Aftertouch rows, which dropped to 0 on release before; the
-  sound's own X/Y HOLD (`pad_hold`, default On) only kept X and Y. The ribbon keeps its touch (CC 17 stays 127), so
+  because 230 of the 296 factory presets have Aftertouch rows (most often to Ladder Cutoff), which fell back on release
+  while their Pad X and Pad Y rows stayed: the sound's own X/Y HOLD (`pad_hold`, On in every preset) only keeps X and Y.
+  No factory preset uses Pad Gate (counted in presets.json, 2026-11-01; the sound itself not checked by ear). The ribbon keeps its touch (CC 17 stays 127), so
   SPRING does not take it back to its origin. The touch is kept by the window not sending the release, so nothing
   changes in the engine or the audio path, and it works on whatever the window plays (with LINK lit, all three
   Synths). The release goes out on the MIDI channel the touch went out on; with Per Synth channels, touching the pad

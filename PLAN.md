@@ -1046,8 +1046,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   46. (2026-11-01) HOLD for the X/Y pad and the ribbon (owner: "when I let go it doesn't hold its modulation position").
      Done 2026-11-01 (the desktop window; `desktop/editor.c` hold_toggle, pad_let_go, ribbon_let_go; load_test
      `hold_test`; docs/MULTITIMBRAL.md "HOLD"). What reset on release before: the pad sent channel pressure 0 and Pad
-     Gate off (X and Y already stayed, the sound's X/Y HOLD being On by default), so the factory sounds' Aftertouch rows
-     (the pad's Y) dropped back; the ribbon sent its touch off and SPRING took it back to its origin. A plain click on
+     Gate off (X and Y already stayed, the sound's X/Y HOLD being On by default), so the Aftertouch rows of 230 of the 296
+     factory presets (the pad's Y; the Pad X and Y rows stayed) fell back; the ribbon sent its touch off and SPRING took it back to its origin. A plain click on
      HOLD (under the pad's left edge; beside the ribbon's LINK) lights it: letting go then sends no release, so the
      position, the gate, the pressure and the ribbon's place all stay; a new drag moves on from there; HOLD clicked
      again lets go. Window-side only (never saved, nothing in the engine or audio path), as SYNTH OUTPUT's MASTER. Layout:
