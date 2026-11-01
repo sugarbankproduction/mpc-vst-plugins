@@ -1087,8 +1087,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        Synths, `editor.c edit_targets`), so a preset that the wrapper loads value by value, or a state or patch, lands
        as written whatever the LINK; unlike `flt_link` (which moves a cutoff while it loads) it can stay On inside
        the presets. A sound saved before that leaves the LINKs out now opens with them lit (window behaviour only:
-       golden_check, which plays the old sounds, unchanged). The randomiser golden leaves the two out of its hash
-       (`CHANGED`, as LINK SENDS): no rule touches them, the fixture stands. load_test: the tests that edit one Synth's
+       golden_check, which plays the old sounds, unchanged). The randomiser golden keeps them Off in its inputs, as
+       before (no rule touches them): the fixture stands. load_test: the tests that edit one Synth's
        KEY on its own unlight LINK KEY first.
      - FOLLOW KEYS on, and left alone by the randomiser ("follow keys should be default on in the generators page,
        randomise shouldn't turn this on or off"): `gen_follow_keys` already defaulted On (a new instance, Init); the
