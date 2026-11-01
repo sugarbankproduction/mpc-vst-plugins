@@ -411,13 +411,14 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_RND_ALSO: return "ARPEGGIATOR (lit): RANDOMISE and MUTATE also set the arpeggiator: on or off, pattern, octaves, "
                             "division, gate, swing. Off: it stays as it is.";
     case Z_RND_ALSO + 1: return "GENERATIVE (lit): RANDOMISE and MUTATE also set the generators (Euclid, Turing, balls, "
-                                "particles, LIFE, orbits, pendulums, rain, Markov), KEY and SCALE, with the sound. Off: they "
-                                "stay. RANDOMISE GENERATORS below: the generators alone.";
+                                "particles, LIFE, orbits, pendulums, rain, Markov), KEY and SCALE, with the sound, and LINK "
+                                "KEY and SCALE (all three Synths in the new key). Off: they stay. RANDOMISE GENERATORS "
+                                "below: the generators alone.";
     case Z_RND_GENS: return "RANDOMISE GENERATORS: new settings for every generator of the Synth in focus, in musical ranges, "
-                            "with one switched on (sometimes two), and a new KEY and SCALE. The sound itself stays. One undo "
-                            "step (the console's UNDO). ALL beside it: all three Synths, each its own.";
-    case Z_RND_GENS_ALL: return "ALL (RANDOMISE GENERATORS): the generators of all three Synths, each its own; their sounds "
-                                "stay. One undo step (the console's UNDO).";
+                            "with one switched on (sometimes two), and a new KEY and SCALE, linked: all three Synths play "
+                            "in it. The sound itself stays. One undo step (the console's UNDO). ALL: all three Synths.";
+    case Z_RND_GENS_ALL: return "ALL (RANDOMISE GENERATORS): the generators of all three Synths, each its own, in one KEY "
+                                "and SCALE (linked); their sounds stay. One undo step (the console's UNDO).";
     case Z_RND_ALSO + 2: return "SEQUENCER (lit): RANDOMISE and MUTATE also set the sequencer's settings (on, division, length, "
                                 "swing, trigger and transpose by the keys if it has notes) and its modulation lanes. The "
                                 "steps' notes stay. The console's UNDO takes the lanes back too; the randomiser's UNDO only the settings.";

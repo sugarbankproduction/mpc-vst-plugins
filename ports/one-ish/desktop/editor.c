@@ -701,6 +701,23 @@ static int rnd_make(ed_t *e, const float *cur, float *out, int mutate) {
     }
     return a;
 }
+/* (2026-11-01, owner: "When GENERATIVE is selected and set to randomise ... let's have SCALE link and KEY
+ * automatically linked") after the generators were randomised (or mutated): LINK KEY and LINK SCALE lit, and all three
+ * Synths in the Synth in focus's KEY and SCALE (the ones just picked), so the generators never clash. Inside the
+ * caller's undo step. */
+static void gens_link_keys(ed_t *e) {
+    static const char *const K[2] = {"key_root", "key_scale"}, *const LK[2] = {"link_key", "link_scale"};
+    for (int k = 0; k < 2; k++) {
+        int i = rnd_key(K[k]), l = rnd_key(LK[k]);
+        if (i >= NPARAMS || l >= NPARAMS) continue;
+        if (e->fx->getParameter(e->fx, l) < 0.5f) edit_abs(e, l, 1.0f);
+        float v = e->fx->getParameter(e->fx, synth_param(i, e->focus));
+        for (int c = 0; c < NSYNTHS; c++) {
+            int j = synth_param(i, c);
+            if (fabsf(e->fx->getParameter(e->fx, j) - v) > 1e-6f) edit_abs(e, j, v);
+        }
+    }
+}
 /* all: the other Synths get a sound of their own too (ON, channels and key ranges stay: the randomiser never
  * touches them); the randomiser's UNDO / REDO follow the Synth in focus, Ctrl+Z takes back all three at once */
 static void rnd_action(ed_t *e, int mutate, int all) {   /* RANDOMISE (0) or MUTATE (1) */
@@ -742,6 +759,7 @@ static void rnd_action(ed_t *e, int mutate, int all) {   /* RANDOMISE (0) or MUT
         if (e->rnd_also >> RS_SEQ & 1u) seq_read(e);   /* (the step editor shows the focused Synth's sequence again) */
         snprintf(name + strlen(name), sizeof name - strlen(name), " (all 3)");
     }
+    if (e->rnd_also >> RS_GEN & 1u) gens_link_keys(e);   /* (2026-11-01) the GENERATIVE tick: KEY / SCALE linked */
     rnd_snapshot(e, cur);   /* as the plugin took it */
     rnd_push(e, cur, name);
     lib_hold(e, -1);
@@ -780,6 +798,7 @@ void ed_rnd_gens(ed_t *e, int mutate, int all) {
     }
     e->focus = focus;
     e->focus_mask = mask;
+    gens_link_keys(e);   /* (2026-11-01) KEY / SCALE linked: all three in the focus's */
     lib_hold(e, -1);
     if (e->wnd) InvalidateRect(e->wnd, NULL, FALSE);
 }

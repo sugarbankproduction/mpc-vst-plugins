@@ -425,6 +425,17 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
                  "GENERATIVE params set (%d before, ticks off), the sound plays (rms %.3f, sound %d of up to 3)", rows, also,
                  also_before, wrms, tries + (wrms > 0.001));
         check(also_before == 0 && also > 0 && rows >= 4 && wrms > 0.001, what);
+        {   /* (2026-11-01) with GENERATIVE lit, RANDOMISE links KEY and SCALE: both LINKs lit, all three Synths alike */
+            int kr = rnd_key("key_root"), ks = rnd_key("key_scale"), lk = rnd_key("link_key"), ls = rnd_key("link_scale");
+            int same = 1;
+            for (int i = 0; i < NPARAMS; i++)
+                if (PARAMS[i].key[0] == 's' && PARAMS[i].key[2] == '_' &&
+                    (rnd_key(PARAMS[i].key + 3) == kr || rnd_key(PARAMS[i].key + 3) == ks))
+                    same &= fx->getParameter(fx, i) == fx->getParameter(fx, rnd_key(PARAMS[i].key + 3));
+            snprintf(what, sizeof what, "RANDOMISE with GENERATIVE lit: LINK KEY %.0f, LINK SCALE %.0f, the three Synths in "
+                     "Synth 1's KEY and SCALE (%d)", fx->getParameter(fx, lk), fx->getParameter(fx, ls), same);
+            check(fx->getParameter(fx, lk) > 0.5f && fx->getParameter(fx, ls) > 0.5f && same, what);
+        }
         rnd_click(child, s, RP_WILD, 0);
         rnd_click(child, s, RP_ALSO, 0);
         rnd_click(child, s, RP_ALSO, 1);
@@ -592,6 +603,10 @@ static int rg_synth(int i) {   /* 0-2: which Synth param i is (by its key's pref
     const char *k = PARAMS[i].key;
     return k[0] == 's' && (k[1] == '2' || k[1] == '3') && k[2] == '_' ? k[1] - '1' : 0;
 }
+static int rg_keylink(int i) {   /* KEY, SCALE or their LINKs: linked across the Synths by the randomise (2026-11-01) */
+    const char *k = PARAMS[i].key + (rg_synth(i) ? 3 : 0);
+    return !strcmp(k, "key_root") || !strcmp(k, "key_scale") || !strcmp(k, "link_key") || !strcmp(k, "link_scale");
+}
 static int rg_gen(int i) {   /* param i in the GENERATIVE section (its Synth 1 key's) */
     const char *k = PARAMS[i].key;
     return rnd_section_of(rg_synth(i) ? rnd_key(k + 3) : i) == RS_GEN;
@@ -610,7 +625,7 @@ static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, 
     int st1 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
     int gens = 0, other = 0, others = 0, on = 0;
     for (int i = 0; i < NPARAMS; i++) {
-        if (after[i] == before[i]) continue;
+        if (after[i] == before[i] || rg_keylink(i)) continue;
         if (rg_synth(i)) others++;
         else if (rg_gen(i)) gens++;
         else other++;
@@ -619,12 +634,21 @@ static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, 
     snprintf(what, sizeof what, "RANDOMISE GENERATORS: %d generator settings of Synth 1 changed, %d other settings (0), "
              "%d of Synths 2 / 3 (0); %d generator(s) on; one undo step (%d -> %d)", gens, other, others, on, st0, st1);
     check(gens > 0 && other == 0 && others == 0 && on >= 1 && st1 == st0 + 1, what);
+    {   /* (2026-11-01) KEY and SCALE linked: both LINKs lit, the three Synths in Synth 1's new KEY and SCALE */
+        int kr = rnd_key("key_root"), ks = rnd_key("key_scale"), same = 1;
+        for (int i = 0; i < NPARAMS; i++)
+            if (rg_synth(i) && (rnd_key(PARAMS[i].key + 3) == kr || rnd_key(PARAMS[i].key + 3) == ks))
+                same &= after[i] == after[rnd_key(PARAMS[i].key + 3)];
+        snprintf(what, sizeof what, "RANDOMISE GENERATORS links KEY and SCALE: LINK KEY %.0f, LINK SCALE %.0f, the three "
+                 "Synths in Synth 1's (%d)", after[rnd_key("link_key")], after[rnd_key("link_scale")], same);
+        check(after[rnd_key("link_key")] > 0.5f && after[rnd_key("link_scale")] > 0.5f && same, what);
+    }
     rnd_click(child, s, RP_GENS_ALL, 0);
     snapshot(fx, all);
     int st2 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
     int per[3] = {0, 0, 0}, nongen = 0;
     for (int i = 0; i < NPARAMS; i++) {
-        if (all[i] == after[i]) continue;
+        if (all[i] == after[i] || rg_keylink(i)) continue;
         if (rg_gen(i)) per[rg_synth(i)]++;
         else nongen++;
     }
@@ -3046,7 +3070,8 @@ static void gens_count(const float *a, const float *b, int *gen, int *other) {  
     for (int i = 0; i < NPARAMS; i++) {
         if (a[i] == b[i]) continue;
         const char *k = PARAMS[i].key, *base = lt_synth_of(k) ? k + 3 : k;
-        int keyscale = !strcmp(base, "key_root") || !strcmp(base, "key_scale");
+        int keyscale = !strcmp(base, "key_root") || !strcmp(base, "key_scale") || !strcmp(base, "link_key") ||
+                       !strcmp(base, "link_scale");   /* (2026-11-01: the generators' randomise links KEY / SCALE) */
         if (lt_gen_key(base)) gen[lt_synth_of(k)]++;
         else if (!keyscale) other[lt_synth_of(k)]++;
     }
@@ -3105,6 +3130,19 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
              other[1], other[2], on, st1 - st0);
     check(gen[0] > 10 && !gen[1] && !gen[2] && !other[0] && !other[1] && !other[2] && on >= 1 && on <= 2 && st1 - st0 == 1,
           what);
+    {   /* (2026-11-01) and LINK KEY / LINK SCALE lit, all three Synths in Synth 1's new KEY and SCALE */
+        int same = 1;
+        for (int c = 1; c < 3; c++) {
+            char k1[24], k2[24];
+            snprintf(k1, sizeof k1, "s%d_key_root", c + 1);
+            snprintf(k2, sizeof k2, "s%d_key_scale", c + 1);
+            same &= getkey(fx, k1) == getkey(fx, "key_root") && getkey(fx, k2) == getkey(fx, "key_scale");
+        }
+        snprintf(what, sizeof what, "GENERATIVE page RANDOMISE: LINK KEY (%.0f) and LINK SCALE (%.0f) lit, the three Synths "
+                 "in Synth 1's KEY and SCALE (%d), in the same undo step", getkey(fx, "link_key"), getkey(fx, "link_scale"),
+                 same);
+        check(getkey(fx, "link_key") > 0.5f && getkey(fx, "link_scale") > 0.5f && same, what);
+    }
     gens_xy(0, 1, &x, &y);   /* its ALL */
     click(child, s, x, y);
     snapshot(fx, a);

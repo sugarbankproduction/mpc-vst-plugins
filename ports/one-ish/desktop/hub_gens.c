@@ -164,11 +164,13 @@ const char *gens_help(ed_t *e, int z) {
                                   "its defaults, so all off. Anything else: nothing happens.";
     switch (z) {
     case Z_GEN_RND: return "RANDOMISE (generators): new settings for every generator of the Synth in focus, in musical ranges, "
-                           "with one generator switched on (sometimes two), and a new KEY and SCALE. The sound stays. One "
-                           "undo step. ALL beside it: each of the three Synths its own.";
-    case Z_GEN_RND_ALL: return "ALL: RANDOMISE the generators of all three Synths (each its own). One undo step.";
+                           "with one generator switched on (sometimes two), and a new KEY and SCALE, with LINK KEY and "
+                           "SCALE lit: all three Synths in it. The sound stays. One undo step. ALL: each Synth its own.";
+    case Z_GEN_RND_ALL: return "ALL: RANDOMISE the generators of all three Synths (each its own), in one KEY and SCALE "
+                               "(linked). One undo step.";
     case Z_GEN_MUT: return "MUTATE (generators): nudges the settings of the generators that are on (40%, or "
-                           "the RANDOM page's AMOUNT if higher); which ones are on, KEY and SCALE stay. One undo step. ALL beside it: all three Synths.";
+                           "the RANDOM page's AMOUNT if higher); which ones are on, KEY and SCALE stay (and LINK KEY and "
+                           "SCALE light: all three Synths in it). One undo step. ALL beside it: all three Synths.";
     case Z_GEN_MUT_ALL: return "ALL: MUTATE the generators of all three Synths. One undo step.";
     case Z_GEN_RESET: return "RESET: every generator of the Synth in focus back to its default settings, so all off. KEY, "
                              "SCALE and FOLLOW TEMPO stay. Click twice (it asks first). One undo step.";

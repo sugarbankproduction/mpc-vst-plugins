@@ -1060,6 +1060,14 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        a plain click switches that generator in the Synth in focus, lit while on; their MORE triangles open the
        MARKOV MELODY and RAIN AND RIPPLES pages. BALLS and PARTICLES stay on the centre screen (the GENERATIVE page,
        the tabs, the MORE index). `desktop/gen_layout.py`; load_test clicks both and their triangles.
+     - KEY and SCALE linked when the generators are randomised ("When GENERATIVE is selected and set to randomise in
+       the RANDOMISE menu and in its own randomise area, let's have SCALE link and KEY automatically linked"):
+       RANDOMISE / MUTATE with the GENERATIVE tick, the GENERATIVE page's RANDOM | ALL and MUTATE | ALL, and
+       RANDOMISE GENERATORS | ALL now also light LINK KEY and LINK SCALE and set all three Synths to the Synth in
+       focus's new KEY and SCALE (with ALL each Synth's generators are its own, the key one), in the same undo step
+       (`editor.c gens_link_keys`). It is the window's, after the randomiser: `src/randomize.h` is unchanged, so the
+       randomiser golden (no GENERATIVE tick in its calls anyway) stands. load_test: both LINKs lit and the three
+       Synths' KEY / SCALE alike after each.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
