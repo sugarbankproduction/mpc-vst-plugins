@@ -213,7 +213,9 @@ filter), `lad_kbd` (key tracking) and the filters' LFO amounts. See Appendix A: 
 - **Generators** (section GENERATIVE and LIFE / ORBITS / PENDULUMS): Euclid, Turing, bouncing balls, particles, Life,
   orbits, pendulums, rain, Markov. Each has an `..._on` switch and settings, plus KEYS (how keys start it). **Write
   `gen_keys` explicitly**: if you leave it out, Moo Won reads it as `Held Keys`, the value from before the setting
-  existed. The same goes for `gen_follow_keys` (missing = Off). `key_root` / `key_scale` set the key they play in.
+  existed. The same goes for `gen_follow_keys` (missing = Off). `key_root` / `key_scale` set the key they play in:
+  a new sound starts in C major (since 2026-11-01), but a file that leaves `key_scale` out is read as `Minor`, the
+  default before that day, so **write `key_scale` too** (e.g. `key_scale=Major`).
 - **Expression**: the matrix sources `Mod Wheel`, `Pitch Wheel`, `Aftertouch`, `Velocity`, `Ribbon`, `Pad X (CC 2)`,
   `Pad Y (CC 3)`, `Pad Gate (CC 18)`, `Exp 1 (CC 11)`, `Exp 2 (CC 4)`, `Sustain`. A good preset gives the mod wheel,
   aftertouch and the X/Y pad something musical to do, and says so in `notes=`.
@@ -232,7 +234,7 @@ filter), `lad_kbd` (key tracking) and the filters' LFO amounts. See Appendix A: 
 5. Effects: each Synth's own effect and its sends; the shared master effects.
 6. Keep levels sane: with three Synths layered, use volumes around 40-60% each, not 100%. Resonance above about 80%
    with high drive can get loud.
-7. Write `gen_keys` and `gen_follow_keys` whenever a generator is on.
+7. Write `gen_keys`, `gen_follow_keys` and `key_scale` whenever a generator is on.
 8. Don't write readouts (Appendix A marks them "read-only") or the `seq=` line.
 9. Name the file `<name>.oneish`. In Moo Won: PATCHES page, IMPORT, choose the file. It's added to your current
    library. (Or copy it straight into `Documents\ONE-ish\Patches` and the browser lists it.)
@@ -888,7 +890,7 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 774 ke
 | `gen_scale` | Turing Scale | option: `Held Notes` / `Chromatic` / `Major` / `Minor` / `Dorian` / `Mixolydian` / `Pent Major` / `Pent Minor` / `Blues` | `Held Notes` | per Synth |
 | `gen_range` | Turing Octaves | option: `1` / `2` / `3` / `4` | `1` | per Synth |
 | `key_root` | Key | option: `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `C` | per Synth |
-| `key_scale` | Scale | option: `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Minor` | per Synth |
+| `key_scale` | Scale | option: `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Major` (2026-11-01; left out of a file: `Minor`) | per Synth |
 | `phys_balls_on` | Balls On | option: `Off` / `On` | `Off` | per Synth |
 | `phys_balls` | Balls | number 1 to 8, whole numbers | `3` | per Synth |
 | `phys_speed` | Phys Speed | number 0 to 100 %, whole numbers | `40` | per Synth |

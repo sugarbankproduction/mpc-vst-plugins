@@ -1016,6 +1016,15 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      (TEST_PATCH PT_M1P_PICK), the patches, tags, sound, message, report, AUTO RENAME and IGNORE. Nothing in the audio
      path. Left: the sequences, the effects' own controls and sync divisions (their scales need more files to read),
      importing a whole folder from the window (the dialog's Ctrl+A does a folder at a time).
+  Owner requests, 2026-11-01:
+     - Generators in C major by default ("I think rain is minor for some reason"): every generator plays in its Synth's
+       KEY / SCALE (`key_root`, `key_scale`; Turing's own SCALE defaults to Held Notes, which uses them too), and
+       SCALE defaulted to Minor. Now Major: a new instance and the Init sound play the generators in C major. The
+       other factory sounds keep Minor as designed (`make_synths.OLD_S1`); of those with a generator on, only Euclid
+       Turing Bells and Euclid Turing Night leave SCALE unset, and both play Turing's own minor scales anyway. A saved
+       sound, patch or `.oneish` file that leaves `key_scale` out is read as Minor (`src/synths.h` state_absent, as
+       for `gen_keys`), so old projects sound the same (golden_check unchanged); the randomiser golden keeps its
+       inputs at Minor (unchanged fixture). Offline.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

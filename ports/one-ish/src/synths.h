@@ -353,16 +353,19 @@ static void legacy_defaults(inst_t *in) {   /* (after load_defaults) every Synth
 /* (2026-10-30) A STATE'S MISSING KEYS. A state lists only the values off their defaults, so a param whose default
  * changes would change every sound saved before. For those params a missing key means the OLD value, not today's
  * default: state_absent() gives it, set_state / synth_load start from it, and state_keeps compares with it (so a value
- * equal to it is the one left out, and a new sound at today's default writes its key). One today:
+ * equal to it is the one left out, and a new sound at today's default writes its key). Those today:
  *   gen_keys: Euclid and Turing played only from the held keys until 2026-10-30 (Held Keys); new sounds start Free;
- *   gen_follow_keys: until 2026-10-30 the notes from the keys stayed in the Synth's KEY (Off); new sounds follow (On).
+ *   gen_follow_keys: until 2026-10-30 the notes from the keys stayed in the Synth's KEY (Off); new sounds follow (On);
+ *   key_scale: the Synth's SCALE (what the generators play in) was Minor until 2026-11-01; new sounds start Major.
  * (A version number in the state would do the same for many params at once; this table is what it would hold.) */
 static float state_absent(const one_t *s, int i) {
-    return i == P_GEN_KEYS ? (float)GK_HELD : i == P_GEN_FOLLOW_KEYS ? 0.0f : s->def[i];
+    return i == P_GEN_KEYS ? (float)GK_HELD : i == P_GEN_FOLLOW_KEYS ? 0.0f : i == P_KEY_SCALE ? (float)KS_MINOR
+                                                                                         : s->def[i];
 }
 static void state_absent_load(one_t *s) {
     s->val[P_GEN_KEYS] = state_absent(s, P_GEN_KEYS);
     s->val[P_GEN_FOLLOW_KEYS] = state_absent(s, P_GEN_FOLLOW_KEYS);
+    s->val[P_KEY_SCALE] = state_absent(s, P_KEY_SCALE);   /* (2026-11-01) */
 }
 static int state_keeps(const one_t *s, int i) {
     if (!KEYS[i][0] || s->val[i] == state_absent(s, i) || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD ||

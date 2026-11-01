@@ -23,7 +23,9 @@
  * (RND_GOLDEN_DUMP, param by param): every call that differed has another mfx_series; none differed without one.
  * (2026-11-01, oscillator tuning: detunes up to 0.9 st, intervals a semitone or more only musical ones below WILD 50%,
  * 7ths and the 9th through the octave footage) made again: 109 of the 240 calls differ. Checked the same way: every
- * call that differed has another o2 / o3 freq (or oct); none differed without one. */
+ * call that differed has another o2 / o3 freq (or oct); none differed without one.
+ * (2026-11-01) the Synth's SCALE (key_scale) defaults to Major now (Minor before): the inputs keep it at Minor, so the
+ * fixture stands as it is (not made again). */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -126,6 +128,10 @@ int main(int argc, char **argv) {
     static float def[NPARAMS], out[NPARAMS];
     for (int i = 0; i < NPARAMS; i++) def[i] = PARAMS[i].def;
     empty_rows(def);
+    {   /* (2026-11-01) SCALE at Minor, its default before that day (Major since): the inputs as before */
+        int ks = rnd_key("key_scale");
+        def[ks] = (float)rnd_opt(ks, "Minor") / (float)(PARAMS[ks].nopts - 1);
+    }
     static const float WILD[3] = {0.0f, 0.5f, 1.0f};
     static const unsigned ALSO[2] = {0, 1u << RS_ARP};   /* (not SEQUENCER: its last rules were past rule 255 before, a bug fixed that day) */
     FILE *f = fopen(argv[2], gen ? "w" : "r");
