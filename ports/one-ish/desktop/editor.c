@@ -1465,6 +1465,12 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             else rnd_action(e, 0, shift);              /* R: randomise (Shift+R: all three) */
             return 0;
         }
+        if (e && wp == 'C' && GetKeyState(VK_CONTROL) >= 0 && GetKeyState(VK_MENU) >= 0 && GetKeyState(VK_SHIFT) >= 0 &&
+            e->mode == M_NONE && !(lp & 0x40000000)) {   /* (2026-11-01, owner) C: the MATRIX with its cables, again: hidden */
+            if (!e->cb.on) show(e, SCR_MATRIX, 0);
+            cb_toggle(e);
+            return 0;
+        }
         break;
     case WM_SYSKEYDOWN:   /* (2026-10-30) Alt+Left / Alt+Right: the screen's BACK / FWD (shortcuts; the buttons first) */
         if (e && (wp == VK_LEFT || wp == VK_RIGHT)) { nav_go(e, wp == VK_RIGHT); return 0; }

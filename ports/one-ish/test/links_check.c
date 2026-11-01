@@ -9,8 +9,7 @@ static void links_checks(void) {
         for (int link = 0; link < 2; link++) {
             void *e = E->create(NULL);
             set(e, "midi_ch", 17); set(e, "s2_syn_on", 1); set(e, "s3_syn_on", 1);
-            for (int k = 0; k < 3; k++) set(e, LINK[k], 0);   /* (since 2026-11-01 they default On: one at a time) */
-            set(e, "link_pad", 0);
+            for (int o = 0; o < 3; o++) set(e, LINK[o], 0);   /* (2026-11-01: the LINKs are on by default) the others off */
             set(e, LINK[which], link);
             char before[3][64], after[3][64];
             static const char *const RD[3] = {"hands_now", "s2_hands_now", "s3_hands_now"};

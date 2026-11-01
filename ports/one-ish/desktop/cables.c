@@ -1602,7 +1602,8 @@ int cb_help(ed_t *e, char *out, int n) {
     if (z == Z_CB_BTN) {
         snprintf(out, n, "CABLES: %s the matrix as patch cables over the panel: drag from a source's jack to a knob for a "
                  "new one, drag a cable's end dots to re-patch it, click a cable for its settings. Click again, CABLES OFF or "
-                 "Esc: hidden.", e->cb.on ? "hides" : "shows");
+                 "Esc: hidden. Key C: from any page, the MATRIX with its cables; C again: hidden.",
+                 e->cb.on ? "hides" : "shows");
         return 1;
     }
     if (!e->cb.on) return 0;

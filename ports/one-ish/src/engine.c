@@ -79,6 +79,7 @@
 #include "midi_out.h"   /* (2026-10-30) MIDI OUT: the notes each Synth plays, to the host */
 
 #define SR 44100.0f
+#define DC_R 0.99929f   /* (2026-11-01) the voice's DC filter: 1 - 2 pi 5 Hz / SR */
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
 #define MAX_HELD 16
 #define POOL_VOICES 16      /* the voices every Synth of an instance shares (src/synths.h) */
@@ -574,6 +575,7 @@ typedef struct {
     float pvar;              /* this note's pitch variance offset, semitones */
     float note_hz, velocity;
     float gain;              /* smoothed towards velocity x volume, so neither jumps the level mid-note */
+    float dc_x, dc_y;        /* (2026-11-01) the DC filter before the amp: its last input and output (dc_block) */
     float cut, svf_cut;      /* the cutoff knobs (0..100) as this voice's filters follow them, smoothed */
     float rand;              /* this note's random value (-1..1), a matrix source */
     float to_lad[NSRC], to_svf[NSRC], mix_lad;   /* last control step's levels and filter mix (ramp start) */
@@ -1452,6 +1454,7 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
     v->mac_note = mac_pitch(s, v, v->an_tune[0]);   /* so a drum model's hit (the trigger) lands on the new note */
     if (v->env[ENV_AMP].stage == ENV_IDLE) {   /* from silence every note starts the same way */
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
+        v->dc_x = v->dc_y = 0.0f;
         ladder_reset(&v->lad);
         svf2_reset(&v->svf);
         set_targets(s, v, no_mod, 0.0f);   /* unmodulated, until the next control step adds the matrix */
@@ -3280,6 +3283,15 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
             fs[u] = lad_out * ml + svf_out * (1.0f - ml);
         }
         float f = os == 1 ? fs[0] : os == 2 ? hq_dec2(&v->dec, fs) : hq_dec4(&v->dec, fs);
+        {   /* (2026-11-01) the DC filter between the filters and the amp, as an analog voice's coupling capacitor: a
+             * one-pole high-pass at about 5 Hz (below hearing). A very narrow pulse driven into a low ladder cutoff left
+             * a large constant offset (offline_check: a held chord at mean -0.61 of rms 0.61) that filled the limiter's
+             * headroom; before the amp, so a closed envelope is still exact silence. */
+            float y = f - v->dc_x + DC_R * v->dc_y;
+            v->dc_x = f;
+            v->dc_y = y;
+            f = y;
+        }
         v->gain += (target - v->gain) * s->gain_coef;
         if (fabsf(v->gain - target) < 1e-7f) v->gain = target;   /* settle exactly: no denormal tail */
         float y = f * env_next(&v->env[ENV_AMP]) * v->gain;

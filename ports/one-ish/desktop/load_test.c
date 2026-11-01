@@ -4067,6 +4067,15 @@ static void cables_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     snprintf(what, sizeof what, "cables: Esc hides them (%d), CABLES shows them again (%d), CABLES OFF hides them (%d)",
              after_esc, again, (int)cbt(fx, CBT_ON, 0));
     check(after_esc == 0 && again == 1 && cbt(fx, CBT_ON, 0) == 0, what);
+    /* (2026-11-01) the C key: from another page, the MATRIX with its cables; C again: hidden */
+    click_zone(child, s, ZONE_TAB_SETUP);
+    int was = screen_now(fx);
+    SendMessageA(child, WM_KEYDOWN, 'C', 1);
+    int c_scr = screen_now(fx), c_on = (int)cbt(fx, CBT_ON, 0);
+    SendMessageA(child, WM_KEYDOWN, 'C', 1);
+    snprintf(what, sizeof what, "cables: the C key opens the MATRIX (screen %d -> %d) with the cables (%d), C again hides "
+             "them (%d)", was, c_scr, c_on, (int)cbt(fx, CBT_ON, 0));
+    check(was != -1 && c_scr == -1 && c_on == 1 && cbt(fx, CBT_ON, 0) == 0, what);
     for (int i = 0; i < NPARAMS; i++)
         if (fx->getParameter(fx, i) != saved[i]) fx->setParameter(fx, i, saved[i]);
     SendMessageA(child, WM_TIMER, 1, 0);

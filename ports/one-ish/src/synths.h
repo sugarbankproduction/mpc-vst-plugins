@@ -754,6 +754,7 @@ static void heal(inst_t *in) {
             ladder_reset(&v->lad);
             svf2_reset(&v->svf);
             v->red = v->wprev = v->fm_prev = 0.0f;
+            v->dc_x = v->dc_y = 0.0f;
         }
     }
 }

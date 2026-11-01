@@ -202,6 +202,12 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      more is snapped to a musical interval (also after MUTATE and WILD's own pass); from WILD 50% any semitone may come.
      A hard-synced oscillator is left as it is (its offset is a timbre). Golden made again; checked offline: at WILD 0 no
      non-musical interval in 160 calls.
+     DC FILTER (found and fixed offline 2026-11-01, owner's go-ahead): a very narrow pulse (PW 10%) through a driven, low
+     ladder cutoff left a large DC offset (WILD 100% sound 36 in offline_check: mean -0.61, rms 0.61, only 0.09 without
+     the DC), which filled the limiter. Each voice now has a one-pole high-pass at about 5 Hz between the filters and
+     the amp (src/engine.c; before the amp so a closed envelope is still exact silence; at the output it left a tail
+     that broke PANIC and All Sound Off). That sound now reads rms 0.09. CPU: within the bench's noise (8 voices 96.5 ->
+     86.3 us per block, 16 voices 154.8 -> 162.9). Golden states made again, now with all 296 factory presets.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27
@@ -744,7 +750,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      the same amount (as MOD FROM's - / +). A drag or a click on a cable selects it: a label by its knob (row, source >
      destination, amount, VIA, XFORM, "row off") with an X that removes the row (quick assign's REMOVE: one undo step,
      the Synths edited together too). A click on a source's jack starts quick assign from it (then a knob: a new
-     cable); clicks anywhere else go to the panel as always; Esc, CABLES again or CABLES OFF hide it. The knobs keep
+     cable); clicks anywhere else go to the panel as always; Esc, CABLES again or CABLES OFF hide it. (2026-11-01) The
+     C key opens the MATRIX with the cables from any page, C again hides them; CABLES is red while hidden, green while shown. The knobs keep
      off the centre screen and away from each other and the ends; the screen's title and help lines stay in front of
      the cables. The MATRIX page is unchanged and stays the only truth (a row changed there, by the host or by undo
      redraws the cables at the window's timer). Drawing: the cables, jacks and bay are a cached layer (premultiplied,
