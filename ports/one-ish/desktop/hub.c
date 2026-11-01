@@ -458,6 +458,7 @@ intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case HT_RESTORE: return hub_restore_n(e);
     case HT_LINKED: return link_lit(e, (int)lroundf(opt));
     case HT_VOL_MASTER: return e->vol_master;
+    case HT_HOLDS: return ed_holds(e);   /* (2026-11-01) the X/Y pad's and the ribbon's HOLD (editor.c) */
     case HT_SUB: return e->sub;
     case HT_TOGETHER: return e->together;
     case HT_GEN_ARMED: return e->gens_arm;   /* (2026-10-30) */

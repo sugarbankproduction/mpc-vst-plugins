@@ -693,14 +693,19 @@ def build(lay):
     zones.update({"OCT_LEDS": (50, 632, 116, 26), "OCT_DOWN": (64, 662, 36, 16), "OCT_UP": (118, 662, 36, 16),
                   # (2026-10-31) the wheels 14 px shorter: their LINKs under their names
                   "PITCH": (56, 706, 36, 98), "MODW": (110, 706, 36, 98), "PAD": (166, 706, 126, 112),
-                  # (2026-10-31) the ribbon starts 64 px in: its LINK at its left end (shorter with a MORE page)
-                  "KEYS": (384, 640, 1744, 200), "RIBBON": (448, 612, 1680, 20),
+                  # (2026-10-31) the ribbon starts 64 px in: its LINK at its left end (shorter with a MORE page);
+                  # (2026-11-01) 124 px in: its HOLD beside the LINK
+                  "KEYS": (384, 640, 1744, 200), "RIBBON": (508, 612, 1620, 20),
                   # (2026-10-30) the controller's DEST button, top left: modulate from the wheels, the X/Y pad,
                   # the ribbon or the keyboard (quickmod.c); the computer keyboard's hint on the front rail
                   "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14),
                   "PANIC": (236, 691, 54, 13),   # (2026-10-30) every note off, under glide's ON
                   # (2026-10-31) LINK ALL: every LINK of this box on (or off) at once, after the pad's LINK
-                  "LINK_ALL": (308, 822, 60, 14)})
+                  "LINK_ALL": (308, 822, 60, 14),
+                  # (2026-11-01) HOLD (a window setting, not saved): lit, letting go of the pad / the ribbon keeps it
+                  # touched, so its modulation stays. The pad's under its left edge, before its name; the ribbon's
+                  # beside its LINK on the plate at its left end
+                  "PAD_HOLD": (166, 822, 38, 14), "RIB_HOLD": (445, 615, 54, 14)})
     # (2026-10-30) LINK beside the X/Y pad's name: lit, the pad plays all three Synths (src/synths.h midi)
     L.ctl("link_pad", "toggle", 256, 822, 48, 14, "LINK", SIDE)
     # (2026-10-31) LINK under each wheel's name: lit, that wheel reaches all three Synths (src/synths.h midi); the pitch
@@ -708,7 +713,7 @@ def build(lay):
     # the ribbon's at the ribbon's left end, on a small plate of its own
     L.ctl("link_bend", "toggle", 52, 822, 44, 14, "LINK", SIDE)
     L.ctl("link_mod", "toggle", 106, 822, 44, 14, "LINK", SIDE)
-    L.panel(384, 612, 60, 20, "", style="frame", keys=["link_ribbon"])
+    L.panel(384, 612, 120, 20, "", style="frame", keys=["link_ribbon"])   # (2026-11-01: 60 wider, HOLD too)
     L.ctl("link_ribbon", "toggle", 387, 615, 54, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     L.ctl("glide", "toggle", 236, 640, 42, 36, "ON")   # (2026-10-31: 20 px shorter, the button where it was)

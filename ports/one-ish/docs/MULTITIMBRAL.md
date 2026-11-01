@@ -81,6 +81,21 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   2026-11-01 for all five (`link_bend`, `link_mod`, `link_pad`, `link_ribbon`, `link_glide`), so LINK ALL starts lit;
   the factory presets were made again with them On (`presets/make_presets.py`; nothing else in them changed). A sound
   saved before keeps what it was saved with.
+- **HOLD** for the X/Y pad and the ribbon (2026-11-01, owner's request; the desktop window, load_test `hold_test`):
+  HOLD under the pad's left edge (before its name) and HOLD beside the ribbon's LINK on the plate at its left end
+  (the ribbon now starts 124 px in, 60 px shorter). Off (the default): letting go is as before. Lit (a plain click):
+  letting go keeps the touch on, so the sound stays modulated where you left it; a new click or drag moves it on from
+  there; clicking HOLD again lets go at once. What "kept touched" means: the pad keeps Pad X and Pad Y, keeps **Pad
+  Gate** on (CC 18 stays 127) and keeps the **aftertouch** its Y sends (no channel pressure 0 on release). That matters
+  because most factory sounds use the pad only through Aftertouch rows, which dropped to 0 on release before; the
+  sound's own X/Y HOLD (`pad_hold`, default On) only kept X and Y. The ribbon keeps its touch (CC 17 stays 127), so
+  SPRING does not take it back to its origin. The touch is kept by the window not sending the release, so nothing
+  changes in the engine or the audio path, and it works on whatever the window plays (with LINK lit, all three
+  Synths). The release goes out on the MIDI channel the touch went out on; with Per Synth channels, touching the pad
+  (or ribbon) while it is held for another Synth's channel lets that one go first. Closing the window keeps a held
+  touch (the HOLD stays lit when it opens again). A window setting, not saved with the sound (as SYNTH OUTPUT's
+  MASTER); the ribbon's MODE Hold (its page) is the saved way to keep the ribbon's position. Hardware controllers and
+  the host are not affected.
 - **SHARE** (2026-10-30, offline and the desktop window; `lfo1_share` .. `lfo4_share`, shared, default Off;
   `src/engine.c` `lfo_owner`, `control_lfos`; `test/lfoshare_check.c`): the button beside LINK at the bottom of each LFO
   panel (and on the LFO's MORE page). Lit, that LFO in Synths 2 and 3 *is* Synth 1's: rate, sync, timing, wave and

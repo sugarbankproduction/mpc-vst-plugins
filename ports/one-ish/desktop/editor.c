@@ -261,6 +261,8 @@ static void layout(void) {
     L.kb_hint = zone(ZONE_KB_HINT);
     L.panic = zone(ZONE_PANIC);
     L.link_all = zone(ZONE_LINK_ALL);   /* (2026-10-31) */
+    L.pad_hold = zone(ZONE_PAD_HOLD);   /* (2026-11-01) */
+    L.rib_hold = zone(ZONE_RIB_HOLD);
     for (int k = 0; k < NMORES; k++) {
         const short z[4] = {MORES[k].x, MORES[k].y, MORES[k].w, MORES[k].h};
         L.more[k] = zone(z);
@@ -447,6 +449,8 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_OCT_PICK: r = &L.oct_leds; break;
     case Z_PANIC: r = &L.panic; break;
     case Z_LINK_ALL: r = &L.link_all; break;
+    case Z_PAD_HOLD: r = &L.pad_hold; break;
+    case Z_RIB_HOLD: r = &L.rib_hold; break;
     case Z_OCT_UP: r = &L.oct_up; break;
     case Z_PREV: case Z_NEXT: invalidate(e, &L.bprev); r = &L.bnext; break;
     case Z_ENCODER: r = &L.encoder; break;
@@ -973,7 +977,7 @@ static int hit(ed_t *e, int x, int y) {
     static const struct { RECT *r; int z; } Z[] = {
         {&L.keys, Z_KEYS}, {&L.ribbon, Z_RIBBON}, {&L.pitch, Z_PITCH}, {&L.modw, Z_MODW}, {&L.pad, Z_PAD},
         {&L.oct_down, Z_OCT_DOWN}, {&L.oct_up, Z_OCT_UP}, {&L.oct_leds, Z_OCT_PICK}, {&L.panic, Z_PANIC},
-        {&L.link_all, Z_LINK_ALL},
+        {&L.link_all, Z_LINK_ALL}, {&L.pad_hold, Z_PAD_HOLD}, {&L.rib_hold, Z_RIB_HOLD},
         {&L.prev, Z_PREV}, {&L.next, Z_NEXT}, {&L.back, Z_NAV_BACK}, {&L.fwd, Z_NAV_FWD}, {&L.bprev, Z_PREV},
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
@@ -1072,7 +1076,7 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
         float px = (x - L.pad.left) / (float)rw(&L.pad), py = (L.pad.bottom - y) / (float)rh(&L.pad);
         e->pad_x = px < 0 ? 0 : px > 1 ? 1 : px;
         e->pad_y = py < 0 ? 0 : py > 1 ? 1 : py;
-        if (!e->pad_on) { e->pad_on = 1; ui_midi(e, 0xB0, PAD_TOUCH_CC, 127); }
+        if (!e->pad_on) { e->pad_on = 1; e->pad_ch = ui_channel(e); ui_midi(e, 0xB0, PAD_TOUCH_CC, 127); }
         ui_midi(e, 0xB0, PAD_X_CC, (int)lroundf(e->pad_x * 127));
         ui_midi(e, 0xB0, PAD_Y_CC, (int)lroundf(e->pad_y * 127));
         ui_midi(e, 0xD0, (int)lroundf(e->pad_y * 127), 0);
@@ -1081,7 +1085,7 @@ static void controller_move(ed_t *e, int x, int y) {   /* a drag on the keys, a 
         e->ribbon = v < 0 ? 0 : v > 1 ? 1 : v;
         int cc = (int)lroundf(e->ribbon * 127);
         if (cc != e->ribbon_cc) ui_midi(e, 0xB0, RIBBON_CC, cc);
-        if (!e->ribbon_on) ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 127);
+        if (!e->ribbon_on) { e->rib_ch = ui_channel(e); ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 127); }
         e->ribbon_cc = cc;
         e->ribbon_on = 1;
     } else if (e->mode == M_RND_AMOUNT || e->mode == M_RND_WILD) {
@@ -1128,13 +1132,40 @@ static void positions_follow(ed_t *e) {   /* after a new sound, or a saved posit
     }
 }
 
+/* letting go of the pad: no pressure, its gate off (CC 18 0), back to its rest when X/Y HOLD is off; and of the
+ * ribbon: its touch off (CC 17 0: SPRING takes it back). On the channel the touch went out on. */
+static void pad_let_go(ed_t *e) {
+    e->pad_on = 0;
+    ui_midi_on(e, 0xD0 | e->pad_ch, 0, 0);
+    ui_midi_on(e, 0xB0 | e->pad_ch, PAD_TOUCH_CC, 0);
+    pad_rest(e);
+}
+static void ribbon_let_go(ed_t *e) {
+    e->ribbon_on = 0;
+    e->ribbon_cc = -1;
+    ui_midi_on(e, 0xB0 | e->rib_ch, RIBBON_TOUCH_CC, 0);
+}
+/* (2026-11-01) HOLD under the X/Y pad, HOLD at the ribbon's left end (window settings, never saved): lit, letting go
+ * keeps the touch on, so the sound stays as it was (the position, the pad's gate and aftertouch); a new click or drag
+ * moves it on from there. Put out, a touch it kept lets go now. */
+static void hold_toggle(ed_t *e, int ribbon) {
+    int *h = ribbon ? &e->hold_rib : &e->hold_pad;
+    *h = !*h;
+    if (!*h && ribbon && e->ribbon_on) ribbon_let_go(e);
+    if (!*h && !ribbon && e->pad_on) pad_let_go(e);
+    InvalidateRect(e->wnd, NULL, FALSE);
+}
+int ed_holds(ed_t *e) {   /* (load_test, hub.c HT_HOLDS) */
+    return e->hold_pad | e->hold_rib << 1 | (e->hold_pad && e->pad_on) << 2 | (e->hold_rib && e->ribbon_on) << 3;
+}
+
 static void controller_release(ed_t *e) {   /* the mouse let go (or lost): notes off, the pitch wheel springs back */
     int m = e->mode;
     e->mode = M_NONE;   /* first: the preset list below takes the mouse, which comes back here */
     if (m == M_KEY) key_off(e);
     if (m == M_PITCH) { e->bend = 0; ui_midi(e, 0xE0, 0, 64); }
-    if (m == M_PAD) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); pad_rest(e); }
-    if (m == M_RIBBON) { e->ribbon_on = 0; e->ribbon_cc = -1; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
+    if (m == M_PAD && !e->hold_pad) pad_let_go(e);   /* (HOLD lit: it stays touched) */
+    if (m == M_RIBBON && !e->hold_rib) ribbon_let_go(e);
     /* a click on the preset knob: what it points at (PRESET AUTOLOAD off), else the patch list */
     if (m == M_ENC && !e->enc_moved && !settings_cue_load(e)) patches_open(e);
     if (m == M_LIB) lib_release(e);   /* a set's number: let go early, it loads; held, it was assigned */
@@ -1280,11 +1311,20 @@ static void press(ed_t *e, int x, int y) {
         InvalidateRect(e->wnd, NULL, FALSE);
         return;
     case Z_LINK_ALL: hands_link_all(e); return;   /* (2026-10-31) every LINK of the controller box (hub.c) */
+    case Z_PAD_HOLD: hold_toggle(e, 0); return;   /* (2026-11-01) */
+    case Z_RIB_HOLD: hold_toggle(e, 1); return;
     case Z_KEYS: e->mode = M_KEY; break;
     case Z_PITCH: e->mode = M_PITCH; break;
     case Z_MODW: e->mode = M_MODW; break;
-    case Z_PAD: e->mode = M_PAD; break;   /* (controller_move sends the touch and the position) */
-    case Z_RIBBON: e->mode = M_RIBBON; e->ribbon_cc = -1; break;
+    case Z_PAD:   /* (controller_move sends the touch and the position) */
+        if (e->pad_on && e->pad_ch != ui_channel(e)) pad_let_go(e);   /* held for another channel: that one first */
+        e->mode = M_PAD;
+        break;
+    case Z_RIBBON:
+        if (e->ribbon_on && e->rib_ch != ui_channel(e)) ribbon_let_go(e);
+        e->mode = M_RIBBON;
+        e->ribbon_cc = -1;
+        break;
     case Z_ENCODER: e->mode = M_ENC; e->enc_y = y; e->enc_moved = 0; break;
     case Z_RND_AMOUNT: e->mode = M_RND_AMOUNT; break;
     case Z_RND_WILD: e->mode = M_RND_WILD; break;
@@ -1571,10 +1611,10 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     }
     case WM_DESTROY:
-        if (e) {   /* nothing left held: the key, the ribbon's touch */
+        if (e) {   /* nothing left held: the key, the ribbon's touch (one a HOLD keeps stays: lit again on reopening) */
             key_off(e);
-            if (e->ribbon_on) { e->ribbon_on = 0; ui_midi(e, 0xB0, RIBBON_TOUCH_CC, 0); }
-            if (e->pad_on) { e->pad_on = 0; ui_midi(e, 0xD0, 0, 0); ui_midi(e, 0xB0, PAD_TOUCH_CC, 0); }
+            if (e->ribbon_on && !e->hold_rib) ribbon_let_go(e);
+            if (e->pad_on && !e->hold_pad) pad_let_go(e);
             e->mode = M_NONE;
             cb_free(e);   /* (the cables' cached layer; they show again when the window opens) */
         }

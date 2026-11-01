@@ -1043,6 +1043,15 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      runs): 8.9-9.1 us a voice at 0%, 9.0-9.6 at 100%, 9.0-10.0 at 200%: about +1-6% at the default, too noisy here to
      pin down; on-device `tools/bench.sh` still to do at the MPC milestone. Screenshot: `build/png/analog_amount.png` (load_test's
      `_analog_amount`).
+  46. (2026-11-01) HOLD for the X/Y pad and the ribbon (owner: "when I let go it doesn't hold its modulation position").
+     Done 2026-11-01 (the desktop window; `desktop/editor.c` hold_toggle, pad_let_go, ribbon_let_go; load_test
+     `hold_test`; docs/MULTITIMBRAL.md "HOLD"). What reset on release before: the pad sent channel pressure 0 and Pad
+     Gate off (X and Y already stayed, the sound's X/Y HOLD being On by default), so the factory sounds' Aftertouch rows
+     (the pad's Y) dropped back; the ribbon sent its touch off and SPRING took it back to its origin. A plain click on
+     HOLD (under the pad's left edge; beside the ribbon's LINK) lights it: letting go then sends no release, so the
+     position, the gate, the pressure and the ribbon's place all stay; a new drag moves on from there; HOLD clicked
+     again lets go. Window-side only (never saved, nothing in the engine or audio path), as SYNTH OUTPUT's MASTER. Layout:
+     the ribbon's plate 60 px wider, the ribbon starts at 508. Left: the MPC page.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

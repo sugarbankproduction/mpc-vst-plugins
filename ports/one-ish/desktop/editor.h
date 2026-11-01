@@ -59,6 +59,7 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_OCT_PICK = 100045,   /* (2026-10-30) a click on the octave LEDs: that octave */
        Z_PANIC,               /* (2026-10-30) PANIC: every note off (as holding an OCTAVE button 2 s) */
        Z_LINK_ALL,            /* (2026-10-31) LINK ALL: every LINK of the controller box at once (hub.c) */
+       Z_PAD_HOLD, Z_RIB_HOLD,   /* (2026-11-01) HOLD under the X/Y pad, HOLD at the ribbon's left end */
        Z_RND_GO_ALL = 100050, /* (2026-10-30) RANDOMISE's and MUTATE's ALL halves: all three Synths */
        Z_RND_MUT_ALL,
        Z_RND_VOICE,           /* + 0..2: the RANDOM page's BOTH, MONO, POLY (RV_*) */
@@ -92,7 +93,8 @@ enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 100
        HT_HELP,               /* the help line now, into ptr (1 KB); returns its length */
        HT_GEN_ARMED,          /* (2026-10-30) the RESET half waiting for its second click (a Z_GEN_RESET*), else 0 */
        HT_RND_VOICING,        /* (2026-10-30) the RANDOM page's MONO / POLY / BOTH (RV_*) */
-       HT_PEEK };             /* (2026-10-30) an engine readout: ptr in, its key; out, its text (1 KB) */
+       HT_PEEK,               /* (2026-10-30) an engine readout: ptr in, its key; out, its text (1 KB) */
+       HT_HOLDS };            /* (2026-11-01) the HOLDs lit: 1 the X/Y pad's, 2 the ribbon's; 4, 8 their touch held */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
@@ -125,6 +127,7 @@ typedef struct {
     RECT qm_hands, kb_hint;                   /* the controller's DEST (quickmod.c); the computer keyboard's hint */
     RECT panic;                               /* the controller's PANIC */
     RECT link_all;                            /* (2026-10-31) the controller's LINK ALL (hub.c) */
+    RECT pad_hold, rib_hold;                  /* (2026-11-01) the X/Y pad's and the ribbon's HOLD */
     RECT back, fwd;                           /* (2026-10-30, nav.c) the screen's BACK / FWD, either side of the name */
 } layout_t;
 extern layout_t L;
@@ -260,6 +263,9 @@ typedef struct {
     unsigned focus_mask;
     float bend, wheel, pad_x, pad_y, ribbon;   /* -1..1, 0..1, 0..1, 0..1, 0..1 */
     int pad_on, ribbon_on, ribbon_cc;          /* ribbon_cc: the position last sent (-1: none since the touch) */
+    /* (2026-11-01) HOLD lit (never saved): letting go of the pad / ribbon keeps its touch on, so the position, the
+     * gate and the pad's aftertouch stay; pad_ch / rib_ch: the MIDI channel its touch went out on */
+    int hold_pad, hold_rib, pad_ch, rib_ch;
     unsigned char mq[MQ][3];                   /* UI -> audio MIDI, single producer / single consumer */
     unsigned mq_w, mq_r;
     unsigned char mlog[MLOG][3];               /* the last MIDI the audio thread passed on, for load_test */
@@ -515,6 +521,7 @@ int link_param(int i);                         /* the LINK param of panel index 
 int link_relative(ed_t *e, int i);             /* lit and relative (ALL 3: the cutoffs move by the same amount) */
 int hands_linked(ed_t *e);                     /* (2026-10-31) 1: every LINK of the controller box is lit */
 void hands_link_all(ed_t *e);                  /* LINK ALL: all lit, all off; else all on (one undo step) */
+int ed_holds(ed_t *e);                         /* (2026-11-01) the HOLDs (editor.c): HT_HOLDS's bits */
 int panel_source(ed_t *e, int i);              /* what panel control i moves now (VOLUME: master_level, MASTER lit) */
 int master_param(void);                        /* master_level's index (-1: none) */
 RECT hub_rect(int z);                          /* where hub zone z sits (the page's or the console's) */

@@ -2831,10 +2831,111 @@ static void hands_link_test(AEffect *fx, HWND child, float s, const char *bmp, i
     SendMessageA(child, WM_TIMER, 1, 0);
 }
 
+/* ---- (2026-11-01) HOLD under the X/Y pad and at the ribbon's left end (window settings): off, letting go is as
+ * before (the pad's gate off and its aftertouch 0; the ribbon springs back to its origin); lit (a plain click),
+ * letting go keeps the touch, so the engine keeps the position, the gate and the pressure; a new drag moves it on;
+ * put out, what it kept lets go. Read from the engine ("pad_now", "hands_now") and the window's MIDI log. ---- */
+static int holds_now(AEffect *fx) {
+    enum { HT_HOLDS_OP = 13 };   /* (editor.h HT_HOLDS: after HT_PEEK) */
+    return (int)fx->dispatcher(fx, 50, TEST_HUB, HT_HOLDS_OP, NULL, 0);
+}
+static void midi_log(AEffect *fx, int *gate_off, int *at_last) {   /* the window's MIDI since the last call */
+    unsigned char log[64][3];
+    int n = (int)fx->dispatcher(fx, 50, TEST_MIDI_LOG, 0, log, 0);
+    *gate_off = 0;
+    *at_last = -1;
+    for (int k = 0; k < n; k++) {
+        if ((log[k][0] & 0xF0) == 0xB0 && (log[k][1] == 18 || log[k][1] == 17) && log[k][2] == 0) *gate_off = 1;
+        if ((log[k][0] & 0xF0) == 0xD0) *at_last = log[k][1];
+    }
+}
+static void hold_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[700];
+    int off, at;
+    float g, x, v[4];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    setkey(fx, "link_pad", 0);
+    setkey(fx, "link_ribbon", 0);
+    float ph0 = pv(fx, "pad_hold"), rm0 = pv(fx, "ribbon_mode");
+    setkey(fx, "ribbon_mode", 0);   /* SPRING and X/Y HOLD On, the defaults */
+    setkey(fx, "pad_hold", 1);
+    check(holds_now(fx) == 0, "HOLD (X/Y pad, ribbon): both out in a new window");
+    /* the pad, HOLD out: as before */
+    play(fx, 2, 512);
+    midi_log(fx, &off, &at);
+    pad_drag(fx, child, s, 0.2f, 0.2f, 0.7f, 0.6f);
+    pad_up(fx, child);
+    x = pad_peek(fx, 0, &g);
+    midi_log(fx, &off, &at);
+    int pad_off = holds_now(fx) == 0 && g < 0.5f && off && at == 0 && x > 0.6f && x < 0.8f;
+    /* lit: let go, still touched */
+    click_zone(child, s, ZONE_PAD_HOLD);
+    int lit = holds_now(fx) & 1;
+    pad_drag(fx, child, s, 0.3f, 0.3f, 0.8f, 0.75f);
+    pad_up(fx, child);
+    x = pad_peek(fx, 0, &g);
+    midi_log(fx, &off, &at);
+    int kept = (holds_now(fx) & 5) == 5 && g > 0.5f && !off && abs(at - 95) <= 2 && x > 0.75f && x < 0.85f;
+    /* a new drag moves it on, the sound's X/Y HOLD off too: the touch kept, nothing goes back to its rest */
+    setkey(fx, "pad_hold", 0);
+    pad_drag(fx, child, s, 0.5f, 0.5f, 0.4f, 0.2f);
+    pad_up(fx, child);
+    float x2 = pad_peek(fx, 0, &g);
+    midi_log(fx, &off, &at);
+    int moved = g > 0.5f && !off && abs(at - 25) <= 2 && x2 > 0.35f && x2 < 0.45f;
+    if (bmp) shot(child, w, h, bmp, "_hold_pad");
+    /* put out: it lets go now (X/Y HOLD off: the pad back to 0) */
+    click_zone(child, s, ZONE_PAD_HOLD);
+    play(fx, 2, 512);
+    float x3 = pad_peek(fx, 0, &g);
+    midi_log(fx, &off, &at);
+    int out = holds_now(fx) == 0 && g < 0.5f && off && at == 0 && x3 < 0.01f;
+    setkey(fx, "pad_hold", ph0);
+    snprintf(what, sizeof what, "the X/Y pad's HOLD: out, letting go is as before (gate off, aftertouch 0, X stays by "
+             "X/Y HOLD) (%d); a plain click lights it (%d); let go, the pad stays touched: gate on, aftertouch kept, X "
+             "%.3f (%d); a new drag moves it on, even with the sound's X/Y HOLD off (X %.3f, %d); put out, it lets "
+             "go (gate off, aftertouch 0, X %.3f) (%d)", pad_off, lit, x, kept, x2, moved, x3, out);
+    check(pad_off && lit && kept && moved && out, what);
+    /* the ribbon: out, SPRING takes it back to its origin (Centre: 64) */
+    hands_peek(fx, 0, v);
+    float origin = v[2];
+    zone_drag(fx, child, s, ZONE_RIBBON, 0.5f, 0.5f, 0.9f, 0.5f);
+    SendMessageA(child, WM_LBUTTONUP, 0, 0);
+    play(fx, 4, 512);
+    hands_peek(fx, 0, v);
+    int rib_off = holds_now(fx) == 0 && v[2] == origin && v[3] < 0.5f;
+    click_zone(child, s, ZONE_RIB_HOLD);
+    int rlit = (holds_now(fx) & 2) != 0;
+    zone_drag(fx, child, s, ZONE_RIBBON, 0.5f, 0.5f, 0.9f, 0.5f);
+    SendMessageA(child, WM_LBUTTONUP, 0, 0);
+    play(fx, 4, 512);
+    hands_peek(fx, 0, v);
+    float r1 = v[2];
+    int rkept = (holds_now(fx) & 10) == 10 && fabsf(r1 - 114) <= 2 && v[3] > 0.5f;
+    zone_drag(fx, child, s, ZONE_RIBBON, 0.9f, 0.5f, 0.2f, 0.5f);
+    SendMessageA(child, WM_LBUTTONUP, 0, 0);
+    play(fx, 4, 512);
+    hands_peek(fx, 0, v);
+    float r2 = v[2];
+    int rmoved = fabsf(r2 - 25) <= 2 && v[3] > 0.5f;
+    if (bmp) shot(child, w, h, bmp, "_hold_ribbon");
+    click_zone(child, s, ZONE_RIB_HOLD);
+    play(fx, 4, 512);
+    hands_peek(fx, 0, v);
+    int rout = holds_now(fx) == 0 && v[2] == origin && v[3] < 0.5f;
+    snprintf(what, sizeof what, "the ribbon's HOLD: out, letting go springs it back to its origin (%.0f) as before "
+             "(%d); a plain click lights it (%d); let go, it stays touched where it was (%.1f, %d); a new drag moves "
+             "it on (%.1f, %d); put out, it lets go and springs back (%d)", origin, rib_off, rlit, r1, rkept, r2,
+             rmoved, rout);
+    check(rib_off && rlit && rkept && rmoved && rout, what);
+    setkey(fx, "ribbon_mode", rm0);
+}
+
 static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-10-30) */
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     pad_link_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     hands_link_test(fx, child, s, bmp, w, h);   /* (2026-10-31) */
+    hold_test(fx, child, s, bmp, w, h);   /* (2026-11-01) */
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
     follow_tempo_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
@@ -3375,7 +3476,8 @@ static void zone_help_test(AEffect *fx, HWND child, float s) {
         {ZONE_TEMPO, "TEMPO"}, {ZONE_TEMPO_HOST, "HOST"}, {ZONE_TEMPO_OWN, "OWN"}, {ZONE_TOGETHER, "TOGETHER"},
         {ZONE_UNDO, "UNDO"}, {ZONE_REDO, "REDO"}, {ZONE_OCT_DOWN, "OCTAVE"}, {ZONE_OCT_LEDS, "octave LEDs"},
         {ZONE_PANIC, "PANIC"}, {ZONE_PITCH, "PITCH"}, {ZONE_MODW, "MOD"}, {ZONE_PAD, "X/Y PAD"}, {ZONE_KEYS, "keyboard"},
-        {ZONE_RIBBON, "RIBBON"}, {ZONE_QM_HANDS, "the controller's DEST"}};
+        {ZONE_RIBBON, "RIBBON"}, {ZONE_QM_HANDS, "the controller's DEST"}, {ZONE_PAD_HOLD, "the pad's HOLD"},
+        {ZONE_RIB_HOLD, "the ribbon's HOLD"}};
     char what[300], bad[600] = "";
     int n = 0;
     click_zone(child, s, ZONE_TAB_MATRIX);
