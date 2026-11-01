@@ -300,6 +300,7 @@ enum {
     P_LINK_POLY,     /* (2026-11-01) the POLYPHONY panel's LINK (the window's kind, as glide's): stored */
     P_LINK_HOLD, P_LINK_OCTAVE,   /* (2026-11-01) the hand controls' HOLD and OCTAVE LINKs (the window's kind): stored */
     P_HOLD_ADD,      /* (2026-11-02) HOLD's ADD: a new key joins what HOLD latched instead of replacing it */
+    P_SEQ_ROTATE, P_SEQ_ROT_EVERY, P_SEQ_ROT_BY,   /* (2026-11-02) the sequence nudged, by hand and every so many passes */
     P_LINK_ARP_ALL,  /* (2026-11-01) the ARPEGGIATOR panel's LINK ALL (the window's kind): stored */
     /* (2026-11-02) each generator's own KEY and SCALE (gen_key_in, gen_scale_in): a pair, the SCALE right after its KEY */
     P_GEN_OWN_KEY, P_GEN_OWN_SCALE, P_BALL_OWN_KEY, P_BALL_OWN_SCALE, P_PART_OWN_KEY, P_PART_OWN_SCALE, P_RAIN_OWN_KEY,
@@ -475,6 +476,7 @@ static const char *const KEYS[P_COUNT] = {
     "link_poly",    /* (2026-11-01) */
     "link_hold", "link_octave",   /* (2026-11-01) */
     "hold_add",     /* (2026-11-02) */
+    "seq_rotate", "seq_rot_every", "seq_rot_by",   /* (2026-11-02) */
     "link_arp_all", /* (2026-11-01) */
     "gen_own_key", "gen_own_scale", "phys_ball_own_key", "phys_ball_own_scale", "phys_part_own_key", "phys_part_own_scale",
     "rain_own_key", "rain_own_scale", "mkv_own_key", "mkv_own_scale", "life_own_key", "life_own_scale", "orb_own_key",

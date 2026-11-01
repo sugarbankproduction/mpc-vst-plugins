@@ -285,9 +285,16 @@ static void sq_fire(one_t *s, int64_t k) {
     int64_t e = k - r->k0;
     r->cur_k = k;
     if (s->val[P_SEQ_ONE_SHOT] > 0.5f && (e >= len || e < 0)) { sq_finish(s); return; }
-    int idx = (int)((e % len + len) % len), out = sq_output(s), rest = (int)(r->q.rest >> idx & 1);
+    int phase = (int)((e % len + len) % len);
+    /* (2026-11-02, owner) NUDGE: the pattern plays shifted, wrapping round (+1: a step later), the steps themselves as
+     * they are; EVERY so many passes it moves on BY so many steps */
+    static const int PASSES[6] = {0, 1, 2, 4, 8, 16};
+    int every = PASSES[(int)clampf(s->val[P_SEQ_ROT_EVERY], 0.0f, 5.0f)];
+    int64_t rot = (int64_t)lroundf(s->val[P_SEQ_ROTATE]);
+    if (every && e >= 0) rot += (e / (len * every)) * ((int)clampf(s->val[P_SEQ_ROT_BY], 0.0f, 16.0f) - 8);
+    int idx = (int)(((phase - rot) % len + len) % len), out = sq_output(s), rest = (int)(r->q.rest >> idx & 1);
     r->cur = idx;
-    r->resume = (idx + 1) % len;
+    r->resume = (phase + 1) % len;
     sq_moff_at(s, idx);
     double t0 = sq_t(r, k), t1 = sq_t(r, k + 1);
     for (int l = 0; l < SQ_NL; l++) {

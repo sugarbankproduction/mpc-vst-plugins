@@ -2056,3 +2056,12 @@ s3_orb_own_key
 s3_orb_own_scale
 s3_pend_own_key
 s3_pend_own_scale
+seq_rotate
+seq_rot_every
+seq_rot_by
+s2_seq_rotate
+s2_seq_rot_every
+s2_seq_rot_by
+s3_seq_rotate
+s3_seq_rot_every
+s3_seq_rot_by

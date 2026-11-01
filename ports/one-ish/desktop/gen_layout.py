@@ -578,7 +578,8 @@ def build(lay):
     L.page("SEQ", "SEQUENCER", "Settings; the steps: the SEQ button. Synced: RATE is each step's note value.", [
         ("seq_on", "On"), ("seq_output", "Output"), ("seq_play", "Play"), ("seq_rec", "Record"),
         ("seq_rec_mode", "Record Mode"),
-        ("seq_step_mod", "Step Mod"), ("seq_length", "Length"), ("seq_sync", "Sync"), ("seq_div", "Rate (Synced)"),
+        ("seq_step_mod", "Step Mod"), ("seq_length", "Length"), ("seq_rotate", "Nudge"), ("seq_rot_every", "Nudge Every"),
+        ("seq_rot_by", "Nudge By"), ("seq_sync", "Sync"), ("seq_div", "Rate (Synced)"),
         ("seq_timing", "Timing"), ("seq_rate", "Free Rate"), ("seq_follow_swing", "Follow Swing"),
         ("clock_swing", "Master Swing"), ("seq_note_trig", "Note Trig"), ("seq_note_reset", "Note Reset"),
         ("seq_restart_trig", "Restart On Trig"), ("seq_restart_hold", "Restart On Hold"),

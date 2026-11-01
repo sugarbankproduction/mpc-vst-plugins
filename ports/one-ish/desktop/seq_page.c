@@ -262,7 +262,22 @@ static RECT btn_rect(int b) {
 RECT seq_help_rect(void) {
     RECT r = L.help;
     r.top += sc(48);
+    r.bottom = L.screen.bottom - sc(47);   /* (over NUDGE's row) */
     return r;
+}
+/* (2026-11-02, owner) NUDGE's row over the KEY and SCALE row: its name, <, how far, >, EVERY so many passes, BY so many steps */
+enum { Z_NUDGE = Z_SEQ_BASE + 310, NG_DOWN = 0, NG_UP, NG_EVERY, NG_BY, NG_ZONES };
+static RECT nudge_rect(int part) {   /* part: NG_, or NG_ZONES for the value between < and > */
+    static const int X0[5] = {44, 96, 150, 278, 62}, W[5] = {18, 18, 124, 106, 34};
+    int y = L.screen.bottom - sc(44);
+    RECT r = {L.row[0].left + sc(X0[part]), y, L.row[0].left + sc(X0[part] + W[part]), y + sc(17)};
+    return r;
+}
+static int nudge_now(ed_t *e) { return (int)lroundf(ed_get(e, param_index("seq_rotate")) * 128.0f) - 64; }
+static void nudge_step(ed_t *e, int d) {   /* wraps: a whole turn is back to 0 */
+    int v = nudge_now(e) + d;
+    if (abs(v) >= (e->sq.len < 1 ? 1 : e->sq.len)) v = 0;
+    ed_edit(e, param_index("seq_rotate"), (v + 64) / 128.0f);
 }
 static RECT pled_rect(int p) {   /* the SEQUENCER module's page LEDs: four in a row, numbered */
     float w = rw(&L.seq_leds) / 4.0f;
@@ -272,6 +287,7 @@ static RECT pled_rect(int p) {   /* the SEQUENCER module's page LEDs: four in a 
 
 /* ---- hits ---- */
 int seq_hit(ed_t *e, POINT pt) {
+    for (int k = 0; k < NG_ZONES; k++) { RECT r = nudge_rect(k); if (PtInRect(&r, pt)) return Z_NUDGE + k; }
     for (int p = 0; p < SQ_STEPS / SQ_PAGE; p++) { RECT r = pagebtn_rect(p); if (PtInRect(&r, pt)) return Z_PAGEBTN + p; }
     for (int v = 0; v < NVIEWS; v++) { RECT r = view_rect(v); if (PtInRect(&r, pt)) return Z_VIEW + v; }
     for (int z = Z_RTZ; z <= Z_AUTO; z++) { RECT r = title_btn_rect(z); if (PtInRect(&r, pt)) return z; }
@@ -792,6 +808,14 @@ static void mod_paint(ed_t *e, int col, int row, int y) {   /* MODS: an offset f
 /* a press on z at (x, y); 1: a drag follows (the editor captures the mouse) */
 int seq_press(ed_t *e, int z, int x, int y, int shift) {
     e->sq.drag = -1;
+    if (z == Z_NUDGE + NG_DOWN || z == Z_NUDGE + NG_UP) { nudge_step(e, z == Z_NUDGE + NG_UP ? 1 : -1); redraw(e); return 0; }
+    if (z == Z_NUDGE + NG_EVERY || z == Z_NUDGE + NG_BY) {   /* a list */
+        int i = param_index(z == Z_NUDGE + NG_BY ? "seq_rot_by" : "seq_rot_every");
+        int c = pick_list(e, nudge_rect(z - Z_NUDGE), i, option_of(e, i));
+        if (c >= 0) set_option(e, i, c);
+        redraw(e);
+        return 0;
+    }
     if (z >= Z_PLED && z < Z_PLED + 4) { seq_open(e, z - Z_PLED); return 0; }
     if (z >= Z_PAGEBTN && z < Z_PAGEBTN + 4) { e->sq.page = z - Z_PAGEBTN; redraw(e); return 0; }
     if (z >= Z_VIEW && z < Z_VIEW + NVIEWS) { e->sq.view = z - Z_VIEW; redraw(e); return 0; }
@@ -1135,8 +1159,26 @@ static void gen_draw(HDC dc, ed_t *e) {
     for (int k = 0; k < 4; k++) button(dc, btn_rect(B_CLEAR + k), GB[k], 0, e->hover == Z_BTN + B_CLEAR + k);
 }
 
+static void nudge_draw(HDC dc, ed_t *e) {
+    char t[32];
+    RECT nm = {L.row[0].left, nudge_rect(0).top, nudge_rect(0).left - sc(2), nudge_rect(0).bottom};
+    txt(dc, nm, "NUDGE", font_tiny, T_DIM, DT_LEFT | DT_VCENTER);
+    button(dc, nudge_rect(NG_DOWN), "<", 0, e->hover == Z_NUDGE + NG_DOWN);
+    button(dc, nudge_rect(NG_UP), ">", 0, e->hover == Z_NUDGE + NG_UP);
+    int v = nudge_now(e), ie = param_index("seq_rot_every"), ib = param_index("seq_rot_by");
+    snprintf(t, sizeof t, "%+d", v);
+    txt(dc, nudge_rect(NG_ZONES), v ? t : "0", font_tiny, v ? T_LCD : T_DIM, DT_CENTER | DT_VCENTER);
+    int oe = option_of(e, ie);
+    if (oe) snprintf(t, sizeof t, "EVERY %s PASS%s", PARAMS[ie].opts[oe], oe > 1 ? "ES" : "");
+    else snprintf(t, sizeof t, "EVERY: OFF");
+    button(dc, nudge_rect(NG_EVERY), t, oe != 0, e->hover == Z_NUDGE + NG_EVERY);
+    snprintf(t, sizeof t, "BY %s", PARAMS[ib].opts[option_of(e, ib)]);
+    button(dc, nudge_rect(NG_BY), t, 0, e->hover == Z_NUDGE + NG_BY);
+}
+
 void seq_draw(HDC dc, ed_t *e) {
     gfx_begin(dc);
+    nudge_draw(dc, e);
     int len = e->sq.len < 1 ? 1 : e->sq.len, view = e->sq.view, page = e->sq.page;
     /* the title line: SEQUENCER, the views, the pages (lit: shown; a dot: playing; dim: past the length) */
     RECT t = {L.tabline.left, L.tabline.top, L.tabline.left + sc(94), L.tabline.bottom};
@@ -1293,6 +1335,13 @@ void seq_panel_draw(HDC dc, ed_t *e) {
 
 /* ---- help ---- */
 const char *seq_zone_help(ed_t *e, int z) {
+    if (z == Z_NUDGE + NG_DOWN || z == Z_NUDGE + NG_UP)
+        return "NUDGE: shifts the whole pattern a step later (>) or earlier (<), wrapping round, for a new pattern from the "
+               "same notes. The steps stay as they are in the grid; the playing step shows where it is. Saved with the sound; "
+               "a host or MIDI Learn can move it too.";
+    if (z == Z_NUDGE + NG_EVERY) return "EVERY: the pattern nudges itself after this many passes of the sequence, so it keeps "
+                                        "changing as it plays (Off: only by hand). A click lists them.";
+    if (z == Z_NUDGE + NG_BY) return "BY: how many steps EVERY moves it each time (+ later, - earlier). A click lists them.";
     if (z >= Z_PLED && z < Z_PLED + 4) return "Page LEDs: the page of 16 steps playing (lit red) or being edited. Click one "
                                               "to edit that page in the step editor.";
     if (z >= Z_PAGEBTN && z < Z_PAGEBTN + 4) return "The four pages of 16 steps (a red dot: the page playing). LENGTH sets "

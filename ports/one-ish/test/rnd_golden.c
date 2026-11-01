@@ -47,7 +47,7 @@ static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the ma
     "mout_on", "mout_send", "mout_ch", "sus_pedal",   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (no rule: never touched) */
     "link_mod", "link_bend", "link_ribbon", "link_glide",   /* (2026-10-31) the hands' LINKs (no rule: never touched) */
     "analog_amt",   /* (2026-11-01) ANALOG AMOUNT (rnd_kept: never touched; the page's new defaults are an_* / drift) */
-    "hold_add", "link_hold", "link_octave", "link_poly", "link_arp_all",   /* (2026-11-01) the POLYPHONY and ARPEGGIATOR panels' LINKs (no rule: never touched) */
+    "seq_rotate", "seq_rot_every", "seq_rot_by", "hold_add", "link_hold", "link_octave", "link_poly", "link_arp_all",   /* (2026-11-01) the POLYPHONY and ARPEGGIATOR panels' LINKs (no rule: never touched) */
     /* (2026-11-02) each generator's own KEY and SCALE (no rule: never touched) */
     "gen_own_key", "gen_own_scale", "phys_ball_own_key", "phys_ball_own_scale", "phys_part_own_key", "phys_part_own_scale",
     "rain_own_key", "rain_own_scale", "mkv_own_key", "mkv_own_scale", "life_own_key", "life_own_scale", "orb_own_key",

@@ -2058,7 +2058,16 @@
   {"key": "s3_orb_own_key", "name": "S3 Orbits Key", "options": ["Follow", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": "Follow"},
   {"key": "s3_orb_own_scale", "name": "S3 Orbits Scale", "options": ["Follow", "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian", "Harmonic Minor", "Melodic Minor", "Pent Major", "Pent Minor", "Blues", "Whole Tone", "Chromatic"], "default": "Follow"},
   {"key": "s3_pend_own_key", "name": "S3 Pendulums Key", "options": ["Follow", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"], "default": "Follow"},
-  {"key": "s3_pend_own_scale", "name": "S3 Pendulums Scale", "options": ["Follow", "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian", "Harmonic Minor", "Melodic Minor", "Pent Major", "Pent Minor", "Blues", "Whole Tone", "Chromatic"], "default": "Follow"}
+  {"key": "s3_pend_own_scale", "name": "S3 Pendulums Scale", "options": ["Follow", "Major", "Minor", "Dorian", "Phrygian", "Lydian", "Mixolydian", "Locrian", "Harmonic Minor", "Melodic Minor", "Pent Major", "Pent Minor", "Blues", "Whole Tone", "Chromatic"], "default": "Follow"},
+  {"key": "seq_rotate", "name": "Seq Nudge", "min": -64, "max": 64, "default": 0, "display": "int"},
+  {"key": "seq_rot_every", "name": "Seq Nudge Every", "options": ["Off", "1", "2", "4", "8", "16"], "default": "Off"},
+  {"key": "seq_rot_by", "name": "Seq Nudge By", "options": ["-8", "-7", "-6", "-5", "-4", "-3", "-2", "-1", "0", "+1", "+2", "+3", "+4", "+5", "+6", "+7", "+8"], "default": "+1"},
+  {"key": "s2_seq_rotate", "name": "S2 Seq Nudge", "min": -64, "max": 64, "default": 0, "display": "int"},
+  {"key": "s2_seq_rot_every", "name": "S2 Seq Nudge Every", "options": ["Off", "1", "2", "4", "8", "16"], "default": "Off"},
+  {"key": "s2_seq_rot_by", "name": "S2 Seq Nudge By", "options": ["-8", "-7", "-6", "-5", "-4", "-3", "-2", "-1", "0", "+1", "+2", "+3", "+4", "+5", "+6", "+7", "+8"], "default": "+1"},
+  {"key": "s3_seq_rotate", "name": "S3 Seq Nudge", "min": -64, "max": 64, "default": 0, "display": "int"},
+  {"key": "s3_seq_rot_every", "name": "S3 Seq Nudge Every", "options": ["Off", "1", "2", "4", "8", "16"], "default": "Off"},
+  {"key": "s3_seq_rot_by", "name": "S3 Seq Nudge By", "options": ["-8", "-7", "-6", "-5", "-4", "-3", "-2", "-1", "0", "+1", "+2", "+3", "+4", "+5", "+6", "+7", "+8"], "default": "+1"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},

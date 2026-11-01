@@ -221,6 +221,11 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      RANDOMISE's detune by WILD (owner, 2026-11-02): WILD 0: 40% gentle (0.05-0.3 st), 40% wider (0.3-0.9 st), 20% in tune,
      no interval; a musical interval takes 50% x WILD of them. Offline over 2000 oscillators: WILD 0, 77% detuned, 4% a
      semitone or more (hard sync); WILD 100%, 70% a semitone or more. A high-pass in series before a low-pass stays below it.
+     SEQUENCER NUDGE (2026-11-02, owner: "nudge a sequence forward or backward and it should wrap ... modulated over time"):
+     `seq_rotate` (-64..64): the pattern plays that many steps later, wrapping, the steps themselves unchanged; `seq_rot_every`
+     (Off, 1-16 passes) and `seq_rot_by` (-8..+8): it moves on by itself. A row over the KEY and SCALE row on the SEQ page, also
+     on its MORE page; host automation and MIDI Learn reach it as any param. Not a matrix destination yet (the matrix is per
+     voice; the sequencer isn't). Offline: stepseq_check, 1138 ok, golden unchanged. CPU: one table look-up per step.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27

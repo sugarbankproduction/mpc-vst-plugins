@@ -52,6 +52,32 @@ static void step_sequencer(void) {
     char what[512];
     evs_t on, off;
 
+    {   /* (2026-11-02) NUDGE: +1 plays each note a step later, wrapping; -1 a step earlier; EVERY 1 BY +1 moves on each pass */
+        static const int NT[4] = {60, 62, 64, 65};
+        int ok1 = 1, ok2 = 1, ok3 = 1;
+        for (int c = 0; c < 3; c++) {
+            void *e = seq_patch(120);
+            seqcmd(e, "note 0 0 60 100 50 1 0\nnote 1 0 62 100 50 1 0\nnote 2 0 64 100 50 1 0\nnote 3 0 65 100 50 1 0\n");
+            set(e, "seq_length", 4);
+            if (c == 0) set(e, "seq_rotate", 1);
+            if (c == 1) set(e, "seq_rotate", -1);
+            if (c == 2) { set(e, "seq_rot_every", 1); set(e, "seq_rot_by", 9); }
+            set(e, "seq_play", 1);
+            int n = gen_render(e, SR * 4, 0);
+            seq_events(n, &on, &off);
+            for (int k = 0; k < 12 && k < on.n; k++) {
+                int rot = c == 0 ? 1 : c == 1 ? -1 : k / 4;
+                int want = NT[((k - rot) % 4 + 4) % 4];
+                if (on.note[k] != want) { if (c == 0) ok1 = 0; else if (c == 1) ok2 = 0; else ok3 = 0; }
+            }
+            if (on.n < 12) { if (c == 0) ok1 = 0; else if (c == 1) ok2 = 0; else ok3 = 0; }
+            E->destroy(e);
+        }
+        snprintf(what, sizeof what, "sequencer NUDGE: +1 plays a step later, wrapping (%d); -1 a step earlier (%d); EVERY 1 "
+                 "pass BY +1 moves on each pass (%d)", ok1, ok2, ok3);
+        check(ok1 && ok2 && ok3, what);
+    }
+
     /* timing: four steps (velocity and gate per note) at 120 and 90 BPM, started off the block grid */
     for (int c = 0; c < 2; c++) {
         double bpm = c ? 90 : 120;
