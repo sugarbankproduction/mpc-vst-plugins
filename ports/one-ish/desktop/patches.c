@@ -1532,6 +1532,7 @@ void pt_apply_state(ed_t *e, const char *state) { apply_state(e, state); }
 /* ---- the ANALOG page stays across preset and patch loads (2026-11-01) ---- */
 static const char *const ANALOG_KEYS[] = {"drift", "an_cut", "an_res", "an_env", "an_lvl", "an_tune", "an_ladder",
                                           "an_hq", "an_warm", "an_warm_amt", "an_warm_time",
+                                          "an_osc_ac",
                                           "an_mix_drive", "an_feedback",
                                           "an_svf", "an_svf_drive", "an_svf_osc",
                                           "analog_amt"};   /* (2026-11-01) shared: Synth 2's and 3's copies don't exist */

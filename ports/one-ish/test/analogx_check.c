@@ -6,10 +6,11 @@
  *                 tune at a steady level, only with both controls up; SVF DRIVE adds harmonics
  *   MIXER DRIVE   a sine's harmonics rise with it; printed: level and brightness
  *   FEEDBACK      level, brightness and pitch at each setting; it is per voice (two notes are the sum of each alone)
+ *   OSC AC COUPLING  a low pulse sags as its corner says, a high note hardly changes, the ring modulator not at all
  *   extremes      everything up in every mode, pair and route, HQ too: finite and bounded; after the release, exact 0
  *   bench         the CPU of each, on against off */
 
-static const char *const AX_KEYS[] = {"an_svf", "an_svf_drive", "an_svf_osc", "an_mix_drive", "an_feedback"};
+static const char *const AX_KEYS[] = {"an_svf", "an_svf_drive", "an_svf_osc", "an_mix_drive", "an_feedback", "an_osc_ac"};
 enum { AX_NKEYS = sizeof AX_KEYS / sizeof AX_KEYS[0] };
 
 /* a sound that reaches both filters and the things the controls touch */
@@ -276,6 +277,61 @@ static void ax_mix_checks(void) {
     check(dd < ss * 1e-3, what);
 }
 
+/* a low square's tops: the level at the start and the end of the flat part, from the last cycles */
+static double ax_sag(const float *x, int n, double hz) {
+    int per = (int)lround(SR / hz), half = per / 2;
+    /* where the signal goes up through 0: a cycle's start */
+    int at = n - 3 * per;
+    while (at < n - per && !(x[at] <= 0 && x[at + 1] > 0)) at++;
+    return fabs(x[at + half - half / 8] / (x[at + half / 8] + 1e-12));
+}
+static void ax_ac_checks(void) {
+    char what[400];
+    static const int HZS[3] = {0, 15, 30};
+    double sag[3];
+    double f0 = 440 * pow(2, (24 - 69) / 12.0);
+    for (int k = 0; k < 3; k++) {
+        void *e = patch(SQUARE, 0, 1, 100, 10);
+        set(e, "voices", 0); set(e, "volume", 50); set(e, "an_osc_ac", HZS[k]);
+        note(e, 1, 24, 110);
+        hq_render(e, mz_x, SR);
+        sag[k] = ax_sag(mz_x, SR, f0);
+        E->destroy(e);
+    }
+    /* the flat part kept is 3/4 of the half cycle; the voice's own 5 Hz DC filter adds to the corner */
+    double t = 0.75 / (2 * f0), want[3];
+    for (int k = 0; k < 3; k++) want[k] = exp(-2 * M_PI * (HZS[k] + 5) * t);
+    snprintf(what, sizeof what, "OSC AC COUPLING 0 / 15 / 30 Hz, a square at C0: what is left across its flat top %.2f / %.2f / %.2f "
+             "(a capacitor's: %.2f / %.2f / %.2f)", sag[0], sag[1], sag[2], want[0], want[1], want[2]);
+    check(sag[1] < sag[0] - 0.1 && sag[2] < sag[1] - 0.05 && fabs(sag[2] - want[2]) < 0.15 && fabs(sag[1] - want[1]) < 0.15, what);
+    /* a high note hardly changes */
+    double l[2];
+    for (int k = 0; k < 2; k++) {
+        void *e = patch(SAW, 0, 1, 100, 10);
+        set(e, "voices", 0); set(e, "volume", 50); set(e, "an_osc_ac", k * 30);
+        note(e, 1, 72, 110);
+        hq_render(e, mz_x, SR);
+        l[k] = mz_db(mz_rms(mz_x + SR / 2, SR / 2));
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "OSC AC COUPLING 30 Hz on a saw at C5: %+.3f dB", l[1] - l[0]);
+    check(fabs(l[1] - l[0]) < 0.1, what);
+    /* the ring modulator reads the oscillators themselves */
+    static float a[SR], b[SR];
+    for (int k = 0; k < 2; k++) {
+        void *e = patch(SAW, 0, 1, 100, 10);
+        set(e, "voices", 0); set(e, "o1_level", 0); set(e, "ring_level", 100); set(e, "an_osc_ac", k * 30);
+        note(e, 1, 40, 110);
+        hq_render(e, k ? b : a, SR);
+        E->destroy(e);
+    }
+    double d = 0, s = 0;
+    for (int i = 0; i < SR; i++) { d += (double)(a[i] - b[i]) * (a[i] - b[i]); s += (double)a[i] * a[i]; }
+    snprintf(what, sizeof what, "OSC AC COUPLING leaves the ring modulator alone: %.1f dB of difference (rms %.1f dB)", 10 * log10(d / s + 1e-30),
+             mz_db(sqrt(s / SR)));
+    check(d == 0 && s > 0, what);
+}
+
 /* every sound up in every mode, pair and route; then the release ends in exact silence */
 static void ax_extremes(void) {
     char what[300];
@@ -320,6 +376,7 @@ static void analogx_checks(void) {
     ax_at_zero();
     ax_svf_checks();
     ax_mix_checks();
+    ax_ac_checks();
     ax_extremes();
 }
 
@@ -350,6 +407,7 @@ static void ax_b_pair(void *e) { set(e, "an_svf", 100); set(e, "svf_pair", 0); }
 static void ax_b_off_pair(void *e) { set(e, "svf_pair", 0); }
 static void ax_b_mixd(void *e) { set(e, "an_mix_drive", 100); }
 static void ax_b_fb(void *e) { set(e, "an_feedback", 100); }
+static void ax_b_ac(void *e) { set(e, "an_osc_ac", 30); }
 static void analogx_bench(void) {
     static const struct { const char *name; void (*fn)(void *); int base; } B[] = {
         {"all off", NULL, 0},
@@ -359,6 +417,7 @@ static void analogx_bench(void) {
         {"SVF pair in series, NON-LINEAR SVF 100%", ax_b_pair, 3},
         {"MIXER DRIVE 100%", ax_b_mixd, 0},
         {"FEEDBACK 100%", ax_b_fb, 0},
+        {"OSC AC COUPLING 30 Hz", ax_b_ac, 0},
     };
     double t[sizeof B / sizeof B[0]];
     for (unsigned k = 0; k < sizeof B / sizeof B[0]; k++) t[k] = ax_time(NULL);   /* (warm the caches, and a first noise figure) */

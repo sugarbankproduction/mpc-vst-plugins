@@ -484,6 +484,21 @@ needs MIXER DRIVE's gain to howl.
 - Per voice: two notes against the sum of each alone, -111.8 dB.
 - So feedback's measured effect is level and bass, and less brightness, which fits "thick". Whether it growls is for the
   ear; nothing here measures growl.
-- CPU, 8 voices: Mixer Drive +1.1-1.2 us a voice, Feedback +1.4 (report's estimate +0.3-0.5). Most of that is
-  the second copy of the voice's loop, which runs once anything new is on; the arithmetic is one soft clip. At 0, old
-  and new in turn: new 8.97-9.32 us a voice, old 9.24-9.66: no rise.
+- CPU, 8 voices: Mixer Drive +1.1-1.2 us a voice, Feedback +1.4 (report's estimate +0.3-0.5). The bench's patch runs
+  both filters, so that is two soft clips, a divide each. At 0, old and new in turn: new 8.97-9.32 us a voice, old
+  9.24-9.66: no rise.
+
+### Item 5: oscillators AC-coupled (`an_osc_ac`)
+
+Built as: 0-30 Hz, a one-pole high-pass per oscillator on its way to the mixer only, so FM, sync, the ring modulator and
+filter FM still read the oscillator itself. No corner is claimed to match any instrument.
+
+- A square at C0, what is left across the flat part of its top at 0 / 15 / 30 Hz: 0.70 / 0.20 / 0.04. (A single capacitor
+  with the voice's 5 Hz DC filter added would give 0.70 / 0.24 / 0.08; these are two in a row, so a little more.)
+  **The voice already sags 30% at 0** because of that DC filter, added 2026-11-01.
+- A saw at C5 at 30 Hz: +0.008 dB, so it is a low-note effect as the report said.
+- The ring modulator alone: not one sample changes.
+- The report's "soft thump as pulse width moves" is **not expected**: pulse DC is already removed by formula, so moving
+  the width moves no DC. Not measured separately.
+- CPU, 8 voices: +0.44 us a voice at 30 Hz (report's estimate +0.2-0.4); this figure also includes the second copy of
+  the voice's loop, so that copy costs little.

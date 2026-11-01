@@ -2082,7 +2082,10 @@
   {"key": "s2_an_mix_drive", "name": "S2 Mixer Drive", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "s2_an_feedback", "name": "S2 Feedback", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
   {"key": "s3_an_mix_drive", "name": "S3 Mixer Drive", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
-  {"key": "s3_an_feedback", "name": "S3 Feedback", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"}
+  {"key": "s3_an_feedback", "name": "S3 Feedback", "min": 0, "max": 100, "unit": "%", "default": 0, "display": "int"},
+  {"key": "an_osc_ac", "name": "Osc AC Coupling", "min": 0, "max": 30, "unit": "Hz", "default": 0, "display": "int"},
+  {"key": "s2_an_osc_ac", "name": "S2 Osc AC Coupling", "min": 0, "max": 30, "unit": "Hz", "default": 0, "display": "int"},
+  {"key": "s3_an_osc_ac", "name": "S3 Osc AC Coupling", "min": 0, "max": 30, "unit": "Hz", "default": 0, "display": "int"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},
@@ -2147,7 +2150,7 @@
   {"label": "SYNTH FX CRUSH/RESON", "keys": ["modfx_bits", "modfx_srate", "modfx_reso", "modfx_ftype", "modfx_cut1", "modfx_cut2", "modfx_cut3", "modfx_lvl1", "modfx_lvl2", "modfx_lvl3"]},
   {"label": "NOISE", "keys": ["noise_color_pair", "noise_color_mix", "noise_env", "noise_a", "noise_r", "noise_sus"]},
   {"label": "VCA", "keys": ["pan", "spread"]},
-  {"label": "ANALOG", "keys": ["analog_amt", "an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder", "drift", "an_hq", "an_warm", "an_warm_amt", "an_warm_time", "an_svf", "an_svf_drive", "an_svf_osc", "an_mix_drive", "an_feedback"]},
+  {"label": "ANALOG", "keys": ["analog_amt", "an_cut", "an_env", "an_lvl", "an_tune", "an_res", "an_ladder", "drift", "an_hq", "an_warm", "an_warm_amt", "an_warm_time", "an_svf", "an_svf_drive", "an_svf_osc", "an_mix_drive", "an_feedback", "an_osc_ac"]},
   {"label": "RIBBON", "keys": ["ribbon_dst", "ribbon_amt", "ribbon_mode", "ribbon_origin"]},
   {"label": "ARP", "keys": ["arp_on", "arp_pattern", "arp_oct", "arp_dir", "arp_oct_order", "arp_pendulum", "arp_pend_mode", "arp_rnd_mode", "arp_sync", "arp_rate", "arp_div", "arp_timing", "arp_gate", "arp_swing", "arp_latch", "arp_reset"]},
   {"label": "CHORD", "keys": ["chord_on", "chord_shape", "chord_learn", "chord_iv1", "chord_iv2", "chord_iv3", "chord_iv4", "chord_iv5"]},

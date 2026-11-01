@@ -164,7 +164,7 @@ enum { NC_RED, NC_WHITE, NC_PURPLE };           /* noise colours */
 static const int NOISE_PAIR[3][2] = {{NC_RED, NC_WHITE}, {NC_RED, NC_PURPLE}, {NC_WHITE, NC_PURPLE}};
 #define NDRIFT (NOSC + 1)                       /* drift: one wander per oscillator, one for the voice's cutoffs */
 /* a voice card's parts that differ from card to card: each is a fixed number in -1..1 per voice */
-enum { AX_SVF_NL = 1, AX_SVF_SAT = 2, AX_MIX = 4 };   /* (2026-11-02) one_t an_x: which of the ANALOG page's newer sounds are on */
+enum { AX_SVF_NL = 1, AX_SVF_SAT = 2, AX_MIX = 4, AX_AC = 8 };   /* (2026-11-02) one_t an_x: which of the ANALOG page's newer sounds are on */
 enum { AC_LAD_CUT, AC_SVF_CUT, AC_LAD_RES, AC_SVF_RES, AC_ENV, AC_LVL = AC_ENV + 3, AC_TUNE, AC_COUNT = AC_TUNE + NOSC };
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
@@ -297,6 +297,7 @@ typedef struct {
     float gain;              /* smoothed towards velocity x volume, so neither jumps the level mid-note */
     float dc_x, dc_y;        /* (2026-11-01) the DC filter before the amp: its last input and output (dc_block) */
     float fb_x, fb_y;        /* (2026-11-02) FEEDBACK's coupling capacitor: its last input and output */
+    float ac_x[NOSC], ac_y[NOSC];   /* (2026-11-02) OSC AC COUPLING's capacitors */
     float cut, svf_cut;      /* the cutoff knobs (0..100) as this voice's filters follow them, smoothed */
     float rand;              /* this note's random value (-1..1), a matrix source */
     float to_lad[NSRC], to_svf[NSRC], mix_lad;   /* last control step's levels and filter mix (ramp start) */
@@ -419,6 +420,7 @@ typedef struct one_s {
     int an_x;                /* AX_* */
     float svf_amt, svf_s, svf_m;   /* NON-LINEAR SVF, 0..1; the saturator before it: gain in, gain out */
     float mix_s, mix_m, fb_k;      /* MIXER DRIVE's soft clip: gain in, gain out; FEEDBACK's level */
+    float ac_hz;             /* OSC AC COUPLING's corner */
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
     float gain_coef, glide;  /* per sample / per control step */
     int phase;               /* samples into the current control step */
@@ -756,6 +758,8 @@ static void apply_analog(one_t *s) {
     s->mix_m = (1.0f + 2.0f * md) / s->mix_s;
     s->an_x = (s->svf_amt > 0.0f ? AX_SVF_NL : 0) | (s->svf_s > 0.0f ? AX_SVF_SAT : 0) |
               (md > 0.0f || s->fb_k > 0.0f ? AX_MIX : 0);
+    s->ac_hz = p[P_AN_OSC_AC] * a;   /* (2026-11-02) OSC AC COUPLING */
+    if (s->ac_hz > 0.0f) s->an_x |= AX_AC;
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
         for (int f = 0; f < 2; f++) {
@@ -1202,6 +1206,8 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
         v->dc_x = v->dc_y = 0.0f;
         v->fb_x = v->fb_y = 0.0f;
+        memset(v->ac_x, 0, sizeof v->ac_x);
+        memset(v->ac_y, 0, sizeof v->ac_y);
         ladder_reset(&v->lad);
         svf2_reset(&v->svf);
         set_targets(s, v, no_mod, 0.0f);   /* unmodulated, until the next control step adds the matrix */
@@ -2882,6 +2888,7 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
     const int axf = ax ? s->an_x : 0;
     const float fb_r = ax ? 1.0f - 6.2831853f * FB_COUPLE_HZ / (SR * (float)os) : 0.0f;
     const float mix_s = s->mix_s, mix_m = s->mix_m, fb_k = s->fb_k, svf_s = s->svf_s, svf_m = s->svf_m;
+    const float ac_r = ax ? 1.0f - 6.2831853f * s->ac_hz / (SR * (float)os) : 0.0f;
     for (int i = 0; i < n; i++) {
         if (hf & 7) {   /* a High LFO on pitch: each oscillator's frequency this sample */
             if (hf & 1) o1->inc = clampf(v->inc0[0] * hp[0][i], 0.0f, 0.49f);
@@ -2908,7 +2915,25 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
             v->fm_prev = c;
             float rm = heard[RING] ? o2->tri_out * (ring23 ? o3->tri_out : o1->tri_out) : 0.0f;
             float nz = wn[i], nc = ncp[i], mc = mac_on ? mb[i] : 0.0f;
-            float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nc * lad[NOISE] + rm * lad[RING];
+            /* (2026-11-02) OSC AC COUPLING: a one-pole high-pass on the way to the mixer only, a capacitor as in the DC
+             * filter below. FM, sync, the ring modulator and filter FM keep reading the oscillators themselves. */
+            float am = a, bm = b, cm = c;
+            if (axf & AX_AC) {
+                am = a - v->ac_x[0] + ac_r * v->ac_y[0];
+                v->ac_x[0] = a;
+                v->ac_y[0] = am;
+                if (run2) {
+                    bm = b - v->ac_x[1] + ac_r * v->ac_y[1];
+                    v->ac_x[1] = b;
+                    v->ac_y[1] = bm;
+                }
+                if (run3) {
+                    cm = c - v->ac_x[2] + ac_r * v->ac_y[2];
+                    v->ac_x[2] = c;
+                    v->ac_y[2] = cm;
+                }
+            }
+            float lad_in = am * lad[0] + bm * lad[1] + cm * lad[2] + nc * lad[NOISE] + rm * lad[RING];
             if (mac_on) lad_in += mc * lad[MACRO];
             if (ext_on) lad_in += ext[i] * lad[EXT];
             /* (2026-11-02) MIXER DRIVE and FEEDBACK. The loop is one sample long and per voice, and always passes the
@@ -2917,7 +2942,7 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
             if (axf & AX_MIX) lad_in = ladder_sat((lad_in + (series && any_svf ? 0.0f : fbv)) * mix_s) * mix_m;
             float svf_out = 0.0f, lad_out = 0.0f;
             if (any_svf) {
-                float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
+                float in = am * svf[0] + bm * svf[1] + cm * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
                 if (mac_on) in += mc * svf[MACRO];
                 if (ext_on) in += ext[i] * svf[EXT];
                 if (axf & AX_MIX) in = ladder_sat((in + fbv) * mix_s) * mix_m;   /* (2026-11-02) */

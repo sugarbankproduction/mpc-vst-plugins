@@ -782,7 +782,9 @@ def build(lay):
         # (2026-11-02) the saturating SVF (src/svf.h svf_tick_nl); the page's second screen
         ("an_svf", "SVF Character"), ("an_svf_drive", "SVF Drive"), ("an_svf_osc", "SVF Self-Osc"),
         # (2026-11-02) a soft clip on the mixer's sum, and each voice's filter output back into its mixer
-        ("an_mix_drive", "Mixer Drive"), ("an_feedback", "Feedback")])
+        ("an_mix_drive", "Mixer Drive"), ("an_feedback", "Feedback"),
+        # (2026-11-02) a capacitor after each oscillator: droop on low notes
+        ("an_osc_ac", "Osc AC Coupling")])
     return zones
 
 
