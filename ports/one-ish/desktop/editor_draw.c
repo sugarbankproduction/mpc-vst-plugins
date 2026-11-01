@@ -1438,6 +1438,7 @@ static void draw_screen(HDC dc, ed_t *e) {
     int small = e->screen == SCR_SEQ || e->screen == SCR_RANDOM;   /* (GEN: LOCK KEY + SCALE) */
     RECT hr = e->screen == SCR_SEQ ? seq_help_rect()
             : e->screen == SCR_RANDOM ? rnd_help_rect() : L.help;
+    if (e->screen == SCR_PATCHES) hr.bottom = L.screen.bottom - sc(47);   /* (over its bottom row) */
     gfx_line((float)hr.left, hr.top - 4.0f, (float)hr.right, hr.top - 4.0f, 1.0f, 0xFF27404E);
     text(dc, &hr, help, small ? font_cell : font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
     keylock_draw(dc, e);   /* (2026-11-02) on every page */
@@ -1502,7 +1503,7 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.bprev, "PREV", 0, e->hover == Z_PREV);
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     panel_button(dc, &L.compare, "COMPARE", lib_comparing(e), e->hover == Z_COMPARE);   /* (library.c) */
-    panel_button(dc, &L.snapshot, "SNAPSHOT", e->screen == SCR_SNAPS, e->hover == Z_SNAPSHOT);
+    panel_button(dc, &L.snapshot, "SNAP", e->screen == SCR_SNAPS, e->hover == Z_SNAPSHOT);
     if (vis(&L.vol_master, sc(6)) && !IsRectEmpty(&L.vol_master)) {   /* SYNTH OUTPUT's MASTER (hub.c) */
         const RECT *r = &L.vol_master;
         int bh = sc(10), bw = sc(18), h = e->hover == Z_VOL_MASTER;
@@ -1644,7 +1645,8 @@ static void controller_static(HDC dc) {
         gfx_line(gx, p->top + 2.0f, gx, p->bottom - 2.0f, 0.8f, 0x18FFFFFF);
         gfx_line(p->left + 2.0f, gy, p->right - 2.0f, gy, 0.8f, 0x18FFFFFF);
     }
-    text_c(dc, (p->left + p->right) / 2, p->bottom + sc(4), sc(80), sc(14), "X/Y PAD", font_label, T_LABEL);
+    RECT pn = {L.pad_hold.right + sc(5), p->bottom + sc(4), L.pad_hold.right + sc(60), p->bottom + sc(18)};
+    text(dc, &pn, "X/Y PAD", font_label, T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 }
 
 /* the ribbon: a matte black touch strip in a brushed aluminium rim over the keys, a glowing marker where it is touched */

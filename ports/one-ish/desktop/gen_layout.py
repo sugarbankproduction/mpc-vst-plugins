@@ -702,7 +702,7 @@ def build(lay):
     # ---- left-hand controller: octave, glide, wheels, X/Y pad, bend range; the ribbon over the keys ----
     zones.update({"OCT_LEDS": (50, 632, 116, 26), "OCT_DOWN": (64, 662, 36, 16), "OCT_UP": (118, 662, 36, 16),
                   # (2026-10-31) the wheels 14 px shorter: their LINKs under their names
-                  "PITCH": (56, 706, 36, 98), "MODW": (110, 706, 36, 98), "PAD": (166, 706, 126, 112),
+                  "PITCH": (56, 706, 36, 98), "MODW": (110, 706, 36, 98), "PAD": (166, 706, 112, 112),
                   # (2026-10-31) the ribbon starts 64 px in: its LINK at its left end (shorter with a MORE page);
                   # (2026-11-01) 124 px in: its HOLD beside the LINK
                   "KEYS": (384, 640, 1744, 200), "RIBBON": (508, 612, 1620, 20),
@@ -716,7 +716,7 @@ def build(lay):
                   # beside its LINK on the plate at its left end
                   "PAD_HOLD": (166, 822, 38, 14), "RIB_HOLD": (445, 615, 54, 14)})
     # (2026-10-30) LINK beside the X/Y pad's name: lit, the pad plays all three Synths (src/synths.h midi)
-    L.ctl("link_pad", "toggle", 256, 822, 48, 14, "LINK", SIDE)
+    L.ctl("link_pad", "toggle", 252, 822, 48, 14, "LINK", SIDE)
     # (2026-10-31) LINK under each wheel's name: lit, that wheel reaches all three Synths (src/synths.h midi); the pitch
     # wheel's also keeps BEND RANGE the same in all three (LINK_GROUPS); glide's under its ON (all its settings alike);
     # the ribbon's at the ribbon's left end, on a small plate of its own
@@ -736,12 +736,12 @@ def build(lay):
     # (2026-11-01, owner) OCTAVE's LINK, beside its name: lit, the buttons move the keyboard (every Synth together); out,
     # the Synth in focus's own OCTAVE (octave_shift), so each Synth can sit in its own (editor.c set_octave)
     L.ctl("link_octave", "toggle", 94, 682, 44, 14, "LINK", SIDE)   # (2026-11-02: both left-justified, off the knob)
-    L.column([("glide_legato", "LEGATO"), ("glide_gated", "GATED"), ("glissando", "GLISS")], 298, 706, 72, 22,
+    L.column([("glide_legato", "LEGATO"), ("glide_gated", "GATED"), ("glissando", "GLISS")], 286, 706, 72, 22,
              "toggle", SIDE)   # the other glide options, beside the pad
-    L.panel(298, 770, 72, 12, "BEND RANGE", style="caption", keys=["bend_up", "bend_down"])
+    L.panel(286, 770, 84, 12, "BEND RANGE", style="caption", keys=["bend_up", "bend_down"])
     if "bend_up" in L.index:
         L.tri(358, 770, "BEND")   # (2026-10-30) after its caption (the knobs fill the corner)
-    L.cells([("bend_up", "UP", 36, "small"), ("bend_down", "DOWN", 36, "small")], 298, 780, 44, "small", 18)
+    L.cells([("bend_up", "UP", 42, "small"), ("bend_down", "DOWN", 42, "small")], 286, 780, 40, "small", 18)
     L.page("BEND", "BEND RANGE", "How far the pitch wheel bends, up and down, and each oscillator's own offset.", [
         ("bend_up", "Bend Up"), ("bend_down", "Bend Down"), ("o1_bend_up_off", "OSC 1 Up Offset"),
         ("o1_bend_dn_off", "OSC 1 Down Offset"), ("o2_bend_up_off", "OSC 2 Up Offset"),

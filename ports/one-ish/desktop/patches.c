@@ -1202,7 +1202,8 @@ static RECT entry_rect(int col, int row) {   /* column 0 factory, 1 user; row 0 
  * each tab as wide as its text */
 static char cat_name[PATCH_CATS][TAG_LEN + 1];
 static int cat_n[PATCH_CATS];
-static int cats(ed_t *e) { return lib_cats(e, cat_name, cat_n, PATCH_CATS); }
+static int cats_now;
+static int cats(ed_t *e) { return cats_now = lib_cats(e, cat_name, cat_n, PATCH_CATS); }
 static void cat_label(int k, char *out, int n) {
     static const char *const SHORT[][2] = {{"Sequence", "SEQ"}, {"Performance", "PERF"}, {"Generative", "GEN"}};
     const char *s = cat_name[k];
@@ -1212,7 +1213,8 @@ static void cat_label(int k, char *out, int n) {
     int i = 0;
     for (; s[i] && i < 8; i++) u[i] = (char)toupper((unsigned char)s[i]);
     u[i] = 0;
-    snprintf(out, n, "%s %d", u, cat_n[k]);
+    if (cats_now > 16) snprintf(out, n, "%.5s", u);   /* (2026-11-02) many tabs: short names, no counts */
+    else snprintf(out, n, "%s %d", u, cat_n[k]);
 }
 static RECT cat_rect(int ncat, int k) {   /* tab k of ncat (call cats() first) */
     int first = (ncat + 1) / 2, line = k >= first, a = line ? first : 0, b = line ? ncat : first, total = 0, x = 0;

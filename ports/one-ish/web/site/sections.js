@@ -14,7 +14,7 @@ const TABS = [   // each tab: rows of rectangles [x, y, w, h], each row scaled t
   { name: "FX", rows: [[[1640, 350, 486, 248]]] },
   { name: "PLAY", rows: [[[30, 612, 348, 238]]] },
 ];
-const MAX_ZOOM = 1.5;
+const MAX_ZOOM = 2.5;   // (2026-11-02: a big monitor fills too; a tab always fits, never scrolls)
 const KEYS_X0 = 384, KEYS_X1 = 2128, WHITE = (KEYS_X1 - KEYS_X0) / 36;   // five octaves of white keys, C2 to C7
 const STRIP_Y0 = 610, STRIP_Y1 = 842;                                     // the ribbon and the keys
 
