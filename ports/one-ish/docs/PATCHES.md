@@ -185,6 +185,25 @@ Code: `desktop/parts.c`; tested by `desktop/parts_test.c` inside load_test. Ever
   as `-  name *` (SAVE AS keeps it in the new one). The settings file keeps `library=<name>` and `import_dup=<0-3>`;
   RESTORE DEFAULTS leaves both. A library that is gone when Moo Won starts: Default.
 
+## The bundled libraries: Steveo's sounds (2026-11-01, the desktop window and the browser)
+
+Six libraries come with Moo Won: **CLASSICS** (51 patches), **KING** (26), **MOO MOO** (25), **POLYPHONIC
+DESTINATIONS** (22), **STEREO FUTURES** (45) and **TRANSFORMERS** (53), 222 sounds that Steveo, a friend of the
+owner's, made on his own instrument and is happy to share (owner, 2026-11-01). Pick one under SETTINGS > LIBRARY.
+
+- In the project: `libraries/<BANK>/*.oneish`, made by `libraries/make_bundled.py` from his files converted with IMPORT
+  .M1P (below). His preset files themselves are not in the project. Each patch is tagged GROUP Steveo, its notes say
+  "By Steveo." with his own comment; the maker's name is written MOO wherever a name or comment said it (MOOMENTUM,
+  POLYMOO), and the one comment that named a sound designer as its maker (his tribute) says "Inspired by a favourite
+  performance sound." ("By Moo Won" is kept for the sounds made for Moo Won itself.) The folder he named after a
+  sound designer who inspired him is called MOO MOO.
+- Windows: `desktop/install.sh` copies a bank into `Documents\ONE-ish\Libraries\<BANK>` when it isn't there yet;
+  after that it is yours (edits, deletions and renames stay). Delete a bank's folder to get it fresh on the next
+  install. Checked 2026-11-01: the six banks added on this PC.
+- In the browser: the banks are built into the page's module and copied into the browser's library folder the same
+  way on the first visit (`web/site/full.js` addBundled). Checked 2026-11-01 in the built-in browser: all six there,
+  CLASSICS (51 patches) picked on the LIBRARY tab.
+
 ## Importing Moog One presets (2026-10-31, the desktop window)
 
 Moo Won ships with **no** Moog presets. If you have Moog One preset files (`.m1p`) of your own (free community

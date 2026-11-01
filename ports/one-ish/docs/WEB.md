@@ -65,6 +65,10 @@ and sends touches back at the panel's own coordinates (a drag stays on the piece
 the tap was. Sections come from the module boxes in `desktop/gen_layout.py` (base pixels). Checked in the built-in
 browser at 375 x 812 (2026-11-01): every tab draws, a tapped key plays, tabs switch. Not on a real phone yet.
 
+**Bundled libraries** (2026-11-01): Steveo's six banks (`docs/PATCHES.md`, "The bundled libraries") are built into
+the module (`--embed-file libraries@/bundled`, about 1.4 MB more) and copied into the browser's library folder on the
+first visit, a bank at a time, only when it isn't there yet.
+
 **What is not there yet:** MIDI clock and song position (the plugin's clock runs free), and the MIDI OUT notes (nothing
 receives them in the browser).
 

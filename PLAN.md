@@ -1010,7 +1010,9 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   owner's OK 2026-11-01). Then the full plugin (same day, owner: "lets now make the proper plugin work and lets see
   how we might lay it out for web and mobile after"): the plugin with its whole panel, its editor code unchanged,
   compiled against a small Windows stand-in (`ports/one-ish/web/full`); now the site's main page. Next: a layout for
-  web and mobile (the owner wants to see options first).
+  web and mobile (the owner wants to see options first). Done the same day: phones and narrow windows get the panel's
+  sections on tabs (layout B, the owner's pick). Also 2026-11-01: Steveo's 222 sounds ship as six bundled libraries
+  on Windows and in the browser (`ports/one-ish/libraries`, docs/PATCHES.md).
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
 - **Then, the MPC port (in order):**
   1. MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, from a copy outside Dropbox (CLAUDE.md).
