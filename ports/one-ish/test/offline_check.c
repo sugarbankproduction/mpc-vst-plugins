@@ -166,6 +166,15 @@ static void *create_one(const char *data_dir) {
             snprintf(k, sizeof k, "mod%d_%s", r, F[f]);
             E_REAL->set_param(e, k, "0");
         }
+    /* (2026-11-01) and the ANALOG page at its old defaults, all 0 (every Synth: multi_check turns 2 and 3 on) */
+    static const char *const AN[] = {"drift", "an_cut", "an_env", "an_lvl", "an_tune", "an_res"};
+    for (int c = 0; c < 3; c++)
+        for (unsigned k = 0; k < sizeof AN / sizeof AN[0]; k++) {
+            char key[24];
+            if (c) snprintf(key, sizeof key, "s%d_%s", c + 1, AN[k]);
+            else snprintf(key, sizeof key, "%s", AN[k]);
+            E_REAL->set_param(e, key, "0");
+        }
     return e;
 }
 /* a key of Synth 1 (or a shared one): not a Synth 2 or 3 copy (multitimbral, test/multi_check.c) */
@@ -5215,6 +5224,7 @@ static void arp_wav(const char *demo_path) {
 #include "midiout_check.c"    /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH */
 #include "m1p_check.c"   /* (2026-10-31) the Moog One preset importer's converter (desktop/m1p.c) */
 #include "links_check.c"     /* (2026-10-31) LINK on the mod wheel, the pitch wheel, the ribbon */
+#include "analog_check.c"    /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5988,6 +5998,7 @@ int main(int argc, char **argv) {
         grains_bench();   /* (2026-10-30) */
         lfo_share_bench();   /* (2026-10-30) SHARE */
         hq_bench();   /* (2026-10-30) HQ MODE, WARM-UP */
+        analog_bench();   /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT */
         multiout_bench();   /* (2026-10-30) multi-out */
         midi_out_bench();   /* (2026-10-30) MIDI OUT */
         m1p_cpu();   /* (2026-10-31) a .m1p converted, on the window's thread */
@@ -6048,6 +6059,13 @@ int main(int argc, char **argv) {
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
+    if (argc > 1 && !strcmp(argv[1], "analog")) {   /* (2026-11-01) just the ANALOG page's defaults, ANALOG AMOUNT */
+        analog_checks();
+        analog_stats();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "analogbench")) { analog_bench(); return 0; }   /* (2026-11-01) */
     if (argc > 1 && !strcmp(argv[1], "links")) {   /* (2026-10-31) just the wheels' and the ribbon's LINKs */
         links_checks();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
@@ -6199,6 +6217,8 @@ int main(int argc, char **argv) {
     midi_out_checks();   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (test/midiout_check.c) */
     m1p_checks();   /* (2026-10-31) the .m1p converter (test/m1p_check.c) */
     links_checks();   /* (2026-10-31) the wheels' and the ribbon's LINKs (test/links_check.c) */
+    analog_checks();   /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT (test/analog_check.c) */
+    analog_stats();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");

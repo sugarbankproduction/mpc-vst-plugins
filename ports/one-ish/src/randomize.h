@@ -1373,7 +1373,8 @@ static inline void rnd_gen_hands(rnd_ctx_t *c) {
  * (2026-10-30). Their numbers are still drawn (and dropped), so every other choice stays as it was. */
 static inline int rnd_kept(int i) {
     const char *k = PARAMS[i].key;
-    return !strcmp(k, "drift") || !strcmp(k, "spread") || !strncmp(k, "an_", 3);
+    return !strcmp(k, "drift") || !strcmp(k, "spread") || !strncmp(k, "an_", 3) ||
+           !strcmp(k, "analog_amt");   /* (2026-11-01) ANALOG AMOUNT: the ANALOG page's, never randomised */
 }
 
 /* WILD's loudness on top of the mixer levels' estimate: unison, and matrix rows that turn levels up */
@@ -1736,6 +1737,9 @@ static inline int rnd_mutate_x(const float *cur, float *out, float amount, unsig
         }
         float span = p->max - p->min, v = c.w[i], lo = r->lo, hi = r->hi;
         if (span <= 0.0f) continue;
+        /* (2026-11-01) the ANALOG page (drift, an_*; never changed, rnd_finish) drawn as if off, its default until
+         * that day: its numbers, and so every other param's, never depend on what the page is set to */
+        if (rnd_kept(i) && strcmp(p->key, "spread")) v = r->z;
         if (r->pz > 0.0f && fabsf(v - r->z) < 1e-6f * span) {   /* off (or centred): mostly stays so */
             if (!rnd_chance(&c, amount * (0.15f + 0.5f * w))) continue;
         } else if (!rnd_chance(&c, pm)) {

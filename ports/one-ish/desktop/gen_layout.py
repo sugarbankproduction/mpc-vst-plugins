@@ -742,7 +742,10 @@ def build(lay):
     L.page("RIBBON", "RIBBON", "The touch strip over the keys (MIDI CC 16 position, CC 17 touch).", [
         ("ribbon_dst", "Destination"), ("ribbon_amt", "Amount"), ("ribbon_mode", "Mode"), ("ribbon_origin", "Origin"),
         ("link_ribbon", "Link (3 Synths)")])
-    L.page("ANALOG", "ANALOG CHARACTER", "Per-voice differences, as between real analog voices. All 0 = exact. Kept when a preset or patch loads.", [
+    # (2026-11-01) ANALOG AMOUNT (shared, analog_amt): the page's main control, a big bar across its top two rows drawn
+    # by the window itself (editor_draw.c draw_analog_amt; editor.h page_top), so not one of the items below
+    L.placed.add("analog_amt")
+    L.page("ANALOG", "ANALOG CHARACTER", "AMOUNT scales the whole page (0% = exact). Kept when a preset loads.", [
         ("drift", "Drift"), ("an_cut", "Cutoff Spread"), ("an_res", "Resonance Spread"), ("an_env", "Envelope Spread"),
         ("an_lvl", "Level Spread"), ("an_tune", "Tuning Spread"), ("an_ladder", "Ladder Character"),
         # (2026-10-30) HQ MODE (the voice oversampled: cleaner sync, FM and driven ladder) and WARM-UP (a cold start)
@@ -925,6 +928,8 @@ def emit(lay, zones, out):
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
     for pid in ("LIFE", "ORBITS", "PEND"):   # (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
+    # (2026-11-01) ANALOG AMOUNT: the ANALOG page's big bar (its param, -1 without it)
+    lines.append("#define PI_ANALOG_AMT %d" % lay.index.get("analog_amt", -1))
     # the rate LEDs: what each flashes with (RL_*: an LFO's rate (n 0-3), the arpeggiator's, the sequencer's, the beat)
     lines.append("enum { %s };" % ", ".join("RL_%s = %d" % (k, v) for k, v in RATE_KINDS.items()))
     lines.append("typedef struct { short kind, n, x, y; const char *label; } lay_rate_t;   /* x, y: the LED's centre */")

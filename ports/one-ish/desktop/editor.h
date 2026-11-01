@@ -131,12 +131,19 @@ extern layout_t L;
 
 /* a MORE page's slots: ROWS rows in two columns, less the rows its picture takes at the bottom (PIC_ROWS); item j of
  * page p sits in slot page_slot(p, j) of slot_rects (column by column) */
-static inline int page_rows(int p) { return p >= 0 && p < NPAGES && PAGES[p].pic ? ROWS - PIC_ROWS : ROWS; }
+/* (2026-11-01) the rows a page keeps at its top for a control of its own: the ANALOG page's ANALOG AMOUNT bar (2) */
+#define AMT_ROWS 2
+static inline int page_top(int p) { return p >= 0 && p == PG_ANALOG && PI_ANALOG_AMT >= 0 ? AMT_ROWS : 0; }
+static inline int page_rows(int p) {
+    return (p >= 0 && p < NPAGES && PAGES[p].pic ? ROWS - PIC_ROWS : ROWS) - page_top(p);
+}
 static inline int page_slots(int p) { return 2 * page_rows(p); }
 static inline int page_slot(int p, int j) {
     int k = j % page_slots(p), r = page_rows(p);
-    return (k / r) * ROWS + k % r;
+    return (k / r) * ROWS + page_top(p) + k % r;
 }
+RECT analog_amt_rect(void);   /* (2026-11-01) the ANALOG page's ANALOG AMOUNT: all of it, and its bar (editor.c) */
+RECT analog_amt_bar(void);
 
 static inline int sc(float v) { return (int)lroundf(v * L.s); }
 static inline RECT zone(const short z[4]) { RECT r = {sc(z[0]), sc(z[1]), sc(z[0] + z[2]), sc(z[1] + z[3])}; return r; }
@@ -485,8 +492,8 @@ void settings_tick(ed_t *e);                   /* the window's timer */
 void settings_midi_put(ed_t *e, const float *keep);
 /* (2026-11-01, owner: "the analog settings shouldn't change when I select a new preset") the ANALOG page's settings
  * (drift, an_*) of all three Synths stay as they are when a preset or patch loads; a project, undo and COMPARE still
- * restore them (patches.c) */
-#define ANALOG_KEEP 33
+ * restore them (patches.c); (2026-11-01) ANALOG AMOUNT too (shared: one value) */
+#define ANALOG_KEEP 36
 void analog_keep(ed_t *e, float *keep);
 void analog_put(ed_t *e, const float *keep);
 void settings_open(ed_t *e);

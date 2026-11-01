@@ -119,6 +119,8 @@ static const char *help_for(int i) {
         {"pan", "Pan: where the sound sits between left and right."},
         {"spread", "Spread: spreads the voices across the stereo field."},
         {"drift", "Analog drift: slow, slight wandering of pitch and tone, different on every voice."},
+        /* (2026-11-01) */
+        {"analog_amt", "ANALOG AMOUNT: the main control of the analog feel, for all three Synths at once. It scales everything on this page together (drift, the voices' cutoff, resonance, envelope, level and tuning spreads, the non-linear ladder and warm-up): 0% exact digital, 100% the page as set, 200% twice as much. Click or drag on the bar, the wheel steps 1%, a double-click sets 100%. Kept when a preset loads."},
         {"an_hq", "HQ MODE (a click opens its list: Off, 2x, 4x): the voice runs at 2 or 4 times the sample rate, for a cleaner top end with hard sync, FM and a driven ladder. Costs about 1.8x (2x) or 3x (4x) the voice's CPU. Off: exactly as before."},
         {"an_warm", "WARM-UP (a click turns it on): like a cold analog synth, the pitch and cutoffs sit a little off and wander more, then settle to the normal drift over WARM-UP TIME. Starts again each time it is turned on, or the plugin is loaded."},
         {"an_warm_amt", "Warm-Up Amount: how cold the start is (100%: up to about 25 cents off and three times the drift's wander)."},
@@ -946,11 +948,45 @@ static void foreign(HDC dc, ed_t *e, void (*fn)(HDC, ed_t *)) {
     skin_bind(gfx_g);
 }
 
+/* (2026-11-01) the ANALOG page's main control, ANALOG AMOUNT (shared): its name, a big bar with marks at 0, 100
+ * (the page as set) and 200%, and its value large, across the page's top two rows */
+static void draw_analog_amt(HDC dc, ed_t *e) {
+    int i = PI_ANALOG_AMT, hot = e->hover == i;
+    RECT a = analog_amt_rect(), b = analog_amt_bar();
+    gfx_rect((float)a.left, (float)a.top, (float)rw(&a), (float)rh(&a), 0xFF0F2230);
+    gfx_frame((float)a.left, (float)a.top, (float)rw(&a), (float)rh(&a), 1.0f, hot ? 0xFFFFFFFF : 0xFF3E6273);
+    RECT nm = {a.left + sc(8), a.top, b.left - sc(8), a.top + rh(&a) * 55 / 100};
+    text(dc, &nm, "ANALOG AMOUNT", font_title, hot ? T_HOT : T_LCD, DT_LEFT | DT_BOTTOM | DT_SINGLELINE);
+    RECT sub = {a.left + sc(8), nm.bottom, b.left - sc(8), a.bottom};
+    text(dc, &sub, "all 3 Synths", font_tiny, T_LCD_DIM, DT_LEFT | DT_TOP | DT_SINGLELINE);
+    float v = ed_get(e, i), tl = (float)b.left, tr = (float)b.right, cy = (b.top + b.bottom) / 2.0f;
+    float th = 10.0f * L.s;   /* the bar's thickness: a lot more than a page's 6 */
+    gfx_rect(tl, cy - th / 2, tr - tl, th, 0xFF1C2C36);
+    gfx_rect(tl, cy - th / 2, v * (tr - tl), th, hot ? 0xFFB4E6F2 : 0xFF96D7E8);
+    static const char *const MARK[3] = {"0", "100", "200%"};
+    for (int k = 0; k < 3; k++) {   /* the marks under it; 100%: the page as set */
+        float mx = tl + (tr - tl) * k / 2.0f;
+        gfx_rect(mx - 0.5f * L.s, cy + th / 2 + 1.0f * L.s, 1.0f * L.s, 4.0f * L.s, 0xFF5A8291);
+        RECT mr = {(int)mx - sc(20), (int)(cy + th / 2) + sc(4), (int)mx + sc(20), b.bottom + sc(10)};
+        if (k == 0) { mr.left = (int)mx; }
+        if (k == 2) { mr.right = (int)mx + sc(2); mr.left = mr.right - sc(40); }
+        text(dc, &mr, MARK[k], font_tiny, T_LCD_DIM,
+             (k == 0 ? DT_LEFT : k == 2 ? DT_RIGHT : DT_CENTER) | DT_TOP | DT_SINGLELINE);
+    }
+    float knob = tl + v * (tr - tl);   /* the handle */
+    gfx_rect(knob - 3.0f * L.s, cy - th / 2 - 4.0f * L.s, 6.0f * L.s, th + 8.0f * L.s, 0xFFFFFFFF);
+    char val[64];
+    param_text(e, i, val, sizeof val);
+    RECT vr = {b.right + sc(6), a.top, a.right - sc(8), a.bottom};
+    text(dc, &vr, val, font_big, T_LCD, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+}
+
 static void draw_page(HDC dc, ed_t *e, int subs) {
     int items[512], n = page_items(e, e->screen, items);
     char t[128];
     snprintf(t, sizeof t, "MORE:  %s", PAGES[e->screen].title);
     title_line(dc, e, t, subs);
+    if (page_top(e->screen)) draw_analog_amt(dc, e);   /* (2026-11-01) */
     if (nav_tabs_shown(e)) foreign(dc, e, nav_tabs_draw);   /* a generator's page: the tabs (its note: the help line) */
     else if (parts_more_page(e->screen) >= 0) {   /* (2026-10-30) an effect's page: PRESETS at the note's right end */
         RECT nr = L.head;
@@ -1292,7 +1328,8 @@ static void draw_screen(HDC dc, ed_t *e) {
     int subs = screen_subs(e);
     if (e->sub >= subs) e->sub = subs - 1;   /* the page got shorter (another effect type) */
     int striped = e->screen >= 0 && e->screen < NPAGES ? page_rows(e->screen) : ROWS;   /* (not under a picture) */
-    for (int r = 0; r < striped && e->screen != SCR_SEQ && e->screen != SCR_GENALL; r++)   /* (the step editor has its own rows) */
+    int top = e->screen >= 0 && e->screen < NPAGES ? page_top(e->screen) : 0;   /* (nor the ANALOG AMOUNT bar) */
+    for (int r = top; r < top + striped && e->screen != SCR_SEQ && e->screen != SCR_GENALL; r++)   /* (the step editor has its own rows) */
         if (r % 2) gfx_rect((float)L.row[r].left, (float)L.row[r].top, (float)rw(&L.row[r]), (float)rh(&L.row[r]), 0x109CC8E6);
     if (e->screen == SCR_MATRIX) draw_matrix(dc, e, subs);
     else if (e->screen == SCR_INDEX) draw_index(dc, e, subs);
