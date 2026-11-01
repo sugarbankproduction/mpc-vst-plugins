@@ -1322,6 +1322,8 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 ke
 | `link_pad` | Link X/Y Pad (3 Synths) | option: `Off` / `On` | `On` | shared |
 | `link_poly` | Link Polyphony (3 Synths) | option: `Off` / `On` | `Off` | shared (2026-11-01) |
 | `link_arp_all` | Link Arpeggiator (3 Synths) | option: `Off` / `On` | `Off` | shared (2026-11-01) |
+| `link_hold` | Link Hold (3 Synths) | option: `Off` / `On` | `On` | shared (2026-11-01) |
+| `link_octave` | Link Octave (3 Synths) | option: `Off` / `On` | `On` | shared (2026-11-01) |
 | `lfo1_share` | Share LFO 1 (3 Synths) | option: `Off` / `On` | `Off` | shared |
 | `lfo2_share` | Share LFO 2 (3 Synths) | option: `Off` / `On` | `Off` | shared |
 | `lfo3_share` | Share LFO 3 (3 Synths) | option: `Off` / `On` | `Off` | shared |

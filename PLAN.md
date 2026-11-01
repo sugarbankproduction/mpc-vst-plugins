@@ -208,6 +208,9 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      the amp (src/engine.c; before the amp so a closed envelope is still exact silence; at the output it left a tail
      that broke PANIC and All Sound Off). That sound now reads rms 0.09. CPU: within the bench's noise (8 voices 96.5 ->
      86.3 us per block, 16 voices 154.8 -> 162.9). Golden states made again, now with all 296 factory presets.
+     HAND CONTROLS (2026-11-01, owner): glide's TYPE moved right; PANIC to SYNTH OUTPUT's bottom right corner; HOLD (notes
+     held, the `hold` param) from POLYPHONY to the hand controls with `link_hold`; `link_octave`: lit, OCTAVE moves the
+     keyboard (every Synth), out, the Synth in focus's `octave_shift`. Both LINKs on by default and in LINK ALL.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27

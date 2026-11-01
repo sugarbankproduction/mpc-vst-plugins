@@ -394,6 +394,7 @@ static int on_screen(ed_t *e, int i) {   /* does the centre screen's current pag
 }
 static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control, the screen, what shows it */
     if (i < 0 || i >= NPARAMS) { invalidate(e, NULL); return; }
+    if (i == rnd_key("link_octave") || i == rnd_key("octave_shift")) invalidate(e, &L.oct_leds);
     qm_matrix_changed(e, i);   /* a matrix row: the knobs' modulation rings (quickmod.c) */
     if (i == rnd_key("syn_on") || i == rnd_key("syn_solo"))   /* the SYNTH buttons' M | S */
         for (int c = 0; c < NSYNTHS; c++) invalidate(e, &L.focus[c]);
@@ -810,6 +811,16 @@ static void rnd_set_amount(ed_t *e, int x, int wild) {   /* the AMOUNT (or WILD)
 }
 
 static float option_norm(int i, int opt) { return PARAMS[i].nopts > 1 ? (float)opt / (PARAMS[i].nopts - 1) : 0.0f; }
+/* (2026-11-01) OCTAVE's LINK (lit, or a build without it): the buttons move the keyboard, every Synth together; out: the
+ * Synth in focus's own OCTAVE. What the LEDs show and the buttons step from: -2..2 */
+int octave_linked(ed_t *e) {
+    int l = rnd_key("link_octave");
+    return l >= NPARAMS || e->fx->getParameter(e->fx, l) > 0.5f;
+}
+int octave_shown(ed_t *e) {
+    if (octave_linked(e)) return e->oct;
+    return (int)lroundf(ed_get(e, rnd_key("octave_shift")) * 4.0f) - 2;
+}
 int option_of(ed_t *e, int i) {
     return PARAMS[i].nopts > 1 ? (int)lroundf(ed_get(e, i) * (PARAMS[i].nopts - 1)) : 0;
 }
@@ -1025,9 +1036,12 @@ static void qk_all_off(ed_t *e) {
     memset(e->qk_down, 0, sizeof e->qk_down);
     invalidate(e, &L.keys);
 }
+static void set_octave(ed_t *e, int oct);
 static int qk_key(ed_t *e, WPARAM vk, int down, LPARAM lp) {   /* 1: the key was a music key (taken) */
     if (vk == 'Z' || vk == 'X') {
-        if (down && !(lp & 0x40000000)) {
+        if (down && !(lp & 0x40000000) && !octave_linked(e)) {   /* (OCTAVE's LINK out: the Synth in focus's) */
+            set_octave(e, octave_shown(e) + (vk == 'X' ? 1 : -1));
+        } else if (down && !(lp & 0x40000000)) {
             int o = e->oct + (vk == 'X' ? 1 : -1);
             e->oct = o < -2 ? -2 : o > 2 ? 2 : o;
             send_kb_oct(e);
@@ -1183,6 +1197,12 @@ static void send_kb_oct(ed_t *e) {
 static void set_octave(ed_t *e, int oct) {
     if (oct < -2 || oct > 2) return;
     key_off(e);
+    if (!octave_linked(e)) {   /* (2026-11-01) OCTAVE's LINK out: the Synth in focus's own OCTAVE, one undo step each */
+        int i = rnd_key("octave_shift");
+        lib_touch(e, "OCTAVE");
+        set_value(e, i, option_norm(i, oct + 2));
+        return;
+    }
     e->oct = oct;
     send_kb_oct(e);
     InvalidateRect(e->wnd, NULL, FALSE);
@@ -1292,7 +1312,7 @@ static void press(ed_t *e, int x, int y) {
     case Z_NEXT: patches_step(e, 1); return;
     case Z_NAME: if (!settings_cue_load(e)) patches_toggle(e); return;   /* (a pointed-at patch: it loads) */
     case Z_OCT_DOWN: case Z_OCT_UP:   /* a click steps; held, the default octave (1 s), then a panic (2 s) */
-        set_octave(e, e->oct + (i == Z_OCT_UP ? 1 : -1));
+        set_octave(e, octave_shown(e) + (i == Z_OCT_UP ? 1 : -1));
         e->mode = M_OCT;
         e->oct_t0 = GetTickCount();
         e->oct_stage = 0;

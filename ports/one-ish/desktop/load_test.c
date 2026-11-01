@@ -2934,6 +2934,45 @@ static void hold_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
 /* ---- (2026-11-01) the POLYPHONY panel's LINK (link_poly, the window's kind, as glide's): off, HOLD and UNISON
  * clicked on the panel switch Synth 1's alone; lit (a plain click), they switch all three Synths'; DETUNE turned too.
  * Saved with the sound; a second click puts it out. ---- */
+/* (2026-11-01) the hand controls: HOLD and its LINK; OCTAVE's LINK: lit, the keyboard's octave; out, each Synth's own */
+static void hold_octave_test(AEffect *fx, HWND child, float s) {
+    char what[400];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    snprintf(what, sizeof what, "HOLD's and OCTAVE's LINKs start lit (%d %d)", pv(fx, "link_hold") > 0.5f,
+             pv(fx, "link_octave") > 0.5f);
+    check(pv(fx, "link_hold") > 0.5f && pv(fx, "link_octave") > 0.5f, what);
+    static const char *const H[3] = {"hold", "s2_hold", "s3_hold"}, *const O[3] = {"octave_shift", "s2_octave_shift", "s3_octave_shift"};
+    float mid = 0.5f;   /* (option 2 of 5: 0) */
+    for (int c = 0; c < 3; c++) { setkey(fx, H[c], 0); setkey(fx, O[c], mid); }
+    click_ctl(child, s, "hold");
+    int all = pv(fx, H[0]) > 0.5f && pv(fx, H[1]) > 0.5f && pv(fx, H[2]) > 0.5f;
+    click_ctl(child, s, "hold");
+    click_ctl(child, s, "link_hold");
+    click_ctl(child, s, "hold");
+    int one = pv(fx, H[0]) > 0.5f && pv(fx, H[1]) < 0.5f && pv(fx, H[2]) < 0.5f;
+    click_ctl(child, s, "hold");
+    click_ctl(child, s, "link_hold");
+    snprintf(what, sizeof what, "HOLD: LINK lit, all three Synths (%d); out, the Synth in focus alone (%d)", all, one);
+    check(all && one, what);
+    /* OCTAVE: lit, no Synth's own moves */
+    click_zone(child, s, ZONE_OCT_UP);
+    int kept = pv(fx, O[0]) == mid && pv(fx, O[1]) == mid && pv(fx, O[2]) == mid;
+    click_zone(child, s, ZONE_OCT_DOWN);
+    /* out: OCTAVE up moves Synth 1's alone, then another Synth in focus down moves its own */
+    click_ctl(child, s, "link_octave");
+    click_zone(child, s, ZONE_OCT_UP);
+    int s1 = fabsf(pv(fx, O[0]) - 0.75f) < 1e-3f && pv(fx, O[1]) == mid && pv(fx, O[2]) == mid;
+    fx->dispatcher(fx, 50, TEST_FOCUS, 2, NULL, 1);
+    click_zone(child, s, ZONE_OCT_DOWN);
+    int s2 = fabsf(pv(fx, O[0]) - 0.75f) < 1e-3f && fabsf(pv(fx, O[1]) - 0.25f) < 1e-3f && pv(fx, O[2]) == mid;
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    snprintf(what, sizeof what, "OCTAVE: LINK lit, the Synths' own stay (%d); out, Synth 1 up alone (%d), then Synth 2 down "
+             "alone (%d): %.2f %.2f %.2f", kept, s1, s2, pv(fx, O[0]), pv(fx, O[1]), pv(fx, O[2]));
+    check(kept && s1 && s2, what);
+    click_ctl(child, s, "link_octave");
+    for (int c = 0; c < 3; c++) { setkey(fx, H[c], 0); setkey(fx, O[c], mid); }
+    SendMessageA(child, WM_TIMER, 1, 0);
+}
 static void poly_link_test(AEffect *fx, HWND child, float s) {
     char what[600], k[32];
     static const char *const KEY[3] = {"hold", "unison", "uni_detune"};
@@ -2946,6 +2985,7 @@ static void poly_link_test(AEffect *fx, HWND child, float s) {
             setkey(fx, k, j == 2 ? 0.25f : 0);   /* (DETUNE 25%) */
         }
     setkey(fx, "link_poly", 0);
+    setkey(fx, "link_hold", 0);   /* (HOLD's own LINK, on by default) */
     click_ctl(child, s, "hold");
     int alone = pv(fx, "hold") > 0.5f && pv(fx, "s2_hold") < 0.5f && pv(fx, "s3_hold") < 0.5f;
     click_ctl(child, s, "hold");
@@ -3049,6 +3089,7 @@ static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     pad_link_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     hands_link_test(fx, child, s, bmp, w, h);   /* (2026-10-31) */
     hold_test(fx, child, s, bmp, w, h);   /* (2026-11-01) */
+    hold_octave_test(fx, child, s);   /* (2026-11-01) */
     poly_link_test(fx, child, s);   /* (2026-11-01) */
     arp_link_all_test(fx, child, s);   /* (2026-11-01) */
     tempo_test(fx, child, s, bmp, w, h);

@@ -298,6 +298,7 @@ enum {
     /* (2026-11-01) ANALOG AMOUNT (shared): every Synth's ANALOG page at once (0% exact, 100% as set, 200% twice) */
     P_ANALOG_AMT,
     P_LINK_POLY,     /* (2026-11-01) the POLYPHONY panel's LINK (the window's kind, as glide's): stored */
+    P_LINK_HOLD, P_LINK_OCTAVE,   /* (2026-11-01) the hand controls' HOLD and OCTAVE LINKs (the window's kind): stored */
     P_LINK_ARP_ALL,  /* (2026-11-01) the ARPEGGIATOR panel's LINK ALL (the window's kind): stored */
     P_COUNT
 };
@@ -467,6 +468,7 @@ static const char *const KEYS[P_COUNT] = {
     "link_glide",   /* (2026-10-31) */
     "analog_amt",   /* (2026-11-01) ANALOG AMOUNT */
     "link_poly",    /* (2026-11-01) */
+    "link_hold", "link_octave",   /* (2026-11-01) */
     "link_arp_all", /* (2026-11-01) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */

@@ -43,7 +43,7 @@ static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the ma
     "mout_on", "mout_send", "mout_ch", "sus_pedal",   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (no rule: never touched) */
     "link_mod", "link_bend", "link_ribbon", "link_glide",   /* (2026-10-31) the hands' LINKs (no rule: never touched) */
     "analog_amt",   /* (2026-11-01) ANALOG AMOUNT (rnd_kept: never touched; the page's new defaults are an_* / drift) */
-    "link_poly", "link_arp_all"};   /* (2026-11-01) the POLYPHONY and ARPEGGIATOR panels' LINKs (no rule: never touched) */
+    "link_hold", "link_octave", "link_poly", "link_arp_all"};   /* (2026-11-01) the POLYPHONY and ARPEGGIATOR panels' LINKs (no rule: never touched) */
 static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
                                       "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
 

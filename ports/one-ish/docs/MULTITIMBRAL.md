@@ -63,6 +63,10 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   reset; RATE's settings are in both, so either LINK lit links them), the sequencer's RATE (beside it), each LFO's RATE (in each LFO:
   its rate, sync and timing), LINK SENDS (the MASTER EFFECTS panel: SEND 1 and SEND 2) and the balls and particles
   (every `phys_*` setting; their pages), and (2026-11-01, owner's request; the desktop window, load_test
+  (2026-11-01, `load_test` `hold_octave_test`) HOLD moved to the hand controls, with a LINK of its own `link_hold` (on by
+  default: HOLD goes to all three Synths); OCTAVE's LINK `link_octave` (on by default): lit, the OCTAVE buttons move the
+  keyboard, every Synth together; out, they set the Synth in focus's own `octave_shift`, so each Synth can sit in its own.
+  Both are in LINK ALL. PANIC moved to SYNTH OUTPUT's bottom right corner.
   `poly_link_test`) the POLYPHONY panel's LINK `link_poly` (its third line, under VOICES: every setting the panel and
   its page show: VOICES, MONO PRIORITY, VOICE STEALING, HOLD, UNISON, UNISON VOICES, UNISON DETUNE, PITCH VARIANCE;
   default Off; appended at the very end of params.json so no VST index moved). **ALL 3** above LINK CUTOFF (between the filters) is the one relative LINK:

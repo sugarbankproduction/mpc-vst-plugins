@@ -318,6 +318,8 @@ int synth_of(int i);             /* the Synth an index belongs to (0-2; a shared
 int shared_param(int i);         /* one value for all three Synths (the master effects, tuning, settings) */
 int synth_param(int i, int c);   /* panel index i -> Synth c's own index (shared: i) */
 float ed_get(ed_t *e, int i);    /* the focused Synth's value of panel index i (normalized) */
+int octave_linked(ed_t *e);      /* (2026-11-01) OCTAVE's LINK lit: the keyboard's octave; out: the focused Synth's */
+int octave_shown(ed_t *e);       /* what the OCTAVE LEDs show, -2..2 */
 int setup_rows(int sub, int *keys);           /* the SETUP page's rows on sub-page sub: panel indexes (-1: none) */
 RECT setup_cell(int row, int col);           /* row 0..ROWS-1; col -1 the label, 0..2 a Synth, 3 a shared value */
 extern const char *const SETUP_LABEL[];
