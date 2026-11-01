@@ -417,6 +417,9 @@ static const char *zone_help(ed_t *e, int z) {
     case Z_RND_GENS: return "RANDOMISE GENERATORS: new settings for every generator of the Synth in focus, in musical ranges, "
                             "with one switched on (sometimes two), and a new KEY and SCALE, linked: all three Synths play "
                             "in it. The sound itself stays. One undo step (the console's UNDO). ALL: all three Synths.";
+    case Z_RND_KEYLOCK: return "LOCK KEY + SCALE (lit): RANDOMISE, MUTATE and RANDOMISE GENERATORS (here and on the "
+                               "GENERATIVE page) keep the KEY and SCALE you set; the rest is randomised as usual (the "
+                               "three Synths are still linked, to your key). The same button as the GENERATIVE page's.";
     case Z_RND_GENS_ALL: return "ALL (RANDOMISE GENERATORS): the generators of all three Synths, each its own, in one KEY "
                                 "and SCALE (linked); their sounds stay. One undo step (the console's UNDO).";
     case Z_RND_ALSO + 2: return "SEQUENCER (lit): RANDOMISE and MUTATE also set the sequencer's settings (on, division, length, "
@@ -1208,9 +1211,8 @@ static void draw_random(HDC dc, ed_t *e) {
     RECT g = rnd_rect(Z_RND_GENS), ga = rnd_rect(Z_RND_GENS_ALL);
     screen_button(dc, g, "RANDOMISE GENERATORS", 0, e->hover == Z_RND_GENS, font_cell);
     screen_button(dc, ga, "ALL", 0, e->hover == Z_RND_GENS_ALL, font_cell);
-    RECT gn = {ga.right + sc(12), g.top, L.row[0].right, g.bottom};
-    text(dc, &gn, "only the generators: the sound stays", font_cell, T_LCD_DIM,
-         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+    /* (2026-11-01) LOCK KEY + SCALE beside it (the GENERATIVE page shows the same setting) */
+    screen_button(dc, rnd_rect(Z_RND_KEYLOCK), "LOCK KEY + SCALE", e->rnd_keylock, e->hover == Z_RND_KEYLOCK, font_cell);
 }
 
 /* the screen's glass, bezel, stripes and rules: static */
@@ -1362,8 +1364,9 @@ static void draw_screen(HDC dc, ed_t *e) {
     char help[480];   /* help: what the control under the mouse does */
     help_line(e, help, sizeof help);
     /* (the step editor uses the top of it; the RANDOM page too, for RANDOMISE GENERATORS: 2026-11-01) */
-    int small = e->screen == SCR_SEQ || e->screen == SCR_RANDOM;
-    RECT hr = e->screen == SCR_SEQ ? seq_help_rect() : e->screen == SCR_RANDOM ? rnd_help_rect() : L.help;
+    int small = e->screen == SCR_SEQ || e->screen == SCR_RANDOM || e->screen == SCR_GEN;   /* (GEN: LOCK KEY + SCALE) */
+    RECT hr = e->screen == SCR_SEQ ? seq_help_rect()
+            : e->screen == SCR_RANDOM || e->screen == SCR_GEN ? rnd_help_rect() : L.help;
     gfx_line((float)hr.left, hr.top - 4.0f, (float)hr.right, hr.top - 4.0f, 1.0f, 0xFF27404E);
     text(dc, &hr, help, small ? font_cell : font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
     skin_glare(L.screen.left, L.screen.top, rw(&L.screen), rh(&L.screen));

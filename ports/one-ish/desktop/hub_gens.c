@@ -69,15 +69,17 @@ RECT gens_rect(int z) {   /* RANDOMISE | ALL and MUTATE | ALL one row; RESET | A
     case Z_GEN_RESET: return split(row_rect(1), 1, 0);
     case Z_GEN_RESET_ALL: return split(row_rect(1), 1, 1);
     case Z_SYNC_CUT: return L.sync_cut;
+    case Z_GEN_KEYLOCK: return keylock_rect();   /* (2026-11-01) under the bottom row, as on the RANDOM page */
     }
     return r;
 }
 int gens_hit(ed_t *e, POINT pt) {
-    (void)e;
     for (int z = Z_GEN_RND; z <= Z_GEN_RESET_ALL; z++) {
         RECT r = gens_rect(z);
         if (PtInRect(&r, pt)) return z;
     }
+    RECT k = keylock_rect();
+    if (e->screen == SCR_GEN && PtInRect(&k, pt)) return Z_GEN_KEYLOCK;
     return -1;
 }
 
@@ -122,6 +124,8 @@ int gens_press(ed_t *e, int z) {
         sync_cutoffs(e);
     } else if (z == Z_GEN_RND || z == Z_GEN_RND_ALL || z == Z_GEN_MUT || z == Z_GEN_MUT_ALL) {
         ed_rnd_gens(e, z == Z_GEN_MUT || z == Z_GEN_MUT_ALL, z == Z_GEN_RND_ALL || z == Z_GEN_MUT_ALL);
+    } else if (z == Z_GEN_KEYLOCK) {   /* (2026-11-01) LOCK KEY + SCALE (one setting with the RANDOM page's) */
+        e->rnd_keylock = !e->rnd_keylock;
     } else if (z == Z_GEN_RESET || z == Z_GEN_RESET_ALL) {   /* the first click asks, the second resets */
         unsigned now = (unsigned)GetTickCount();
         if (e->gens_arm == z && now - e->gens_arm_t < GENS_ARM_MS) {
@@ -154,6 +158,9 @@ void gens_draw(HDC dc, ed_t *e) {
     screen_button(dc, gens_rect(Z_GEN_RESET), a1 ? "SURE?" : "RESET", a1, e->hover == Z_GEN_RESET, font_cell);
     screen_button(dc, gens_rect(Z_GEN_RESET_ALL), a3 ? "SURE?" : "ALL", a3, e->hover == Z_GEN_RESET_ALL,
                   a3 ? font_tiny : font_cell);
+    if (e->screen == SCR_GEN)   /* (2026-11-01) */
+        screen_button(dc, gens_rect(Z_GEN_KEYLOCK), "LOCK KEY + SCALE", e->rnd_keylock, e->hover == Z_GEN_KEYLOCK,
+                      font_cell);
 }
 
 const char *gens_help(ed_t *e, int z) {
@@ -174,6 +181,9 @@ const char *gens_help(ed_t *e, int z) {
     case Z_GEN_MUT_ALL: return "ALL: MUTATE the generators of all three Synths. One undo step.";
     case Z_GEN_RESET: return "RESET: every generator of the Synth in focus back to its default settings, so all off. KEY, "
                              "SCALE and FOLLOW TEMPO stay. Click twice (it asks first). One undo step.";
+    case Z_GEN_KEYLOCK: return "LOCK KEY + SCALE (lit): RANDOM, MUTATE (here and on the RANDOM page) and RANDOMISE "
+                               "GENERATORS keep the KEY and SCALE you set; the rest is randomised as usual (the three "
+                               "Synths are still linked, to your key). The same button as the RANDOM page's. Off at first.";
     case Z_GEN_RESET_ALL: return "ALL: RESET the generators of all three Synths. Click twice (it asks first). One undo step.";
     case Z_SYNC_CUT: return "SYNC: once, both cutoffs (SVF and ladder) of all three Synths to this Synth's. One undo step. "
                             "(ALL 3 under it keeps them moving together from now on.)";

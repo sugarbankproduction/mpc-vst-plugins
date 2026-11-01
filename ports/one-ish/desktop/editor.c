@@ -321,12 +321,19 @@ RECT rnd_rect(int z) {
         int y = L.help.top - sc(4);
         if (z == Z_RND_GENS) SetRect(&r, xl, y, xl + half - sc(50), y + sc(18));
         else SetRect(&r, xl + half - sc(46), y, xl + half, y + sc(18));
+    } else if (z == Z_RND_KEYLOCK) {
+        r = keylock_rect();
     }
     return r;
 }
-RECT rnd_help_rect(void) {   /* (2026-11-01) the RANDOM page's help: under RANDOMISE GENERATORS */
+RECT rnd_help_rect(void) {   /* (2026-11-01) the RANDOM and GENERATIVE pages' help: under that row */
     RECT r = L.help;
     r.top += sc(20);
+    return r;
+}
+RECT keylock_rect(void) {   /* (2026-11-01) LOCK KEY + SCALE: that row's right half (the RANDOM and GENERATIVE pages) */
+    int half = (rw(&L.row[0]) - sc(8)) / 2, xr = L.row[0].left + half + sc(8), y = L.help.top - sc(4);
+    RECT r = {xr, y, xr + half, y + sc(18)};
     return r;
 }
 
@@ -678,6 +685,14 @@ static void rnd_apply(ed_t *e, const float *target) {
     if (link >= 0 && target[link] > 0.5f) edit_value(e, link, target[link]);
     e->no_link = 0;
 }
+/* (2026-11-01, owner: "a lock setting for the KEY and SCALE so I can mutate and randomise but it will not change the
+ * key and scale I've set") LOCK KEY + SCALE lit: what the randomiser made keeps cur's KEY and SCALE */
+static void keylock_keep(ed_t *e, const float *cur, float *out) {
+    if (!e->rnd_keylock) return;
+    int kr = rnd_key("key_root"), ks = rnd_key("key_scale");
+    if (kr < NPARAMS) out[kr] = cur[kr];
+    if (ks < NPARAMS) out[ks] = cur[ks];
+}
 /* a new sound for the focused Synth: RANDOMISE (0) or MUTATE (1) of cur; returns the archetype (RANDOMISE). SEQUENCER
  * lit: its notes (the hook), then its modulation lanes go to the engine here, the settings with the rest of out. */
 static int rnd_make(ed_t *e, const float *cur, float *out, int mutate) {
@@ -686,6 +701,7 @@ static int rnd_make(ed_t *e, const float *cur, float *out, int mutate) {
     if (seq) o.seq_notes = 1;   /* (the sequence always has notes after: kept, or new ones from the generator below) */
     int a = mutate ? (rnd_mutate_x(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed, &o), 0)
                    : rnd_generate_x(cur, out, e->rnd_locks, &e->rnd_seed, &o);
+    keylock_keep(e, cur, out);   /* (2026-11-01) LOCK KEY + SCALE (before the sequence's notes: they follow it) */
     for (int i = 0; i < NPARAMS && e->focus; i++)   /* Synth 2 or 3: the shared master effects stay as they are */
         if (shared_param(i)) out[i] = cur[i];
     if (seq) {   /* the notes (the sequence generator, in the key just picked), then the lanes: one load */
@@ -789,6 +805,7 @@ void ed_rnd_gens(ed_t *e, int mutate, int all) {
         for (int tries = 0, moved = 0; !moved && tries < 8; tries++) {
             if (mutate) rnd_mutate_x(cur, out, fmaxf(e->rnd_amount, 0.4f), sound, &e->rnd_seed, &o);   /* (a clear nudge) */
             else rnd_generate_x(cur, out, sound, &e->rnd_seed, &o);
+            keylock_keep(e, cur, out);   /* (2026-11-01) LOCK KEY + SCALE */
             for (int i = 0; i < NPARAMS; i++) {
                 if (shared_param(i)) out[i] = cur[i];
                 else if (out[i] != cur[i]) moved = 1;
@@ -892,7 +909,7 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (e->screen == SCR_RANDOM) {
         static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_GO_ALL, Z_RND_MUT_ALL, Z_RND_AMOUNT, Z_RND_WILD, Z_RND_UNDO,
                                 Z_RND_REDO, Z_RND_VOICE, Z_RND_VOICE + 1, Z_RND_VOICE + 2,
-                                Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2, Z_RND_GENS, Z_RND_GENS_ALL};
+                                Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2, Z_RND_GENS, Z_RND_GENS_ALL, Z_RND_KEYLOCK};
         for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
             RECT r = rnd_rect(Z[k]);
             if (Z[k] == Z_RND_AMOUNT || Z[k] == Z_RND_WILD) InflateRect(&r, sc(4), sc(4));   /* easier to catch */
@@ -1228,6 +1245,9 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         rnd_action(e, z == Z_RND_MUTATE || z == Z_RND_MUT_ALL, z == Z_RND_GO_ALL || z == Z_RND_MUT_ALL);
     } else if (z == Z_RND_GENS || z == Z_RND_GENS_ALL) {   /* (2026-11-01) the generators only: the sound stays */
         ed_rnd_gens(e, 0, z == Z_RND_GENS_ALL);
+    } else if (z == Z_RND_KEYLOCK) {   /* (2026-11-01) LOCK KEY + SCALE */
+        e->rnd_keylock = !e->rnd_keylock;
+        InvalidateRect(e->wnd, NULL, FALSE);
     } else if (z >= Z_RND_VOICE && z < Z_RND_VOICE + RV_COUNT) {   /* (2026-10-30) BOTH / MONO / POLY */
         e->rnd_voicing = z - Z_RND_VOICE;
         InvalidateRect(e->wnd, NULL, FALSE);

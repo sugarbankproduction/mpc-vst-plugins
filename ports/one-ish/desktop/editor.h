@@ -64,6 +64,7 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_RND_VOICE,           /* + 0..2: the RANDOM page's BOTH, MONO, POLY (RV_*) */
        Z_RND_GENS = 100056,   /* (2026-11-01) the RANDOM page's RANDOMISE GENERATORS (the Synth in focus) ... */
        Z_RND_GENS_ALL,        /* ... and its ALL (all three Synths): the generators only (ed_rnd_gens) */
+       Z_RND_KEYLOCK,         /* (2026-11-01) LOCK KEY + SCALE (the same as the GENERATIVE page's Z_GEN_KEYLOCK) */
        Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
@@ -81,6 +82,7 @@ enum { Z_HUB_ON = 670000,        /* + row: a generator's ON (HUB[row]) */
         * its ALL half: all three Synths); SYNC over the filters' ALL 3 (both cutoffs of every Synth to the focus's) */
        Z_GEN_RND = 670250, Z_GEN_RND_ALL, Z_GEN_MUT, Z_GEN_MUT_ALL, Z_GEN_RESET, Z_GEN_RESET_ALL, Z_SYNC_CUT,
        Z_HUB_BPM_DOWN, Z_HUB_BPM_UP,   /* (2026-10-30) the hub page's GEN TEMPO < and > (the Synth's own BPM) */
+       Z_GEN_KEYLOCK,                  /* (2026-11-01) LOCK KEY + SCALE (one setting with the RANDOM page's) */
        Z_HUB_END = 670300 };
 #define TEST_HUB 0x4F314842   /* VENDOR_SPECIFIC index: value = HT_ op (hub.c) */
 enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 1000) */
@@ -95,7 +97,8 @@ enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 100
        HT_GEN_ARMED,          /* (2026-10-30) the RESET half waiting for its second click (a Z_GEN_RESET*), else 0 */
        HT_RND_VOICING,        /* (2026-10-30) the RANDOM page's MONO / POLY / BOTH (RV_*) */
        HT_PEEK,               /* (2026-10-30) an engine readout: ptr in, its key; out, its text (1 KB) */
-       HT_GEN_LIT };          /* (2026-11-01) 1: the console's GEN ON is lit (a generator on in any Synth) */
+       HT_GEN_LIT,            /* (2026-11-01) 1: the console's GEN ON is lit (a generator on in any Synth) */
+       HT_KEYLOCK };          /* (2026-11-01) 1: LOCK KEY + SCALE is lit */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
@@ -287,6 +290,7 @@ typedef struct {
     int together;                              /* TOGETHER lit: SYNTH buttons add / remove Synths (never saved) */
     nav_ui_t nav;                              /* (2026-10-30) BACK / FWD, the overview's Synth (nav.c) */
     int rnd_voicing;                           /* (2026-10-30) the RANDOM page's BOTH / MONO / POLY (RV_*) */
+    int rnd_keylock;                           /* (2026-11-01) LOCK KEY + SCALE: the randomisers keep them */
     int no_link;                               /* (2026-10-30) the randomiser's edits: no LINK to the other Synths */
     int gens_arm;                              /* (2026-10-30) RESET (hub_gens.c): the half clicked once (0: none) */
     unsigned gens_arm_t;                       /* ... and when (GetTickCount): a second click within 4 s resets */
@@ -321,6 +325,7 @@ RECT matrix_cell(int r, int col);             /* the matrix on the screen: row r
 RECT rnd_rect(int z);                         /* the randomiser page: where control z (Z_RND_*) sits */
 RECT rnd_col(int col);                        /* the randomiser page: its three columns of buttons (0-2) */
 RECT rnd_help_rect(void);                     /* the randomiser page: its help, under RANDOMISE GENERATORS */
+RECT keylock_rect(void);                      /* (2026-11-01) LOCK KEY + SCALE, on the RANDOM and GENERATIVE pages */
 RECT focus_part(int c, int part);             /* SYNTH c's button: its cap (0), M (1) and S (2) halves */
 int synth_muted(ed_t *e, int c);              /* SYNTH c off (its ON) / soloed (never saved) */
 int synth_soloed(ed_t *e, int c);

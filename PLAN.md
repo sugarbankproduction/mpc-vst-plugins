@@ -1068,6 +1068,18 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        (`editor.c gens_link_keys`). It is the window's, after the randomiser: `src/randomize.h` is unchanged, so the
        randomiser golden (no GENERATIVE tick in its calls anyway) stands. load_test: both LINKs lit and the three
        Synths' KEY / SCALE alike after each.
+     - LOCK KEY + SCALE ("a lock setting for the KEY and SCALE so I can mutate and randomise but it will not change
+       the key and scale I've set ... the same for the RANDOM front page"): one button on both pages, the same setting
+       (under the GENERATIVE page's bottom row, and beside RANDOMISE GENERATORS on the RANDOM page; each page's help
+       line moved under it in the smaller font). Lit: RANDOMISE and MUTATE (with the GENERATIVE tick), RANDOMISE
+       GENERATORS | ALL and the GENERATIVE page's RANDOM / MUTATE | ALL keep every Synth's KEY and SCALE; everything
+       else is randomised as usual, and the KEY / SCALE LINK above still lights, to the key you set (the Synth in
+       focus's). A window setting like AMOUNT, WILD and the ticks (`ed_t.rnd_keylock`): off each time the window
+       opens, never saved with the sound (it is how you randomise, not part of a sound). Not a randomiser section lock
+       (`rnd_locks`): KEY and SCALE are in the GENERATIVE section, which the generator-only randomisers must open;
+       the window puts them back after the randomiser (`editor.c keylock_keep`). load_test: lit, four RANDOMISE
+       GENERATORS / ALL, RANDOMISE and MUTATE with GENERATIVE, and the GENERATIVE page's RANDOM three times keep D
+       Dorian in all three Synths; off, RANDOMISE GENERATORS picks another key again.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

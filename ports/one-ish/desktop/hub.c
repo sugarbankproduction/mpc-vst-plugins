@@ -468,6 +468,7 @@ intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case HT_TEMPO: settings_tempo(&bpm); return (intptr_t)llround(bpm * 1000.0);
     case HT_RESTORE: return hub_restore_n(e);
     case HT_GEN_LIT: return any_on(e);   /* (2026-11-01) */
+    case HT_KEYLOCK: return e->rnd_keylock;   /* (2026-11-01) */
     case HT_LINKED: return link_lit(e, (int)lroundf(opt));
     case HT_VOL_MASTER: return e->vol_master;
     case HT_SUB: return e->sub;

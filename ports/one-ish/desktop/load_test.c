@@ -278,7 +278,8 @@ static void ribbon_test(AEffect *fx, HWND child, float s) {
 /* (2026-10-30) RP_ALL: RANDOMISE's ALL half (it was the ALL 3 SYNTHS toggle); RP_MUT_ALL: MUTATE's; RP_VOICE k: BOTH,
  * MONO, POLY where the toggle was */
 enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK, RP_ALSO, RP_WILD, RP_MUT_ALL, RP_VOICE,
-       RP_GENS, RP_GENS_ALL };   /* (2026-11-01) RANDOMISE GENERATORS | ALL, under the columns */
+       RP_GENS, RP_GENS_ALL,     /* (2026-11-01) RANDOMISE GENERATORS | ALL, under the columns */
+       RP_KEYLOCK };             /* (2026-11-01) LOCK KEY + SCALE, beside them */
 static void rnd_point(int what, int k, float *x, float *y) {   /* k: a lock's section, a tick (0-2), WILD in % */
     float x0 = ZONE_SCREEN[0] + 8.0f, x1 = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f, top = ZONE_SCREEN[1] + 6.0f + 36 + 20 + 18;
     float half = (x1 - x0 - 8) / 2, xr = x0 + half + 8, cw = (x1 - x0 - 16) / 3, q = (cw - 6) / 2;
@@ -293,6 +294,7 @@ static void rnd_point(int what, int k, float *x, float *y) {   /* k: a lock's se
     case RP_ALL: *x = x0 + half - 23; *y = top + 22; break;
     case RP_GENS: *x = x0 + (half - 50) / 2; *y = top + 22 * 8 + 8 + 5; break;   /* (the help's top, less 4, 18 tall) */
     case RP_GENS_ALL: *x = x0 + half - 23; *y = top + 22 * 8 + 8 + 5; break;
+    case RP_KEYLOCK: *x = xr + half / 2; *y = top + 22 * 8 + 8 + 5; break;
     case RP_ALSO: *x = col2 + cw / 2; *y = top + 22 * (4 + k) + 11; break;
     case RP_WILD: *x = x0 + 54 + (half - 94) * k / 100.0f; *y = top + 22 * 2 + 11; break;
     default: *x = (k < 4 ? x0 : col1) + cw / 2; *y = top + 22 * (4 + k % 4) + 11; break;
@@ -611,6 +613,63 @@ static int rg_gen(int i) {   /* param i in the GENERATIVE section (its Synth 1 k
     const char *k = PARAMS[i].key;
     return rnd_section_of(rg_synth(i) ? rnd_key(k + 3) : i) == RS_GEN;
 }
+/* (2026-11-01) LOCK KEY + SCALE: lit (one setting, the RANDOM page's button and the GENERATIVE page's), RANDOMISE with
+ * the GENERATIVE tick, MUTATE, RANDOMISE GENERATORS | ALL and the GENERATIVE page's RANDOM leave every Synth's KEY and
+ * SCALE as set; off, RANDOMISE GENERATORS picks new ones (one of a few clicks at least) */
+enum { HT_KEYLOCK_OP = 14 };   /* (editor.h HT_KEYLOCK: after HT_GEN_LIT) */
+static void rg_keys(AEffect *fx, float *k) {   /* the three Synths' KEY and SCALE */
+    static const char *const K[6] = {"key_root", "key_scale", "s2_key_root", "s2_key_scale", "s3_key_root", "s3_key_scale"};
+    for (int j = 0; j < 6; j++) k[j] = fx->getParameter(fx, rnd_key(K[j]));
+}
+static void rg_keylock_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[300];
+    float k0[6], k1[6];
+    int lk0 = (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0);
+    for (int c = 0; c < 3; c++) {   /* all three in D Dorian */
+        char a[24], b[24];
+        snprintf(a, sizeof a, c ? "s%d_key_root" : "key_root", c + 1);
+        snprintf(b, sizeof b, c ? "s%d_key_scale" : "key_scale", c + 1);
+        fx->setParameter(fx, rnd_key(a), 2.0f / 11);
+        fx->setParameter(fx, rnd_key(b), 2.0f / 13);
+    }
+    rg_keys(fx, k0);
+    rnd_click(child, s, RP_KEYLOCK, 0);
+    int lk1 = (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0);
+    if (bmp) {
+        float x, y;
+        rnd_point(RP_KEYLOCK, 0, &x, &y);
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
+        shot(child, w, h, bmp, "_random_keylock");
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));
+    }
+    int kept = 1;
+    for (int t = 0; t < 4; t++) {
+        rnd_click(child, s, t & 1 ? RP_GENS_ALL : RP_GENS, 0);
+        rg_keys(fx, k1);
+        for (int j = 0; j < 6; j++) kept &= k1[j] == k0[j];
+    }
+    rnd_click(child, s, RP_ALSO, 1);   /* RANDOMISE and MUTATE with the GENERATIVE tick */
+    rnd_click(child, s, RP_GO, 0);
+    rg_keys(fx, k1);
+    for (int j = 0; j < 6; j++) kept &= k1[j] == k0[j];
+    rnd_click(child, s, RP_MUTATE, 0);
+    rg_keys(fx, k1);
+    for (int j = 0; j < 6; j++) kept &= k1[j] == k0[j];
+    rnd_click(child, s, RP_ALSO, 1);
+    snprintf(what, sizeof what, "LOCK KEY + SCALE: off at first (%d), lit by a click (%d); RANDOMISE GENERATORS / ALL, "
+             "RANDOMISE and MUTATE with GENERATIVE keep D Dorian in all three Synths (%d)", lk0, lk1, kept);
+    check(lk0 == 0 && lk1 == 1 && kept, what);
+    rnd_click(child, s, RP_KEYLOCK, 0);   /* off: new KEY / SCALE again */
+    int moved = 0;
+    for (int t = 0; t < 6 && !moved; t++) {
+        rnd_click(child, s, RP_GENS, 0);
+        rg_keys(fx, k1);
+        for (int j = 0; j < 6; j++) moved |= k1[j] != k0[j];
+    }
+    snprintf(what, sizeof what, "LOCK KEY + SCALE off (%d): RANDOMISE GENERATORS picks another KEY or SCALE again (%d)",
+             (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0), moved);
+    check(fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0) == 0 && moved, what);
+}
 static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     static float before[NPARAMS], after[NPARAMS], all[NPARAMS], undone[NPARAMS];
     char what[300], lb[1024];
@@ -672,6 +731,7 @@ static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, 
     snprintf(what, sizeof what, "... and again: RANDOMISE GENERATORS back too (%d params differ from before)",
              count_diff(undone, before));
     check(count_diff(undone, before) == 0, what);
+    rg_keylock_test(fx, child, s, bmp, w, h);   /* (2026-11-01) */
 }
 
 /* ---- user patches (desktop/patches.c), in a temporary folder (ONEISH_PATCH_DIR) ---- */
@@ -3142,6 +3202,24 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
                  "in Synth 1's KEY and SCALE (%d), in the same undo step", getkey(fx, "link_key"), getkey(fx, "link_scale"),
                  same);
         check(getkey(fx, "link_key") > 0.5f && getkey(fx, "link_scale") > 0.5f && same, what);
+    }
+    {   /* (2026-11-01) the page's LOCK KEY + SCALE (the RANDOM page's setting): lit, RANDOM keeps KEY and SCALE */
+        float kx, ky, kr0 = getkey(fx, "key_root"), ks0 = getkey(fx, "key_scale"), gx, gy;
+        rnd_point(RP_KEYLOCK, 0, &kx, &ky);   /* (the same place as on the RANDOM page) */
+        click(child, s, kx, ky);
+        int lit = (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0);
+        if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_keylock"); }
+        gens_xy(0, 0, &gx, &gy);
+        int kept = 1;
+        for (int t = 0; t < 3; t++) {
+            click(child, s, gx, gy);
+            kept &= getkey(fx, "key_root") == kr0 && getkey(fx, "key_scale") == ks0;
+        }
+        click(child, s, kx, ky);
+        snprintf(what, sizeof what, "GENERATIVE page LOCK KEY + SCALE: lit (%d), RANDOM three times keeps KEY and SCALE "
+                 "(%d), off again (%d)", lit, kept, (int)fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0));
+        check(lit == 1 && kept && fx->dispatcher(fx, 50, TEST_HUB, HT_KEYLOCK_OP, NULL, 0) == 0, what);
+        snapshot(fx, b);   /* (what follows compares with the sound now) */
     }
     gens_xy(0, 1, &x, &y);   /* its ALL */
     click(child, s, x, y);
