@@ -25,7 +25,8 @@ PREFIXES = ("s2_", "s3_")
 GLOBAL_PREFIX = ("dly_", "rev_", "link_")   # the master effect slots' controls; the window's LINKs (2026-10-30)
 GLOBAL = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune", "fine_tune", "midi_ch",
           "learn_mode", "master_level", "seq_all", "gen_follow_tempo",
-          "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share"}   # (2026-10-30) SHARE: Synth 1's LFO n in all 3
+          "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   # (2026-10-30) SHARE: Synth 1's LFO n in all 3
+          "analog_amt"}   # (2026-11-01) ANALOG AMOUNT: scales every Synth's ANALOG page at once
 SYNTH_DEFAULTS = {"s2_": {"syn_on": "On", "syn_ch": "2", "mout_ch": "2", "o1_oct": "16'", "volume": 45},
                   "s3_": {"syn_on": "On", "syn_ch": "3", "mout_ch": "3", "o1_oct": "4'", "o1_wave": "Tri", "volume": 35}}
 # (2026-10-30) MIDI OUT's channel: Synth n sends on channel n (mout_ch, new: no old default to keep)
@@ -37,6 +38,9 @@ OLD_S1 = {"mod%d_%s" % (r, f): v for r in (13, 14, 15, 16) for f, v in (("src", 
 # (2026-10-30) the generators' KEYS and FOLLOW KEYS: Euclid / Turing played from the held keys, in the Synth's KEY
 # (src/synths.h state_absent reads an old state's missing keys the same way, whatever its dv=)
 OLD_S1.update({"gen_keys": "Held Keys", "gen_follow_keys": "Off"})
+# (2026-11-01) the ANALOG page's spreads and drift, 0 (exact) until that day; since then a gentle analog feel by default
+# (src/synths.h LEGACY_AN: a state saved before, dv < 2, reads them as 0 too)
+OLD_S1.update({k: 0 for k in ("drift", "an_cut", "an_env", "an_lvl", "an_tune", "an_res")})
 OLD_SYNTH = {"s2_": {"syn_on": "Off", "syn_ch": "2", "mout_ch": "2"}, "s3_": {"syn_on": "Off", "syn_ch": "3", "mout_ch": "3"}}
 
 

@@ -51,7 +51,8 @@ static int engine_global(int k) {
     static const char *const SHARED[] = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune",
                                          "fine_tune", "midi_ch", "learn_mode", "master_level", "seq_all",
                                          "gen_follow_tempo",   /* (2026-10-30: the generators follow the tempo) */
-                                         "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share"};   /* (2026-10-30) */
+                                         "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   /* (2026-10-30) */
+                                         "analog_amt"};   /* (2026-11-01) ANALOG AMOUNT */
     const char *key = KEYS[k];
     if (!strncmp(key, "dly_", 4) || !strncmp(key, "rev_", 4)) return 1;   /* the master effect slots' controls */
     if (!strncmp(key, "link_", 5)) return 1;   /* the window's LINKs across the Synths (2026-10-30) */
@@ -321,8 +322,17 @@ static void set_param(void *inst, const char *key, const char *val) {
  * one without it was saved with the defaults before 2026-10-30, and only non-default values were written, so what it
  * leaves out is read as those old defaults: Synths 2 and 3 off with Synth 1's sound (but their channel), and no
  * aftertouch / X/Y pad / ribbon rows in matrix rows 13-16 (presets/make_synths.py OLD_S1 keeps the same list). Old
- * projects, patches and presets so play sample for sample as before (test/golden_check.c). */
-#define STATE_DV 1
+ * projects, patches and presets so play sample for sample as before (test/golden_check.c).
+ * (2026-11-01) "dv=2": the ANALOG page has a gentle analog feel by default (drift and the voice spreads, LEGACY_AN);
+ * a state with dv=1 or none leaves them out when they were 0, its default then, so it reads them as 0 (legacy_an). */
+#define STATE_DV 2
+static const char *const LEGACY_AN[] = {"drift", "an_cut", "an_env", "an_lvl", "an_tune", "an_res"};
+static void legacy_an(one_t *s) {   /* a Synth's ANALOG page as its defaults were before 2026-11-01: all 0 */
+    for (unsigned i = 0; i < sizeof LEGACY_AN / sizeof LEGACY_AN[0]; i++) {
+        int k = slot(LEGACY_AN[i]);
+        if (k >= 0) s->val[k] = 0.0f;
+    }
+}
 static const struct { const char *key; float val; } LEGACY_S1[] = {
     {"mod13_src", 0}, {"mod13_dst", 0}, {"mod13_amt", 0}, {"mod14_src", 0}, {"mod14_dst", 0}, {"mod14_amt", 0},
     {"mod15_src", 0}, {"mod15_dst", 0}, {"mod15_amt", 0}, {"mod16_src", 0}, {"mod16_dst", 0}, {"mod16_amt", 0}};
@@ -515,6 +525,7 @@ static void set_state(inst_t *in, const char *str) {
         syn_name_set(in->syn[c], "");   /* nor a name (2026-10-30) */
         in->syn[c]->ctrl_seen = 0;
     }
+    if (state_dv(str) < 2) for (int c = 0; c < NSYN; c++) legacy_an(in->syn[c]);   /* (before 2026-11-01: ANALOG 0) */
     if (state_dv(str) < 1) legacy_defaults(in);   /* (saved before 2026-10-30: what it leaves out, as then) */
     state_walk(in, str, state_value, 0);
     for (int c = 0; c < NSYN; c++) {
@@ -561,6 +572,7 @@ static void synth_load(inst_t *in, int c, const char *str) {
         s->val[k] = load_skip(k) ? keep[k] : in->syn[0]->def[k];   /* this Synth's own Init (2026-10-30) */
     state_absent_load(s);   /* (2026-10-30) a key the sound leaves out: what it meant when it was saved */
     if (state_dv(str) < 1) legacy_s1(s);   /* (a sound saved before 2026-10-30: no aftertouch / pad / ribbon rows) */
+    if (state_dv(str) < 2) legacy_an(s);   /* (before 2026-11-01: its ANALOG page at 0) */
     sq_clear(&s->sq.q);
     tun_clear(&s->tun);
     syn_name_set(s, "");   /* (2026-10-30: the sound's own name, if it has one) */

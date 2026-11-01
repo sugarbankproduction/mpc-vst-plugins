@@ -139,7 +139,7 @@ follows the focus, would have let automation reach only the focused Synth). 1,52
   `GEN_VST_RELOCK=1`, `gen_vst --params-h`) after adding a param.
 - Shared, one copy (Synth 1's key, mirrored into the others): the master effects (`dly_*`, `rev_*`, `mfx_on`,
   `mfx_series`, `mfx_width`, `mfx_buss`), `clock_swing`, `master_tune`, `fine_tune`, `midi_ch`, `learn_mode`,
-  `master_level`, `seq_all`, `gen_follow_tempo` (2026-10-30), `lfo1_share` .. `lfo4_share` (2026-10-30) (`engine_global()` in `src/synths.h`; `is_global()` in
+  `master_level`, `seq_all`, `gen_follow_tempo` (2026-10-30), `lfo1_share` .. `lfo4_share` (2026-10-30), `analog_amt` (2026-11-01) (`engine_global()` in `src/synths.h`; `is_global()` in
   `make_synths.py` keeps the same list).
 - Per Synth, beyond the sound: `syn_on` (all three On since 2026-10-30; before, Synths 2 and 3 started Off), `syn_ch` (1, 2, 3), `key_lo` / `key_hi` (0-127,
   shown as note names), `syn_out` (2026-10-30: Main, Own Pair, Main + Own; the desktop's outputs), and its own `transpose`, `octave_shift`, `voices`, `volume`, `pan`, `mfx_send1/2`, the synth
@@ -209,6 +209,10 @@ way.
   (`test/golden_check.c`); an old state with no `s2_syn_on` loads with Synth 2 off, a new one round trips with all
   three on (`test/defaults_check.c`). LOAD INTO SYNTH loads a sound against Synth 1's defaults (not the target's own
   Init); SAVE SYNTH 2 or 3 writes that Synth's own Init values (16', its level) into the sound.
+- (2026-11-01, offline) `dv=2`: the ANALOG page's new defaults (a gentle analog feel: `drift`, `an_cut`, `an_env`,
+  `an_lvl`, `an_tune`, `an_res`). A state, sound or patch with `dv=1` or none reads what it leaves out of them as 0,
+  their default until then (`legacy_an()` in `src/synths.h`, `OLD_S1` in `make_synths.py`), so it plays as before.
+  ANALOG AMOUNT (`analog_amt`) is shared (one value, Synth 1's key); LOAD INTO SYNTH leaves it as it is.
 
 - The engine state stays `key=value;...` (`v=1`, or the compact `v=2` when it would not fit): Synth 1's keys as
   before, then `s2_...` and `s3_...` values that differ from their defaults, then `seq=`, `s2_seq=`, `s3_seq=` for

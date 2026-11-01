@@ -776,6 +776,7 @@ link_mod
 link_bend
 link_ribbon
 link_glide
+analog_amt
 s2_o1_wave
 s2_amp_a
 s2_amp_d

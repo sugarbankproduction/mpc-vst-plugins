@@ -117,7 +117,8 @@ static uint64_t from_program(int idx) {   /* as the wrapper's set_program: each 
     if (!strcmp(PRESETS[idx].name, "Init")) {   /* (2026-10-30: Init is all three Synths now, on purpose; its Synth 1 must */
         E->set_param(e, "s2_syn_on", "0");      /* still be the old Init: the pad / ribbon / aftertouch rows at rest */
         E->set_param(e, "s3_syn_on", "0");      /* change nothing) */
-    }
+        E->set_param(e, "analog_amt", "0");     /* (2026-11-01: and its ANALOG page's new defaults, on purpose: */
+    }                                           /* ANALOG AMOUNT 0 must give exactly the old all-0 page) */
     uint64_t h = phrase(e);
     E->destroy(e);
     return h;

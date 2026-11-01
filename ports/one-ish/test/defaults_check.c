@@ -94,12 +94,12 @@ static void defaults_instance(void) {
              ok ? "yes" : "NO", ok2 ? "yes" : "NO");
     check(ok && ok2, what);
     E_REAL->destroy(e);
-    /* new states round trip: a new instance's state says dv=1, leaves the new defaults out, and restores them */
+    /* new states round trip: a new instance's state says dv=2 (dv=1 until 2026-11-01), leaves the new defaults out, and restores them */
     e = fresh();
     E_REAL->get_param(e, "state", st, sizeof st);
     void *b = E->create(NULL);
     E_REAL->set_param(b, "state", st);
-    ok = !strncmp(st, "v=1;dv=1", 8) && !strstr(st, "s2_syn_on") && get(b, "s2_syn_on") == 1 && get(b, "s3_syn_on") == 1
+    ok = !strncmp(st, "v=1;dv=2", 8) && !strstr(st, "s2_syn_on") && get(b, "s2_syn_on") == 1 && get(b, "s3_syn_on") == 1
          && get(b, "mod15_src") == 24 && get(b, "s2_o1_oct") == 1;
     set(e, "s2_syn_on", 0);
     E_REAL->get_param(e, "state", st, sizeof st);
@@ -168,6 +168,7 @@ static void defaults_hands(void) {
     /* in a new instance (Synth 1 alone, so one sound): at rest the rows do nothing; moved, they do */
     void *a = fresh(), *b = E->create(NULL);
     set(a, "s2_syn_on", 0); set(a, "s3_syn_on", 0);
+    set(a, "analog_amt", 0);   /* (2026-11-01: b has the old ANALOG page, all 0; a's new one at AMOUNT 0 is exactly that) */
     note(a, 1, 60, 100);
     note(b, 1, 60, 100);
     int rest = hash_out(a, 200) == hash_out(b, 200);
