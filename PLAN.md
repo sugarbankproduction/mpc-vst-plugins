@@ -202,6 +202,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      more is snapped to a musical interval (also after MUTATE and WILD's own pass); from WILD 50% any semitone may come.
      A hard-synced oscillator is left as it is (its offset is a timbre). Golden made again; checked offline: at WILD 0 no
      non-musical interval in 160 calls.
+     OPEN (found offline 2026-11-01): a very narrow pulse (PW 10%) through a driven, low ladder cutoff leaves a large DC
+     offset at the output (WILD 100% sound 36 in offline_check: mean -0.61, rms 0.61, only 0.09 without the DC), which
+     fills the limiter. No DC blocker on the output yet; adding one changes every old sound's samples slightly (the
+     golden states), so it waits for the owner's decision. Until then offline_check's WILD 100% check fails on it.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27
