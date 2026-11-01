@@ -1000,8 +1000,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
   (`ports/one-ish/web/`, docs `ports/one-ish/docs/WEB.md`), played by a page with the factory presets, an on-screen
-  and computer keyboard, MIDI, wheels and volume. Private Vercel preview (project `moo-won`; the public address was
-  removed, making it public is the owner's call). Next: the full panel in the browser.
+  and computer keyboard, MIDI, wheels and volume. Public at https://moo-won.vercel.app (Vercel project `moo-won`,
+  owner's OK 2026-11-01). Next: the full panel in the browser.
   Parameters may be renamed or reordered freely until the first release (`GEN_VST_RELOCK=1`); presets are regenerated.
 - **Then, the MPC port (in order):**
   1. MPC builds for armv7 + aarch64 and `tools/test_port.sh` x86 + aarch64, from a copy outside Dropbox (CLAUDE.md).
