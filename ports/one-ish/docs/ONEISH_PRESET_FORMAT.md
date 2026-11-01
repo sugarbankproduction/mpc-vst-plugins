@@ -220,6 +220,11 @@ filter), `lad_kbd` (key tracking) and the filters' LFO amounts. See Appendix A: 
   existed. The same goes for `gen_follow_keys` (missing = Off). `key_root` / `key_scale` set the key they play in:
   a new sound starts in C major (since 2026-11-01), but a file that leaves `key_scale` out is read as `Minor`, the
   default before that day, so **write `key_scale` too** (e.g. `key_scale=Major`).
+  (2026-11-02) A generator can have its own: `gen_own_key` / `gen_own_scale` (Euclid and Turing), `phys_ball_own_*`,
+  `phys_part_own_*`, `rain_own_*`, `mkv_own_*`, `life_own_*`, `orb_own_*`, `pend_own_*`. `Follow` (the default, and what a
+  file that leaves them out gets) plays in `key_root` / `key_scale`; anything else plays in that, whatever the main ones
+  say. `gen_follow_keys` still takes the root from a key played, over an own key too; the own scale stays. A
+  `gen_scale` other than `Held Notes` still wins over the scale for Turing. Moo Won's RANDOMISE and MUTATE never touch them.
 - **Expression**: the matrix sources `Mod Wheel`, `Pitch Wheel`, `Aftertouch`, `Velocity`, `Ribbon`, `Pad X (CC 2)`,
   `Pad Y (CC 3)`, `Pad Gate (CC 18)`, `Exp 1 (CC 11)`, `Exp 2 (CC 4)`, `Sustain`. A good preset gives the mod wheel,
   aftertouch and the X/Y pad something musical to do, and says so in `notes=`.
@@ -1330,6 +1335,22 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 ke
 | `lfo2_share` | Share LFO 2 (3 Synths) | option: `Off` / `On` | `Off` | shared |
 | `lfo3_share` | Share LFO 3 (3 Synths) | option: `Off` / `On` | `Off` | shared |
 | `lfo4_share` | Share LFO 4 (3 Synths) | option: `Off` / `On` | `Off` | shared |
+| `gen_own_key` | Euclid/Turing Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `gen_own_scale` | Euclid/Turing Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `phys_ball_own_key` | Balls Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `phys_ball_own_scale` | Balls Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `phys_part_own_key` | Particles Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `phys_part_own_scale` | Particles Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `rain_own_key` | Rain Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `rain_own_scale` | Rain Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `mkv_own_key` | Markov Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `mkv_own_scale` | Markov Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `life_own_key` | Life Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `life_own_scale` | Life Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `orb_own_key` | Orbits Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `orb_own_scale` | Orbits Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `pend_own_key` | Pendulums Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `pend_own_scale` | Pendulums Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
 
 ## Appendix B: the long option lists
 

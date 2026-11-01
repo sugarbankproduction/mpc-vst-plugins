@@ -46,6 +46,11 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
 - **KEY and SCALE per Synth** (2026-10-29): the step editor's GEN view (`docs/SEQUENCER.md`) generates a sequence for
   the Synth in focus in its own key and scale, so the Synths can play in different keys or modes; the other Synths'
   sequences stay as they are.
+- **A generator's own KEY and SCALE** (2026-11-02, offline and the desktop window, not on a device; `*_own_key`,
+  `*_own_scale`, per Synth, so Synth 2's Rain and Synth 1's Rain each have theirs). Each generator's page has Key and Scale
+  rows, Follow by default: Follow plays in that Synth's main KEY and SCALE (the row along the screen's bottom), so LINK KEY
+  and LINK SCALE reach it through them; a custom pick is not linked, except the balls' and particles' under their page's
+  Link (3 Synths), which keeps every `phys_*` setting alike.
 - **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample (also the PLAY
   ALL button on the SEQUENCER module's title strip, 2026-10-30).
 - **Sequencer OUTPUT** (2026-10-30, offline and the desktop window; `seq_output`, `docs/SEQUENCER.md`): a Synth's
