@@ -1127,6 +1127,31 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      runs): 8.9-9.1 us a voice at 0%, 9.0-9.6 at 100%, 9.0-10.0 at 200%: about +1-6% at the default, too noisy here to
      pin down; on-device `tools/bench.sh` still to do at the MPC milestone. Screenshot: `build/png/analog_amount.png` (load_test's
      `_analog_amount`).
+  46. (2026-11-01) HOLD for the X/Y pad and the ribbon (owner: "when I let go it doesn't hold its modulation position").
+     Done 2026-11-01 (the desktop window; `desktop/editor.c` hold_toggle, pad_let_go, ribbon_let_go; load_test
+     `hold_test`; docs/MULTITIMBRAL.md "HOLD"). What reset on release before: the pad sent channel pressure 0 and Pad
+     Gate off (X and Y already stayed, the sound's X/Y HOLD being On by default), so the Aftertouch rows of 230 of the 296
+     factory presets (the pad's Y; the Pad X and Y rows stayed) fell back; the ribbon sent its touch off and SPRING took it back to its origin. A plain click on
+     HOLD (under the pad's left edge; beside the ribbon's LINK) lights it: letting go then sends no release, so the
+     position, the gate, the pressure and the ribbon's place all stay; a new drag moves on from there; HOLD clicked
+     again lets go. Window-side only (never saved, nothing in the engine or audio path), as SYNTH OUTPUT's MASTER. Layout:
+     the ribbon's plate 60 px wider, the ribbon starts at 508. Left: the MPC page.
+  47. (2026-11-01) LINK on the POLYPHONY panel (owner: "link all the settings on this panel to all three synths").
+     Done 2026-11-01 (the desktop window; `link_poly`, shared, default Off; gen_layout.py LINK_GROUPS; load_test
+     `poly_link_test`). On the panel's third line under VOICES, a plain click: lit, VOICES, MONO PRIORITY, VOICE
+     STEALING, HOLD, UNISON, UNISON VOICES, UNISON DETUNE and PITCH VARIANCE set from the panel or its page go to all
+     three Synths (one undo step, the host told), as glide's LINK; lighting it copies nothing by itself. Saved with the
+     sound, never randomised (rnd_golden NEWER). It is the last param of params.json (after the Synth 3 copies) so no
+     VST index moved (params.lock); `presets/make_synths.py` now keeps every param where it is when run again (new
+     copies still go last). Factory presets made again (`link_poly` Off, nothing else changed).
+  48. (2026-11-01) The ARPEGGIATOR's LINKs (owner: "put that just under the rate area, and have another link button
+     called LINK ALL"). Done 2026-11-01 (the desktop window; `link_arp_all`, shared, default Off; gen_layout.py
+     LINK_GROUPS; `desktop/hub.c` link_lit; load_test `arp_link_all_test`). The rate LINK (`link_arp`) moved from the
+     third line to just under RATE; LINK ALL on the third line, a plain click: lit, every arpeggiator setting set
+     from the panel or its ARP page goes to all three Synths (one undo step, the host told), as the POLYPHONY LINK.
+     RATE's four settings are in both groups: hub.c now keeps a second LINK per setting, and either lit links it.
+     Saved with the sound, never randomised (rnd_golden NEWER); the last param of params.json (no VST index moved);
+     factory presets made again (`link_arp_all` Off, nothing else changed).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

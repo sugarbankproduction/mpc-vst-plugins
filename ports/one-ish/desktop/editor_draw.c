@@ -106,6 +106,8 @@ static const char *help_for(int i) {
         {"link_bend", "LINK (pitch wheel): lit, the pitch wheel bends all three Synths at once, whatever their MIDI channels, and BEND RANGE (UP / DOWN) set from the panel goes to all three. Saved with the sound."},
         {"link_mod", "LINK (mod wheel): lit, the mod wheel (CC 1) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"link_ribbon", "LINK (ribbon): lit, the ribbon (CC 16 and 17) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
+        {"link_arp_all", "LINK ALL (ARPEGGIATOR): lit, every arpeggiator setting set from the panel or its page (ON, LATCH, SYNC, PATTERN, OCT, DIRECTION, RATE, GATE, SWING and the page's) goes to all three Synths. LINK under RATE links the rate alone. Saved with the sound."},
+        {"link_poly", "LINK (POLYPHONY): lit, this panel's settings set from the panel or its page (VOICES, UNISON and its voices, DETUNE, HOLD, PITCH VARIANCE, MONO PRIORITY, VOICE STEALING) go to all three Synths. Saved with the sound."},
         {"link_glide", "LINK (glide): lit, glide's settings set from the panel (ON, RATE, TYPE, LEGATO, GATED, GLISS) go to all three Synths. Saved with the sound."},
         {"link_pad", "LINK (X/Y pad): lit, moving the pad drives Pad X, Pad Y and the pad's gate in all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"modfx_gain", "Wet gain: the level of the effect's output (50% = as it comes)."},
@@ -345,16 +347,24 @@ static const char *zone_help(ed_t *e, int z) {
                         "W E T Y U O P the black ones, Z / X the octave (click the panel first). To modulate from "
                         "velocity, aftertouch, the key or the pedals: the DEST button at the top left of the controller panel.";
     case Z_RIBBON: return "Ribbon: touch and slide along it. It sends MIDI CC 16 (position, left to right) and CC 17 (touched). "
-                          "Its settings: the triangle at its right end. To modulate from it: the controller panel's DEST "
-                          "button (top left).";
+                          "Its settings: the triangle at its right end; HOLD at its left end keeps it where you let go. "
+                          "To modulate from it: the controller panel's DEST button (top left).";
     case Z_PITCH: return "Pitch wheel: drag up or down to bend; it springs back to the centre. BEND + and BEND - set the range. "
                          "To modulate from it: the DEST button at the top left of this panel.";
     case Z_MODW: return "Mod wheel (MIDI CC 1): drag up to bring in the mod matrix's Mod Wheel rows (vibrato in most presets). "
                         "To modulate from it: the DEST button at the top left of this panel.";
     case Z_PAD: return "X/Y pad: drag inside it. Left/right is the matrix source Pad X (MIDI CC 2), up/down Pad Y (CC 3); "
                        "both stay where you let go. Pad Gate (CC 18) is on while you touch it. Up/down also sends "
-                       "aftertouch (the source Aftertouch, back to 0 when you let go). To modulate from X, Y or its gate: "
-                       "the DEST button at the top left of this panel.";
+                       "aftertouch (the source Aftertouch, back to 0 when you let go; HOLD under the pad keeps it, and "
+                       "the gate, on). To modulate from X, Y or its gate: the DEST button at the top left of this panel.";
+    case Z_PAD_HOLD: return "HOLD (X/Y pad): lit, letting go of the pad keeps it touched: X, Y, Pad Gate and its "
+                            "aftertouch stay where you left them, so the sound stays modulated. Click or drag the pad "
+                            "again to move it on. Click HOLD again to let go (the gate off, aftertouch back to 0). "
+                            "A window setting: not saved with the sound.";
+    case Z_RIB_HOLD: return "HOLD (ribbon): lit, letting go of the ribbon keeps it touched, so it stays where you left "
+                            "it (no spring back to its origin) and so does its modulation. Touch it again to move it on. "
+                            "Click HOLD again to let go (SPRING then takes it back). A window setting: not saved with "
+                            "the sound (the ribbon's MODE Hold, on its page, is the saved way).";
     case Z_OCT_DOWN: case Z_OCT_UP:
         return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Click an LED above for that "
                "octave at once (0: the default); PANIC (under glide's ON) stops every note. Shortcut: hold one, 1 s the "
@@ -1556,6 +1566,22 @@ static void draw_controller(HDC dc, ed_t *e) {
                     lit ? SK_ON : hot ? SK_HOT : SK_UP);
         text(dc, r, "LINK ALL", font_label, lit ? RGB(24, 24, 26) : hot ? T_HOT : T_LABEL,
              DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    if (vis(&L.pad_hold, sc(4)) && !IsRectEmpty(&L.pad_hold)) {   /* (2026-11-01) the pad's HOLD: its name on the cap */
+        const RECT *r = &L.pad_hold;
+        int hot = e->hover == Z_PAD_HOLD;
+        skin_button((float)r->left + 1, (float)r->top + 1, (float)rw(r) - 2, (float)rh(r) - 2, SK_BLACK,
+                    e->hold_pad ? SK_ON : hot ? SK_HOT : SK_UP);
+        text(dc, r, "HOLD", font_label, e->hold_pad ? RGB(24, 24, 26) : hot ? T_HOT : T_LABEL,
+             DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    }
+    if (vis(&L.rib_hold, sc(4)) && !IsRectEmpty(&L.rib_hold)) {   /* (2026-11-01) the ribbon's: as its LINK beside it */
+        const RECT *r = &L.rib_hold;
+        int bh = sc(10), bw = sc(18), hot = e->hover == Z_RIB_HOLD;
+        skin_button((float)r->left + 1, (r->top + r->bottom - bh) / 2.0f, (float)bw, (float)bh, SK_BLACK,
+                    e->hold_rib ? SK_ON : hot ? SK_HOT : SK_UP);
+        RECT tr = {r->left + bw + sc(5), r->top, r->right + sc(6), r->bottom};
+        text(dc, &tr, "HOLD", font_label, hot ? T_HOT : T_LABEL, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
     wheel(dc, &L.pitch, e->bend, "PITCH", e->hover == Z_PITCH);
     wheel(dc, &L.modw, e->wheel * 2 - 1, "MOD", e->hover == Z_MODW);

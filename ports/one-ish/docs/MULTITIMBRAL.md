@@ -55,10 +55,17 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   with its own Synth. Notes end where they started, whatever changes meanwhile.
 - **LINK** (2026-10-30, desktop window): small LINK buttons keep a setting the same in all three Synths. While one is
   lit, changing that setting on the Synth in focus sets the same value on the other two (host automation for each, one
-  undo step). LINKs: KEY and SCALE (the GENERATIVE page and the GEN page), the arpeggiator's RATE (under it on the
-  panel: its division, timing, sync and free rate), the sequencer's RATE (beside it), each LFO's RATE (in each LFO:
+  undo step). LINKs: KEY and SCALE (the GENERATIVE page and the GEN page), the arpeggiator's RATE (just under it on the
+  panel since 2026-11-01: its division, timing, sync and free rate), the arpeggiator's **LINK ALL** (2026-11-01,
+  owner's request; the desktop window, load_test `arp_link_all_test`; `link_arp_all`, default Off: on the panel's
+  third line, every arpeggiator setting the panel and its ARP page show: ON, LATCH, SYNC, PATTERN, OCT, DIRECTION,
+  RATE and its timing / free rate, GATE, SWING, octave order, pendulum and its ends, random mode, follow swing, note
+  reset; RATE's settings are in both, so either LINK lit links them), the sequencer's RATE (beside it), each LFO's RATE (in each LFO:
   its rate, sync and timing), LINK SENDS (the MASTER EFFECTS panel: SEND 1 and SEND 2) and the balls and particles
-  (every `phys_*` setting; their pages). **ALL 3** above LINK CUTOFF (between the filters) is the one relative LINK:
+  (every `phys_*` setting; their pages), and (2026-11-01, owner's request; the desktop window, load_test
+  `poly_link_test`) the POLYPHONY panel's LINK `link_poly` (its third line, under VOICES: every setting the panel and
+  its page show: VOICES, MONO PRIORITY, VOICE STEALING, HOLD, UNISON, UNISON VOICES, UNISON DETUNE, PITCH VARIANCE;
+  default Off; appended at the very end of params.json so no VST index moved). **ALL 3** above LINK CUTOFF (between the filters) is the one relative LINK:
   turning either CUTOFF moves that cutoff on all three Synths by the same amount, so their offsets stay (a cutoff at
   its end stays there). Lighting one copies nothing by itself: the next change does. They are shared
   params (`link_*`, one copy, no engine effect), so they are saved with the sound (projects, patches, presets, undo)
@@ -86,6 +93,22 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   2026-11-01 for all five (`link_bend`, `link_mod`, `link_pad`, `link_ribbon`, `link_glide`), so LINK ALL starts lit;
   the factory presets were made again with them On (`presets/make_presets.py`; nothing else in them changed). A sound
   saved before keeps what it was saved with.
+- **HOLD** for the X/Y pad and the ribbon (2026-11-01, owner's request; the desktop window, load_test `hold_test`):
+  HOLD under the pad's left edge (before its name) and HOLD beside the ribbon's LINK on the plate at its left end
+  (the ribbon now starts 124 px in, 60 px shorter). Off (the default): letting go is as before. Lit (a plain click):
+  letting go keeps the touch on, so the sound stays modulated where you left it; a new click or drag moves it on from
+  there; clicking HOLD again lets go at once. What "kept touched" means: the pad keeps Pad X and Pad Y, keeps **Pad
+  Gate** on (CC 18 stays 127) and keeps the **aftertouch** its Y sends (no channel pressure 0 on release). That matters
+  because 230 of the 296 factory presets have Aftertouch rows (most often to Ladder Cutoff), which fell back on release
+  while their Pad X and Pad Y rows stayed: the sound's own X/Y HOLD (`pad_hold`, On in every preset) only keeps X and Y.
+  No factory preset uses Pad Gate (counted in presets.json, 2026-11-01; the sound itself not checked by ear). The ribbon keeps its touch (CC 17 stays 127), so
+  SPRING does not take it back to its origin. The touch is kept by the window not sending the release, so nothing
+  changes in the engine or the audio path, and it works on whatever the window plays (with LINK lit, all three
+  Synths). The release goes out on the MIDI channel the touch went out on; with Per Synth channels, touching the pad
+  (or ribbon) while it is held for another Synth's channel lets that one go first. Closing the window keeps a held
+  touch (the HOLD stays lit when it opens again). A window setting, not saved with the sound (as SYNTH OUTPUT's
+  MASTER); the ribbon's MODE Hold (its page) is the saved way to keep the ribbon's position. Hardware controllers and
+  the host are not affected.
 - **SHARE** (2026-10-30, offline and the desktop window; `lfo1_share` .. `lfo4_share`, shared, default Off;
   `src/engine.c` `lfo_owner`, `control_lfos`; `test/lfoshare_check.c`): the button beside LINK at the bottom of each LFO
   panel (and on the LFO's MORE page). Lit, that LFO in Synths 2 and 3 *is* Synth 1's: rate, sync, timing, wave and

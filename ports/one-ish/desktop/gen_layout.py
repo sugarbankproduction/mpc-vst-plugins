@@ -414,18 +414,22 @@ def build(lay):
     if "arp_on" in L.index:   # the master clock's TEMPO LED (on the beat) after the buttons; RATE's over its window
         L.rate_led("TEMPO", 0, 341, YA + 7, "TEMPO")
         L.rate_led("ARP", 0, 350, YL + 13)
+    # the arp's RATE the same in all 3 Synths: (2026-11-01, the owner's place) just under RATE, its name under it (SWING
+    # is beside). Before RATE's cell, whose empty lower part it sits in: a click takes the first control listed there
+    L.ctl("link_arp", "toggle", 328, 514, 44, 32, "LINK")
     L.cells([("arp_pattern", "PATTERN", 54, "leds"), ("arp_oct", "OCT", 42, "leds"),
              ("arp_dir", "DIRECTION", 54, "leds"), ("arp_div", "RATE", 44, "button")], 178, YL, HL)
     L.column([("arp_gate", "GATE"), ("arp_swing", "SWING")], 372, YL, 36, HL // 2, "small")
     YX = YL + HL + 8   # (2026-10-30) the third line: LINK under RATE; BALLS and PARTICLES
-    L.ctl("link_arp", "toggle", 340, YX, 50, 14, "LINK", SIDE)   # the arp's RATE the same in all 3 Synths
+    # (2026-11-01) LINK ALL: every setting of this panel and its page the same in all 3 Synths
+    L.ctl("link_arp_all", "toggle", 180, YX, 80, 14, "LINK ALL", SIDE)
     L.page("ARP", "ARPEGGIATOR", "Plays the held keys in turn; RATE is each step's note value.", [
         ("arp_on", "On"), ("arp_latch", "Latch"), ("arp_pattern", "Pattern"), ("arp_oct", "Octaves"),
         ("arp_dir", "Octave Direction"), ("arp_oct_order", "Octave Order"), ("arp_pendulum", "Pendulum"),
         ("arp_pend_mode", "Pendulum Ends"), ("arp_rnd_mode", "Random Mode"), ("arp_sync", "Tempo Sync"),
         ("arp_div", "Rate (Synced)"), ("arp_timing", "Timing"), ("arp_rate", "Free Rate"), ("arp_gate", "Gate Length"),
         ("arp_swing", "Swing"), ("arp_follow_swing", "Follow Swing"), ("arp_reset", "Note Reset"),
-        ("link_arp", "Link Rate (3 Synths)")])
+        ("link_arp", "Link Rate (3 Synths)"), ("link_arp_all", "Link All (3 Synths)")])
 
     L.panel(412, YB, 58, HB, "CHORD", more="CHORD", keys=["chord_on"])
     L.ctl("chord_on", "toggle", 416, YA, 36, 14, "ON", SIDE)
@@ -511,10 +515,12 @@ def build(lay):
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
     L.cells([("voices", "VOICES", 40, "button"), ("uni_detune", "DETUNE", 40, "knob"), ("hold", "HOLD", 40, "toggle")],
             622, YL, HL, size=24)
+    # (2026-11-01) LINK on the third line: every setting of this panel and its page the same in all 3 Synths
+    L.ctl("link_poly", "toggle", 626, YX, 50, 14, "LINK", SIDE)
     L.page("POLY", "POLYPHONY", "How notes share the voices.", [
         ("voices", "Voices"), ("note_priority", "Mono Priority"), ("steal_mode", "Voice Stealing"), ("hold", "Hold"),
         ("unison", "Unison"), ("uni_count", "Unison Voices"), ("uni_detune", "Unison Detune"),
-        ("pitch_var", "Pitch Variance")])
+        ("pitch_var", "Pitch Variance"), ("link_poly", "Link (3 Synths)")])
 
     # ---- centre console: the screen (presets, mod matrix, MORE pages, the step editor, help), its buttons, and under
     # them the SEQUENCER module ----
@@ -695,14 +701,19 @@ def build(lay):
     zones.update({"OCT_LEDS": (50, 632, 116, 26), "OCT_DOWN": (64, 662, 36, 16), "OCT_UP": (118, 662, 36, 16),
                   # (2026-10-31) the wheels 14 px shorter: their LINKs under their names
                   "PITCH": (56, 706, 36, 98), "MODW": (110, 706, 36, 98), "PAD": (166, 706, 126, 112),
-                  # (2026-10-31) the ribbon starts 64 px in: its LINK at its left end (shorter with a MORE page)
-                  "KEYS": (384, 640, 1744, 200), "RIBBON": (448, 612, 1680, 20),
+                  # (2026-10-31) the ribbon starts 64 px in: its LINK at its left end (shorter with a MORE page);
+                  # (2026-11-01) 124 px in: its HOLD beside the LINK
+                  "KEYS": (384, 640, 1744, 200), "RIBBON": (508, 612, 1620, 20),
                   # (2026-10-30) the controller's DEST button, top left: modulate from the wheels, the X/Y pad,
                   # the ribbon or the keyboard (quickmod.c); the computer keyboard's hint on the front rail
                   "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14),
                   "PANIC": (236, 691, 54, 13),   # (2026-10-30) every note off, under glide's ON
                   # (2026-10-31) LINK ALL: every LINK of this box on (or off) at once, after the pad's LINK
-                  "LINK_ALL": (308, 822, 60, 14)})
+                  "LINK_ALL": (308, 822, 60, 14),
+                  # (2026-11-01) HOLD (a window setting, not saved): lit, letting go of the pad / the ribbon keeps it
+                  # touched, so its modulation stays. The pad's under its left edge, before its name; the ribbon's
+                  # beside its LINK on the plate at its left end
+                  "PAD_HOLD": (166, 822, 38, 14), "RIB_HOLD": (445, 615, 54, 14)})
     # (2026-10-30) LINK beside the X/Y pad's name: lit, the pad plays all three Synths (src/synths.h midi)
     L.ctl("link_pad", "toggle", 256, 822, 48, 14, "LINK", SIDE)
     # (2026-10-31) LINK under each wheel's name: lit, that wheel reaches all three Synths (src/synths.h midi); the pitch
@@ -710,7 +721,7 @@ def build(lay):
     # the ribbon's at the ribbon's left end, on a small plate of its own
     L.ctl("link_bend", "toggle", 52, 822, 44, 14, "LINK", SIDE)
     L.ctl("link_mod", "toggle", 106, 822, 44, 14, "LINK", SIDE)
-    L.panel(384, 612, 60, 20, "", style="frame", keys=["link_ribbon"])
+    L.panel(384, 612, 120, 20, "", style="frame", keys=["link_ribbon"])   # (2026-11-01: 60 wider, HOLD too)
     L.ctl("link_ribbon", "toggle", 387, 615, 54, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     L.ctl("glide", "toggle", 236, 640, 42, 36, "ON")   # (2026-10-31: 20 px shorter, the button where it was)
@@ -777,7 +788,15 @@ LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
                ("link_cut", ("svf_cut", "flt_cut")),
                # (2026-10-31) the controller box: glide's settings; the pitch wheel's LINK also keeps BEND RANGE alike
                ("link_glide", ("glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando")),
-               ("link_bend", ("bend_up", "bend_down"))] + \
+               ("link_bend", ("bend_up", "bend_down")),
+               # (2026-11-01) the POLYPHONY panel: all it shows and its page
+               # (2026-11-01) the ARPEGGIATOR panel's LINK ALL: everything it and its page show (RATE's
+               # four keep LINK too: either lit links them, desktop/hub.c link_lit)
+               ("link_arp_all", ("arp_on", "arp_latch", "arp_pattern", "arp_oct", "arp_dir", "arp_oct_order", "arp_pendulum",
+                                 "arp_pend_mode", "arp_rnd_mode", "arp_sync", "arp_div", "arp_timing", "arp_rate",
+                                 "arp_gate", "arp_swing", "arp_follow_swing", "arp_reset")),
+               ("link_poly", ("voices", "note_priority", "steal_mode", "hold", "unison", "uni_count", "uni_detune",
+                              "pitch_var"))] + \
               [("link_lfo%d" % n, tuple("lfo%d_%s" % (n, s) for s in ("rate", "sync", "timing"))) for n in range(1, 5)]
 
 

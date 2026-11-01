@@ -56,19 +56,25 @@ _Static_assert(NHUB <= HUB_GTEMPO, "GEN TEMPO and FOLLOW KEYS take the hub page'
 static int key_ix(const char *k);
 static short LINKMAP[NPARAMS];
 static int linkmap_ready;
+/* (2026-11-01) a setting in two LINK groups (the arp's RATE: LINK and LINK ALL) has its second LINK here */
+static short LINKMAP2[NPARAMS];
 int link_param(int i) {
     if (!linkmap_ready) {
-        for (int k = 0; k < NPARAMS; k++) LINKMAP[k] = -1;
-        for (int k = 0; k < NLINKOF; k++)
-            if (LINK_OF[k][0] >= 0) LINKMAP[LINK_OF[k][0]] = LINK_OF[k][1];
+        for (int k = 0; k < NPARAMS; k++) LINKMAP[k] = LINKMAP2[k] = -1;
+        for (int k = 0; k < NLINKOF; k++) {
+            int p = LINK_OF[k][0];
+            if (p < 0) continue;
+            if (LINKMAP[p] >= 0 && LINKMAP[p] != LINK_OF[k][1]) LINKMAP2[p] = LINK_OF[k][1];
+            else LINKMAP[p] = LINK_OF[k][1];
+        }
         linkmap_ready = 1;
     }
     i = base_of(i);
     return i >= 0 && i < NPARAMS ? LINKMAP[i] : -1;
 }
-int link_lit(ed_t *e, int i) {
-    int l = link_param(i);
-    return l >= 0 && e->fx->getParameter(e->fx, l) > 0.5f;
+int link_lit(ed_t *e, int i) {   /* (either of its LINKs) */
+    int l = link_param(i), b = base_of(i), l2 = b >= 0 && b < NPARAMS ? LINKMAP2[b] : -1;
+    return (l >= 0 && e->fx->getParameter(e->fx, l) > 0.5f) || (l2 >= 0 && e->fx->getParameter(e->fx, l2) > 0.5f);
 }
 int link_relative(ed_t *e, int i) {   /* lit, and a relative one (ALL 3 over LINK CUTOFF: the cutoffs) */
     static int cut = -2;
@@ -471,6 +477,7 @@ intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case HT_KEYLOCK: return e->rnd_keylock;   /* (2026-11-01) */
     case HT_LINKED: return link_lit(e, (int)lroundf(opt));
     case HT_VOL_MASTER: return e->vol_master;
+    case HT_HOLDS: return ed_holds(e);   /* (2026-11-01) the X/Y pad's and the ribbon's HOLD (editor.c) */
     case HT_SUB: return e->sub;
     case HT_TOGETHER: return e->together;
     case HT_GEN_ARMED: return e->gens_arm;   /* (2026-10-30) */
