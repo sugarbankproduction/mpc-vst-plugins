@@ -54,7 +54,7 @@ for f in win32 gdi gdiplus host; do cc "$F/$f.c" "$OUT/web_$f.o" "${WIN[@]}" -Wa
 for f in "$P"/third_party/plutovg/source/*.c; do
   cc "$f" "$OUT/pvg_$(basename "${f%.c}").o" -I"$P/third_party/plutovg/include" -DPLUTOVG_BUILD_STATIC -w
 done
-EXPORTS='["_main","_web_start","_web_info","_web_event","_web_midi","_malloc","_free"]'
+EXPORTS='["_main","_web_start","_web_info","_web_event","_web_midi","_web_last_session","_malloc","_free"]'
 "$EMXX" -O3 -pthread "${OBJS[@]}" -o "$SITE/moowon_full.js" \
   -sMODULARIZE -sEXPORT_NAME=createMooWon -sENVIRONMENT=web,worker -sEXPORTED_FUNCTIONS="$EXPORTS" \
   -sEXPORTED_RUNTIME_METHODS='["FS","IDBFS","UTF8ToString","stringToNewUTF8","HEAPU8","HEAPU32","HEAP32","HEAPF32","wasmMemory"]' \

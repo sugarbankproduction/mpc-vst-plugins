@@ -202,3 +202,9 @@ Messenger, Facebook and Instagram open links in their own built-in browser, whic
 (`crossOriginIsolated` false, whatever the headers say), so the plugin can't start there. The page says so and offers
 OPEN IN CHROME (Android, an `intent://` link) and COPY THE LINK. Checked with an emulated Android browser on a local server
 without the headers; not yet tried from Messenger itself.
+
+## Starts on Init (2026-11-02, owner)
+
+The page always starts on Init. An edited last session moves from `web_state.bin` to `web_last.bin`, and LAST SESSION (on the
+bar and in the sections view) brings it back; Init left unchanged is never saved, so opening the page and leaving doesn't
+overwrite it. User patches and the libraries aren't touched. Checked in the browser: R, reload (a clean Init), LAST SESSION.

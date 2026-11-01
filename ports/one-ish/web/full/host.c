@@ -12,6 +12,7 @@
 #include <emscripten.h>
 #include <emscripten/threading.h>
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -150,6 +151,9 @@ static void *audio_main(void *arg) {
 
 /* ---- the sound the user made: saved in the browser, back on the next visit ---- */
 static const char *STATE_FILE = "/Users/web/AppData/Roaming/Moo Won/web_state.bin";
+/* (2026-11-02, owner) the page starts on Init; what was playing last time waits here for the LAST SESSION button */
+static const char *LAST_FILE = "/Users/web/AppData/Roaming/Moo Won/web_last.bin";
+static atomic_int want_last;
 static uint32_t state_hash;
 static uint32_t fnv(const unsigned char *p, intptr_t n) {
     uint32_t h = 2166136261u;
@@ -173,8 +177,8 @@ static void state_save(HWND w, UINT m, UINT_PTR id, DWORD t) {
     if (!ok || rename(tmp, STATE_FILE)) { remove(tmp); state_hash = 0; return; }
     web_files_changed();
 }
-static void state_load(void) {
-    FILE *f = fopen(STATE_FILE, "rb");
+static void state_load(const char *path) {
+    FILE *f = fopen(path, "rb");
     if (!f) return;
     fseek(f, 0, SEEK_END);
     long n = ftell(f);
@@ -188,7 +192,19 @@ static void state_load(void) {
     fclose(f);
 }
 
-static void cables_poll(HWND w, UINT m, UINT_PTR id, DWORD t) { touch_state(INFO.cables); }
+static void cables_poll(HWND w, UINT m, UINT_PTR id, DWORD t) {
+    touch_state(INFO.cables);
+    if (atomic_exchange(&want_last, 0)) state_load(LAST_FILE);
+}
+EMSCRIPTEN_KEEPALIVE void web_last_session(void) { atomic_store(&want_last, 1); }   /* (the page; the editor's thread loads it) */
+/* a new session starts on Init: an edited last session moves aside for LAST SESSION; Init unchanged is never saved, so
+ * opening the page and leaving doesn't overwrite it */
+static void state_start(void) {
+    if (rename(STATE_FILE, LAST_FILE) == 0) web_files_changed();
+    void *chunk = NULL;
+    intptr_t n = fx->dispatcher(fx, effGetChunk, 0, 0, &chunk, 0);
+    if (n > 0 && chunk) state_hash = fnv(chunk, n);
+}
 
 void web_files_changed(void) {
     MAIN_THREAD_ASYNC_EM_ASM({ if (Module.mwSync) Module.mwSync(); });
@@ -201,7 +217,7 @@ static void *editor_main(void *arg) {
     fx->dispatcher(fx, effOpen, 0, 0, NULL, 0);
     fx->dispatcher(fx, effSetSampleRate, 0, 0, NULL, rate);
     fx->dispatcher(fx, effSetBlockSize, 0, BLOCK, NULL, 0);
-    state_load();
+    state_start();
     fx->dispatcher(fx, effMainsChanged, 0, 1, NULL, 0);
     pthread_t at;
     pthread_attr_t aa;

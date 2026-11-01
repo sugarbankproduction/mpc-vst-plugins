@@ -601,6 +601,17 @@ function cantRunHere() {
 }
 
 // ---- starting ----
+// (2026-11-02) the page starts on Init; LAST SESSION (the bar's and the sections view's) brings back what was playing
+function wireLastSession() {
+  const dir = "/Users/web/AppData/Roaming/Moo Won/";
+  const there = (f) => { try { M.FS.stat(dir + f); return true; } catch { return false; } };
+  const bs = [$("last-session"), ...document.querySelectorAll(".sec-last")];
+  for (const b of bs) {
+    b.hidden = !there("web_state.bin") && !there("web_last.bin");
+    b.addEventListener("click", () => { M._web_last_session(); bs.forEach((x) => { x.hidden = true; }); });
+  }
+}
+
 async function load() {
   if (!crossOriginIsolated) {
     cantRunHere();
@@ -690,6 +701,7 @@ async function start() {
     document.body.classList.add("running");
     document.body.classList.toggle("mouse", !isTouch);
     sections = createSections({ source: canvas, scale: panelW / 2162, root: $("sections"), onToggle: toggleMode, onCables: toggleCables });
+    wireLastSession();
     $("to-sections").addEventListener("click", toggleMode);
     let saved = null;
     try { saved = localStorage.getItem("mw.view"); } catch { /* (none) */ }

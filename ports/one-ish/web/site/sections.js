@@ -33,7 +33,7 @@ export function createSections({ source, scale, root, onToggle, onCables }) {
   root.innerHTML = `<div class="sec-tabs"></div><div class="sec-body"><canvas class="sec-view" tabindex="0"></canvas></div>
     <div class="sec-kbar"><button class="sec-oct" data-d="-1" aria-label="Lower keys">&lt;</button>
     <span class="sec-octlabel"></span><button class="sec-oct" data-d="1" aria-label="Higher keys">&gt;</button>
-    <button class="sec-small sec-cables">CABLES</button><button class="sec-small sec-showkeys">KEYS</button>
+    <button class="sec-small sec-last" hidden>LAST SESSION</button><button class="sec-small sec-cables">CABLES</button><button class="sec-small sec-showkeys">KEYS</button>
     <button class="sec-small sec-whole">WHOLE PANEL</button></div><canvas class="sec-keys"></canvas>`;
   const tabsEl = root.querySelector(".sec-tabs"), body = root.querySelector(".sec-body");
   const view = root.querySelector(".sec-view"), keys = root.querySelector(".sec-keys");
