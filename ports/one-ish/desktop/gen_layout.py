@@ -745,7 +745,7 @@ def build(lay):
     # (2026-11-01) ANALOG AMOUNT (shared, analog_amt): the page's main control, a big bar across its top two rows drawn
     # by the window itself (editor_draw.c draw_analog_amt; editor.h page_top), so not one of the items below
     L.placed.add("analog_amt")
-    L.page("ANALOG", "ANALOG CHARACTER", "Per-voice analog differences. ANALOG AMOUNT scales them all (0% = exact). Kept when a preset loads.", [
+    L.page("ANALOG", "ANALOG CHARACTER", "AMOUNT scales the whole page (0% = exact). Kept when a preset loads.", [
         ("drift", "Drift"), ("an_cut", "Cutoff Spread"), ("an_res", "Resonance Spread"), ("an_env", "Envelope Spread"),
         ("an_lvl", "Level Spread"), ("an_tune", "Tuning Spread"), ("an_ladder", "Ladder Character"),
         # (2026-10-30) HQ MODE (the voice oversampled: cleaner sync, FM and driven ladder) and WARM-UP (a cold start)
