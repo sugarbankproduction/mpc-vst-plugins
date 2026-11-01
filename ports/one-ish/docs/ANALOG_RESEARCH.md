@@ -454,9 +454,36 @@ not whistle by itself. Tests: `test/analogx_check.c`.
 | SVF Drive 0 / 50 / 100%, a sine: 3rd harmonic | -136 / -21.3 / -13.7 dB; level -15.2 / -11.0 / -12.3 dB |
 | Everything at 0 (or ANALOG AMOUNT 0%) | the very samples of before; the golden check passes with its fixture not remade |
 | Everything up, 64 combinations | finite, largest sample 0.95, exact 0 after the release |
-| CPU (8 voices, one element) | about +1.0-1.4 us a voice on, the same run differing by up to 0.27; +1.7 for a series pair |
+| CPU (8 voices, one element) | about +1.1-1.3 us a voice on, the same run differing by up to 0.06; +1.7 for a series pair |
 | CPU at 0 (old and new binaries in turn, 4 times) | new 8.86-9.17 us a voice, old 9.12-9.72: no rise |
 
 The report's estimate was +0.4-0.8 us; this came out higher. On its own the damping adds few harmonics (3rd at -67 dB
 at full scale, resonance 90%), so the harmonics come from the saturator before it. Pitch sharpens with cutoff, because
 the damping is one state late; 13 cents at 8 kHz is outside "a few cents" there, and under that up to 4 kHz.
+
+### Item 3: mixer drive and feedback (`an_mix_drive`, `an_feedback`)
+
+Built as: one soft clip on the mixer's sum (on each filter's mixer), and a one-sample loop per voice from after the
+filters, before the amp, back into it. Two choices the report left open, made here and open to the ear: the **tap is
+before the amp** (only that one built, so it does not fade with the note), and the loop's sign is **positive** with a
+**20 Hz coupling capacitor** in it, because a positive loop with DC in it would latch to a rail. In series it goes in at
+the start of the chain only. Its loop gain tops out at 1 by itself (the ladder's bass loss keeps it under), so it
+needs MIXER DRIVE's gain to howl.
+
+| A held two-saw C2, ladder at 1.5 kHz | 0% | 25% | 50% | 75% | 100% |
+|---|---|---|---|---|---|
+| Mixer Drive, resonance 0: level dB | -19.8 | -18.6 | -18.8 | -19.2 | -19.5 |
+| Feedback, resonance 0: level dB | -19.8 | -18.0 | -15.8 | -13.3 | -10.9 |
+| Feedback, resonance 60%: level dB | -22.6 | -21.6 | -20.3 | -18.7 | -17.0 |
+| Feedback, resonance 60%: brightness | 0.0052 | 0.0033 | 0.0023 | 0.0017 | 0.0012 |
+| Feedback with Mixer Drive 100%, resonance 60%: level dB | -22.6 | -22.2 | -21.9 | -21.8 | -21.7 |
+
+- Mixer Drive 0 / 50 / 100% on a sine: 3rd harmonic -58.8 / -23.0 / -15.4 dB, level -18.2 / -14.0 / -13.4 dB.
+- Feedback 100% with no source: silence stays (-121 dB, the noise floor). With Mixer Drive 100% too it howls by itself at
+  -18.5 dB (resonance 0) and -22.7 dB (60%), bounded.
+- Per voice: two notes against the sum of each alone, -111.8 dB.
+- So feedback's measured effect is level and bass, and less brightness, which fits "thick". Whether it growls is for the
+  ear; nothing here measures growl.
+- CPU, 8 voices: Mixer Drive +1.1-1.2 us a voice, Feedback +1.4 (report's estimate +0.3-0.5). Most of that is
+  the second copy of the voice's loop, which runs once anything new is on; the arithmetic is one soft clip. At 0, old
+  and new in turn: new 8.97-9.32 us a voice, old 9.24-9.66: no rise.

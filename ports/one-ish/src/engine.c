@@ -79,6 +79,7 @@
 #include "midi_out.h"   /* (2026-10-30) MIDI OUT: the notes each Synth plays, to the host */
 
 #define SR 44100.0f
+#define FB_COUPLE_HZ 20.0f   /* (2026-11-02) FEEDBACK's path passes no DC: a positive loop would latch to one rail */
 #define DC_R 0.99929f   /* (2026-11-01) the voice's DC filter: 1 - 2 pi 5 Hz / SR */
 #define CR 16              /* control-rate step in samples: modulation is worked out every 0.36 ms */
 #define MAX_HELD 16
@@ -163,7 +164,7 @@ enum { NC_RED, NC_WHITE, NC_PURPLE };           /* noise colours */
 static const int NOISE_PAIR[3][2] = {{NC_RED, NC_WHITE}, {NC_RED, NC_PURPLE}, {NC_WHITE, NC_PURPLE}};
 #define NDRIFT (NOSC + 1)                       /* drift: one wander per oscillator, one for the voice's cutoffs */
 /* a voice card's parts that differ from card to card: each is a fixed number in -1..1 per voice */
-enum { AX_SVF_NL = 1, AX_SVF_SAT = 2 };   /* (2026-11-02) one_t an_x: which of the ANALOG page's newer sounds are on */
+enum { AX_SVF_NL = 1, AX_SVF_SAT = 2, AX_MIX = 4 };   /* (2026-11-02) one_t an_x: which of the ANALOG page's newer sounds are on */
 enum { AC_LAD_CUT, AC_SVF_CUT, AC_LAD_RES, AC_SVF_RES, AC_ENV, AC_LVL = AC_ENV + 3, AC_TUNE, AC_COUNT = AC_TUNE + NOSC };
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
@@ -295,6 +296,7 @@ typedef struct {
     float note_hz, velocity;
     float gain;              /* smoothed towards velocity x volume, so neither jumps the level mid-note */
     float dc_x, dc_y;        /* (2026-11-01) the DC filter before the amp: its last input and output (dc_block) */
+    float fb_x, fb_y;        /* (2026-11-02) FEEDBACK's coupling capacitor: its last input and output */
     float cut, svf_cut;      /* the cutoff knobs (0..100) as this voice's filters follow them, smoothed */
     float rand;              /* this note's random value (-1..1), a matrix source */
     float to_lad[NSRC], to_svf[NSRC], mix_lad;   /* last control step's levels and filter mix (ramp start) */
@@ -416,6 +418,7 @@ typedef struct one_s {
     /* (2026-11-02) what the ANALOG page's newer controls come to (apply_analog); an_x 0: the voice's loop as before */
     int an_x;                /* AX_* */
     float svf_amt, svf_s, svf_m;   /* NON-LINEAR SVF, 0..1; the saturator before it: gain in, gain out */
+    float mix_s, mix_m, fb_k;      /* MIXER DRIVE's soft clip: gain in, gain out; FEEDBACK's level */
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
     float gain_coef, glide;  /* per sample / per control step */
     int phase;               /* samples into the current control step */
@@ -745,7 +748,14 @@ static void apply_analog(one_t *s) {
     s->svf_amt = clampf(p[P_AN_SVF] * 0.01f * a, 0.0f, 1.0f);
     s->svf_s = 0.5f * s->svf_amt + 3.5f * sd;
     s->svf_m = s->svf_s > 0.0f ? sqrtf(1.0f + 7.0f * sd) / s->svf_s : 1.0f;
-    s->an_x = (s->svf_amt > 0.0f ? AX_SVF_NL : 0) | (s->svf_s > 0.0f ? AX_SVF_SAT : 0);
+    /* (2026-11-02) MIXER DRIVE and FEEDBACK: one soft clip on the mixer's sum, ladder_sat(x s) m. Drive 0: a knee far
+     * above full scale (it only bounds FEEDBACK's loop); 100%: at a quarter of it, +9.5 dB, its ceiling at 0.75 */
+    float md = clampf(p[P_AN_MIX_DRIVE] * 0.01f * a, 0.0f, 1.0f);
+    s->fb_k = clampf(p[P_AN_FEEDBACK] * 0.01f * a, 0.0f, 1.0f);
+    s->mix_s = 0.25f + 3.75f * md;
+    s->mix_m = (1.0f + 2.0f * md) / s->mix_s;
+    s->an_x = (s->svf_amt > 0.0f ? AX_SVF_NL : 0) | (s->svf_s > 0.0f ? AX_SVF_SAT : 0) |
+              (md > 0.0f || s->fb_k > 0.0f ? AX_MIX : 0);
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
         for (int f = 0; f < 2; f++) {
@@ -1191,6 +1201,7 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
     if (v->env[ENV_AMP].stage == ENV_IDLE) {   /* from silence every note starts the same way */
         for (int n = 0; n < NOSC; n++) osc_reset(&v->osc[n]);
         v->dc_x = v->dc_y = 0.0f;
+        v->fb_x = v->fb_y = 0.0f;
         ladder_reset(&v->lad);
         svf2_reset(&v->svf);
         set_targets(s, v, no_mod, 0.0f);   /* unmodulated, until the next control step adds the matrix */
@@ -2867,6 +2878,10 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
     if (!run_lad) ladder_reset(&v->lad);
     float target = gain_target(s, v);
     osc_t *o1 = &v->osc[0], *o2 = &v->osc[1], *o3 = &v->osc[2];
+    /* (2026-11-02) the ANALOG page's newer sounds: what this step's samples read (ax 0: none of it is compiled in) */
+    const int axf = ax ? s->an_x : 0;
+    const float fb_r = ax ? 1.0f - 6.2831853f * FB_COUPLE_HZ / (SR * (float)os) : 0.0f;
+    const float mix_s = s->mix_s, mix_m = s->mix_m, fb_k = s->fb_k, svf_s = s->svf_s, svf_m = s->svf_m;
     for (int i = 0; i < n; i++) {
         if (hf & 7) {   /* a High LFO on pitch: each oscillator's frequency this sample */
             if (hf & 1) o1->inc = clampf(v->inc0[0] * hp[0][i], 0.0f, 0.49f);
@@ -2896,13 +2911,18 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
             float lad_in = a * lad[0] + b * lad[1] + c * lad[2] + nc * lad[NOISE] + rm * lad[RING];
             if (mac_on) lad_in += mc * lad[MACRO];
             if (ext_on) lad_in += ext[i] * lad[EXT];
+            /* (2026-11-02) MIXER DRIVE and FEEDBACK. The loop is one sample long and per voice, and always passes the
+             * soft clip, so it stays bounded whatever the filters do. In series it goes in at the start of the chain. */
+            float fbv = axf & AX_MIX ? v->fb_y * fb_k : 0.0f;
+            if (axf & AX_MIX) lad_in = ladder_sat((lad_in + (series && any_svf ? 0.0f : fbv)) * mix_s) * mix_m;
             float svf_out = 0.0f, lad_out = 0.0f;
             if (any_svf) {
                 float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
                 if (mac_on) in += mc * svf[MACRO];
                 if (ext_on) in += ext[i] * svf[EXT];
-                if (ax && (s->an_x & AX_SVF_SAT)) in = ladder_sat(in * s->svf_s) * s->svf_m;   /* (2026-11-02) */
-                if (ax && (s->an_x & AX_SVF_NL)) {   /* (2026-11-02) NON-LINEAR SVF, with the same cutoff modulation */
+                if (axf & AX_MIX) in = ladder_sat((in + fbv) * mix_s) * mix_m;   /* (2026-11-02) */
+                if (axf & AX_SVF_SAT) in = ladder_sat(in * svf_s) * svf_m;   /* (2026-11-02) */
+                if (axf & AX_SVF_NL) {   /* (2026-11-02) NON-LINEAR SVF, with the same cutoff modulation */
                     float e = svf_fm > 0.0f ? exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)) : 1.0f;
                     svf_out = svf2_next_nl(&v->svf, in, hf & HF_SVF ? e * hs[i] : e);
                 } else if (hf & HF_SVF)   /* a High LFO on its cutoff (with filter FM, if any) */
@@ -2926,6 +2946,11 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
                                             : ladder_next(&v->lad, in);
             }
             fs[u] = lad_out * ml + svf_out * (1.0f - ml);
+            if (axf & AX_MIX) {   /* (2026-11-02) FEEDBACK's tap: after the filters, before the amp */
+                float fy = fs[u] - v->fb_x + fb_r * v->fb_y;
+                v->fb_x = fs[u];
+                v->fb_y = fy;
+            }
         }
         float f = os == 1 ? fs[0] : os == 2 ? hq_dec2(&v->dec, fs) : hq_dec4(&v->dec, fs);
         {   /* (2026-11-01) the DC filter between the filters and the amp, as an analog voice's coupling capacitor: a

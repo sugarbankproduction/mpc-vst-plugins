@@ -780,7 +780,9 @@ def build(lay):
         ("an_hq", "HQ Mode"), ("an_warm", "Warm-Up"), ("an_warm_amt", "Warm-Up Amount"),
         ("an_warm_time", "Warm-Up Time"),
         # (2026-11-02) the saturating SVF (src/svf.h svf_tick_nl); the page's second screen
-        ("an_svf", "SVF Character"), ("an_svf_drive", "SVF Drive"), ("an_svf_osc", "SVF Self-Osc")])
+        ("an_svf", "SVF Character"), ("an_svf_drive", "SVF Drive"), ("an_svf_osc", "SVF Self-Osc"),
+        # (2026-11-02) a soft clip on the mixer's sum, and each voice's filter output back into its mixer
+        ("an_mix_drive", "Mixer Drive"), ("an_feedback", "Feedback")])
     return zones
 
 

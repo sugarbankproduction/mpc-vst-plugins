@@ -223,6 +223,7 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RBELL("uni_detune", RS_PERF, 10, 40, 0, 0, 0.05f), RUNI("pitch_var", RS_PERF, 1, 8, 0.8f, 0, 0.02f),
     RNEVER("an_hq"), RNEVER("an_warm*"),   /* (2026-10-30) HQ MODE and WARM-UP: the player's, never drawn */
     RNEVER("an_svf*"),   /* (2026-11-02) the saturating SVF: the player's, never drawn */
+    RNEVER("an_mix_drive"), RNEVER("an_feedback"),   /* (2026-11-02) the same */
     RCODEZ("an_*", RS_PERF, 0, 70, 0, 0.05f), RCODEZ("drift", RS_PERF, 0, 70, 0, 0.05f),
     RCODEZ("spread", RS_PERF, 0, 90, 0, 0.06f), RDEF("pan", RS_PERF, 0),
 

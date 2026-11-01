@@ -4,10 +4,12 @@
  *                 ANALOG AMOUNT 0% does too; a fresh state doesn't mention them; they are saved and restored
  *   NON-LINEAR SVF  0 is the linear element to rounding; the resonant peak compresses with level; SELF-OSC whistles in
  *                 tune at a steady level, only with both controls up; SVF DRIVE adds harmonics
+ *   MIXER DRIVE   a sine's harmonics rise with it; printed: level and brightness
+ *   FEEDBACK      level, brightness and pitch at each setting; it is per voice (two notes are the sum of each alone)
  *   extremes      everything up in every mode, pair and route, HQ too: finite and bounded; after the release, exact 0
  *   bench         the CPU of each, on against off */
 
-static const char *const AX_KEYS[] = {"an_svf", "an_svf_drive", "an_svf_osc"};
+static const char *const AX_KEYS[] = {"an_svf", "an_svf_drive", "an_svf_osc", "an_mix_drive", "an_feedback"};
 enum { AX_NKEYS = sizeof AX_KEYS / sizeof AX_KEYS[0] };
 
 /* a sound that reaches both filters and the things the controls touch */
@@ -191,6 +193,89 @@ static void ax_svf_checks(void) {
     }
 }
 
+/* a held low two-saw sound into the ladder, for the printed tables */
+static void *ax_mix_patch(int res) {
+    void *e = patch(SAW, 1, 300, 100, 100);
+    set(e, "voices", 0); set(e, "o2_level", 70); set(e, "o2_freq", 0.1);
+    set(e, "flt_cut", knob_for_hz(1500)); set(e, "flt_res", res); set(e, "flt_kbd", 0); set(e, "lad_kbd", 0); set(e, "volume", 40);
+    return e;
+}
+static void ax_mix_checks(void) {
+    char what[500];
+    /* MIXER DRIVE: harmonics of a sine through the audio input, the ladder wide open */
+    double h3[3], l3[3];
+    for (int k = 0; k < 3; k++) {
+        void *e = patch(SAW, 0, 1, 100, 10);
+        long t = 0;
+        set(e, "voices", 0); set(e, "o1_level", 0); set(e, "ext_route", 2); set(e, "ext_level", 100); set(e, "volume", 70);
+        set(e, "an_mix_drive", k * 50);
+        note(e, 1, 45, 127);
+        ext_render(e, mz_x, SR, 200, 0.5, &t);
+        h3[k] = mz_db(mz_amp(mz_x + SR / 2, SR / 2, 600)) - mz_db(mz_amp(mz_x + SR / 2, SR / 2, 200));
+        l3[k] = mz_db(mz_rms(mz_x + SR / 2, SR / 2));
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "MIXER DRIVE 0 / 50 / 100%% on a sine: the 3rd harmonic against it %.1f / %.1f / %.1f dB, level %.1f / "
+             "%.1f / %.1f dB", h3[0], h3[1], h3[2], l3[0], l3[1], l3[2]);
+    check(h3[1] > h3[0] + 10 && h3[2] > h3[1] + 2 && fabs(l3[2] - l3[0]) < 8, what);
+    /* level, brightness and the fundamental against the whole, printed: FEEDBACK alone and with MIXER DRIVE at 100% */
+    static const int LV[5] = {0, 25, 50, 75, 100};
+    for (int row = 0; row < 3; row++)
+        for (int res = 0; res < 2; res++) {
+            char line[300] = "";
+            for (int k = 0; k < 5; k++) {
+                void *e = ax_mix_patch(res * 60);
+                set(e, row == 0 ? "an_mix_drive" : "an_feedback", LV[k]);
+                if (row == 2) set(e, "an_mix_drive", 100);
+                note(e, 1, 36, 110);
+                hq_render(e, mz_x, SR);
+                const float *t = mz_x + SR / 2;
+                size_t u = strlen(line);
+                snprintf(line + u, sizeof line - u, "  %3d%%: %5.1f dB, bright %.4f, fund %+.1f", LV[k], mz_db(mz_rms(t, SR / 2)),
+                         an_bright(t, SR / 2), mz_db(mz_amp(t, SR / 2, 65.406)) - mz_db(mz_rms(t, SR / 2)));
+                E->destroy(e);
+            }
+            printf("analog: %s, resonance %d%%:%s\n", row == 0 ? "MIXER DRIVE" : row == 1 ? "FEEDBACK" : "FEEDBACK with MIXER DRIVE 100%",
+                   res * 60, line);
+        }
+    /* the note is still the note at 75%; with no source only MIXER DRIVE's gain makes the loop howl, and it stays bounded */
+    double f75[2], howl[2], howl_d[2];
+    for (int k = 0; k < 2; k++) {
+        void *e = ax_mix_patch(k * 60);
+        set(e, "an_feedback", 75);
+        note(e, 1, 36, 110);
+        hq_render(e, mz_x, SR);
+        f75[k] = mz_db(mz_amp(mz_x + SR / 2, SR / 2, 65.406)) - mz_db(mz_rms(mz_x + SR / 2, SR / 2));
+        E->destroy(e);
+        for (int d = 0; d < 2; d++) {
+            e = ax_mix_patch(k * 60);
+            set(e, "o1_level", 0); set(e, "o2_level", 0); set(e, "an_feedback", 100); set(e, "an_mix_drive", d * 100);
+            note(e, 1, 36, 110);
+            hq_render(e, mz_x, SR * 3);
+            (d ? howl_d : howl)[k] = mz_db(mz_rms(mz_x + SR * 2, SR));
+            E->destroy(e);
+        }
+    }
+    snprintf(what, sizeof what, "FEEDBACK 75%%: the note's fundamental against the whole, resonance 0 / 60%%: %+.1f / %+.1f dB. 100%% with "
+             "no source: %.1f / %.1f dB; with MIXER DRIVE 100%%: %.1f / %.1f dB (a howl, bounded)", f75[0], f75[1], howl[0], howl[1],
+             howl_d[0], howl_d[1]);
+    check(f75[0] > -15 && howl[0] < -60 && howl_d[0] < 6 && howl_d[1] < 6, what);
+    /* per voice: two notes are the sum of each alone */
+    static float a[SR], b[SR], c[SR];
+    for (int k = 0; k < 3; k++) {
+        void *e = ax_mix_patch(30);
+        set(e, "voices", 7); set(e, "volume", 15); set(e, "an_feedback", 80); set(e, "an_mix_drive", 50);
+        if (k != 1) note(e, 1, 36, 110);
+        if (k != 0) note(e, 1, 43, 110);
+        hq_render(e, k == 0 ? a : k == 1 ? b : c, SR);
+        E->destroy(e);
+    }
+    double dd = 0, ss = 0;
+    for (int i = 0; i < SR; i++) { double d = (double)c[i] - a[i] - b[i]; dd += d * d; ss += (double)c[i] * c[i]; }
+    snprintf(what, sizeof what, "FEEDBACK and MIXER DRIVE are per voice: two notes against the sum of each alone: %.1f dB", 10 * log10(dd / ss + 1e-30));
+    check(dd < ss * 1e-3, what);
+}
+
 /* every sound up in every mode, pair and route; then the release ends in exact silence */
 static void ax_extremes(void) {
     char what[300];
@@ -234,6 +319,7 @@ static void ax_extremes(void) {
 static void analogx_checks(void) {
     ax_at_zero();
     ax_svf_checks();
+    ax_mix_checks();
     ax_extremes();
 }
 
@@ -262,6 +348,8 @@ static void ax_b_svf(void *e) { set(e, "an_svf", 100); }
 static void ax_b_drive(void *e) { set(e, "an_svf", 100); set(e, "an_svf_drive", 100); }
 static void ax_b_pair(void *e) { set(e, "an_svf", 100); set(e, "svf_pair", 0); }
 static void ax_b_off_pair(void *e) { set(e, "svf_pair", 0); }
+static void ax_b_mixd(void *e) { set(e, "an_mix_drive", 100); }
+static void ax_b_fb(void *e) { set(e, "an_feedback", 100); }
 static void analogx_bench(void) {
     static const struct { const char *name; void (*fn)(void *); int base; } B[] = {
         {"all off", NULL, 0},
@@ -269,6 +357,8 @@ static void analogx_bench(void) {
         {"NON-LINEAR SVF + SVF DRIVE 100%", ax_b_drive, 0},
         {"SVF pair in series, all off", ax_b_off_pair, 0},
         {"SVF pair in series, NON-LINEAR SVF 100%", ax_b_pair, 3},
+        {"MIXER DRIVE 100%", ax_b_mixd, 0},
+        {"FEEDBACK 100%", ax_b_fb, 0},
     };
     double t[sizeof B / sizeof B[0]];
     for (unsigned k = 0; k < sizeof B / sizeof B[0]; k++) t[k] = ax_time(NULL);   /* (warm the caches, and a first noise figure) */

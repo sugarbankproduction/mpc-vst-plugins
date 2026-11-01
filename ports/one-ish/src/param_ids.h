@@ -156,6 +156,8 @@ enum {
     P_PEND_OWN_KEY, P_PEND_OWN_SCALE,
     /* (2026-11-02) the ANALOG page's NON-LINEAR SVF, SVF DRIVE and SVF SELF-OSC (src/svf.h svf_tick_nl) */
     P_AN_SVF, P_AN_SVF_DRIVE, P_AN_SVF_OSC,
+    /* (2026-11-02) the ANALOG page's MIXER DRIVE and FEEDBACK (render_voice_os) */
+    P_AN_MIX_DRIVE, P_AN_FEEDBACK,
     P_COUNT
 };
 
@@ -303,4 +305,5 @@ static const char *const KEYS[P_COUNT] = {
     "rain_own_key", "rain_own_scale", "mkv_own_key", "mkv_own_scale", "life_own_key", "life_own_scale", "orb_own_key",
     "orb_own_scale", "pend_own_key", "pend_own_scale",   /* (2026-11-02) */
     "an_svf", "an_svf_drive", "an_svf_osc",   /* (2026-11-02) */
+    "an_mix_drive", "an_feedback",   /* (2026-11-02) */
 };

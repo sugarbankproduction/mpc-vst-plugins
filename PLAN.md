@@ -1193,7 +1193,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      change to the sound. Each sound below is a new param at the very end of params.json starting at 0 or Off, on the
      ANALOG page, scaled by ANALOG AMOUNT, kept when a preset loads, never randomised; the golden check passes with
      its fixture not remade; a voice takes `render_voice_os` with `ax` 0, the old loop, unless one is on. Saturating
-     SVF: `an_svf`, `an_svf_drive`, `an_svf_osc` (src/svf.h svf_tick_nl; test/analogx_check.c).
+     SVF: `an_svf`, `an_svf_drive`, `an_svf_osc` (src/svf.h svf_tick_nl; test/analogx_check.c). Mixer drive and feedback: `an_mix_drive`, `an_feedback`
+     (render_voice_os: a soft clip on the mixer's sum; a one-sample loop per voice, tapped before the amp).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

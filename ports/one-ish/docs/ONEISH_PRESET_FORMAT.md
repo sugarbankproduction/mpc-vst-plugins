@@ -844,6 +844,8 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 ke
 | `an_svf` | Non-Linear SVF: the SVF's resonance holds back as it gets loud | number 0 to 100 %, whole numbers | `0` | per Synth |
 | `an_svf_drive` | SVF Drive: a soft saturator before the SVF | number 0 to 100 %, whole numbers | `0` | per Synth |
 | `an_svf_osc` | SVF Self-Osc: with `an_svf` above 0, the top of the resonance whistles | option: `Off` / `On` | `Off` | per Synth |
+| `an_mix_drive` | Mixer Drive: a soft clip on the mixer's sum | number 0 to 100 %, whole numbers | `0` | per Synth |
+| `an_feedback` | Feedback: each voice's filter output back into its mixer | number 0 to 100 %, whole numbers | `0` | per Synth |
 
 ### RIBBON
 
