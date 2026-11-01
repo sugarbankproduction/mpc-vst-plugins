@@ -1052,6 +1052,14 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      position, the gate, the pressure and the ribbon's place all stay; a new drag moves on from there; HOLD clicked
      again lets go. Window-side only (never saved, nothing in the engine or audio path), as SYNTH OUTPUT's MASTER. Layout:
      the ribbon's plate 60 px wider, the ribbon starts at 508. Left: the MPC page.
+  47. (2026-11-01) LINK on the POLYPHONY panel (owner: "link all the settings on this panel to all three synths").
+     Done 2026-11-01 (the desktop window; `link_poly`, shared, default Off; gen_layout.py LINK_GROUPS; load_test
+     `poly_link_test`). On the panel's third line under VOICES, a plain click: lit, VOICES, MONO PRIORITY, VOICE
+     STEALING, HOLD, UNISON, UNISON VOICES, UNISON DETUNE and PITCH VARIANCE set from the panel or its page go to all
+     three Synths (one undo step, the host told), as glide's LINK; lighting it copies nothing by itself. Saved with the
+     sound, never randomised (rnd_golden NEWER). It is the last param of params.json (after the Synth 3 copies) so no
+     VST index moved (params.lock); `presets/make_synths.py` now keeps every param where it is when run again (new
+     copies still go last). Factory presets made again (`link_poly` Off, nothing else changed).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

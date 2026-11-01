@@ -86,7 +86,12 @@ def main():
     for i, p in enumerate(copies):   # a copy follows its Synth 1 param's range and options
         pre, k = p["key"][:3], p["key"][3:]
         copies[i] = copy_of(byk[k], pre)
-    doc["params"] = base + copies + new
+    if have:   # (2026-11-01) every param where it was (a shared one appended after the copies too), new ones last
+        keep = {p["key"]: p for p in copies}
+        doc["params"] = [keep[p["key"]] if p["key"].startswith(PREFIXES) else p for p in params
+                         if not p["key"].startswith(PREFIXES) or p["key"] in keep] + new
+    else:
+        doc["params"] = base + copies + new
     with open(PATH, "w", encoding="utf-8", newline="\n") as f:
         f.write('{\n "name": %s,\n "params": [\n' % json.dumps(doc["name"]))
         f.write(",\n".join("  " + json.dumps(p, ensure_ascii=False) for p in doc["params"]))

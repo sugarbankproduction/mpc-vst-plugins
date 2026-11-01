@@ -509,10 +509,12 @@ def build(lay):
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
     L.cells([("voices", "VOICES", 40, "button"), ("uni_detune", "DETUNE", 40, "knob"), ("hold", "HOLD", 40, "toggle")],
             622, YL, HL, size=24)
+    # (2026-11-01) LINK on the third line: every setting of this panel and its page the same in all 3 Synths
+    L.ctl("link_poly", "toggle", 626, YX, 50, 14, "LINK", SIDE)
     L.page("POLY", "POLYPHONY", "How notes share the voices.", [
         ("voices", "Voices"), ("note_priority", "Mono Priority"), ("steal_mode", "Voice Stealing"), ("hold", "Hold"),
         ("unison", "Unison"), ("uni_count", "Unison Voices"), ("uni_detune", "Unison Detune"),
-        ("pitch_var", "Pitch Variance")])
+        ("pitch_var", "Pitch Variance"), ("link_poly", "Link (3 Synths)")])
 
     # ---- centre console: the screen (presets, mod matrix, MORE pages, the step editor, help), its buttons, and under
     # them the SEQUENCER module ----
@@ -780,7 +782,10 @@ LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
                ("link_cut", ("svf_cut", "flt_cut")),
                # (2026-10-31) the controller box: glide's settings; the pitch wheel's LINK also keeps BEND RANGE alike
                ("link_glide", ("glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando")),
-               ("link_bend", ("bend_up", "bend_down"))] + \
+               ("link_bend", ("bend_up", "bend_down")),
+               # (2026-11-01) the POLYPHONY panel: all it shows and its page
+               ("link_poly", ("voices", "note_priority", "steal_mode", "hold", "unison", "uni_count", "uni_detune",
+                              "pitch_var"))] + \
               [("link_lfo%d" % n, tuple("lfo%d_%s" % (n, s) for s in ("rate", "sync", "timing"))) for n in range(1, 5)]
 
 

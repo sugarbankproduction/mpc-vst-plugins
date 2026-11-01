@@ -2931,11 +2931,63 @@ static void hold_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     setkey(fx, "ribbon_mode", rm0);
 }
 
+/* ---- (2026-11-01) the POLYPHONY panel's LINK (link_poly, the window's kind, as glide's): off, HOLD and UNISON
+ * clicked on the panel switch Synth 1's alone; lit (a plain click), they switch all three Synths'; DETUNE turned too.
+ * Saved with the sound; a second click puts it out. ---- */
+static void poly_link_test(AEffect *fx, HWND child, float s) {
+    char what[600], k[32];
+    static const char *const KEY[3] = {"hold", "unison", "uni_detune"};
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    float was[3][3];
+    for (int c = 0; c < 3; c++)
+        for (int j = 0; j < 3; j++) {
+            snprintf(k, sizeof k, "%s%s", c == 1 ? "s2_" : c == 2 ? "s3_" : "", KEY[j]);
+            was[c][j] = pv(fx, k);
+            setkey(fx, k, j == 2 ? 0.25f : 0);   /* (DETUNE 25%) */
+        }
+    setkey(fx, "link_poly", 0);
+    click_ctl(child, s, "hold");
+    int alone = pv(fx, "hold") > 0.5f && pv(fx, "s2_hold") < 0.5f && pv(fx, "s3_hold") < 0.5f;
+    click_ctl(child, s, "hold");
+    click_ctl(child, s, "link_poly");   /* LINK, on the panel's third line */
+    int lit = pv(fx, "link_poly") > 0.5f;
+    click_ctl(child, s, "hold");
+    click_ctl(child, s, "unison");
+    qm_drag(child, "uni_detune", s, 30);   /* (DETUNE turned up) */
+    int all = 1;
+    for (int c = 0; c < 3; c++)
+        for (int j = 0; j < 3; j++) {
+            snprintf(k, sizeof k, "%s%s", c == 1 ? "s2_" : c == 2 ? "s3_" : "", KEY[j]);
+            all &= fabsf(pv(fx, k) - pv(fx, KEY[j])) < 1e-4f;
+        }
+    int changed = pv(fx, "hold") > 0.5f && pv(fx, "unison") > 0.5f && pv(fx, "uni_detune") > 0.27f;
+    void *chunk = NULL;   /* saved with the sound */
+    intptr_t n = fx->dispatcher(fx, 23 /* effGetChunk */, 0, 0, &chunk, 0);
+    static char saved[300000];
+    if (n > 0 && n <= (intptr_t)sizeof saved) memcpy(saved, chunk, (size_t)n);
+    setkey(fx, "link_poly", 0);
+    if (n > 0 && n <= (intptr_t)sizeof saved) fx->dispatcher(fx, 24 /* effSetChunk */, 0, n, saved, 0);
+    int kept = pv(fx, "link_poly") > 0.5f;
+    click_ctl(child, s, "link_poly");
+    int out = pv(fx, "link_poly") < 0.5f;
+    snprintf(what, sizeof what, "POLYPHONY's LINK: off, HOLD clicked switches Synth 1's alone (%d); a plain click lights "
+             "LINK (%d); then HOLD, UNISON and DETUNE set from the panel go to all three Synths alike (%d, changed %d); "
+             "saved with the sound (%d); a second click puts it out (%d)", alone, lit, all, changed, kept, out);
+    check(alone && lit && all && changed && kept && out, what);
+    for (int c = 0; c < 3; c++)
+        for (int j = 0; j < 3; j++) {
+            snprintf(k, sizeof k, "%s%s", c == 1 ? "s2_" : c == 2 ? "s3_" : "", KEY[j]);
+            setkey(fx, k, was[c][j]);
+        }
+    SendMessageA(child, WM_TIMER, 1, 0);
+}
+
 static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-10-30) */
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     pad_link_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     hands_link_test(fx, child, s, bmp, w, h);   /* (2026-10-31) */
     hold_test(fx, child, s, bmp, w, h);   /* (2026-11-01) */
+    poly_link_test(fx, child, s);   /* (2026-11-01) */
     tempo_test(fx, child, s, bmp, w, h);
     gen_hub_test(fx, child, s, bmp, w, h);
     follow_tempo_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */

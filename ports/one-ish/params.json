@@ -2003,7 +2003,8 @@
   {"key": "s3_mout_on", "name": "S3 MIDI Out", "options": ["Off", "On"], "default": "Off"},
   {"key": "s3_mout_send", "name": "S3 MIDI Out Sends", "options": ["Keys", "Generated", "Both"], "default": "Both"},
   {"key": "s3_mout_ch", "name": "S3 MIDI Out Channel", "options": ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16"], "default": "3"},
-  {"key": "s3_sus_pedal", "name": "S3 Sustain Pedal Holds", "options": ["Off", "On"], "default": "On"}
+  {"key": "s3_sus_pedal", "name": "S3 Sustain Pedal Holds", "options": ["Off", "On"], "default": "On"},
+  {"key": "link_poly", "name": "Link Polyphony (3 Synths)", "options": ["Off", "On"], "default": "Off"}
  ],
  "sections": [
   {"label": "OSC 1", "keys": ["o1_oct", "o1_freq", "o1_beat", "o1_wave", "o1_angle", "o1_pw", "o1_mix"]},

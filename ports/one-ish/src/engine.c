@@ -297,6 +297,7 @@ enum {
     P_LINK_GLIDE,    /* (2026-10-31) the window's glide LINK (gen_layout.py LINK_GROUPS): stored, as the other LINKs */
     /* (2026-11-01) ANALOG AMOUNT (shared): every Synth's ANALOG page at once (0% exact, 100% as set, 200% twice) */
     P_ANALOG_AMT,
+    P_LINK_POLY,     /* (2026-11-01) the POLYPHONY panel's LINK (the window's kind, as glide's): stored */
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -464,6 +465,7 @@ static const char *const KEYS[P_COUNT] = {
     "link_mod", "link_bend", "link_ribbon",   /* (2026-10-31) the wheels' and the ribbon's LINKs */
     "link_glide",   /* (2026-10-31) */
     "analog_amt",   /* (2026-11-01) ANALOG AMOUNT */
+    "link_poly",    /* (2026-11-01) */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */

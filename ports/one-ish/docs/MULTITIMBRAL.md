@@ -58,7 +58,10 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   undo step). LINKs: KEY and SCALE (the GENERATIVE page and the GEN page), the arpeggiator's RATE (under it on the
   panel: its division, timing, sync and free rate), the sequencer's RATE (beside it), each LFO's RATE (in each LFO:
   its rate, sync and timing), LINK SENDS (the MASTER EFFECTS panel: SEND 1 and SEND 2) and the balls and particles
-  (every `phys_*` setting; their pages). **ALL 3** above LINK CUTOFF (between the filters) is the one relative LINK:
+  (every `phys_*` setting; their pages), and (2026-11-01, owner's request; the desktop window, load_test
+  `poly_link_test`) the POLYPHONY panel's LINK `link_poly` (its third line, under VOICES: every setting the panel and
+  its page show: VOICES, MONO PRIORITY, VOICE STEALING, HOLD, UNISON, UNISON VOICES, UNISON DETUNE, PITCH VARIANCE;
+  default Off; appended at the very end of params.json so no VST index moved). **ALL 3** above LINK CUTOFF (between the filters) is the one relative LINK:
   turning either CUTOFF moves that cutoff on all three Synths by the same amount, so their offsets stay (a cutoff at
   its end stays there). Lighting one copies nothing by itself: the next change does. They are shared
   params (`link_*`, one copy, no engine effect), so they are saved with the sound (projects, patches, presets, undo)
