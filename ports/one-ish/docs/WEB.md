@@ -195,3 +195,10 @@ vercel deploy --prod --yes
 That updates the public page **https://moo-won.vercel.app** (owner, 2026-11-01: "Public is fine"). Without `--prod`
 it makes a preview behind Vercel's sign-in. The built files (`moowon.wasm`, `moowon_full.*`) are not in git; build
 them before deploying.
+
+## Browsers built into other apps (2026-11-02)
+
+Messenger, Facebook and Instagram open links in their own built-in browser, which has no shared memory between threads
+(`crossOriginIsolated` false, whatever the headers say), so the plugin can't start there. The page says so and offers
+OPEN IN CHROME (Android, an `intent://` link) and COPY THE LINK. Checked with an emulated Android browser on a local server
+without the headers; not yet tried from Messenger itself.

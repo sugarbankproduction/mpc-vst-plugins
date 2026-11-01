@@ -568,10 +568,42 @@ async function setupMidi() {
   } catch { st.textContent = "MIDI was not allowed."; }
 }
 
+// (2026-11-02) a browser built into another app (Messenger, Facebook, Instagram ...) has no shared memory between threads,
+// which the plugin needs: say so plainly, and offer the way out
+function cantRunHere() {
+  const ua = navigator.userAgent, link = location.href.split("#")[0];
+  const android = /Android/i.test(ua), ios = /iPhone|iPad|iPod/i.test(ua);
+  const inApp = /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|MicroMessenger|Line\/|; wv\)/i.test(ua);
+  $("start").hidden = true;
+  $("status").textContent = (inApp ? "This app's built-in browser can't run Moo Won." : "This browser can't run Moo Won.") +
+    (ios ? " Open it in Safari: tap the ... menu, then Open in Safari, or copy the link." :
+     android ? " Open it in Chrome with the button below, or from the ... menu." :
+     " Open it in Chrome, Edge, Firefox or Safari.");
+  const box = $("status").parentNode;
+  if (android) {
+    const a = document.createElement("a");
+    a.className = "big red";
+    a.style.cssText = "display:inline-block;text-decoration:none;margin:6px;padding:14px 26px;border-radius:6px;background:var(--red);color:#fff;font-size:18px";
+    a.textContent = "Open in Chrome";
+    a.href = `intent://${location.host}${location.pathname}#Intent;scheme=https;package=com.android.chrome;` +
+      `S.browser_fallback_url=${encodeURIComponent(link)};end`;
+    box.appendChild(a);
+  }
+  const c = document.createElement("button");
+  c.className = "big";
+  c.style.margin = "6px";
+  c.textContent = "Copy the link";
+  c.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(link); c.textContent = "Copied"; }
+    catch { c.textContent = link; }
+  });
+  box.appendChild(c);
+}
+
 // ---- starting ----
 async function load() {
   if (!crossOriginIsolated) {
-    $("status").textContent = "This page needs a cross-origin isolated server (it shares memory between threads).";
+    cantRunHere();
     return;
   }
   M = await createMooWon({
