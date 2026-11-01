@@ -841,6 +841,9 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 ke
 | `an_warm_amt` | Warm-Up Amount | number 0 to 100 %, whole numbers | `50` | per Synth |
 | `an_warm_time` | Warm-Up Time | number 1 to 20 min, whole numbers | `5` | per Synth |
 | `analog_amt` | Analog Amount (all of the ANALOG page, all 3 Synths) | number 0 to 200 %, whole numbers | `100` | shared |
+| `an_svf` | Non-Linear SVF: the SVF's resonance holds back as it gets loud | number 0 to 100 %, whole numbers | `0` | per Synth |
+| `an_svf_drive` | SVF Drive: a soft saturator before the SVF | number 0 to 100 %, whole numbers | `0` | per Synth |
+| `an_svf_osc` | SVF Self-Osc: with `an_svf` above 0, the top of the resonance whistles | option: `Off` / `On` | `Off` | per Synth |
 
 ### RIBBON
 

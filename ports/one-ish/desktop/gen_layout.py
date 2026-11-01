@@ -778,7 +778,9 @@ def build(lay):
         ("an_lvl", "Level Spread"), ("an_tune", "Tuning Spread"), ("an_ladder", "Ladder Character"),
         # (2026-10-30) HQ MODE (the voice oversampled: cleaner sync, FM and driven ladder) and WARM-UP (a cold start)
         ("an_hq", "HQ Mode"), ("an_warm", "Warm-Up"), ("an_warm_amt", "Warm-Up Amount"),
-        ("an_warm_time", "Warm-Up Time")])
+        ("an_warm_time", "Warm-Up Time"),
+        # (2026-11-02) the saturating SVF (src/svf.h svf_tick_nl); the page's second screen
+        ("an_svf", "SVF Character"), ("an_svf_drive", "SVF Drive"), ("an_svf_osc", "SVF Self-Osc")])
     return zones
 
 

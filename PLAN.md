@@ -1190,7 +1190,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      `docs/ANALOG_RESEARCH.md`, on branch `one-ish-analog`). Offline only; nothing heard by ear, not in Carla, not on a
      device; section 9 of that report has the numbers. The measuring kit: `test/analog_measure.c` (`offline_check
      measure`, run by `test/run.sh`): the ladder's reference model and the tables, with today's numbers recorded. No
-     change to the sound.
+     change to the sound. Each sound below is a new param at the very end of params.json starting at 0 or Off, on the
+     ANALOG page, scaled by ANALOG AMOUNT, kept when a preset loads, never randomised; the golden check passes with
+     its fixture not remade; a voice takes `render_voice_os` with `ax` 0, the old loop, unless one is on. Saturating
+     SVF: `an_svf`, `an_svf_drive`, `an_svf_osc` (src/svf.h svf_tick_nl; test/analogx_check.c).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

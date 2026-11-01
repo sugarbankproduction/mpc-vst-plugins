@@ -3,7 +3,18 @@
  * Model: the trapezoidal (TPT) SVF, as in V. Zavalishin, "The Art of VA Filter Design" (ch. 4) and A. Simper's openly
  * published "Linear Trap Integrated SVF" notes: stable at any cutoff and resonance, in tune up to its top cutoff.
  * Linear: resonance raises the peak at the cutoff up to +20 dB but does not self-oscillate (the ladder does that).
- * About ten multiplies per sample per element, no allocation: safe in the audio path. */
+ * About ten multiplies per sample per element, no allocation: safe in the audio path.
+ *
+ * Non-linear variant (2026-11-02, svf_tick_nl, the ANALOG page's NON-LINEAR SVF): the same zero-delay structure with
+ * a damping that rises with the band state's level, D = c v^2 (capped), as a soft limiter across the first integrator
+ * would give. Worked out from the state alone (the last sample), so the loop stays linear within the sample and is
+ * solved as above: the "cheap" method of Mystran's KVR posts, used here on the band path, on the structure of
+ * Zavalishin ch. 4 and 6. A damping term moves the level, hardly the pitch, so the resonance compresses and stays in
+ * tune. This is a musically saturating filter, not a model of any one circuit (nobody has published which saturator
+ * matches which classic filter). One division and three multiplies more than the linear element; no tanh.
+ * Self-oscillation (svf2_set_osc): the damping is allowed just below 0 at the top of the resonance, where D then
+ * holds the sine's level: c v^2 averages 0.75 c A^2 over a cycle, so -k = 0.75 c A^2 gives the amplitude A. Both k and
+ * c scale with the amount, so A stays about 0.7 at any amount. */
 #pragma once
 #include <math.h>
 
@@ -12,6 +23,9 @@
 #define SVF_G_MIN 7.1e-5f      /* about 1 Hz at 44.1 kHz */
 #define SVF_K_MIN 0.1f         /* damping at 100% resonance: Q 10, a +20 dB peak */
 #define SVF_SPACE_OCT 4.0f     /* the pair's spacing at +-100%: element B sits up to 4 octaves above or below A */
+#define SVF_NL_C 0.133f        /* the non-linear damping's c at 100%: self-oscillation's amplitude about 0.7 (see above) */
+#define SVF_NL_DMAX 8.0f       /* its cap: enough at any level, and a state never freezes at the sample rate's top */
+#define SVF_K_OSC (-0.05f)     /* the damping at 100% resonance with SVF SELF-OSC, at 100% amount: past 0 from about 97% */
 
 enum { SVF_LP, SVF_BP, SVF_HP, SVF_NOTCH };   /* option order in params.json */
 enum { SVF_SERIES, SVF_PARALLEL };            /* the pair's "svf_pair" options */
@@ -83,6 +97,7 @@ typedef struct {
     float ga, gb;              /* each element's g at the last control step (filter FM scales them per sample) */
     int series;
     int single;                /* parallel at spacing 0: element A alone is the pair */
+    float nl;                  /* the non-linear variant's c (read by svf2_next_nl only) */
 } svf2_t;
 
 static inline void svf2_reset(svf2_t *p) { svf_reset(&p->a); svf_reset(&p->b); }
@@ -110,6 +125,27 @@ static inline float svf2_next(svf2_t *p, float x) {
     return 0.5f * (svf_next(&p->a, x) + svf_next(&p->b, x));
 }
 
+/* one sample of an element at g with the non-linear damping (see the top of the file); c 0: svf_next to rounding */
+static inline float svf_tick_nl(svf_t *f, float x, float g, float c) {
+    float s1 = f->ic1, s2 = f->ic2;
+    float d = c * s1 * s1;
+    if (d > SVF_NL_DMAX) d = SVF_NL_DMAX;
+    float v1 = (s1 + g * (x - s2)) / (1.0f + g * (g + f->k + d));   /* band */
+    float v2 = s2 + g * v1;   /* low */
+    f->ic1 = 2.0f * v1 - s1;
+    f->ic2 = 2.0f * v2 - s2;
+    return f->m0 * x + f->m1 * v1 + f->m2 * v2;
+}
+
+/* SVF SELF-OSC, after svf2_set: resonance 0..1 reaches SVF_K_OSC x the amount (0..1) instead of SVF_K_MIN. In series
+ * the square root as svf2_set takes it, while there is one; below 0 k itself. Outside the sample loop. */
+static inline void svf2_set_osc(svf2_t *p, float reso, float amount, int mode) {
+    float k = 2.0f - (2.0f - SVF_K_OSC * amount) * (reso < 0.0f ? 0.0f : reso > 1.0f ? 1.0f : reso);
+    if (p->series && k > 0.0f) k = sqrtf(k);
+    svf_coefs(&p->a, p->ga, k, mode);
+    svf_coefs(&p->b, p->gb, k, mode);
+}
+
 static inline float svf_clamp_g(float g) { return g < SVF_G_MIN ? SVF_G_MIN : g > SVF_G_MAX ? SVF_G_MAX : g; }
 
 /* filter FM: both cutoffs times e (2 to the power of this sample's modulation in octaves). Scaling g stands in for
@@ -119,4 +155,13 @@ static inline float svf2_next_fm(svf2_t *p, float x, float e) {
     svf_set_g(&p->a, svf_clamp_g(p->ga * e));
     if (!p->single) svf_set_g(&p->b, svf_clamp_g(p->gb * e));
     return svf2_next(p, x);
+}
+
+/* the pair with the non-linear damping, both cutoffs times e (1: no filter FM) */
+static inline float svf2_next_nl(svf2_t *p, float x, float e) {
+    float ga = svf_clamp_g(p->ga * e), c = p->nl;
+    if (p->single) return svf_tick_nl(&p->a, x, ga, c);
+    float gb = svf_clamp_g(p->gb * e);
+    if (p->series) return svf_tick_nl(&p->b, svf_tick_nl(&p->a, x, ga, c), gb, c);
+    return 0.5f * (svf_tick_nl(&p->a, x, ga, c) + svf_tick_nl(&p->b, x, gb, c));
 }

@@ -94,8 +94,8 @@ static double mz_ref_tick(mz_ref_t *r, const mz_sig_t *s, double t) {
 }
 
 /* ---- one filter under test, whichever it is ---- */
-enum { MZ_LAD, MZ_NL, MZ_REF, MZ_SVF, MZ_KINDS };
-static const char *const MZ_NAME[MZ_KINDS] = {"linear ladder", "non-linear ladder", "reference", "SVF"};
+enum { MZ_LAD, MZ_NL, MZ_REF, MZ_SVF, MZ_SVFN, MZ_KINDS };   /* MZ_SVFN: NON-LINEAR SVF at 100% */
+static const char *const MZ_NAME[MZ_KINDS] = {"linear ladder", "non-linear ladder", "reference", "SVF", "non-linear SVF"};
 typedef struct {
     int kind;
     ladder_t l;
@@ -113,6 +113,7 @@ static void mz_set(mz_flt_t *f, double hz, double res) {
         f->r.k = LADDER_K_MAX * res;
     } else {
         svf2_set(&f->s, (float)hz, 0.0f, (float)res, SVF_LP, SVF_PARALLEL, (float)MZ_FR);
+        f->s.nl = SVF_NL_C;
     }
 }
 static void mz_init(mz_flt_t *f, int kind, double hz, double res) {
@@ -131,6 +132,7 @@ static double mz_tick(mz_flt_t *f, const mz_sig_t *s, double t) {
     float x = (float)mz_sig(s, t);
     if (f->kind == MZ_LAD) return ladder_next(&f->l, x);
     if (f->kind == MZ_NL) return ladder_next_nl(&f->l, x);
+    if (f->kind == MZ_SVFN) return svf2_next_nl(&f->s, x, 1.0f);
     return svf2_next(&f->s, x);
 }
 static void mz_run(mz_flt_t *f, const mz_sig_t *s, float *out, int n) {
@@ -325,6 +327,25 @@ static void mz_compression(const int *kinds, int nk) {
     }
 }
 
+/* (the voice's other side of it: test/analogx_check.c, through the engine) */
+static void mz_svf_self_osc(void) {
+    static const double HZ[] = {50, 200, 1000, 2000, 4000, 8000, 12000, 16000};
+    printf("measure: NON-LINEAR SVF, SELF-OSC at 100%%: cents against the cutoff, rms level, harmonics 2-5 in dB\n");
+    for (unsigned i = 0; i < sizeof HZ / sizeof HZ[0]; i++) {
+        static mz_flt_t f;
+        static const mz_sig_t none = {MZ_SILENCE, 0, 0};
+        int n = HZ[i] < 100 ? MZ_FR * 6 : MZ_FR * 2;
+        mz_init(&f, MZ_SVFN, HZ[i], 1.0);
+        svf2_set_osc(&f.s, 1.0f, 1.0f, SVF_LP);
+        mz_seed(&f, 0.01);
+        mz_run(&f, &none, mz_x, n);
+        const float *t = mz_x + n - MZ_FR;
+        double hz = mz_freq(t, MZ_FR);
+        printf("measure:   %6.0f Hz: %+6.1f cents, %5.1f dB, %6.1f\n", HZ[i], 1200 * log2(hz / HZ[i]), mz_db(mz_rms(t, MZ_FR)),
+               2 * hz < 0.48 * MZ_FR ? mz_thd(t, MZ_FR, hz) : 0.0);
+    }
+}
+
 static void mz_aliasing(void) {
     static const int NOTES[3] = {91, 96, 100};
     printf("measure: ALIASING (alias_db, the whole engine): a triangle into the ladder, drive 100%%, non-linear 100%%\n");
@@ -471,15 +492,16 @@ static void mz_cutoff_steps(void) {
 }
 
 static void analog_measure(void) {
-    static const int ALL[] = {MZ_LAD, MZ_NL, MZ_REF, MZ_SVF};
+    static const int ALL[] = {MZ_LAD, MZ_NL, MZ_REF, MZ_SVF, MZ_SVFN};
     printf("measure: the scale against the reference: input x is u = 0.625 x, y4 = 1 comes out as 1.6, no bass make-up in "
            "the reference. All offline, no ears.\n");
     mz_self_osc();
     mz_onset();
     mz_level_vs_k(0.05);
     mz_level_vs_k(1.0);
-    mz_harmonics_table(ALL, 4);
-    mz_compression(ALL, 4);
+    mz_harmonics_table(ALL, 5);
+    mz_compression(ALL, 5);
+    mz_svf_self_osc();
     mz_aliasing();
     mz_null_4x();
     mz_sweep();

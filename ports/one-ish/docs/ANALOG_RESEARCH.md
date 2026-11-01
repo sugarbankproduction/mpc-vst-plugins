@@ -437,3 +437,26 @@ lower), as the symmetric equations say.
 6. Item 8's gate: the 16-sample cutoff steps against every sample (time-aligned): ladder -21 dB on a 1 ms envelope,
    -38 on 5 ms, -51 on 25 ms; SVF -35, -48, -60. That is above the -70 dB the report said to drop it at, so it is
    **not ruled out**; a null is not an ear test either.
+
+### Item 2: saturating SVF (`an_svf`, `an_svf_drive`, `an_svf_osc`)
+
+Built as: a damping that rises with the band state (the method named in item 2, on the band path), a soft saturator
+before the filter, and past-the-edge damping for the whistle. A separate on/off for the whistle, so a saturating SVF does
+not whistle by itself. Tests: `test/analogx_check.c`.
+
+| | Result |
+|---|---|
+| Compression at the cutoff, resonance 90%: linear | +10.8 dB at every level |
+| The same, Non-Linear SVF 100% (-40 / -12 / 0 / +12 dB in) | +10.7 / +9.3 / +4.7 / -2.0 dB |
+| Resonance 95%, quiet against full scale | +14.2 and +5.4 dB (linear +14.2 and +14.2) |
+| Self-oscillation pitch, 50 / 200 / 1 k / 4 k / 8 kHz | -0.2 / +0.1 / +1.8 / +7.6 / +13.2 cents (ladder: up to -30) |
+| Its level through the engine | -12.1 to -12.7 dB across those; harmonics 2-5 -54 dB |
+| SVF Drive 0 / 50 / 100%, a sine: 3rd harmonic | -136 / -21.3 / -13.7 dB; level -15.2 / -11.0 / -12.3 dB |
+| Everything at 0 (or ANALOG AMOUNT 0%) | the very samples of before; the golden check passes with its fixture not remade |
+| Everything up, 64 combinations | finite, largest sample 0.95, exact 0 after the release |
+| CPU (8 voices, one element) | about +1.0-1.4 us a voice on, the same run differing by up to 0.27; +1.7 for a series pair |
+| CPU at 0 (old and new binaries in turn, 4 times) | new 8.86-9.17 us a voice, old 9.12-9.72: no rise |
+
+The report's estimate was +0.4-0.8 us; this came out higher. On its own the damping adds few harmonics (3rd at -67 dB
+at full scale, resonance 90%), so the harmonics come from the saturator before it. Pitch sharpens with cutoff, because
+the damping is one state late; 13 cents at 8 kHz is outside "a few cents" there, and under that up to 4 kHz.

@@ -2065,3 +2065,12 @@ s2_seq_rot_by
 s3_seq_rotate
 s3_seq_rot_every
 s3_seq_rot_by
+an_svf
+an_svf_drive
+an_svf_osc
+s2_an_svf
+s2_an_svf_drive
+s2_an_svf_osc
+s3_an_svf
+s3_an_svf_drive
+s3_an_svf_osc

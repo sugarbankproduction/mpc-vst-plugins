@@ -2740,14 +2740,18 @@ static void analog_keep_test(AEffect *fx) {
     float d0 = pv(fx, "drift"), c0 = pv(fx, "an_cut"), t0 = pv(fx, "s2_an_tune"), a0 = pv(fx, "analog_amt");
     setkey(fx, "drift", 0.4f); setkey(fx, "an_cut", 0.3f); setkey(fx, "s2_an_tune", 0.6f);
     setkey(fx, "analog_amt", 0.75f);   /* (2026-11-01) ANALOG AMOUNT 150% */
+    float sv0 = pv(fx, "s3_an_svf");
+    setkey(fx, "s3_an_svf", 0.65f);   /* (2026-11-02) the page's newer controls too */
     fx->dispatcher(fx, 2 /* effSetProgram */, 0, prog == 5 ? 6 : 5, NULL, 0);
     float d = pv(fx, "drift"), c = pv(fx, "an_cut"), t = pv(fx, "s2_an_tune"), a = pv(fx, "analog_amt");
+    float sv = pv(fx, "s3_an_svf");
     fx->dispatcher(fx, 2 /* effSetProgram */, 0, prog, NULL, 0);
     char what[240];
     snprintf(what, sizeof what, "ANALOG: kept when a preset loads (drift %.2f, cutoff spread %.2f, Synth 2 tuning "
-             "spread %.2f, ANALOG AMOUNT %.2f; want 0.40, 0.30, 0.60, 0.75)", d, c, t, a);
-    check(fabsf(d - 0.4f) < 0.01f && fabsf(c - 0.3f) < 0.01f && fabsf(t - 0.6f) < 0.01f && fabsf(a - 0.75f) < 0.01f,
-          what);
+             "spread %.2f, ANALOG AMOUNT %.2f, Synth 3 NON-LINEAR SVF %.2f; want 0.40, 0.30, 0.60, 0.75, 0.65)", d, c, t, a, sv);
+    check(fabsf(d - 0.4f) < 0.01f && fabsf(c - 0.3f) < 0.01f && fabsf(t - 0.6f) < 0.01f && fabsf(a - 0.75f) < 0.01f &&
+          fabsf(sv - 0.65f) < 0.01f, what);
+    setkey(fx, "s3_an_svf", sv0);
     setkey(fx, "drift", d0); setkey(fx, "an_cut", c0); setkey(fx, "s2_an_tune", t0); setkey(fx, "analog_amt", a0);
 }
 

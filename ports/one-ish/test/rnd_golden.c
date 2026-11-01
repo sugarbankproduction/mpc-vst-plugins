@@ -51,7 +51,9 @@ static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the ma
     /* (2026-11-02) each generator's own KEY and SCALE (no rule: never touched) */
     "gen_own_key", "gen_own_scale", "phys_ball_own_key", "phys_ball_own_scale", "phys_part_own_key", "phys_part_own_scale",
     "rain_own_key", "rain_own_scale", "mkv_own_key", "mkv_own_scale", "life_own_key", "life_own_scale", "orb_own_key",
-    "orb_own_scale", "pend_own_key", "pend_own_scale"};
+    "orb_own_scale", "pend_own_key", "pend_own_scale",
+    /* (2026-11-02) the ANALOG page's new controls (no rule that draws: never touched) */
+    "an_svf", "an_svf_drive", "an_svf_osc"};
 static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
                                       "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
 

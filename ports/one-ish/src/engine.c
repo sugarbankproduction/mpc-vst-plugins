@@ -163,6 +163,7 @@ enum { NC_RED, NC_WHITE, NC_PURPLE };           /* noise colours */
 static const int NOISE_PAIR[3][2] = {{NC_RED, NC_WHITE}, {NC_RED, NC_PURPLE}, {NC_WHITE, NC_PURPLE}};
 #define NDRIFT (NOSC + 1)                       /* drift: one wander per oscillator, one for the voice's cutoffs */
 /* a voice card's parts that differ from card to card: each is a fixed number in -1..1 per voice */
+enum { AX_SVF_NL = 1, AX_SVF_SAT = 2 };   /* (2026-11-02) one_t an_x: which of the ANALOG page's newer sounds are on */
 enum { AC_LAD_CUT, AC_SVF_CUT, AC_LAD_RES, AC_SVF_RES, AC_ENV, AC_LVL = AC_ENV + 3, AC_TUNE, AC_COUNT = AC_TUNE + NOSC };
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
@@ -412,6 +413,9 @@ typedef struct one_s {
     env_cfg_t ncfg;          /* the noise EG's */
     float drift_coef;        /* drift's smoothing per control step */
     float an_amt;            /* (2026-11-01) ANALOG AMOUNT as a factor, 0..2 (1: the page as set; apply_analog) */
+    /* (2026-11-02) what the ANALOG page's newer controls come to (apply_analog); an_x 0: the voice's loop as before */
+    int an_x;                /* AX_* */
+    float svf_amt, svf_s, svf_m;   /* NON-LINEAR SVF, 0..1; the saturator before it: gain in, gain out */
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
     float gain_coef, glide;  /* per sample / per control step */
     int phase;               /* samples into the current control step */
@@ -735,6 +739,13 @@ static void apply_analog(one_t *s) {
     float cut = p[P_AN_CUT] * 0.01f * AN_CUT_OCT * a, res = p[P_AN_RES] * 0.01f * AN_RES * a;
     float env = p[P_AN_ENV] * 0.01f * AN_ENV_FRAC * a, lvl = p[P_AN_LVL] * 0.01f * AN_LVL_DB * a;
     float tune = p[P_AN_TUNE] * 0.01f * AN_TUNE_ST * a;
+    /* (2026-11-02) NON-LINEAR SVF and SVF DRIVE. The saturator: ladder_sat(x s) m, of gain s m = the drive's up to
+     * +9 dB and from a knee well above full scale (NON-LINEAR SVF alone) to one at a quarter of it (drive) */
+    float sd = clampf(p[P_AN_SVF_DRIVE] * 0.01f * a, 0.0f, 1.0f);
+    s->svf_amt = clampf(p[P_AN_SVF] * 0.01f * a, 0.0f, 1.0f);
+    s->svf_s = 0.5f * s->svf_amt + 3.5f * sd;
+    s->svf_m = s->svf_s > 0.0f ? sqrtf(1.0f + 7.0f * sd) / s->svf_s : 1.0f;
+    s->an_x = (s->svf_amt > 0.0f ? AX_SVF_NL : 0) | (s->svf_s > 0.0f ? AX_SVF_SAT : 0);
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
         for (int f = 0; f < 2; f++) {
@@ -746,6 +757,13 @@ static void apply_analog(one_t *s) {
         for (int n = 0; n < NOSC; n++) v->an_tune[n] = v->card[AC_TUNE + n] * tune;
     }
 }
+/* (2026-11-02) after svf2_set: NON-LINEAR SVF's amount and SVF SELF-OSC's damping; off, the SVF stays as svf2_set left it */
+static inline void svf_analog(const one_t *s, voice_t *v, float reso, int mode) {
+    if (!(s->an_x & AX_SVF_NL)) return;
+    v->svf.nl = SVF_NL_C * s->svf_amt;
+    if (s->val[P_AN_SVF_OSC] > 0.5f) svf2_set_osc(&v->svf, reso, s->svf_amt, mode);
+}
+
 /* the NON-LINEAR LADDER's amount (0..1), x ANALOG AMOUNT (2026-11-01): 0, the linear ladder (and its CPU) */
 static float an_ladder(const one_t *s) { return clampf(s->val[P_AN_LADDER] * 0.01f * s->an_amt, 0.0f, 1.0f); }
 
@@ -1199,6 +1217,7 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
         svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(v->an_cut[1]), s->val[P_SVF_SPACE] * 0.01f,
                  clampf(s->val[P_SVF_RES] * 0.01f + v->an_res[1], 0.0f, 1.0f), (int)s->val[P_SVF_MODE],
                  (int)s->val[P_SVF_PAIR], SR * (float)v->os);
+        svf_analog(s, v, clampf(s->val[P_SVF_RES] * 0.01f + v->an_res[1], 0.0f, 1.0f), (int)s->val[P_SVF_MODE]);
     }
 }
 
@@ -2637,6 +2656,7 @@ static void control_voice(one_t *s, voice_t *v) {
     svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), clampf(p[P_SVF_SPACE] * 0.01f + dm[MD_SVF_SPACE], -1.0f, 1.0f),
              clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES] + v->an_res[1], 0.0f, 1.0f), (int)p[P_SVF_MODE],
              (int)p[P_SVF_PAIR], SR * (float)v->os);
+    svf_analog(s, v, clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES] + v->an_res[1], 0.0f, 1.0f), (int)p[P_SVF_MODE]);
     set_targets(s, v, dm, v->lfo_out[2]);
     if (v->hi_reach) v->amp_mod = clampf(v->hi_amp0, 0.0f, 2.0f);   /* (the High LFOs move it per sample) */
     if (mac_heard(v)) v->mac_note = mac_pitch(s, v, semis + dr[0] * DRIFT_ST + v->an_tune[0]);
@@ -2766,9 +2786,12 @@ __attribute__((noinline)) static int hi_lfo_block(const one_t *s, voice_t *v, in
  * is acc + xl, acc + xr, and centred voices cost nothing extra); returns whether it did. Levels, wave shapes, FM
  * depth, the filter mix, the noise colours and the pan gains ramp from the last control step's values to this one's.
  * ext: the audio input for these n samples (the EXT channel), or NULL while it is silent: then EXT is not heard and
- * nothing it routes to runs on its account (no input connected changes nothing). */
+ * nothing it routes to runs on its account (no input connected changes nothing).
+ * ax (2026-11-02): 0, the loop as it was, with none of the ANALOG page's newer sounds compiled into it; 1, they run as
+ * s->an_x says. render_voice picks. */
 static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice_t *v, const float *ext, float *acc,
-                                                                  float *xl, float *xr, int n, int first, const int os) {
+                                                                  float *xl, float *xr, int n, int first, const int os,
+                                                                  const int ax) {
     const float *p = s->val;
     float inv = 1.0f / (float)n, out[CR], wn[CR], cn[CR];   /* the voice's output; white noise; the noise channel */
     const float *ncp = noise_channel(s, v, first, inv, n, wn, cn);
@@ -2813,6 +2836,8 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
     v->mix_lad = v->tgt_mix;
     v->fm = v->tgt_fm;
     int run_lad = series || ml != 0.0f || v->mix_lad != 0.0f;
+    /* (2026-11-02) SVF SELF-OSC whistles with nothing routed to it, as the ladder does, wherever the SVF is heard */
+    if (ax && (s->an_x & AX_SVF_NL) && p[P_AN_SVF_OSC] > 0.5f && (series || ml != 1.0f || v->mix_lad != 1.0f)) any_svf = 1;
     float dpl, dpr;   /* the pan gains */
     float pl = ramp_from(v->pl, v->tgt_pl, first, inv, &dpl), pr = ramp_from(v->pr, v->tgt_pr, first, inv, &dpr);
     v->pl = v->tgt_pl;
@@ -2876,7 +2901,11 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
                 float in = a * svf[0] + b * svf[1] + c * svf[2] + nc * svf[NOISE] + rm * svf[RING] + nz * NOISE_FLOOR;
                 if (mac_on) in += mc * svf[MACRO];
                 if (ext_on) in += ext[i] * svf[EXT];
-                if (hf & HF_SVF)   /* a High LFO on its cutoff (with filter FM, if any) */
+                if (ax && (s->an_x & AX_SVF_SAT)) in = ladder_sat(in * s->svf_s) * s->svf_m;   /* (2026-11-02) */
+                if (ax && (s->an_x & AX_SVF_NL)) {   /* (2026-11-02) NON-LINEAR SVF, with the same cutoff modulation */
+                    float e = svf_fm > 0.0f ? exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c)) : 1.0f;
+                    svf_out = svf2_next_nl(&v->svf, in, hf & HF_SVF ? e * hs[i] : e);
+                } else if (hf & HF_SVF)   /* a High LFO on its cutoff (with filter FM, if any) */
                     svf_out = svf2_next_fm(&v->svf, in, (svf_fm > 0.0f ? exp2_fast(svf_fm * (svf_src == 0 ? a : svf_src == 1 ? b : c))
                                                                        : 1.0f) * hs[i]);
                 else
@@ -2935,11 +2964,17 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
 }
 
 /* (2026-10-30) the voice at its HQ MODE: render_voice_os made once per oversampling, so Off (1) is the loop as it was,
- * with no sub-sample loop or decimation in it */
+ * with no sub-sample loop or decimation in it. (2026-11-02) And once more for the ANALOG page's newer sounds, so with
+ * them off a voice pays for one test per control step and nothing per sample. */
 static int render_voice(one_t *s, voice_t *v, const float *ext, float *acc, float *xl, float *xr, int n, int first) {
-    if (v->os == 2) return render_voice_os(s, v, ext, acc, xl, xr, n, first, 2);
-    if (v->os == 4) return render_voice_os(s, v, ext, acc, xl, xr, n, first, 4);
-    return render_voice_os(s, v, ext, acc, xl, xr, n, first, 1);
+    if (s->an_x) {
+        if (v->os == 2) return render_voice_os(s, v, ext, acc, xl, xr, n, first, 2, 1);
+        if (v->os == 4) return render_voice_os(s, v, ext, acc, xl, xr, n, first, 4, 1);
+        return render_voice_os(s, v, ext, acc, xl, xr, n, first, 1, 1);
+    }
+    if (v->os == 2) return render_voice_os(s, v, ext, acc, xl, xr, n, first, 2, 0);
+    if (v->os == 4) return render_voice_os(s, v, ext, acc, xl, xr, n, first, 4, 0);
+    return render_voice_os(s, v, ext, acc, xl, xr, n, first, 1, 0);
 }
 
 /* what CTRL 1/2 can move (fx.h's FXD_* order): each target's slot and its knob's range */

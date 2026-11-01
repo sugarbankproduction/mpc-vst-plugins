@@ -5231,6 +5231,7 @@ static void arp_wav(const char *demo_path) {
 #include "links_check.c"     /* (2026-10-31) LINK on the mod wheel, the pitch wheel, the ribbon */
 #include "analog_check.c"    /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT */
 #include "analog_measure.c"  /* (2026-11-02) the measuring kit and its reference model: offline_check measure */
+#include "analogx_check.c"   /* (2026-11-02) the ANALOG page's newer sounds */
 #include "own_keys_check.c"  /* (2026-11-02) each generator's own KEY and SCALE */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
@@ -6006,6 +6007,7 @@ int main(int argc, char **argv) {
         lfo_share_bench();   /* (2026-10-30) SHARE */
         hq_bench();   /* (2026-10-30) HQ MODE, WARM-UP */
         analog_bench();   /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT */
+        analogx_bench();   /* (2026-11-02) the ANALOG page's newer sounds */
         multiout_bench();   /* (2026-10-30) multi-out */
         midi_out_bench();   /* (2026-10-30) MIDI OUT */
         m1p_cpu();   /* (2026-10-31) a .m1p converted, on the window's thread */
@@ -6073,6 +6075,12 @@ int main(int argc, char **argv) {
         return failures != 0;
     }
     if (argc > 1 && !strcmp(argv[1], "analogbench")) { analog_bench(); return 0; }   /* (2026-11-01) */
+    if (argc > 1 && !strcmp(argv[1], "analogxbench")) { analogx_bench(); return 0; }   /* (2026-11-02) */
+    if (argc > 1 && !strcmp(argv[1], "analogx")) {   /* (2026-11-02) just the ANALOG page's newer sounds */
+        analogx_checks();
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
     if (argc > 1 && !strcmp(argv[1], "measure")) {   /* (2026-11-02) the measuring kit (test/analog_measure.c) */
         analog_measure();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
@@ -6230,6 +6238,7 @@ int main(int argc, char **argv) {
     gen_keys_checks();   /* (2026-10-30) the generators' KEYS, GEN TEMPO */
     lfo_share_checks();   /* (2026-10-30) SHARE (test/lfoshare_check.c) */
     hq_checks();   /* (2026-10-30) HQ MODE and WARM-UP (test/hq_check.c) */
+    analogx_checks();   /* (2026-11-02) the ANALOG page's newer sounds (test/analogx_check.c) */
     multiout_checks();   /* (2026-10-30) multi-out (test/multiout_check.c) */
     midi_out_checks();   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH (test/midiout_check.c) */
     m1p_checks();   /* (2026-10-31) the .m1p converter (test/m1p_check.c) */
