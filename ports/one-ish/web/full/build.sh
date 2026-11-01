@@ -22,6 +22,7 @@ for try in 1 2 3 4 5; do   # (Dropbox sometimes holds build/params.h for a momen
 done
 mkdir -p "$OUT" "$SITE"
 "$PY" "$P/desktop/gen_layout.py" "$P/params.json" "$OUT/layout.h" > /dev/null
+"$PY" "$F/gen_panels.py" "$OUT/layout.h" "$SITE/panels.js"   # (the page's PANEL ZOOM rectangles)
 CHUNK=(-DVST2_CHUNK_MAX=262144)
 COMMON=(-O3 -pthread -Wno-unused-parameter -I"$P/build" -Iwrapper $CFLAGS "${CHUNK[@]}")
 FLAGS=("${COMMON[@]}" -std=gnu11)
@@ -48,6 +49,7 @@ for f in editor editor_draw skin patches library settings scala seq_page more_pi
   cc "$P/desktop/$f.c" "$OUT/$f.o" "${WIN[@]}" -Wno-comment -Wno-string-plus-int
 done
 cc "$P/desktop/m1p.c" "$OUT/m1p.o" "${WIN[@]}" -I"$P/src"
+cc "$F/touch.c" "$OUT/web_touch.o" "${WIN[@]}" -Wall -Wno-comment
 for f in win32 gdi gdiplus host; do cc "$F/$f.c" "$OUT/web_$f.o" "${WIN[@]}" -Wall; done
 for f in "$P"/third_party/plutovg/source/*.c; do
   cc "$f" "$OUT/pvg_$(basename "${f%.c}").o" -I"$P/third_party/plutovg/include" -DPLUTOVG_BUILD_STATIC -w
