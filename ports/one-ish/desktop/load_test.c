@@ -3104,6 +3104,10 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);
     fx->dispatcher(fx, 2, 0, 0, NULL, 0);
     click(child, s, ZONE_PAD[0] + 4.0f, ZONE_PAD[1] + ZONE_PAD[3] - 4.0f);   /* the pad: left, down (at rest) */
+    /* (2026-11-01) at ANALOG AMOUNT 0: this measures the wiring by level, and the layers' level only follows the filter
+     * this strongly while they stay in phase (with the new defaults' tuning spreads, about -8% instead of -27%) */
+    float amt_was = getkey(fx, "analog_amt");
+    setkey(fx, "analog_amt", 0.0f);
     send_midi(fx, 0x90, 60, 100);
     play(fx, 40, 512);
     double rest = play(fx, 20, 512);
@@ -3115,6 +3119,7 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     double back = play(fx, 20, 512);
     send_midi(fx, 0x80, 60, 0);
     play(fx, 200, 512);
+    setkey(fx, "analog_amt", amt_was);
     snprintf(what, sizeof what, "Init (all three Synths): a click on the pad's right side darkens it (rms %.4f at rest, %.4f "
              "with the pad to the right, %.4f back)", rest, moved, back);
     check(moved < rest * 0.85 && back > moved * 1.1, what);
