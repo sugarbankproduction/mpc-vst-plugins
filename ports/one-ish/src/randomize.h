@@ -351,6 +351,16 @@ static inline float rnd_range(rnd_ctx_t *c, float lo, float hi) { return lo + (h
 static inline float rnd_bell(rnd_ctx_t *c, float lo, float hi) { return lo + (hi - lo) * 0.5f * (rnd_u(c) + rnd_u(c)); }
 static inline float rnd_logr(rnd_ctx_t *c, float lo, float hi) { return lo * powf(hi / lo, rnd_u(c)); }   /* log-uniform */
 static inline int rnd_chance(rnd_ctx_t *c, float p) { return rnd_u(c) < p; }
+/* (2026-11-01) a whole-semitone offset of an oscillator to the nearest musical interval in the knob's +-7 st: unison,
+ * minor / major 3rd, 4th, 5th (up or down); 7ths and 9ths come through the octave footage (rnd_gen_osc) */
+static inline float rnd_musical(float st) {
+    static const float OK[] = {-7, -5, -4, -3, 0, 3, 4, 5, 7};
+    float best = 0.0f;
+    for (unsigned k = 0; k < sizeof OK / sizeof OK[0]; k++)
+        if (fabsf(OK[k] - st) < fabsf(best - st) || (fabsf(OK[k] - st) == fabsf(best - st) && fabsf(OK[k]) < fabsf(best)))
+            best = OK[k];
+    return best;
+}
 static inline float rnd_gauss(rnd_ctx_t *c) {   /* about a unit gaussian, within +-3.5 */
     return (rnd_u(c) + rnd_u(c) + rnd_u(c) + rnd_u(c) - 2.0f) * 1.7320508f;
 }
@@ -525,12 +535,23 @@ static inline void rnd_gen_osc(rnd_ctx_t *c) {
     rnd_set(c, "o1_oct", (float)o1);
     rnd_set(c, "o2_oct", rnd_clamp((float)o2, 0, 4));
     rnd_set(c, "o3_oct", rnd_clamp((float)o3, 0, 4));
-    for (int n = 2; n <= 3; n++) {   /* a slight detune, an interval, or in tune (a beat frequency may still move it) */
+    /* (2026-11-01, owner: a slight detune between the oscillators is the warm, fat analog sound; above a semitone only
+     * musical intervals) a detune of up to 0.9 st (mostly gentle, sometimes wide), a musical interval (3rds, 4th, 5th;
+     * 7ths and the 9th an octave up through the footage), or in tune (a beat frequency may still move it) */
+    for (int n = 2; n <= 3; n++) {
         float r = rnd_u(c), f = 0.0f, sign = rnd_chance(c, 0.5f) ? 1.0f : -1.0f;
-        if (r < 0.6f) f = sign * rnd_range(c, 0.03f, 0.15f);
-        else if (r < 0.78f) {
-            static const float IV[] = {7, 5, -5, 3, 4, -7};
-            f = IV[rnd_pickw(c, a == RA_TEXTURE ? "2 1 1 1 1 1" : "4 1.5 1", 6)] + sign * rnd_range(c, 0.0f, 0.05f);
+        if (r < 0.45f) f = sign * rnd_range(c, 0.04f, 0.3f);
+        else if (r < 0.62f) f = sign * rnd_range(c, 0.3f, 0.9f);
+        else if (r < 0.8f) {
+            /* semitones, then octaves up: 5th, 4th, 4th below, minor 3rd, major 3rd, 5th below, minor 7th, major 7th,
+             * 9th (the last three: the semitones below the octave above, and two above it) */
+            static const float IV[] = {7, 5, -5, 3, 4, -7, -2, -1, 2};
+            static const int UP[] = {0, 0, 0, 0, 0, 0, 1, 1, 1};
+            int k = rnd_pickw(c, a == RA_TEXTURE ? "2 1 1 1 1 1 1 0.5 1" : "4 1.5 1 1 1 0.5 0.6 0.3 0.6", 9);
+            int ok = rnd_keyf("o%d_oct", n);
+            if (UP[k] && c->w[ok] + 1.0f > 4.0f) k = 0;   /* (no footage above: the 5th) */
+            if (UP[k]) rnd_seti(c, ok, c->w[ok] + 1.0f);
+            f = IV[k] + sign * rnd_range(c, 0.0f, 0.05f);
         }
         rnd_seti(c, rnd_keyf("o%d_freq", n), f);
     }
@@ -997,7 +1018,8 @@ static inline void rnd_gen_wild(rnd_ctx_t *c, float s) {
             }
             if (n > 1 && rnd_chance(c, 0.3f * s)) {   /* far apart: any footage, any interval (kept in tune) */
                 rnd_seti(c, rnd_keyf("o%d_oct", n), (float)((int)(rnd_u(c) * 5) % 5));
-                rnd_seti(c, rnd_keyf("o%d_freq", n), roundf(rnd_range(c, -7, 7)));
+                float st = roundf(rnd_range(c, -7, 7));   /* (2026-11-01) any semitone from WILD 50% up */
+                rnd_seti(c, rnd_keyf("o%d_freq", n), c->wild >= 0.5f ? st : rnd_musical(st));
             }
         }
     }
@@ -1427,11 +1449,19 @@ static inline void rnd_safety(rnd_ctx_t *c) {
     rnd_min(c, "amp_scale", 30.0f);
     if (rnd_get(c, "amp_s") < 10.0f && rnd_get(c, "amp_d") < rnd_ms(150)) rnd_set(c, "amp_d", rnd_ms(150));
     if (rnd_on(c, "amp_loop") && rnd_get(c, "amp_s") < 20.0f) rnd_set(c, "amp_s", 20.0f);
-    /* oscillators in tune: an interval's detune within 0.25 st, beat frequencies within 3 Hz, gentle FM */
+    /* oscillators in tune: a detune under a semitone up to 0.9 st (2026-11-01: the analog warmth); from a semitone up
+     * an interval (below WILD 50% a musical one: 3rds, 4th, 5th) with its detune within 0.25 st; beat frequencies
+     * within 3 Hz, gentle FM. (A synced oscillator is a timbre, not a pitch: left as it is.) */
     for (int n = 1; n <= 3; n++) {
         int f = rnd_keyf("o%d_freq", n), b = rnd_keyf("o%d_beat", n);
-        float v = c->w[f], whole = roundf(v);
-        if (fabsf(v - whole) > 0.25f) rnd_seti(c, f, whole + (v > whole ? 0.25f : -0.25f));
+        float v = c->w[f];
+        int synced = n > 1 && c->w[rnd_keyf("o%d_sync", n)] > 0.5f;
+        if (fabsf(v) < 1.0f) rnd_seti(c, f, rnd_clamp(v, -0.9f, 0.9f));
+        else if (!synced) {
+            float whole = roundf(v), d = rnd_clamp(v - whole, -0.25f, 0.25f);
+            if (c->wild < 0.5f) whole = rnd_musical(whole);
+            rnd_seti(c, f, whole + d);
+        }
         rnd_seti(c, b, rnd_clamp(c->w[b], -3.0f, 3.0f));
     }
     rnd_max(c, "fm_amt", 70.0f);
