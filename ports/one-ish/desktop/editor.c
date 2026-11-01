@@ -275,6 +275,17 @@ void slot_rects(int slot, RECT *name, RECT *ctl) {
     SetRect(ctl, name->right + sc(4), L.row[r].top + sc(2), x + half, L.row[r].bottom - sc(2));
 }
 
+/* (2026-11-01) the ANALOG page's ANALOG AMOUNT: a big bar across the page's top AMT_ROWS rows (editor.h page_top);
+ * analog_amt_bar: the bar itself (between the name and the value), what a click and a drag go by */
+RECT analog_amt_rect(void) {
+    RECT r = {L.row[0].left, L.row[0].top + sc(2), L.row[0].right, L.row[AMT_ROWS - 1].bottom - sc(2)};
+    return r;
+}
+RECT analog_amt_bar(void) {
+    RECT a = analog_amt_rect(), b = {a.left + sc(122), a.top + sc(8), a.right - sc(70), a.bottom - sc(12)};
+    return b;
+}
+
 RECT matrix_cell(int r, int col) {
     RECT c = {L.row[r].left + sc(MXC[col]), L.row[r].top + sc(2), L.row[r].left + sc(MXC[col + 1]) - sc(4),
               L.row[r].bottom - sc(2)};
@@ -917,6 +928,12 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
             if (PtInRect(&all, pt)) return Z_PAGE + p;
         }
     } else {
+        RECT amt = analog_amt_rect();   /* (2026-11-01) the ANALOG page's ANALOG AMOUNT bar (all of it catches) */
+        if (page_top(e->screen) && PtInRect(&amt, pt)) {
+            e->hit_screen = 1;
+            e->hit_rect = analog_amt_bar();
+            return PI_ANALOG_AMT;
+        }
         int items[512], n = page_items(e, e->screen, items), per = page_slots(e->screen);
         for (int j = e->sub * per; j < n && j < (e->sub + 1) * per; j++) {
             RECT nm, c;
@@ -1294,6 +1311,11 @@ static void press(ed_t *e, int x, int y) {
         e->drag_from = ed_get(e, i);
         SetCapture(e->wnd);
         begin_edit(e, i, 0);
+        if (screen && i == PI_ANALOG_AMT && page_top(e->screen) && rw(&r) > 0) {   /* (2026-11-01) the big bar: a */
+            float v = (float)(x - r.left) / (float)rw(&r);                         /* click sets where it lands */
+            set_value(e, i, v < 0 ? 0.0f : v > 1 ? 1.0f : v);
+            e->drag_from = ed_get(e, i);   /* (and a drag goes on from there) */
+        }
     } else if (k == K_TOGGLE || (k == K_MENU && n == 2)) {
         edit_value(e, i, option_of(e, i) ? 0.0f : 1.0f);
     } else if (k == K_LEDS || k == K_OCT) {   /* an LED (or footage) picks it; the button steps on */

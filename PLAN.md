@@ -1002,6 +1002,32 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      (TEST_PATCH PT_M1P_PICK), the patches, tags, sound, message, report, AUTO RENAME and IGNORE. Nothing in the audio
      path. Left: the sequences, the effects' own controls and sync divisions (their scales need more files to read),
      importing a whole folder from the window (the dialog's Ctrl+A does a folder at a time).
+  45. (2026-11-01) ANALOG defaults and ANALOG AMOUNT (owner, 2026-11-01: "default ANALOG options that give a nice
+     analog flavour by default ... an overall ANALOG AMOUNT ... bigger so it's obvious that's the main control"). Done
+     2026-11-01 (offline and the desktop window). New defaults, every Synth: DRIFT 25 (each oscillator wanders within
+     about +-1 cent), CUTOFF SPREAD 25 (each voice's cutoffs +-1/12 octave), ENVELOPE SPREAD 30 (stage times +-7.5%),
+     LEVEL SPREAD 25 (+-0.4 dB), TUNING SPREAD 25 (+-2 cents per oscillator), RESONANCE SPREAD 20 (+-1% of the knob);
+     NON-LINEAR LADDER, HQ MODE and WARM-UP stay off (the ladder costs about +24% a voice and changes how the factory
+     sounds self-oscillate, about 8 dB quieter; HQ 1.8-3x; WARM-UP makes a fresh instance out of tune for minutes).
+     ANALOG AMOUNT (`analog_amt`, shared, 0-200%, default 100%): one control for all three Synths, scaling everything
+     on the page (spreads, drift with its matrix modulation, the non-linear ladder capped at 100%, WARM-UP's offsets;
+     not HQ MODE, a quality setting): 0% gives exactly the digital samples, 100% exactly the page as set (a factor of
+     1: every older sound plays as before), 200% twice. Kept across preset and patch loads with the rest of the page
+     (`desktop/patches.c` ANALOG_KEYS); never touched by the randomiser (`rnd_kept`; MUTATE draws the page as if 0, so
+     its numbers don't depend on it: the randomiser golden is unchanged). States: `dv=2` (src/synths.h `legacy_an`);
+     a `dv=1` or older state, sound or patch reads the page's left-out values as 0, as then; the factory presets keep
+     their designed values (make_synths `OLD_S1`; only Init takes the new defaults). Desktop: the ANALOG page's top two
+     rows are one big ANALOG AMOUNT bar (its name, a thick bar with 0 / 100 / 200% marks and a handle, its value large;
+     a plain click sets where it lands, a drag moves it, the wheel steps 1%, a double-click 100%; its help), the
+     page's 11 items under it (editor.h `page_top`). Tests: `test/analog_check.c` (`offline_check analog`: 0% with
+     everything up = the page at 0 sample for sample; 200% = 100% with the page doubled; states dv=2 / dv=1 / none;
+     LOAD INTO SYNTH), golden check (61 old sounds the same), load_test `analog_amt_test`, `analog_keep_test`.
+     Measured offline (a 4-note two-saw chord into the ladder, 2 s): RMS -0.9 dB against all 0 (the voices' phases
+     drift apart, so the chord's beating sums lower), brightness -4%; one note played on 8 voices in turn: levels
+     within 0.12 dB of each other (0 digital), brightness spread 3% (0 digital), on average -0.4 dB. CPU on the PC (O2,
+     8 voices of a busy two-saw patch, best of 7, the PC busy with other builds): 8.9 us a voice at 0%, 9.0-9.2 at
+     100% and 200%: about +1-3%, within the noise. Screenshot: `build/png/analog_amount.png` (load_test's
+     `_analog_amount`).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
