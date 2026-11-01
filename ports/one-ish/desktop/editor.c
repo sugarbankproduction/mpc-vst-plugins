@@ -317,7 +317,16 @@ RECT rnd_rect(int z) {
         RECT c = rnd_col(2);
         int row = 4 + z - Z_RND_ALSO;
         SetRect(&r, c.left, L.row[row].top + sc(2), c.right, L.row[row].bottom - sc(2));
+    } else if (z == Z_RND_GENS || z == Z_RND_GENS_ALL) {   /* (2026-11-01) a row under the columns, RANDOMISE's width */
+        int y = L.help.top - sc(4);
+        if (z == Z_RND_GENS) SetRect(&r, xl, y, xl + half - sc(50), y + sc(18));
+        else SetRect(&r, xl + half - sc(46), y, xl + half, y + sc(18));
     }
+    return r;
+}
+RECT rnd_help_rect(void) {   /* (2026-11-01) the RANDOM page's help: under RANDOMISE GENERATORS */
+    RECT r = L.help;
+    r.top += sc(20);
     return r;
 }
 
@@ -864,7 +873,7 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
     if (e->screen == SCR_RANDOM) {
         static const int Z[] = {Z_RND_GO, Z_RND_MUTATE, Z_RND_GO_ALL, Z_RND_MUT_ALL, Z_RND_AMOUNT, Z_RND_WILD, Z_RND_UNDO,
                                 Z_RND_REDO, Z_RND_VOICE, Z_RND_VOICE + 1, Z_RND_VOICE + 2,
-                                Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2};
+                                Z_RND_ALSO, Z_RND_ALSO + 1, Z_RND_ALSO + 2, Z_RND_GENS, Z_RND_GENS_ALL};
         for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++) {
             RECT r = rnd_rect(Z[k]);
             if (Z[k] == Z_RND_AMOUNT || Z[k] == Z_RND_WILD) InflateRect(&r, sc(4), sc(4));   /* easier to catch */
@@ -1198,6 +1207,8 @@ static void press_zone(ed_t *e, int z) {   /* the console buttons, MORE triangle
         show(e, PG_GEN, 0);
     } else if (z == Z_RND_GO || z == Z_RND_MUTATE || z == Z_RND_GO_ALL || z == Z_RND_MUT_ALL) {
         rnd_action(e, z == Z_RND_MUTATE || z == Z_RND_MUT_ALL, z == Z_RND_GO_ALL || z == Z_RND_MUT_ALL);
+    } else if (z == Z_RND_GENS || z == Z_RND_GENS_ALL) {   /* (2026-11-01) the generators only: the sound stays */
+        ed_rnd_gens(e, 0, z == Z_RND_GENS_ALL);
     } else if (z >= Z_RND_VOICE && z < Z_RND_VOICE + RV_COUNT) {   /* (2026-10-30) BOTH / MONO / POLY */
         e->rnd_voicing = z - Z_RND_VOICE;
         InvalidateRect(e->wnd, NULL, FALSE);

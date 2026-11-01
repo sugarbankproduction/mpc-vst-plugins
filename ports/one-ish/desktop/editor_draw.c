@@ -410,8 +410,14 @@ static const char *zone_help(ed_t *e, int z) {
                             "effects. Still always heard and kept out of harshness. Default 0%.";
     case Z_RND_ALSO: return "ARPEGGIATOR (lit): RANDOMISE and MUTATE also set the arpeggiator: on or off, pattern, octaves, "
                             "division, gate, swing. Off: it stays as it is.";
-    case Z_RND_ALSO + 1: return "GENERATIVE (lit): RANDOMISE and MUTATE also set the GENERATIVE section: the Euclidean rhythm "
-                                "(steps, hits, rotation), probability, the Turing melody, KEY and SCALE. Off: they stay.";
+    case Z_RND_ALSO + 1: return "GENERATIVE (lit): RANDOMISE and MUTATE also set the generators (Euclid, Turing, balls, "
+                                "particles, LIFE, orbits, pendulums, rain, Markov), KEY and SCALE, with the sound. Off: they "
+                                "stay. RANDOMISE GENERATORS below: the generators alone.";
+    case Z_RND_GENS: return "RANDOMISE GENERATORS: new settings for every generator of the Synth in focus, in musical ranges, "
+                            "with one switched on (sometimes two), and a new KEY and SCALE. The sound itself stays. One undo "
+                            "step (the console's UNDO). ALL beside it: all three Synths, each its own.";
+    case Z_RND_GENS_ALL: return "ALL (RANDOMISE GENERATORS): the generators of all three Synths, each its own; their sounds "
+                                "stay. One undo step (the console's UNDO).";
     case Z_RND_ALSO + 2: return "SEQUENCER (lit): RANDOMISE and MUTATE also set the sequencer's settings (on, division, length, "
                                 "swing, trigger and transpose by the keys if it has notes) and its modulation lanes. The "
                                 "steps' notes stay. The console's UNDO takes the lanes back too; the randomiser's UNDO only the settings.";
@@ -1180,6 +1186,13 @@ static void draw_random(HDC dc, ed_t *e) {
         screen_button(dc, rnd_rect(Z_RND_GO_ALL), "ALL", 0, e->hover == Z_RND_GO_ALL, font_cell);
         screen_button(dc, rnd_rect(Z_RND_MUT_ALL), "ALL", 0, e->hover == Z_RND_MUT_ALL, font_cell);
     }
+    /* (2026-11-01) RANDOMISE GENERATORS | ALL: the generators alone (as the GENERATIVE page's RANDOM | ALL) */
+    RECT g = rnd_rect(Z_RND_GENS), ga = rnd_rect(Z_RND_GENS_ALL);
+    screen_button(dc, g, "RANDOMISE GENERATORS", 0, e->hover == Z_RND_GENS, font_cell);
+    screen_button(dc, ga, "ALL", 0, e->hover == Z_RND_GENS_ALL, font_cell);
+    RECT gn = {ga.right + sc(12), g.top, L.row[0].right, g.bottom};
+    text(dc, &gn, "only the generators: the sound stays", font_cell, T_LCD_DIM,
+         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 }
 
 /* the screen's glass, bezel, stripes and rules: static */
@@ -1330,9 +1343,11 @@ static void draw_screen(HDC dc, ed_t *e) {
     else draw_page(dc, e, subs);
     char help[480];   /* help: what the control under the mouse does */
     help_line(e, help, sizeof help);
-    RECT hr = e->screen == SCR_SEQ ? seq_help_rect() : L.help;   /* (the step editor uses the top of it) */
+    /* (the step editor uses the top of it; the RANDOM page too, for RANDOMISE GENERATORS: 2026-11-01) */
+    int small = e->screen == SCR_SEQ || e->screen == SCR_RANDOM;
+    RECT hr = e->screen == SCR_SEQ ? seq_help_rect() : e->screen == SCR_RANDOM ? rnd_help_rect() : L.help;
     gfx_line((float)hr.left, hr.top - 4.0f, (float)hr.right, hr.top - 4.0f, 1.0f, 0xFF27404E);
-    text(dc, &hr, help, e->screen == SCR_SEQ ? font_cell : font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
+    text(dc, &hr, help, small ? font_cell : font_screen, T_LCD, DT_LEFT | DT_WORDBREAK | DT_END_ELLIPSIS);
     skin_glare(L.screen.left, L.screen.top, rw(&L.screen), rh(&L.screen));
 }
 

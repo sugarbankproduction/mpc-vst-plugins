@@ -62,6 +62,8 @@ enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_
        Z_RND_GO_ALL = 100050, /* (2026-10-30) RANDOMISE's and MUTATE's ALL halves: all three Synths */
        Z_RND_MUT_ALL,
        Z_RND_VOICE,           /* + 0..2: the RANDOM page's BOTH, MONO, POLY (RV_*) */
+       Z_RND_GENS = 100056,   /* (2026-11-01) the RANDOM page's RANDOMISE GENERATORS (the Synth in focus) ... */
+       Z_RND_GENS_ALL,        /* ... and its ALL (all three Synths): the generators only (ed_rnd_gens) */
        Z_RND_LOCK = 100060,   /* Z_RND_LOCK + section */
        Z_PAGE = 100100,     /* Z_PAGE + p */
        Z_ABS = 700000 };    /* the SETUP page's cells: Z_ABS + a param's own index (any Synth's: not the focus's) */
@@ -318,6 +320,7 @@ void slot_rects(int slot, RECT *name, RECT *ctl);   /* a page's slot 0..SLOTS-1:
 RECT matrix_cell(int r, int col);             /* the matrix on the screen: row r, column 0 (#) .. MX_COLS */
 RECT rnd_rect(int z);                         /* the randomiser page: where control z (Z_RND_*) sits */
 RECT rnd_col(int col);                        /* the randomiser page: its three columns of buttons (0-2) */
+RECT rnd_help_rect(void);                     /* the randomiser page: its help, under RANDOMISE GENERATORS */
 RECT focus_part(int c, int part);             /* SYNTH c's button: its cap (0), M (1) and S (2) halves */
 int synth_muted(ed_t *e, int c);              /* SYNTH c off (its ON) / soloed (never saved) */
 int synth_soloed(ed_t *e, int c);

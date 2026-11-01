@@ -263,7 +263,8 @@ static void ribbon_test(AEffect *fx, HWND child, float s) {
 /* where its controls sit, in base units: mirrors editor.c's layout() (the screen's rows) and rnd_rect() */
 /* (2026-10-30) RP_ALL: RANDOMISE's ALL half (it was the ALL 3 SYNTHS toggle); RP_MUT_ALL: MUTATE's; RP_VOICE k: BOTH,
  * MONO, POLY where the toggle was */
-enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK, RP_ALSO, RP_WILD, RP_MUT_ALL, RP_VOICE };
+enum { RP_GO, RP_MUTATE, RP_UNDO, RP_REDO, RP_ALL, RP_LOCK, RP_ALSO, RP_WILD, RP_MUT_ALL, RP_VOICE,
+       RP_GENS, RP_GENS_ALL };   /* (2026-11-01) RANDOMISE GENERATORS | ALL, under the columns */
 static void rnd_point(int what, int k, float *x, float *y) {   /* k: a lock's section, a tick (0-2), WILD in % */
     float x0 = ZONE_SCREEN[0] + 8.0f, x1 = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f, top = ZONE_SCREEN[1] + 6.0f + 36 + 20 + 18;
     float half = (x1 - x0 - 8) / 2, xr = x0 + half + 8, cw = (x1 - x0 - 16) / 3, q = (cw - 6) / 2;
@@ -276,6 +277,8 @@ static void rnd_point(int what, int k, float *x, float *y) {   /* k: a lock's se
     case RP_UNDO: *x = col1 + q / 2; *y = top + 22 * 7 + 11; break;
     case RP_REDO: *x = col1 + q + 6 + q / 2; *y = top + 22 * 7 + 11; break;
     case RP_ALL: *x = x0 + half - 23; *y = top + 22; break;
+    case RP_GENS: *x = x0 + (half - 50) / 2; *y = top + 22 * 8 + 8 + 5; break;   /* (the help's top, less 4, 18 tall) */
+    case RP_GENS_ALL: *x = x0 + half - 23; *y = top + 22 * 8 + 8 + 5; break;
     case RP_ALSO: *x = col2 + cw / 2; *y = top + 22 * (4 + k) + 11; break;
     case RP_WILD: *x = x0 + 54 + (half - 94) * k / 100.0f; *y = top + 22 * 2 + 11; break;
     default: *x = (k < 4 ? x0 : col1) + cw / 2; *y = top + 22 * (4 + k % 4) + 11; break;
@@ -567,6 +570,70 @@ static void random_test(AEffect *fx, HWND child, float s, const char *bmp, int w
         rnd_click(child, s, RP_WILD, 0);
         SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));
     }
+}
+
+/* (2026-11-01) the RANDOM page's RANDOMISE GENERATORS | ALL: the generators alone (GENERATIVE section, KEY and SCALE),
+ * of the Synth in focus or all three, one undo step each; nothing of the sounds moves */
+static int rg_synth(int i) {   /* 0-2: which Synth param i is (by its key's prefix) */
+    const char *k = PARAMS[i].key;
+    return k[0] == 's' && (k[1] == '2' || k[1] == '3') && k[2] == '_' ? k[1] - '1' : 0;
+}
+static int rg_gen(int i) {   /* param i in the GENERATIVE section (its Synth 1 key's) */
+    const char *k = PARAMS[i].key;
+    return rnd_section_of(rg_synth(i) ? rnd_key(k + 3) : i) == RS_GEN;
+}
+static void random_gens_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    static float before[NPARAMS], after[NPARAMS], all[NPARAMS], undone[NPARAMS];
+    char what[300], lb[1024];
+    click_zone(child, s, ZONE_TAB_RANDOM);
+    /* (LINK KEY / SCALE off, their default: lit, Synth 1's new KEY / SCALE would go to the other two as well) */
+    fx->setParameter(fx, rnd_key("link_key"), 0.0f);
+    fx->setParameter(fx, rnd_key("link_scale"), 0.0f);
+    snapshot(fx, before);
+    int st0 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
+    rnd_click(child, s, RP_GENS, 0);
+    snapshot(fx, after);
+    int st1 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
+    int gens = 0, other = 0, others = 0, on = 0;
+    for (int i = 0; i < NPARAMS; i++) {
+        if (after[i] == before[i]) continue;
+        if (rg_synth(i)) others++;
+        else if (rg_gen(i)) gens++;
+        else other++;
+    }
+    for (int g = 0; g < RND_NGEN; g++) on += fx->getParameter(fx, rnd_key(RND_GEN_ON[g])) > 0.5f;
+    snprintf(what, sizeof what, "RANDOMISE GENERATORS: %d generator settings of Synth 1 changed, %d other settings (0), "
+             "%d of Synths 2 / 3 (0); %d generator(s) on; one undo step (%d -> %d)", gens, other, others, on, st0, st1);
+    check(gens > 0 && other == 0 && others == 0 && on >= 1 && st1 == st0 + 1, what);
+    rnd_click(child, s, RP_GENS_ALL, 0);
+    snapshot(fx, all);
+    int st2 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
+    int per[3] = {0, 0, 0}, nongen = 0;
+    for (int i = 0; i < NPARAMS; i++) {
+        if (all[i] == after[i]) continue;
+        if (rg_gen(i)) per[rg_synth(i)]++;
+        else nongen++;
+    }
+    snprintf(what, sizeof what, "RANDOMISE GENERATORS ALL: generator settings changed in Synth 1 / 2 / 3 (%d %d %d), "
+             "nothing else (%d), one undo step (%d -> %d)", per[0], per[1], per[2], nongen, st1, st2);
+    check(per[0] > 0 && per[1] > 0 && per[2] > 0 && nongen == 0 && st2 == st1 + 1, what);
+    if (bmp) {   /* a picture of the page, the mouse over RANDOMISE GENERATORS (its help under it) */
+        float x, y;
+        rnd_point(RP_GENS, 0, &x, &y);
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf(x * s), (int)lroundf(y * s)));
+        shot(child, w, h, bmp, "_random_gens");
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM(0, 0));
+    }
+    click_zone(child, s, ZONE_UNDO);   /* the console's UNDO: the three Synths' generators back, in one step */
+    snapshot(fx, undone);
+    snprintf(what, sizeof what, "the console's UNDO takes RANDOMISE GENERATORS ALL back in one step (%d params differ)",
+             count_diff(undone, after));
+    check(count_diff(undone, after) == 0, what);
+    click_zone(child, s, ZONE_UNDO);
+    snapshot(fx, undone);
+    snprintf(what, sizeof what, "... and again: RANDOMISE GENERATORS back too (%d params differ from before)",
+             count_diff(undone, before));
+    check(count_diff(undone, before) == 0, what);
 }
 
 /* ---- user patches (desktop/patches.c), in a temporary folder (ONEISH_PATCH_DIR) ---- */
@@ -1541,6 +1608,7 @@ static void editor(AEffect *fx, const char *bmp) {
         check(after < held / 10, what);
         ribbon_test(fx, child, cr.right / (float)BASE_W);
         random_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
+        random_gens_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* (2026-11-01) */
         phys_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);
         gens_b_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* (2026-10-30) */
         gens_a_test(fx, child, cr.right / (float)BASE_W, bmp, w, h);   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
@@ -2256,6 +2324,7 @@ static void quickmod_test(AEffect *fx, HWND child, float s, const char *bmp, int
  * GEN OFF, the LINKs across the Synths, SYNTH OUTPUT's MASTER, the new MORE triangles, the screen's sub-page arrows ---- */
 #define TEST_HUB 0x4F314842   /* as editor.h */
 enum { HT_ENGINE_BPM = 1, HT_OWN, HT_TEMPO, HT_RESTORE, HT_LINKED, HT_VOL_MASTER, HT_SUB };
+enum { HT_GEN_LIT = 13 };   /* (2026-11-01; after HT_PEEK, as editor.h) */
 enum { T_SCR_GEN = -21, T_SCR_MATRIX = -1, T_SCR_SETUP = -11 };   /* as editor.h */
 static intptr_t ht(AEffect *fx, int op, float opt) { return fx->dispatcher(fx, 50, TEST_HUB, op, NULL, opt); }
 static int screen_now(AEffect *fx) { char b[1024]; return (int)fx->dispatcher(fx, 50, TEST_LIB, LT_SCREEN, b, 0); }
@@ -2324,7 +2393,6 @@ static void tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
     st(fx, STT_RESTORE, NULL, NULL, 0);
     host_tempo = was_host;
     play(fx, 4, 512);
-enum { HT_GEN_LIT = 13 };   /* (2026-11-01; after HT_PEEK, as editor.h) */
 }
 
 static void gen_hub_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
@@ -2366,6 +2434,15 @@ static void gen_hub_test(AEffect *fx, HWND child, float s, const char *bmp, int 
     /* GEN ON: three generators on in three Synths, all off at once (one undo step), then back */
     setkey(fx, "gen_euclid_on", 1); setkey(fx, "s2_phys_balls_on", 1); setkey(fx, "s3_gen_tm_on", 1);
     if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_hub"); }
+    {   /* its help says what it is now: GEN ON (lit) */
+        char hb[1024] = "";
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf((ZONE_GEN_OFF[0] + ZONE_GEN_OFF[2] / 2.0f) * s),
+                                                        (int)lroundf((ZONE_GEN_OFF[1] + ZONE_GEN_OFF[3] / 2.0f) * s)));
+        fx->dispatcher(fx, 50, TEST_HUB, 9 /* HT_HELP */, hb, 1);
+        snprintf(what, sizeof what, "GEN ON: lit (%d) with three generators on, its help says so (\"%.50s...\")",
+                 (int)ht(fx, HT_GEN_LIT, 0), hb);
+        check(ht(fx, HT_GEN_LIT, 0) == 1 && !strncmp(hb, "GEN ON (lit)", 12), what);
+    }
     int au = automated[rnd_key("s2_phys_balls_on")];
     char lb[1024];
     int steps0 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
@@ -2397,6 +2474,16 @@ static void gen_hub_test(AEffect *fx, HWND child, float s, const char *bmp, int 
           pv(fx, "phys_balls_on") < 0.5f && ht(fx, HT_RESTORE, 0) == 0, what);
     click(child, s, ax, ay);   /* (off again, for what follows) */
     check(pv(fx, "gen_euclid_on") < 0.5f && pv(fx, "s2_phys_balls_on") < 0.5f, "ALL OFF: off again");
+    {   /* (2026-11-01) the console's GEN OFF, clicked while they are off: back on, and lit (GEN ON); again: off */
+        click_zone(child, s, ZONE_GEN_OFF);
+        int on = pv(fx, "gen_euclid_on") > 0.5f && pv(fx, "s2_phys_balls_on") > 0.5f && pv(fx, "s3_gen_tm_on") > 0.5f;
+        int lit = (int)ht(fx, HT_GEN_LIT, 0);
+        if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_btn_on"); }
+        click_zone(child, s, ZONE_GEN_OFF);
+        snprintf(what, sizeof what, "GEN OFF clicked: the three generators back on (%d), GEN ON lit (%d); clicked again: "
+                 "off (%.0f), not lit (%d)", on, lit, pv(fx, "gen_euclid_on"), (int)ht(fx, HT_GEN_LIT, 0));
+        check(on && lit == 1 && pv(fx, "gen_euclid_on") < 0.5f && ht(fx, HT_GEN_LIT, 0) == 0, what);
+    }
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
@@ -2437,15 +2524,6 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
         click_ctl(child, s, k);
         snprintf(what, sizeof what, "SHARE (LFO %d): a plain click on its button turns it on (%d) and off again (%.0f); "
                  "LINK untouched", n, on, pv(fx, k));
-    {   /* its help says what it is now: GEN ON (lit) */
-        char hb[1024] = "";
-        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf((ZONE_GEN_OFF[0] + ZONE_GEN_OFF[2] / 2.0f) * s),
-                                                        (int)lroundf((ZONE_GEN_OFF[1] + ZONE_GEN_OFF[3] / 2.0f) * s)));
-        fx->dispatcher(fx, 50, TEST_HUB, 9 /* HT_HELP */, hb, 1);
-        snprintf(what, sizeof what, "GEN ON: lit (%d) with three generators on, its help says so (\"%.50s...\")",
-                 (int)ht(fx, HT_GEN_LIT, 0), hb);
-        check(ht(fx, HT_GEN_LIT, 0) == 1 && !strncmp(hb, "GEN ON (lit)", 12), what);
-    }
         check(on && pv(fx, k) < 0.5f, what);
     }
     /* ALL 3 over LINK CUTOFF: relative, each Synth's cutoff moves by the same amount */
@@ -2474,16 +2552,6 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     /* KEY on the hub page, with its LINK there; then the LINK survives the project's save and load */
     click_zone(child, s, ZONE_TAB_GEN);
     float x, y;
-    {   /* (2026-11-01) the console's GEN OFF, clicked while they are off: back on, and lit (GEN ON); again: off */
-        click_zone(child, s, ZONE_GEN_OFF);
-        int on = pv(fx, "gen_euclid_on") > 0.5f && pv(fx, "s2_phys_balls_on") > 0.5f && pv(fx, "s3_gen_tm_on") > 0.5f;
-        int lit = (int)ht(fx, HT_GEN_LIT, 0);
-        if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_btn_on"); }
-        click_zone(child, s, ZONE_GEN_OFF);
-        snprintf(what, sizeof what, "GEN OFF clicked: the three generators back on (%d), GEN ON lit (%d); clicked again: "
-                 "off (%.0f), not lit (%d)", on, lit, pv(fx, "gen_euclid_on"), (int)ht(fx, HT_GEN_LIT, 0));
-        check(on && lit == 1 && pv(fx, "gen_euclid_on") < 0.5f && ht(fx, HT_GEN_LIT, 0) == 0, what);
-    }
     hub_key_xy(0, 1, &x, &y);
     click(child, s, x, y);
     hub_key_xy(0, 0, &x, &y);

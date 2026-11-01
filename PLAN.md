@@ -1031,6 +1031,14 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        the three Synths, GEN OFF (not lit) while none is. A click does what it did: lit, every generator off in all
        three (one undo step); then, while they are still off, back on. Its help line says which. load_test: lit with
        only Synth 3's RAIN on, out with none, the help, a click off (not lit) and a click back (lit).
+     - RANDOM page, generators ("an easy button to press to randomise the generators, or ... across all 3 synths";
+       "maybe a checkbox to also include randomise generators"): the checkbox was there already, the GENERATIVE tick
+       under ALSO RANDOMISE (lit: RANDOMISE and MUTATE set the generators, KEY and SCALE with the sound; its help now
+       names every generator). New under the columns: RANDOMISE GENERATORS | ALL, the generators alone (the GENERATIVE
+       page's RANDOM | ALL: `ed_rnd_gens`, `rnd_gen_gen`): every generator's settings, one or two switched on, a new
+       KEY / SCALE; the sound stays. The big part the Synth in focus, ALL each of the three; one undo step each (the
+       console's UNDO). The page's help line moved under it in the smaller font (as on the SEQ page). load_test: only
+       Synth 1's generator settings move, then all three Synths', nothing else, one step each, UNDO takes both back.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
