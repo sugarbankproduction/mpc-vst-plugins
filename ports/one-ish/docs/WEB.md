@@ -52,7 +52,7 @@ vercel deploy --yes
 That makes a preview: its address (`moo-…-sugarbankproductions-projects.vercel.app`) is behind Vercel's sign-in, so
 only the owner's account opens it. The public page is **https://moo-won.vercel.app** (owner, 2026-11-01: "Public is
 fine"); `vercel deploy --prod --yes` updates it. Checked 2026-11-01 in the app's built-in browser: the public page
-loads, all 296 presets are listed and Fat Bass plays.
+loads, all 296 presets are listed and Fat Bass plays. The owner played it on their own browser the same day: it works.
 
 ## Next
 
