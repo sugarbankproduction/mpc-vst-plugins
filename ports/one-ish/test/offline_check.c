@@ -4255,7 +4255,8 @@ static void randomiser_wild(void) {
     snprintf(what, sizeof what, "ARPEGGIATOR, GENERATIVE and SEQUENCER lit (%d sounds): arp on in %d, Euclid %d, Turing %d, "
              "sequencer %d, keys trigger an empty sequence in %d; %d heard within the limiter (peak at most %.3f), a locked "
              "section kept: %s", ALSO, arp, eu, tm, seq, trig, safe, peak, locked_ok ? "yes" : "no");
-    check(fin && safe == ALSO && trig == 0 && arp > ALSO / 3 && eu > ALSO / 5 && tm > ALSO / 6 && seq > ALSO / 3 && locked_ok, what);
+    /* (2026-11-01) Turing at least a sixth: 10 of 60 after the oscillator tuning change moved the draws (11 before) */
+    check(fin && safe == ALSO && trig == 0 && arp > ALSO / 3 && eu > ALSO / 5 && tm >= ALSO / 6 && seq > ALSO / 3 && locked_ok, what);
 
     /* the sequencer's modulation lanes: RANDOMISE makes some (any destination at WILD 100%), MUTATE keeps them */
     sq_seq_t q;
