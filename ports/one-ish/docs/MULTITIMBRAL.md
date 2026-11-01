@@ -55,8 +55,12 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   with its own Synth. Notes end where they started, whatever changes meanwhile.
 - **LINK** (2026-10-30, desktop window): small LINK buttons keep a setting the same in all three Synths. While one is
   lit, changing that setting on the Synth in focus sets the same value on the other two (host automation for each, one
-  undo step). LINKs: KEY and SCALE (the GENERATIVE page and the GEN page), the arpeggiator's RATE (under it on the
-  panel: its division, timing, sync and free rate), the sequencer's RATE (beside it), each LFO's RATE (in each LFO:
+  undo step). LINKs: KEY and SCALE (the GENERATIVE page and the GEN page), the arpeggiator's RATE (just under it on the
+  panel since 2026-11-01: its division, timing, sync and free rate), the arpeggiator's **LINK ALL** (2026-11-01,
+  owner's request; the desktop window, load_test `arp_link_all_test`; `link_arp_all`, default Off: on the panel's
+  third line, every arpeggiator setting the panel and its ARP page show: ON, LATCH, SYNC, PATTERN, OCT, DIRECTION,
+  RATE and its timing / free rate, GATE, SWING, octave order, pendulum and its ends, random mode, follow swing, note
+  reset; RATE's settings are in both, so either LINK lit links them), the sequencer's RATE (beside it), each LFO's RATE (in each LFO:
   its rate, sync and timing), LINK SENDS (the MASTER EFFECTS panel: SEND 1 and SEND 2) and the balls and particles
   (every `phys_*` setting; their pages), and (2026-11-01, owner's request; the desktop window, load_test
   `poly_link_test`) the POLYPHONY panel's LINK `link_poly` (its third line, under VOICES: every setting the panel and

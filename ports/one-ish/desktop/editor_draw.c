@@ -106,6 +106,7 @@ static const char *help_for(int i) {
         {"link_bend", "LINK (pitch wheel): lit, the pitch wheel bends all three Synths at once, whatever their MIDI channels, and BEND RANGE (UP / DOWN) set from the panel goes to all three. Saved with the sound."},
         {"link_mod", "LINK (mod wheel): lit, the mod wheel (CC 1) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"link_ribbon", "LINK (ribbon): lit, the ribbon (CC 16 and 17) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
+        {"link_arp_all", "LINK ALL (ARPEGGIATOR): lit, every arpeggiator setting set from the panel or its page (ON, LATCH, SYNC, PATTERN, OCT, DIRECTION, RATE, GATE, SWING and the page's) goes to all three Synths. LINK under RATE links the rate alone. Saved with the sound."},
         {"link_poly", "LINK (POLYPHONY): lit, this panel's settings set from the panel or its page (VOICES, UNISON and its voices, DETUNE, HOLD, PITCH VARIANCE, MONO PRIORITY, VOICE STEALING) go to all three Synths. Saved with the sound."},
         {"link_glide", "LINK (glide): lit, glide's settings set from the panel (ON, RATE, TYPE, LEGATO, GATED, GLISS) go to all three Synths. Saved with the sound."},
         {"link_pad", "LINK (X/Y pad): lit, moving the pad drives Pad X, Pad Y and the pad's gate in all three Synths at once, whatever their MIDI channels. Saved with the sound."},

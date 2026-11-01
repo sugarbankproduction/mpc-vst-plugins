@@ -414,18 +414,22 @@ def build(lay):
     if "arp_on" in L.index:   # the master clock's TEMPO LED (on the beat) after the buttons; RATE's over its window
         L.rate_led("TEMPO", 0, 341, YA + 7, "TEMPO")
         L.rate_led("ARP", 0, 350, YL + 13)
+    # the arp's RATE the same in all 3 Synths: (2026-11-01, the owner's place) just under RATE, its name under it (SWING
+    # is beside). Before RATE's cell, whose empty lower part it sits in: a click takes the first control listed there
+    L.ctl("link_arp", "toggle", 328, 514, 44, 32, "LINK")
     L.cells([("arp_pattern", "PATTERN", 54, "leds"), ("arp_oct", "OCT", 42, "leds"),
              ("arp_dir", "DIRECTION", 54, "leds"), ("arp_div", "RATE", 44, "button")], 178, YL, HL)
     L.column([("arp_gate", "GATE"), ("arp_swing", "SWING")], 372, YL, 36, HL // 2, "small")
     YX = YL + HL + 8   # (2026-10-30) the third line: LINK under RATE; BALLS and PARTICLES
-    L.ctl("link_arp", "toggle", 340, YX, 50, 14, "LINK", SIDE)   # the arp's RATE the same in all 3 Synths
+    # (2026-11-01) LINK ALL: every setting of this panel and its page the same in all 3 Synths
+    L.ctl("link_arp_all", "toggle", 180, YX, 80, 14, "LINK ALL", SIDE)
     L.page("ARP", "ARPEGGIATOR", "Plays the held keys in turn; RATE is each step's note value.", [
         ("arp_on", "On"), ("arp_latch", "Latch"), ("arp_pattern", "Pattern"), ("arp_oct", "Octaves"),
         ("arp_dir", "Octave Direction"), ("arp_oct_order", "Octave Order"), ("arp_pendulum", "Pendulum"),
         ("arp_pend_mode", "Pendulum Ends"), ("arp_rnd_mode", "Random Mode"), ("arp_sync", "Tempo Sync"),
         ("arp_div", "Rate (Synced)"), ("arp_timing", "Timing"), ("arp_rate", "Free Rate"), ("arp_gate", "Gate Length"),
         ("arp_swing", "Swing"), ("arp_follow_swing", "Follow Swing"), ("arp_reset", "Note Reset"),
-        ("link_arp", "Link Rate (3 Synths)")])
+        ("link_arp", "Link Rate (3 Synths)"), ("link_arp_all", "Link All (3 Synths)")])
 
     L.panel(412, YB, 58, HB, "CHORD", more="CHORD", keys=["chord_on"])
     L.ctl("chord_on", "toggle", 416, YA, 36, 14, "ON", SIDE)
@@ -784,6 +788,11 @@ LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
                ("link_glide", ("glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando")),
                ("link_bend", ("bend_up", "bend_down")),
                # (2026-11-01) the POLYPHONY panel: all it shows and its page
+               # (2026-11-01) the ARPEGGIATOR panel's LINK ALL: everything it and its page show (RATE's
+               # four keep LINK too: either lit links them, desktop/hub.c link_lit)
+               ("link_arp_all", ("arp_on", "arp_latch", "arp_pattern", "arp_oct", "arp_dir", "arp_oct_order", "arp_pendulum",
+                                 "arp_pend_mode", "arp_rnd_mode", "arp_sync", "arp_div", "arp_timing", "arp_rate",
+                                 "arp_gate", "arp_swing", "arp_follow_swing", "arp_reset")),
                ("link_poly", ("voices", "note_priority", "steal_mode", "hold", "unison", "uni_count", "uni_detune",
                               "pitch_var"))] + \
               [("link_lfo%d" % n, tuple("lfo%d_%s" % (n, s) for s in ("rate", "sync", "timing"))) for n in range(1, 5)]

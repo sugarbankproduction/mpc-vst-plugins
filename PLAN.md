@@ -1060,6 +1060,14 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      sound, never randomised (rnd_golden NEWER). It is the last param of params.json (after the Synth 3 copies) so no
      VST index moved (params.lock); `presets/make_synths.py` now keeps every param where it is when run again (new
      copies still go last). Factory presets made again (`link_poly` Off, nothing else changed).
+  48. (2026-11-01) The ARPEGGIATOR's LINKs (owner: "put that just under the rate area, and have another link button
+     called LINK ALL"). Done 2026-11-01 (the desktop window; `link_arp_all`, shared, default Off; gen_layout.py
+     LINK_GROUPS; `desktop/hub.c` link_lit; load_test `arp_link_all_test`). The rate LINK (`link_arp`) moved from the
+     third line to just under RATE; LINK ALL on the third line, a plain click: lit, every arpeggiator setting set
+     from the panel or its ARP page goes to all three Synths (one undo step, the host told), as the POLYPHONY LINK.
+     RATE's four settings are in both groups: hub.c now keeps a second LINK per setting, and either lit links it.
+     Saved with the sound, never randomised (rnd_golden NEWER); the last param of params.json (no VST index moved);
+     factory presets made again (`link_arp_all` Off, nothing else changed).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
