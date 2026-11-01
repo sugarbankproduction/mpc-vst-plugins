@@ -617,6 +617,7 @@ static int rg_gen(int i) {   /* param i in the GENERATIVE section (its Synth 1 k
  * the GENERATIVE tick, MUTATE, RANDOMISE GENERATORS | ALL and the GENERATIVE page's RANDOM leave every Synth's KEY and
  * SCALE as set; off, RANDOMISE GENERATORS picks new ones (one of a few clicks at least) */
 enum { HT_KEYLOCK_OP = 14 };   /* (editor.h HT_KEYLOCK: after HT_GEN_LIT) */
+#define TEST_HUB 0x4F314842   /* as editor.h (and again further down, the same) */
 static void rg_keys(AEffect *fx, float *k) {   /* the three Synths' KEY and SCALE */
     static const char *const K[6] = {"key_root", "key_scale", "s2_key_root", "s2_key_scale", "s3_key_root", "s3_key_scale"};
     for (int j = 0; j < 6; j++) k[j] = fx->getParameter(fx, rnd_key(K[j]));
