@@ -572,7 +572,9 @@ static int synth_sound(ed_t *e, char *out, int n) {
     if (!current_state(e, st, sizeof st)) return 0;
     char pre[8] = "";
     if (e->focus) snprintf(pre, sizeof pre, "s%d_", e->focus + 1);
-    int used = snprintf(out, n, "v=1;dv=1;ctl=2"), pl = (int)strlen(pre);
+    /* (2026-11-01) dv=2, as the state it comes from (src/synths.h STATE_DV): the ANALOG page's defaults it leaves out
+     * are today's */
+    int used = snprintf(out, n, "v=1;dv=2;ctl=2"), pl = (int)strlen(pre);
     static char seen[NPARAMS];   /* (2026-10-30) the focused Synth's keys the state lists */
     memset(seen, 0, sizeof seen);
     for (char *s = st; *s;) {
@@ -1460,7 +1462,8 @@ void pt_apply_state(ed_t *e, const char *state) { apply_state(e, state); }
 
 /* ---- the ANALOG page stays across preset and patch loads (2026-11-01) ---- */
 static const char *const ANALOG_KEYS[] = {"drift", "an_cut", "an_res", "an_env", "an_lvl", "an_tune", "an_ladder",
-                                          "an_hq", "an_warm", "an_warm_amt", "an_warm_time"};
+                                          "an_hq", "an_warm", "an_warm_amt", "an_warm_time",
+                                          "analog_amt"};   /* (2026-11-01) shared: Synth 2's and 3's copies don't exist */
 enum { NANALOG = sizeof ANALOG_KEYS / sizeof ANALOG_KEYS[0] };
 _Static_assert(NANALOG * 3 <= ANALOG_KEEP, "keep[] holds all three Synths' ANALOG settings");
 static int analog_ix(int k) {   /* keep slot k (Synth k / NANALOG) -> its param index, or -1 */

@@ -202,7 +202,7 @@ static void grains_engine(void) {
     snprintf(what, sizeof what, "old states: Delay's CTRL 1 at 40%% on Auto becomes %s (%d), CTRL 2 untouched stays Auto "
              "(%d), an old phaser's CTRL 1 under the matrix becomes %s (%d); a new state (\"ctl=2\") keeps Auto (%d), "
              "and states say so (%.17s)", FXD_NAME[old1], old1, old2, FXD_NAME[mat2], mat2, new1, n > 0 ? st : "");
-    check(old1 == FXD_MIX && old2 == FXD_AUTO && mat2 == FXD_MIX && new1 == FXD_AUTO && !strncmp(st, "v=1;dv=1;ctl=2;", 15), what);
+    check(old1 == FXD_MIX && old2 == FXD_AUTO && mat2 == FXD_MIX && new1 == FXD_AUTO && !strncmp(st, "v=1;dv=2;ctl=2;", 15), what);
     E->destroy(e);
 
     /* a state round trip with GRAINS everywhere: every value back */

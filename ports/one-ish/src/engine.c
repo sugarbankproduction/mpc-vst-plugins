@@ -295,6 +295,8 @@ enum {
      * that controller reaches all three Synths whatever their MIDI channels (src/synths.h midi), as link_pad */
     P_LINK_MOD, P_LINK_BEND, P_LINK_RIBBON,
     P_LINK_GLIDE,    /* (2026-10-31) the window's glide LINK (gen_layout.py LINK_GROUPS): stored, as the other LINKs */
+    /* (2026-11-01) ANALOG AMOUNT (shared): every Synth's ANALOG page at once (0% exact, 100% as set, 200% twice) */
+    P_ANALOG_AMT,
     P_COUNT
 };
 enum { XO_TRACK, XO_RESET, XO_BEND_UP, XO_BEND_DN, XO_STRIDE = P_O2_TRACK - P_O1_TRACK };
@@ -461,6 +463,7 @@ static const char *const KEYS[P_COUNT] = {
     "mout_on", "mout_send", "mout_ch", "sus_pedal",   /* (2026-10-30) MIDI OUT, SUSTAIN IN SYNTH */
     "link_mod", "link_bend", "link_ribbon",   /* (2026-10-31) the wheels' and the ribbon's LINKs */
     "link_glide",   /* (2026-10-31) */
+    "analog_amt",   /* (2026-11-01) ANALOG AMOUNT */
 };
 enum { RIB_SPRING, RIB_HOLD };                  /* "ribbon_mode" options */
 enum { RIB_CENTRE, RIB_LEFT };                  /* "ribbon_origin" options */
@@ -690,6 +693,7 @@ typedef struct one_s {
     env_cfg_t ecfg[NENV];    /* each envelope's settings (times, curves, loop, latch...), shared by the voices */
     env_cfg_t ncfg;          /* the noise EG's */
     float drift_coef;        /* drift's smoothing per control step */
+    float an_amt;            /* (2026-11-01) ANALOG AMOUNT as a factor, 0..2 (1: the page as set; apply_analog) */
     float wheel, aftertouch, bend;   /* 0..1, 0..1, -1..1 (times the bend range) */
     float gain_coef, glide;  /* per sample / per control step */
     int phase;               /* samples into the current control step */
@@ -1003,12 +1007,16 @@ static void apply_matrix(one_t *s) {
     }
 }
 
-/* ANALOG CHARACTER: each voice card's parts times the knobs, in the units the voice reads them in */
+/* ANALOG CHARACTER: each voice card's parts times the knobs, in the units the voice reads them in.
+ * (2026-11-01) ANALOG AMOUNT (shared) scales them all, and drift, the non-linear ladder and WARM-UP where they are
+ * used: at 100% a factor of exactly 1 (the same samples as before it existed), at 0% none of it (exactly digital). */
 static void apply_analog(one_t *s) {
     const float *p = s->val;
-    float cut = p[P_AN_CUT] * 0.01f * AN_CUT_OCT, res = p[P_AN_RES] * 0.01f * AN_RES;
-    float env = p[P_AN_ENV] * 0.01f * AN_ENV_FRAC, lvl = p[P_AN_LVL] * 0.01f * AN_LVL_DB;
-    float tune = p[P_AN_TUNE] * 0.01f * AN_TUNE_ST;
+    s->an_amt = clampf(p[P_ANALOG_AMT] / 100.0f, 0.0f, 2.0f);   /* (a division: 100% gives exactly 1) */
+    float a = s->an_amt;
+    float cut = p[P_AN_CUT] * 0.01f * AN_CUT_OCT * a, res = p[P_AN_RES] * 0.01f * AN_RES * a;
+    float env = p[P_AN_ENV] * 0.01f * AN_ENV_FRAC * a, lvl = p[P_AN_LVL] * 0.01f * AN_LVL_DB * a;
+    float tune = p[P_AN_TUNE] * 0.01f * AN_TUNE_ST * a;
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
         for (int f = 0; f < 2; f++) {
@@ -1020,6 +1028,8 @@ static void apply_analog(one_t *s) {
         for (int n = 0; n < NOSC; n++) v->an_tune[n] = v->card[AC_TUNE + n] * tune;
     }
 }
+/* the NON-LINEAR LADDER's amount (0..1), x ANALOG AMOUNT (2026-11-01): 0, the linear ladder (and its CPU) */
+static float an_ladder(const one_t *s) { return clampf(s->val[P_AN_LADDER] * 0.01f * s->an_amt, 0.0f, 1.0f); }
 
 /* the performance section's settings: whether the step clock plays and the Euclidean pattern (rotated later by
  * ROTATION steps: E(3,8) rotated by 1 is .x..x..x). The arpeggiator's pattern is built again (at its next step) only
@@ -1266,7 +1276,7 @@ static void drift_step(const one_t *s, voice_t *v, float *out, float amt) {
  * Synth warms up. Written in drift's units (out[k] x DRIFT_ST semitones, x DRIFT_CUT_OCT octaves), so everything drift
  * reaches (the MACRO channel too) follows. */
 static void warm_drift(const one_t *s, voice_t *v, float *out, float drift) {
-    float w = s->warm_w;
+    float w = s->warm_w * s->an_amt;   /* (2026-11-01) x ANALOG AMOUNT (the clock runs on whatever it is) */
     drift_step(s, v, out, drift + WARM_WANDER * w);
     float common = WARM_COMMON_ST * s->warm_common;
     for (int k = 0; k < NOSC; k++) out[k] += (common + WARM_TUNE_ST * v->warm_off[k]) * w * (1.0f / DRIFT_ST);
@@ -1467,7 +1477,7 @@ static void start_note(one_t *s, voice_t *v, int note, int legato) {
         ladder_set(&v->lad, cut_hz(v->cut) * exp2f(v->an_cut[0]),
                    clampf(s->val[P_FLT_RES] * 0.01f + v->an_res[0], 0.0f, 1.0f), s->val[P_FLT_DRIVE] * 0.01f,
                    (int)s->val[P_FLT_MODE], (int)s->val[P_FLT_SLOPE], SR * (float)v->os);
-        v->lad.nl = s->val[P_AN_LADDER] * 0.01f;
+        v->lad.nl = an_ladder(s);
         svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(v->an_cut[1]), s->val[P_SVF_SPACE] * 0.01f,
                  clampf(s->val[P_SVF_RES] * 0.01f + v->an_res[1], 0.0f, 1.0f), (int)s->val[P_SVF_MODE],
                  (int)s->val[P_SVF_PAIR], SR * (float)v->os);
@@ -2824,7 +2834,9 @@ static void voice_nenv(const one_t *s, voice_t *v, const float *dm) {
 static void voice_envs(const one_t *s, voice_t *v, const float *dm) {
     static const int stage[5] = {ENV_DELAY, ENV_ATTACK, ENV_HOLD, ENV_DECAY, ENV_RELEASE};
     static const int knob_md[5] = {MDE_DELAY, MDE_ATTACK, MDE_HOLD, MDE_DECAY, MDE_RELEASE};
-    if (!s->mod_env && s->val[P_AN_ENV] <= 0.0f) {   /* no slot reaches an envelope, no card differences: shared */
+    if (!s->mod_env && (s->val[P_AN_ENV] <= 0.0f || s->an_amt <= 0.0f)) {   /* no slot reaches an envelope, no card
+                                                                           * differences (2026-11-01: or ANALOG AMOUNT
+                                                                           * 0): shared */
         for (int n = 0; n < NENV; n++) v->env[n].cfg = &s->ecfg[n];
         return;
     }
@@ -2975,8 +2987,8 @@ static void control_voice(one_t *s, voice_t *v) {
                   + src[MS_MENV] * (p[P_PITCH_ENV] * 0.01f + dm[MD_PITCH_ENV]) * ENV_PITCH_ST
                   + bend_semis(s, -1) + dm[MD_PITCH] * MOD_PITCH_ST;
     float dr[NDRIFT] = {0};   /* analog drift, -1..1 x the amount per oscillator and for the cutoffs; off: none at all */
-    float drift = clampf(p[P_DRIFT] * 0.01f + dm[MD_DRIFT], 0.0f, 1.0f);
-    if (s->warm_w > 0.0f) warm_drift(s, v, dr, drift);   /* (2026-10-30) WARM-UP: still cold */
+    float drift = clampf(p[P_DRIFT] * 0.01f + dm[MD_DRIFT], 0.0f, 1.0f) * s->an_amt;   /* (2026-11-01) x ANALOG AMOUNT */
+    if (s->warm_w > 0.0f && s->an_amt > 0.0f) warm_drift(s, v, dr, drift);   /* (2026-10-30) WARM-UP: still cold */
     else if (drift > 0.0f) drift_step(s, v, dr, drift);
     float osc_semis[NOSC] = {dm[MD_O1_PITCH] * MOD_PITCH_ST + bend_semis(s, 0) + dr[0] * DRIFT_ST + v->an_tune[0],
                              dm[MD_O2_PITCH] * MOD_PITCH_ST + bend_semis(s, 1) + dr[1] * DRIFT_ST + v->an_tune[1],
@@ -3005,7 +3017,7 @@ static void control_voice(one_t *s, voice_t *v) {
                clampf(p[P_FLT_RES] * 0.01f + dm[MD_LAD_RES] + v->an_res[0], 0.0f, 1.0f),
                clampf(p[P_FLT_DRIVE] * 0.01f + dm[MD_LAD_DRIVE], 0.0f, 1.0f), (int)p[P_FLT_MODE], (int)p[P_FLT_SLOPE],
                SR * (float)v->os);
-    v->lad.nl = p[P_AN_LADDER] * 0.01f;
+    v->lad.nl = an_ladder(s);
     svf2_set(&v->svf, cut_hz(v->svf_cut) * exp2f(svf_oct), clampf(p[P_SVF_SPACE] * 0.01f + dm[MD_SVF_SPACE], -1.0f, 1.0f),
              clampf(p[P_SVF_RES] * 0.01f + dm[MD_SVF_RES] + v->an_res[1], 0.0f, 1.0f), (int)p[P_SVF_MODE],
              (int)p[P_SVF_PAIR], SR * (float)v->os);

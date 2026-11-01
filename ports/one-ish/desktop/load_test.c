@@ -889,6 +889,17 @@ static void patch_tests(AEffect *fx) {
     write_file(path, "hello, this is not a patch\n");
     check(pt(fx, PT_IMPORT, path, NULL, 0) == PE_BADFILE && pt(fx, PT_COUNT, NULL, NULL, 0) == 3, "IMPORT refuses a file that isn't a patch");
 
+    /* (2026-11-01) the ANALOG page stays as it is when a patch loads (analog_keep), and an old state reads it as 0: for
+     * the comparison below, the page at 0 while it runs (then put back, so the project check after it is as before) */
+    static const char *const AN0[] = {"drift", "an_cut", "an_env", "an_lvl", "an_tune", "an_res"};
+    float an_was[3][6];
+    for (int c = 0; c < 3; c++)
+        for (int k = 0; k < 6; k++) {
+            char key[24];
+            if (c) snprintf(key, sizeof key, "s%d_%s", c + 1, AN0[k]); else snprintf(key, sizeof key, "%s", AN0[k]);
+            an_was[c][k] = fx->getParameter(fx, rnd_key(key));
+            fx->setParameter(fx, rnd_key(key), 0.0f);
+        }
     /* a damaged file: the defaults plus the lines that make sense, no crash */
     snprintf(path, sizeof path, "%s\\Broken.oneish", patch_dir);
     write_file(path, "ONE-ish patch 1\r\nname=Broken\r\nnonsense line\r\n=5\r\nflt_res=abc\r\nno_such_param=3\r\n"
@@ -918,6 +929,12 @@ static void patch_tests(AEffect *fx) {
              !strcmp(state, ref) ? "the same" : "NOT the same", state);
     check(!strcmp(state, ref) && strstr(state, "o2_level=55") && strstr(state, "o2_wave=0") && !strstr(state, "flt_res"),
           what);
+    for (int c = 0; c < 3; c++)   /* (2026-11-01) the ANALOG page back as it was */
+        for (int k = 0; k < 6; k++) {
+            char key[24];
+            if (c) snprintf(key, sizeof key, "s%d_%s", c + 1, AN0[k]); else snprintf(key, sizeof key, "%s", AN0[k]);
+            fx->setParameter(fx, rnd_key(key), an_was[c][k]);
+        }
 
     /* the * marker against the loaded values */
     pt(fx, PT_LOAD, "Bright Pad", NULL, 0);
@@ -1389,6 +1406,7 @@ static int page_has(AEffect *fx, int page, const char *key) {   /* is key among 
 /* the bouncing balls and particles' pages (2026-10-29): both open from the MORE index, show their params and their box,
  * and the box moves (two pictures of it a little apart differ) */
 enum { PT_ROWS = 8, PT_SLOTS = 2 * PT_ROWS };   /* as editor.h's ROWS and SLOTS */
+enum { LT_AMT_ROWS = 2 };   /* (2026-11-01) as editor.h's AMT_ROWS: the ANALOG page's ANALOG AMOUNT bar */
 static unsigned char phys_px[2][4096 * 2048 * 3];
 static int phys_grab(HWND child, int w, int h, unsigned char *px) {   /* the window's pixels (24-bit rows, bottom up) */
     HDC screen = GetDC(NULL), dc = CreateCompatibleDC(screen);
@@ -2691,15 +2709,68 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
 /* (2026-11-01) the ANALOG page stays when another preset loads (and in Synth 2 too); undo still brings it back */
 static void analog_keep_test(AEffect *fx) {
     int prog = (int)fx->dispatcher(fx, 3 /* effGetProgram */, 0, 0, NULL, 0);
+    float d0 = pv(fx, "drift"), c0 = pv(fx, "an_cut"), t0 = pv(fx, "s2_an_tune"), a0 = pv(fx, "analog_amt");
     setkey(fx, "drift", 0.4f); setkey(fx, "an_cut", 0.3f); setkey(fx, "s2_an_tune", 0.6f);
+    setkey(fx, "analog_amt", 0.75f);   /* (2026-11-01) ANALOG AMOUNT 150% */
     fx->dispatcher(fx, 2 /* effSetProgram */, 0, prog == 5 ? 6 : 5, NULL, 0);
-    float d = pv(fx, "drift"), c = pv(fx, "an_cut"), t = pv(fx, "s2_an_tune");
+    float d = pv(fx, "drift"), c = pv(fx, "an_cut"), t = pv(fx, "s2_an_tune"), a = pv(fx, "analog_amt");
     fx->dispatcher(fx, 2 /* effSetProgram */, 0, prog, NULL, 0);
-    char what[200];
+    char what[240];
     snprintf(what, sizeof what, "ANALOG: kept when a preset loads (drift %.2f, cutoff spread %.2f, Synth 2 tuning "
-             "spread %.2f; want 0.40, 0.30, 0.60)", d, c, t);
-    check(fabsf(d - 0.4f) < 0.01f && fabsf(c - 0.3f) < 0.01f && fabsf(t - 0.6f) < 0.01f, what);
-    setkey(fx, "drift", 0); setkey(fx, "an_cut", 0); setkey(fx, "s2_an_tune", 0);
+             "spread %.2f, ANALOG AMOUNT %.2f; want 0.40, 0.30, 0.60, 0.75)", d, c, t, a);
+    check(fabsf(d - 0.4f) < 0.01f && fabsf(c - 0.3f) < 0.01f && fabsf(t - 0.6f) < 0.01f && fabsf(a - 0.75f) < 0.01f,
+          what);
+    setkey(fx, "drift", d0); setkey(fx, "an_cut", c0); setkey(fx, "s2_an_tune", t0); setkey(fx, "analog_amt", a0);
+}
+
+/* (2026-11-01) ANALOG AMOUNT on the ANALOG page: the big bar across its top two rows. A plain click sets where it
+ * lands, the wheel steps 1%, a double-click sets 100% (the default); its help; one value for all three Synths; not on
+ * the OTHER page; the new defaults (a gentle analog feel) in a new instance. The page's screenshot: _analog_amount. */
+static const char *help_fresh(AEffect *fx);
+static void hover_at(HWND child, float s, float x, float y);
+static void dbl_click_px(HWND child, intptr_t at, int jitter);
+static void analog_amt_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[500];
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone */
+    click_zone(child, s, ZONE_TAB_ANALOG);
+    float x0 = ZONE_SCREEN[0] + 8.0f, x1 = ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f;   /* editor.c analog_amt_bar */
+    float bx0 = x0 + 122.0f, bx1 = x1 - 70.0f, y = ZONE_SCREEN[1] + 80.0f + 22.0f;   /* (the two rows' middle) */
+    float a0 = pv(fx, "analog_amt");
+#define LT_DEF(k) PARAMS[rnd_key(k)].def   /* (a new instance's: the params' defaults, normalized) */
+    int defaults = fabsf(LT_DEF("analog_amt") - 0.5f) < 1e-4f && fabsf(LT_DEF("drift") - 0.25f) < 1e-4f &&
+                   fabsf(LT_DEF("an_env") - 0.30f) < 1e-4f && fabsf(LT_DEF("s3_an_res") - 0.20f) < 1e-4f &&
+                   LT_DEF("an_ladder") == 0.0f && LT_DEF("an_hq") == 0.0f && LT_DEF("an_warm") == 0.0f;
+#undef LT_DEF
+    static const char *const PAGE[] = {"drift", "an_cut", "an_res", "an_env", "an_lvl", "an_tune", "an_ladder"};
+    float was[7];
+    for (int k = 0; k < 7; k++) { was[k] = pv(fx, PAGE[k]); setkey(fx, PAGE[k], PARAMS[rnd_key(PAGE[k])].def); }
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_analog_amount"); }   /* (as a new one) */
+    click(child, s, bx0 + 0.25f * (bx1 - bx0), y);   /* a quarter along: 50% */
+    float at_q = pv(fx, "analog_amt");
+    wheel_at(child, s, bx0 + 0.6f * (bx1 - bx0), y, 2);   /* +2% */
+    float wheeled = pv(fx, "analog_amt");
+    hover_at(child, s, bx0 + 0.5f * (bx1 - bx0), y);
+    int help = strstr(help_fresh(fx), "ANALOG AMOUNT") != NULL;
+    LPARAM at = MAKELPARAM((int)lroundf((bx0 + 0.9f * (bx1 - bx0)) * s), (int)lroundf(y * s));
+    dbl_click_px(child, at, 0);
+    float reset = pv(fx, "analog_amt");
+    if (bmp) { click(child, s, bx0 + 0.75f * (bx1 - bx0), y); InvalidateRect(child, NULL, FALSE);
+               shot(child, w, h, bmp, "_analog_amount_150"); }
+    float at_150 = pv(fx, "analog_amt");
+    int other = 0;   /* not left on the OTHER page */
+    for (int p = 0; p < NPAGES; p++)
+        if (!strcmp(PAGES[p].title, "OTHER"))
+            for (int k = PAGES[p].first; k < PAGES[p].first + PAGES[p].count; k++) other |= ITEMS[k].param == rnd_key("analog_amt");
+    setkey(fx, "analog_amt", a0);
+    for (int k = 0; k < 7; k++) setkey(fx, PAGE[k], was[k]);
+    snprintf(what, sizeof what, "ANALOG AMOUNT: a new instance at 100%% with the page's new defaults (drift 25, env spread "
+             "30, S3 res spread 20, ladder / HQ / warm-up off): %s; a plain click a quarter along the bar: %.0f%% (want 50), "
+             "the wheel +2: %.0f%% (52), a double-click: %.0f%% (100), a click at three quarters: %.0f%% (150); its help: %s; "
+             "on the OTHER page: %s", defaults ? "yes" : "NO", at_q * 200, wheeled * 200, reset * 200, at_150 * 200,
+             help ? "yes" : "NO", other ? "YES" : "no");
+    check(defaults && fabsf(at_q * 200 - 50) < 1.5f && fabsf(wheeled * 200 - at_q * 200 - 2) < 0.6f &&
+          fabsf(reset - 0.5f) < 1e-4f && (!bmp || fabsf(at_150 * 200 - 150) < 1.5f) && help && !other, what);
+    click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
 static void master_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
@@ -3012,6 +3083,7 @@ static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     cables_drag_test(fx, child, s, bmp, w, h);   /* (2026-10-31) CABLES by dragging, the settings box */
     cables_more_test(fx, child, s, bmp, w, h);   /* (2026-10-31) double-click, right-click menu, drag the other way */
     analog_test(fx, child, s, bmp, w, h);   /* (2026-10-30) HQ MODE and WARM-UP on the ANALOG page */
+    analog_amt_test(fx, child, s, bmp, w, h);   /* (2026-11-01) ANALOG AMOUNT, its big bar */
 }
 
 /* ---- (2026-10-30) the plain-click pass: what a modifier key, a double-click, a right-click or a keyboard key did,
@@ -3074,7 +3146,9 @@ static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     for (int j = 0; j < 2 && PG_ANALOG >= 0; j++)
         for (int k = PAGES[PG_ANALOG].first; k < PAGES[PG_ANALOG].first + PAGES[PG_ANALOG].count; k++)
             if (ITEMS[k].param == rnd_key(K[j])) {
-                int slot = k - PAGES[PG_ANALOG].first, r = slot % PT_ROWS, col = slot / PT_ROWS;
+                /* (2026-11-01) under the ANALOG AMOUNT bar: 6 rows a column, from row 2 (editor.h page_slot) */
+                int slot = k - PAGES[PG_ANALOG].first, pr = PT_ROWS - LT_AMT_ROWS;
+                int r = LT_AMT_ROWS + slot % pr, col = slot / pr;
                 x[j] = sx0 + col * (half + 8.0f) + half * 0.75f;
                 y[j] = ZONE_SCREEN[1] + 80.0f + 22.0f * r + 11.0f;
                 found++;
@@ -3296,6 +3370,10 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     fx->dispatcher(fx, 2 /* effSetProgram */, 0, 1, NULL, 0);
     fx->dispatcher(fx, 2, 0, 0, NULL, 0);
     click(child, s, ZONE_PAD[0] + 4.0f, ZONE_PAD[1] + ZONE_PAD[3] - 4.0f);   /* the pad: left, down (at rest) */
+    /* (2026-11-01) at ANALOG AMOUNT 0: this measures the wiring by level, and the layers' level only follows the filter
+     * this strongly while they stay in phase (with the new defaults' tuning spreads, about -8% instead of -27%) */
+    float amt_was = getkey(fx, "analog_amt");
+    setkey(fx, "analog_amt", 0.0f);
     send_midi(fx, 0x90, 60, 100);
     play(fx, 40, 512);
     double rest = play(fx, 20, 512);
@@ -3307,6 +3385,7 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     double back = play(fx, 20, 512);
     send_midi(fx, 0x80, 60, 0);
     play(fx, 200, 512);
+    setkey(fx, "analog_amt", amt_was);
     snprintf(what, sizeof what, "Init (all three Synths): a click on the pad's right side darkens it (rms %.4f at rest, %.4f "
              "with the pad to the right, %.4f back)", rest, moved, back);
     check(moved < rest * 0.85 && back > moved * 1.1, what);

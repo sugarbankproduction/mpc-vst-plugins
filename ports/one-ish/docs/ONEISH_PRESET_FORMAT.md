@@ -28,7 +28,7 @@ category=Pad
 mood=Dark
 group=Live
 notes=Synth 1 slow strings, Synth 2 bells on top. Mod wheel opens both filters.
-dv=1
+dv=2
 ctl=2
 # ---- Synth 1 ----
 o1_wave=Saw
@@ -53,12 +53,12 @@ Write these at the top, in this order:
 | `mood=` | no | Free text, e.g. `Warm`, `Dark`, `Bright`, `Aggressive`, `Soft`. |
 | `group=` | no | Free text, your own grouping. |
 | `notes=` | no | One line. Write a line break as `\n`. Say how to play it ("Mod wheel: vibrato"). |
-| `dv=1` | **strongly recommended** | "Today's defaults" (section 3). Without it, Moo Won assumes the file is from before 2026-10-30 and fills in what you left out with the OLD defaults: Synths 2 and 3 OFF, playing a copy of Synth 1's sound, and no X/Y pad, ribbon or aftertouch rows in matrix rows 13-16. |
+| `dv=2` | **strongly recommended** | "Today's defaults" (section 3). Without it, Moo Won assumes the file is from before 2026-10-30 and fills in what you left out with the OLD defaults: Synths 2 and 3 OFF, playing a copy of Synth 1's sound, no X/Y pad, ribbon or aftertouch rows in matrix rows 13-16, and the ANALOG page all 0. `dv=1` (files saved from 2026-10-30 until 2026-11-01): today's defaults except the ANALOG page, whose `drift` and `an_*` spreads you leave out are read as 0 (exact, no analog feel), as they were then. |
 | `ctl=2` | recommended | Each effect's CTRL 1 / CTRL 2 knobs in "Auto" use today's targets (each effect's two most useful controls). |
 
 ## 3. The defaults (what you get without writing anything)
 
-With `dv=1`, an empty patch is:
+With `dv=2`, an empty patch is:
 
 - **All three Synths ON**, all at the same basic sound: oscillator 1 a saw at 8', the others silent (level 0), into the
   ladder filter fully open (`flt_cut=100`), a moderate amp envelope, 4 voices each, volume 70%.
@@ -71,6 +71,10 @@ With `dv=1`, an empty patch is:
 - Master effects ON (`mfx_on=On`), but each Synth's sends at 0 (`mfx_send1=0`, `mfx_send2=0`): no echo or reverb until
   you raise a send.
 - The Synth's own effect OFF (`modfx_on=Off`).
+- (2026-11-01) A gentle analog feel on the ANALOG page, in every Synth: `drift=25`, `an_cut=25`, `an_env=30`,
+  `an_lvl=25`, `an_tune=25`, `an_res=20` (the non-linear ladder, HQ and warm-up off), at `analog_amt=100` (shared).
+  Write `analog_amt=0`, or each of those at 0, for an exactly digital sound. (The desktop window keeps the player's
+  ANALOG page when a preset or patch loads, so these matter most for a new instance and other hosts.)
 
 **Consequences when writing presets:**
 - **Every Synth you don't want must be switched off**, e.g. `s3_syn_on=Off`. Otherwise it plays the default saw.
@@ -223,11 +227,12 @@ filter), `lad_kbd` (key tracking) and the filters' LFO amounts. See Appendix A: 
   and others keep settings the same across the three Synths. `lfoN_share` makes Synths 2 and 3 play
   Synth 1's LFO N exactly, in step.
 - **Analog character** (section ANALOG): `drift`, the `an_*` settings, `an_hq` (2x / 4x oversampling: cleaner but
-  costs CPU) and warm-up. Moo Won's RANDOMISE never changes these.
+  costs CPU) and warm-up, and (2026-11-01) `analog_amt`, ANALOG AMOUNT (shared, 0-200%, default 100%): scales all
+  of them in every Synth at once (0% exact digital, 200% twice the page). Moo Won's RANDOMISE never changes these.
 
 ## 9. Rules for a good, safe preset
 
-1. Start with the header, `name=`, the tags, `dv=1`, `ctl=2`.
+1. Start with the header, `name=`, the tags, `dv=2`, `ctl=2`.
 2. Decide the structure (Single, Layer, Split) and switch unused Synths off.
 3. For every Synth used: oscillators and their levels, filter routing, filters, envelopes, volume.
 4. Fill the matrix rows you want, all fields of each row. Keep rows 13-16 unless you mean to replace them.
@@ -249,7 +254,7 @@ type=Split
 category=Performance
 mood=Warm
 notes=Left hand: round bass (below C4). Right hand: pad layered with bells.\nMod wheel: vibrato. Aftertouch: opens the pad. Pad X: bell brightness.
-dv=1
+dv=2
 ctl=2
 # ---- Synth 1: bass, keys below C4 ----
 syn_name=Bass
@@ -315,7 +320,7 @@ s3_mod2_via=None
 
 ## Appendix A: every parameter
 
-Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 774 keys for Synth 1 and the shared settings; 612 of them also exist for Synths 2 and 3 with the prefixes `s2_` / `s3_`). **Scope**: *per Synth* keys can be written three times (`key`, `s2_key`, `s3_key`); *shared* keys exist once and apply to all three Synths (never write `s2_` / `s3_` for them). Defaults are for a sound with `dv=1` (see section 2).
+Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 keys for Synth 1 and the shared settings; 612 of them also exist for Synths 2 and 3 with the prefixes `s2_` / `s3_`). **Scope**: *per Synth* keys can be written three times (`key`, `s2_key`, `s3_key`); *shared* keys exist once and apply to all three Synths (never write `s2_` / `s3_` for them). Defaults are for a sound with `dv=2` (see section 2).
 
 ### OSC 1
 
@@ -819,17 +824,18 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 774 ke
 
 | Key | Name | Value | Default | Scope |
 |---|---|---|---|---|
-| `an_cut` | Voice Cutoff Spread | number 0 to 100 %, whole numbers | `0` | per Synth |
-| `an_env` | Voice Env Time Spread | number 0 to 100 %, whole numbers | `0` | per Synth |
-| `an_lvl` | Voice Level Spread | number 0 to 100 %, whole numbers | `0` | per Synth |
-| `an_tune` | Voice Tuning Spread | number 0 to 100 %, whole numbers | `0` | per Synth |
-| `an_res` | Voice Resonance Spread | number 0 to 100 %, whole numbers | `0` | per Synth |
+| `an_cut` | Voice Cutoff Spread | number 0 to 100 %, whole numbers | `25` | per Synth |
+| `an_env` | Voice Env Time Spread | number 0 to 100 %, whole numbers | `30` | per Synth |
+| `an_lvl` | Voice Level Spread | number 0 to 100 %, whole numbers | `25` | per Synth |
+| `an_tune` | Voice Tuning Spread | number 0 to 100 %, whole numbers | `25` | per Synth |
+| `an_res` | Voice Resonance Spread | number 0 to 100 %, whole numbers | `20` | per Synth |
 | `an_ladder` | Non-Linear Ladder | number 0 to 100 %, whole numbers | `0` | per Synth |
-| `drift` | Analog Drift | number 0 to 100 %, whole numbers | `0` | per Synth |
+| `drift` | Analog Drift | number 0 to 100 %, whole numbers | `25` | per Synth |
 | `an_hq` | HQ Mode | option: `Off` / `2x` / `4x` | `Off` | per Synth |
 | `an_warm` | Warm-Up | option: `Off` / `On` | `Off` | per Synth |
 | `an_warm_amt` | Warm-Up Amount | number 0 to 100 %, whole numbers | `50` | per Synth |
 | `an_warm_time` | Warm-Up Time | number 1 to 20 min, whole numbers | `5` | per Synth |
+| `analog_amt` | Analog Amount (all of the ANALOG page, all 3 Synths) | number 0 to 200 %, whole numbers | `100` | shared |
 
 ### RIBBON
 
