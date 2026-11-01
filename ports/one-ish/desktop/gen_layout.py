@@ -513,7 +513,7 @@ def build(lay):
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
-    L.cells([("voices", "VOICES", 40, "button"), ("uni_detune", "DETUNE", 40, "knob"), ("hold", "HOLD", 40, "toggle")],
+    L.cells([("voices", "VOICES", 56, "button"), ("uni_detune", "DETUNE", 56, "knob")],   # (HOLD: the hand controls)
             622, YL, HL, size=24)
     # (2026-11-01) LINK on the third line: every setting of this panel and its page the same in all 3 Synths
     L.ctl("link_poly", "toggle", 626, YX, 50, 14, "LINK", SIDE)
@@ -679,6 +679,7 @@ def build(lay):
     L.cells([("pan", "PAN", 46), ("spread", "SPREAD", 44)], X + 1930, 490, 78)
     if "master_level" in L.index:   # (2026-10-30) lit: VOLUME is MASTER (master_level, all three Synths; hub.c)
         zones["VOL_MASTER"] = (X + 1880, 572, 60, 14)
+    zones["PANIC"] = (X + 1962, 573, 54, 13)   # (2026-11-01, owner) every note off: this panel's bottom right corner
     L.page("OUTPUT", "SYNTH OUTPUT", "This Synth's level, place and sends; MASTER: all three Synths' level.", [
         ("volume", "Volume"), ("pan", "Pan"), ("spread", "Spread"), ("mfx_send1", "Send 1 (FX 1)"),
         ("mfx_send2", "Send 2 (FX 2)"), ("master_level", "Master (All Synths)"),
@@ -707,7 +708,6 @@ def build(lay):
                   # (2026-10-30) the controller's DEST button, top left: modulate from the wheels, the X/Y pad,
                   # the ribbon or the keyboard (quickmod.c); the computer keyboard's hint on the front rail
                   "QM_HANDS": (43, 623, 26, 9), "KB_HINT": (400, 841, 900, 14),
-                  "PANIC": (236, 691, 54, 13),   # (2026-10-30) every note off, under glide's ON
                   # (2026-10-31) LINK ALL: every LINK of this box on (or off) at once, after the pad's LINK
                   "LINK_ALL": (308, 822, 60, 14),
                   # (2026-11-01) HOLD (a window setting, not saved): lit, letting go of the pad / the ribbon keeps it
@@ -725,8 +725,14 @@ def build(lay):
     L.ctl("link_ribbon", "toggle", 387, 615, 54, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     L.ctl("glide", "toggle", 236, 640, 42, 36, "ON")   # (2026-10-31: 20 px shorter, the button where it was)
-    L.ctl("link_glide", "toggle", 236, 676, 42, 14, "LINK", SIDE)
-    L.ctl("glide_type", "leds", 278, 624, 52, 76, "TYPE")
+    L.ctl("link_glide", "toggle", 274, 645, 44, 14, "LINK", SIDE)   # (2026-11-01, owner: beside its ON)
+    L.ctl("glide_type", "leds", 318, 624, 52, 66, "TYPE")   # (2026-11-01, owner: moved right)
+    # (2026-11-01, owner) the Synth's HOLD, here from the POLYPHONY panel, under glide's LINK, with a LINK of its own
+    L.ctl("hold", "toggle", 236, 691, 50, 14, "HOLD", SIDE)
+    L.ctl("link_hold", "toggle", 292, 691, 46, 14, "LINK", SIDE)
+    # (2026-11-01, owner) OCTAVE's LINK, beside its name: lit, the buttons move the keyboard (every Synth together); out,
+    # the Synth in focus's own OCTAVE (octave_shift), so each Synth can sit in its own (editor.c set_octave)
+    L.ctl("link_octave", "toggle", 136, 682, 44, 14, "LINK", SIDE)
     L.column([("glide_legato", "LEGATO"), ("glide_gated", "GATED"), ("glissando", "GLISS")], 298, 706, 72, 22,
              "toggle", SIDE)   # the other glide options, beside the pad
     L.panel(298, 770, 72, 12, "BEND RANGE", style="caption", keys=["bend_up", "bend_down"])
@@ -789,6 +795,7 @@ LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
                # (2026-10-31) the controller box: glide's settings; the pitch wheel's LINK also keeps BEND RANGE alike
                ("link_glide", ("glide", "glide_time", "glide_type", "glide_legato", "glide_gated", "glissando")),
                ("link_bend", ("bend_up", "bend_down")),
+               ("link_hold", ("hold",)),   # (2026-11-01; link_poly has it too: either lit links it)
                # (2026-11-01) the POLYPHONY panel: all it shows and its page
                # (2026-11-01) the ARPEGGIATOR panel's LINK ALL: everything it and its page show (RATE's
                # four keep LINK too: either lit links them, desktop/hub.c link_lit)

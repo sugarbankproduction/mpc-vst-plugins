@@ -107,6 +107,8 @@ static const char *help_for(int i) {
         {"link_mod", "LINK (mod wheel): lit, the mod wheel (CC 1) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"link_ribbon", "LINK (ribbon): lit, the ribbon (CC 16 and 17) reaches all three Synths at once, whatever their MIDI channels. Saved with the sound."},
         {"link_arp_all", "LINK ALL (ARPEGGIATOR): lit, every arpeggiator setting set from the panel or its page (ON, LATCH, SYNC, PATTERN, OCT, DIRECTION, RATE, GATE, SWING and the page's) goes to all three Synths. LINK under RATE links the rate alone. Saved with the sound."},
+        {"link_hold", "LINK (HOLD): lit, HOLD set from the panel goes to all three Synths."},
+        {"link_octave", "LINK (OCTAVE): lit, OCTAVE moves the keyboard, every Synth together. Out: OCTAVE sets the Synth in focus's own, so each Synth can sit in its own octave (pick a Synth, then press OCTAVE)."},
         {"link_poly", "LINK (POLYPHONY): lit, this panel's settings set from the panel or its page (VOICES, UNISON and its voices, DETUNE, HOLD, PITCH VARIANCE, MONO PRIORITY, VOICE STEALING) go to all three Synths. Saved with the sound."},
         {"link_glide", "LINK (glide): lit, glide's settings set from the panel (ON, RATE, TYPE, LEGATO, GATED, GLISS) go to all three Synths. Saved with the sound."},
         {"link_pad", "LINK (X/Y pad): lit, moving the pad drives Pad X, Pad Y and the pad's gate in all three Synths at once, whatever their MIDI channels. Saved with the sound."},
@@ -366,11 +368,14 @@ static const char *zone_help(ed_t *e, int z) {
                             "Click HOLD again to let go (SPRING then takes it back). A window setting: not saved with "
                             "the sound (the ribbon's MODE Hold, on its page, is the saved way).";
     case Z_OCT_DOWN: case Z_OCT_UP:
-        return "Octave: shifts the on-screen keyboard down or up, two octaves each way. Click an LED above for that "
-               "octave at once (0: the default); PANIC (under glide's ON) stops every note. Shortcut: hold one, 1 s the "
-               "default octave, 2 s PANIC.";
-    case Z_OCT_PICK: return "Octave LEDs: the keyboard's octave (lit). Click one to go straight to it; 0 is the default.";
-    case Z_LINK_ALL: return "LINK ALL: every LINK of this box at once (pitch wheel, mod wheel, X/Y pad, ribbon, glide). "
+        return "Octave: its LINK lit, shifts the on-screen keyboard, every Synth together, two octaves each way. LINK out: "
+               "the Synth in focus's own OCTAVE, so each Synth can sit in its own. Click an LED above for that octave at "
+               "once (0: the default); PANIC is in SYNTH OUTPUT's corner. Shortcut: hold one, 1 s the default octave, "
+               "2 s PANIC.";
+    case Z_OCT_PICK: return "Octave LEDs: the keyboard's octave, or with OCTAVE's LINK out the Synth in focus's own (lit). "
+                            "Click one to go straight to it; 0 is the default.";
+    case Z_LINK_ALL: return "LINK ALL: every LINK of this box at once (pitch wheel, mod wheel, X/Y pad, ribbon, glide, HOLD, "
+                            "OCTAVE). "
                             "Lit when they all are: a click puts them all out; otherwise a click lights them all. Each LINK "
                             "still works on its own.";
     case Z_PANIC: return "PANIC: stops every note at once (all notes and sounds off on every MIDI channel, the pedals up). "
@@ -1548,7 +1553,7 @@ static void draw_controller(HDC dc, ed_t *e) {
     if (vis(&L.oct_leds, sc(8)))
         for (int k = 0; k < 5; k++) {
             float x = L.oct_leds.left + rw(&L.oct_leds) * (k + 0.5f) / 5;
-            led(x, (float)(L.oct_leds.top + sc(5)), e->oct == k - 2);
+            led(x, (float)(L.oct_leds.top + sc(5)), octave_shown(e) == k - 2);
         }
     if (vis(&L.oct_down, sc(6))) red_button(&L.oct_down, e->hover == Z_OCT_DOWN);
     if (vis(&L.oct_up, sc(6))) red_button(&L.oct_up, e->hover == Z_OCT_UP);

@@ -83,7 +83,8 @@ int link_relative(ed_t *e, int i) {   /* lit, and a relative one (ALL 3 over LIN
 }
 
 /* ---- (2026-10-31) LINK ALL: every LINK of the controller box (the wheels', the X/Y pad's, the ribbon's, glide's) ---- */
-static const char *const HAND_LINK[] = {"link_bend", "link_mod", "link_pad", "link_ribbon", "link_glide"};
+static const char *const HAND_LINK[] = {"link_bend", "link_mod", "link_pad", "link_ribbon", "link_glide", "link_hold",
+                                        "link_octave"};
 enum { NHAND_LINK = sizeof HAND_LINK / sizeof HAND_LINK[0] };
 int hands_linked(ed_t *e) {   /* 1: every one of them that this build has is lit */
     int any = 0;

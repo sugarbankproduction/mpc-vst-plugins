@@ -2003,3 +2003,5 @@ s3_mout_ch
 s3_sus_pedal
 link_poly
 link_arp_all
+link_hold
+link_octave
