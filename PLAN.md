@@ -416,7 +416,8 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      plain click; Shift-click on GENERATIVE (GEN OFF) and the arrow keys are extra shortcuts. GENERATIVE (console button): a hub page
      of the generators (data-driven from the MORE pages: EUCLID, TURING, BOUNCING BALLS, PARTICLES, and LIFE, ORBITS,
      PEND, RAIN, MARKOV once they exist) with each one's ON and the Synths it is on in, KEY / SCALE with their LINKs,
-     and ALL OFF; GEN OFF beside the button: every generator off in all three Synths (one undo step), again: back on.
+     and ALL OFF; GEN OFF beside the button: every generator off in all three Synths (one undo step), again: back on
+     (since 2026-11-01 it reads GEN ON, lit, while any generator is on: see the owner requests of that day).
      MASTER in SYNTH OUTPUT: lit, its knob is the shared master level (a view, not saved). New MORE triangles and
      pages: PITCH MODULATION, RING MOD, WAVEFORM MOD, FREQ MOD, NOISE, CUTOFF MODULATION, SYNTH OUTPUT, BEND RANGE;
      BALLS and PARTICLES (their ON and triangle) in GENERATIVE. The screen's sub-pages: the < > on the title line, and
@@ -1025,6 +1026,11 @@ for MPC afterwards. Work through the steps without stopping for approval at each
        sound, patch or `.oneish` file that leaves `key_scale` out is read as Minor (`src/synths.h` state_absent, as
        for `gen_keys`), so old projects sound the same (golden_check unchanged); the randomiser golden keeps its
        inputs at Minor (unchanged fixture). Offline.
+     - GEN ON / GEN OFF ("can it be GEN OFF and GEN ON and have it lit up when gen on is on?"): the console button
+       beside GENERATIVE (was GEN OFF / GEN BACK, never lit) reads GEN ON and is lit while a generator is on in any of
+       the three Synths, GEN OFF (not lit) while none is. A click does what it did: lit, every generator off in all
+       three (one undo step); then, while they are still off, back on. Its help line says which. load_test: lit with
+       only Synth 3's RAIN on, out with none, the help, a click off (not lit) and a click back (lit).
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

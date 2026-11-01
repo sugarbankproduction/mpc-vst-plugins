@@ -93,8 +93,10 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   LFO settings stay stored (and the window shows them while SHARE is lit); SHARE off, each Synth hears its own again.
   Unlike LINK (which copies the rate into the other Synths' own settings), SHARE copies nothing. Saved with the sound;
   the randomiser never touches it (no rule, like the LINKs). Old sounds: Off, unchanged (golden check).
-- **GEN OFF** (the console's third row) and **ALL OFF** (the GENERATIVE page) switch every generator off in all three
-  Synths at once; pressed again while they are all still off, they bring back the ones they switched off.
+- **GEN ON / GEN OFF** (the console's third row) and **ALL OFF** (the GENERATIVE page) switch every generator off in
+  all three Synths at once; pressed again while they are all still off, they bring back the ones they switched off.
+  (2026-11-01, owner: "makes more sense") The console button reads GEN ON and is lit while any generator is on in any
+  Synth, GEN OFF (not lit) while none is; it was GEN OFF / GEN BACK, never lit. Same clicks as before.
 - **MASTER** (2026-10-30): the small MASTER button in SYNTH OUTPUT turns that section's VOLUME knob into MASTER, the
   shared master level of all three Synths (`master_level`, also on the SETUP page); off, the knob is the focused
   Synth's own VOLUME again. The button is only a view (never saved). Lit when the window opens since 2026-11-01

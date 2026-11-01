@@ -92,7 +92,8 @@ enum { HT_ENGINE_BPM = 1,     /* the tempo the engine's Synths follow now (x 100
        HT_HELP,               /* the help line now, into ptr (1 KB); returns its length */
        HT_GEN_ARMED,          /* (2026-10-30) the RESET half waiting for its second click (a Z_GEN_RESET*), else 0 */
        HT_RND_VOICING,        /* (2026-10-30) the RANDOM page's MONO / POLY / BOTH (RV_*) */
-       HT_PEEK };             /* (2026-10-30) an engine readout: ptr in, its key; out, its text (1 KB) */
+       HT_PEEK,               /* (2026-10-30) an engine readout: ptr in, its key; out, its text (1 KB) */
+       HT_GEN_LIT };          /* (2026-11-01) 1: the console's GEN ON is lit (a generator on in any Synth) */
 enum { RIBBON_CC = 16, RIBBON_TOUCH_CC = 17 };   /* the ribbon's MIDI: position 0..127; touch 127, release 0 */
 /* the X/Y pad's: X (left 0 .. right 127), Y (bottom 0 .. top 127), touch 127 / release 0; Y also sends aftertouch */
 enum { PAD_X_CC = 2, PAD_Y_CC = 3, PAD_TOUCH_CC = 18 };
@@ -522,7 +523,8 @@ int hub_hit_console(POINT pt);                 /* the console's third row */
 int hub_press(ed_t *e, int z);                 /* 1: z was the hub's */
 int hub_on(ed_t *e, int row, int c);           /* HUB[row] on in Synth c */
 int hub_restore_n(ed_t *e);                    /* generators GEN OFF would bring back (0: it switches off) */
-void hub_all_off(ed_t *e);                     /* GEN OFF / ALL OFF: every generator off in all 3 Synths, or back */
+int hub_any_on(ed_t *e);                       /* 1: a generator is on in any Synth (GEN ON lit; 2026-11-01) */
+void hub_all_off(ed_t *e);                     /* GEN ON / ALL OFF: every generator off in all 3 Synths, or back */
 void hub_panic_stop(ed_t *e);                  /* PANIC: every sequence stopped, every generator off (2026-10-30) */
 void tempo_text(ed_t *e, char *out, int n);    /* the readout: "120.0" */
 int tempo_host_bpm(ed_t *e, double *bpm);      /* the host's tempo (1: it gives one) */

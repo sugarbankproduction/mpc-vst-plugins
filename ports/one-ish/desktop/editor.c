@@ -396,8 +396,8 @@ static void invalidate_param(ed_t *e, int i) {   /* a value changed: its control
         InflateRect(&a, sc(8), sc(2));
         invalidate(e, &a);
     }
-    for (int k = 0; k < NHUB; k++)   /* a generator's ON: GEN OFF's name (GEN BACK) may change */
-        if (HUB[k].on == i) { RECT g = L.gen_off; InflateRect(&g, sc(12), sc(4)); invalidate(e, &g); }
+    for (int k = 0; k < NHUB; k++)   /* a generator's ON (any Synth's): GEN ON may light or go out (GEN OFF) */
+        if (HUB[k].on == base_of(i)) { RECT g = L.gen_off; InflateRect(&g, sc(12), sc(4)); invalidate(e, &g); }
     if (!IsRectEmpty(&L.ctl[i])) {   /* on the panel: the control, its label and value (they spill a little) */
         RECT r = L.ctl[i];
         InflateRect(&r, sc(16), sc(6));

@@ -1405,9 +1405,11 @@ static void draw_console(HDC dc, ed_t *e) {
     }
     if (vis(&L.sync_cut, sc(4)) && !IsRectEmpty(&L.sync_cut))   /* (2026-10-30) the filters' SYNC (hub_gens.c) */
         panel_button(dc, &L.sync_cut, "SYNC", 0, e->hover == Z_SYNC_CUT);
-    /* the third row (hub.c): GENERATIVE, GEN OFF (GEN BACK while it can bring them back), TEMPO with HOST / OWN */
+    /* the third row (hub.c): GENERATIVE, GEN ON (lit while a generator is on in any Synth) / GEN OFF (none on), TEMPO
+     * with HOST / OWN */
     panel_button(dc, &L.tab_gen, "GENERATIVE", e->screen == SCR_GEN, e->hover == Z_TAB_GEN);
-    panel_button(dc, &L.gen_off, hub_restore_n(e) ? "GEN BACK" : "GEN OFF", 0, e->hover == Z_GEN_OFF);
+    int gens_on = hub_any_on(e);   /* (2026-11-01: was GEN OFF / GEN BACK, never lit) */
+    panel_button(dc, &L.gen_off, gens_on ? "GEN ON" : "GEN OFF", gens_on, e->hover == Z_GEN_OFF);
     if (NSYNTHS > 1) panel_button(dc, &L.together, "TOGETHER", e->together, e->hover == Z_TOGETHER);   /* (hub.c) */
     panel_button(dc, &L.undo, "UNDO", 0, e->hover == Z_UNDO);
     panel_button(dc, &L.redo, "REDO", 0, e->hover == Z_REDO);

@@ -14,9 +14,10 @@
  * (2026-10-30) RANDOMISE | ALL, MUTATE | ALL and RESET | ALL under the right column's generators, and the filters'
  * SYNC: desktop/hub_gens.c.
  *
- * GEN OFF (beside GENERATIVE) and ALL OFF (on the page) switch every generator's ON off in all three Synths: one undo
- * step, the host told of each. Pressed again while they are all still off (and the same sound loaded), it brings back
- * the ones it switched off. That memory is the window's, never saved.
+ * GEN ON / GEN OFF (beside GENERATIVE; 2026-11-01, was GEN OFF / GEN BACK) and ALL OFF (on the page) switch every
+ * generator's ON off in all three Synths: one undo step, the host told of each. The console button reads GEN ON and is
+ * lit while any generator is on in any Synth, GEN OFF (not lit) while none is. Pressed again while they are all still
+ * off (and the same sound loaded), it brings back the ones it switched off. That memory is the window's, never saved.
  *
  * TEMPO (the third row): the tempo everything synced follows, with HOST / OWN. It is the SETTINGS page's RECEIVE MIDI
  * CLOCK (HOST = on) and TEMPO, the same two settings (settings.c keeps them, in its file, for every ONE-ish), so the
@@ -249,6 +250,7 @@ static int any_on(ed_t *e) {
             if (hub_on(e, k, c)) return 1;
     return 0;
 }
+int hub_any_on(ed_t *e) { return any_on(e); }   /* (2026-11-01) GEN ON lit */
 static int program(ed_t *e) { return (int)e->fx->dispatcher(e->fx, effGetProgram, 0, 0, NULL, 0); }
 int hub_restore_n(ed_t *e) {   /* what a press would bring back: only while all are off, with the same sound */
     if (!e->gen_was_n || e->gen_was_prog != program(e) || any_on(e)) return 0;
@@ -413,8 +415,16 @@ const char *hub_zone_help(ed_t *e, int z) {
     }
     if (z == Z_TAB_GEN) return "GENERATIVE: the generators on one page: each one's ON (in the Synth in focus) and which Synths "
                                "it is on in; click a name for its page. KEY, SCALE and their LINKs; FOLLOW TEMPO; ALL OFF.";
-    if (z == Z_GEN_OFF || z == Z_HUB_ALLOFF)
-        return "GEN OFF / ALL OFF: switches every generator (Euclid, Turing, balls, particles and the rest) off in all "
+    if (z == Z_GEN_OFF)
+        return any_on(e) ? "GEN ON (lit): a generator is playing in at least one Synth. Click: every generator off in "
+                           "all three Synths, one undo step (it then reads GEN OFF). Click again while they are still "
+                           "off to bring back the ones it switched off."
+             : hub_restore_n(e) ? "GEN OFF: every generator is off. Click: back on, the ones GEN ON switched off (one "
+                                  "undo step; not saved with the sound)."
+                                : "GEN OFF: no generator is on in any Synth. It lights (GEN ON) when one is: switch one "
+                                  "on with its ON on the GENERATIVE page.";
+    if (z == Z_HUB_ALLOFF)
+        return "ALL OFF: switches every generator (Euclid, Turing, balls, particles and the rest) off in all "
                "three Synths: one undo step. Press again while they are still off to bring back the ones it switched "
                "off (not saved with the sound).";
     if (z == Z_TEMPO) return "TEMPO: what everything synced follows (arp, sequencer, LFOs, synced envelopes, effects, the "
@@ -456,6 +466,7 @@ intptr_t hub_test(ed_t *e, intptr_t op, char *buf, float opt) {
     case HT_OWN: return settings_tempo(NULL);
     case HT_TEMPO: settings_tempo(&bpm); return (intptr_t)llround(bpm * 1000.0);
     case HT_RESTORE: return hub_restore_n(e);
+    case HT_GEN_LIT: return any_on(e);   /* (2026-11-01) */
     case HT_LINKED: return link_lit(e, (int)lroundf(opt));
     case HT_VOL_MASTER: return e->vol_master;
     case HT_SUB: return e->sub;

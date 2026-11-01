@@ -2324,6 +2324,7 @@ static void tempo_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
     st(fx, STT_RESTORE, NULL, NULL, 0);
     host_tempo = was_host;
     play(fx, 4, 512);
+enum { HT_GEN_LIT = 13 };   /* (2026-11-01; after HT_PEEK, as editor.h) */
 }
 
 static void gen_hub_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
@@ -2352,7 +2353,17 @@ static void gen_hub_test(AEffect *fx, HWND child, float s, const char *bmp, int 
     snprintf(what, sizeof what, "GENERATIVE: the first row's ON switches %s in Synth 1 (on %.0f), not Synth 2 (%.0f), "
              "and again off (%.0f)", PARAMS[i].key, a, a2, fx->getParameter(fx, i));
     check(a > 0.5f && a2 < 0.5f && fx->getParameter(fx, i) < 0.5f, what);
-    /* GEN OFF: three generators on in three Synths, all off at once (one undo step), then back */
+    /* (2026-11-01) GEN ON / GEN OFF: lit while a generator is on in any Synth (Synth 3's alone too), not lit with none */
+    {
+        int lit0 = (int)ht(fx, HT_GEN_LIT, 0);
+        setkey(fx, "s3_rain_on", 1);
+        int lit3 = (int)ht(fx, HT_GEN_LIT, 0);
+        setkey(fx, "s3_rain_on", 0);
+        snprintf(what, sizeof what, "GEN ON: not lit with every generator off (%d), lit with only Synth 3's RAIN on (%d), "
+                 "out again (%d)", lit0, lit3, (int)ht(fx, HT_GEN_LIT, 0));
+        check(lit0 == 0 && lit3 == 1 && ht(fx, HT_GEN_LIT, 0) == 0, what);
+    }
+    /* GEN ON: three generators on in three Synths, all off at once (one undo step), then back */
     setkey(fx, "gen_euclid_on", 1); setkey(fx, "s2_phys_balls_on", 1); setkey(fx, "s3_gen_tm_on", 1);
     if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_hub"); }
     int au = automated[rnd_key("s2_phys_balls_on")];
@@ -2368,10 +2379,13 @@ static void gen_hub_test(AEffect *fx, HWND child, float s, const char *bmp, int 
             left += pv(fx, key) > 0.5f;
         }
     int back = (int)ht(fx, HT_RESTORE, 0), steps1 = (int)(fx->dispatcher(fx, 50, TEST_LIB, LT_STEPS, lb, 0) % 1000);
-    snprintf(what, sizeof what, "GEN OFF: every generator off in all three Synths (%d left on), the host told (%d), one "
-             "undo step (%d -> %d); it would bring back %d", left, automated[rnd_key("s2_phys_balls_on")] - au, steps0,
-             steps1, back);
-    check(left == 0 && automated[rnd_key("s2_phys_balls_on")] > au && steps1 == steps0 + 1 && back == 3, what);
+    int lit1 = (int)ht(fx, HT_GEN_LIT, 0);
+    snprintf(what, sizeof what, "GEN ON clicked: every generator off in all three Synths (%d left on), the host told (%d), "
+             "one undo step (%d -> %d); it would bring back %d; now GEN OFF, not lit (%d)", left,
+             automated[rnd_key("s2_phys_balls_on")] - au, steps0, steps1, back, lit1);
+    check(left == 0 && automated[rnd_key("s2_phys_balls_on")] > au && steps1 == steps0 + 1 && back == 3 && lit1 == 0,
+          what);
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_btn_off"); }
     click_zone(child, s, ZONE_TAB_GEN);
     hub_xy(0, 0, &x, &y);
     float ax = ZONE_SCREEN[0] + 8.0f + 30.0f, ay = ZONE_SCREEN[1] + 80.0f + 22.0f * 7 + 11.0f;   /* ALL OFF: row 8 */
@@ -2423,6 +2437,15 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
         click_ctl(child, s, k);
         snprintf(what, sizeof what, "SHARE (LFO %d): a plain click on its button turns it on (%d) and off again (%.0f); "
                  "LINK untouched", n, on, pv(fx, k));
+    {   /* its help says what it is now: GEN ON (lit) */
+        char hb[1024] = "";
+        SendMessageA(child, WM_MOUSEMOVE, 0, MAKELPARAM((int)lroundf((ZONE_GEN_OFF[0] + ZONE_GEN_OFF[2] / 2.0f) * s),
+                                                        (int)lroundf((ZONE_GEN_OFF[1] + ZONE_GEN_OFF[3] / 2.0f) * s)));
+        fx->dispatcher(fx, 50, TEST_HUB, 9 /* HT_HELP */, hb, 1);
+        snprintf(what, sizeof what, "GEN ON: lit (%d) with three generators on, its help says so (\"%.50s...\")",
+                 (int)ht(fx, HT_GEN_LIT, 0), hb);
+        check(ht(fx, HT_GEN_LIT, 0) == 1 && !strncmp(hb, "GEN ON (lit)", 12), what);
+    }
         check(on && pv(fx, k) < 0.5f, what);
     }
     /* ALL 3 over LINK CUTOFF: relative, each Synth's cutoff moves by the same amount */
@@ -2451,6 +2474,16 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     /* KEY on the hub page, with its LINK there; then the LINK survives the project's save and load */
     click_zone(child, s, ZONE_TAB_GEN);
     float x, y;
+    {   /* (2026-11-01) the console's GEN OFF, clicked while they are off: back on, and lit (GEN ON); again: off */
+        click_zone(child, s, ZONE_GEN_OFF);
+        int on = pv(fx, "gen_euclid_on") > 0.5f && pv(fx, "s2_phys_balls_on") > 0.5f && pv(fx, "s3_gen_tm_on") > 0.5f;
+        int lit = (int)ht(fx, HT_GEN_LIT, 0);
+        if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_btn_on"); }
+        click_zone(child, s, ZONE_GEN_OFF);
+        snprintf(what, sizeof what, "GEN OFF clicked: the three generators back on (%d), GEN ON lit (%d); clicked again: "
+                 "off (%.0f), not lit (%d)", on, lit, pv(fx, "gen_euclid_on"), (int)ht(fx, HT_GEN_LIT, 0));
+        check(on && lit == 1 && pv(fx, "gen_euclid_on") < 0.5f && ht(fx, HT_GEN_LIT, 0) == 0, what);
+    }
     hub_key_xy(0, 1, &x, &y);
     click(child, s, x, y);
     hub_key_xy(0, 0, &x, &y);
