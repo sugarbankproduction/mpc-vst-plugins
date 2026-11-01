@@ -723,7 +723,7 @@ def build(lay):
     L.ctl("link_ribbon", "toggle", 387, 615, 54, 14, "LINK", SIDE)
     L.ctl("glide_time", "knob", 172, 626, 64, 70, "GLIDE RATE")
     L.ctl("glide", "toggle", 236, 640, 42, 36, "ON")   # (2026-10-31: 20 px shorter, the button where it was)
-    L.ctl("link_glide", "toggle", 236, 676, 42, 14, "LINK", SIDE)
+    L.ctl("link_glide", "toggle", 274, 645, 44, 14, "LINK", SIDE)   # (2026-11-01, owner: beside its ON)
     L.ctl("glide_type", "leds", 318, 624, 52, 66, "TYPE")   # (2026-11-01, owner: moved right)
     # (2026-11-01, owner) the Synth's HOLD, here from the POLYPHONY panel, under glide's LINK, with a LINK of its own
     L.ctl("hold", "toggle", 236, 691, 50, 14, "HOLD", SIDE)
