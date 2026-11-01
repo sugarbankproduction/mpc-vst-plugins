@@ -739,7 +739,9 @@ static inline void rnd_gen_fx(rnd_ctx_t *c) {
     if (rnd_chance(c, PREV[a])) {   /* the reverb on send 2 */
         rnd_set(c, "mfx_send2", a == RA_BASS ? rnd_range(c, 5, 15) : rnd_range(c, 12, 40));
         rnd_set(c, "rev_decay", rnd_rt(rnd_logr(c, 1.0f, a == RA_PAD ? 5.0f : 3.5f)));
-        if (dly && rnd_chance(c, 0.25f)) rnd_set(c, "mfx_series", rnd_range(c, 15, 40));
+        /* (2026-11-01, owner: SERIES low to medium makes the effects more interesting) delay into reverb, more often;
+         * further up as WILD rises */
+        if (dly && rnd_chance(c, 0.6f)) rnd_set(c, "mfx_series", rnd_range(c, 12, 35 + 20 * c->wild));
     }
 }
 
@@ -1063,7 +1065,7 @@ static inline void rnd_gen_wild(rnd_ctx_t *c, float s) {
         }
         if (rnd_chance(c, 0.3f * s)) { rnd_any_type(c, "dly_type"); rnd_set(c, "mfx_send1", rnd_range(c, 10, 40)); }
         if (rnd_chance(c, 0.3f * s)) { rnd_any_type(c, "rev_type"); rnd_set(c, "mfx_send2", rnd_range(c, 15, 45)); }
-        if (rnd_chance(c, 0.25f * s)) rnd_set(c, "mfx_series", rnd_range(c, 15, 50));
+        if (rnd_chance(c, 0.45f * s)) rnd_set(c, "mfx_series", rnd_range(c, 20 + 20 * s, 40 + 40 * s));   /* (2026-11-01) */
     }
     if (rnd_open(c, RS_MOD)) {
         for (int n = 1; n <= 4; n++) {   /* LFOs up into the High range (audio rate), any wave */
@@ -1520,7 +1522,7 @@ static inline void rnd_safety(rnd_ctx_t *c) {
     rnd_min(c, "modfx_bits", 4.0f);
     rnd_max(c, "mfx_send1", 45.0f);
     rnd_max(c, "mfx_send2", 55.0f);
-    rnd_max(c, "mfx_series", 60.0f);
+    rnd_max(c, "mfx_series", 60.0f + 25.0f * c->wild);   /* (2026-11-01: WILD lets it go further) */
     /* the matrix: pitch only by a little (a sync sweep on a synced oscillator may go further), levels by up to 40% */
     int d1 = rnd_key("mod1_dst"), s1 = rnd_key("mod1_src");
     int env_src[3] = {rnd_opt(s1, "Filter Env"), rnd_opt(s1, "Amp Env"), rnd_opt(s1, "Mod Env")};

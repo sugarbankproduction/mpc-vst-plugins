@@ -17,7 +17,10 @@
  * (2026-10-30, the merge with GRAINS) the fixture was made again: GRAINS joined the three effect TYPE lists, and
  * WILD's any-type pick draws over the longer list, so 51 of the 240 calls (WILD 50 / 100% only) pick another type
  * (and what follows from it). Checked before remaking it: against the old randomiser (4f1c1b0) param by param, every
- * call that differed had an effect type change; none differed without one. */
+ * call that differed had an effect type change; none differed without one.
+ * (2026-11-01, SERIES: RANDOMISE sets the master effects' SERIES more often and higher with WILD, the cap rises with WILD)
+ * made again: 42 of the 240 calls differ. Checked before remaking it, against the randomiser before the change
+ * (RND_GOLDEN_DUMP, param by param): every call that differed has another mfx_series; none differed without one. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
