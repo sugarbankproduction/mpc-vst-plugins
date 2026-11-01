@@ -23,6 +23,9 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
   click lists only that category, from its first page; ALL lists everything. A tab is the CATEGORY filter of the TAGS
   page (the same one: the TAGS page shows it, CLEAR clears it), and the other filters (TYPE, MOOD, GROUP) still apply
   to the list and to the counts.
+- **The bottom row** (2026-11-02, desktop window and browser): SINGLE, LAYER, SPLIT, MULTI list only that TYPE (the same
+  filter as the TAGS page's; again: all; they stay while you click through the category tabs), and `LIB: name (count)` with
+  `<` `>` changes the library the USER column shows, so the bundled banks are one click away.
 - **The buttons on that page:**
   - SAVE: stores the sound over the current user patch. On a factory preset or an unsaved sound it asks for a name
     (factory presets are never changed). It lights up while there are changes to keep.
