@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Moo Won</title>
+<meta name="description" content="Moo Won, a three-synth instrument, playing in your browser.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main class="panel">
+  <header>
+    <h1>MOO WON</h1>
+    <p class="sub">three synths in your browser</p>
+    <div class="meter" aria-hidden="true"><div id="meter-fill"></div></div>
+  </header>
+
+  <section id="start-box" class="start">
+    <button id="start" class="big red">Turn on sound</button>
+    <p id="status" class="hint">Loading the synth…</p>
+  </section>
+
+  <section class="row presets">
+    <button id="prev" class="step red" aria-label="Previous preset">◀</button>
+    <select id="preset" aria-label="Preset"></select>
+    <button id="next" class="step red" aria-label="Next preset">▶</button>
+    <input id="search" type="search" placeholder="Find a preset" aria-label="Find a preset">
+  </section>
+
+  <section class="row controls">
+    <label>Volume <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8"></label>
+    <label>Mod wheel <input id="mod" type="range" min="0" max="127" step="1" value="0"></label>
+    <label>Pitch bend <input id="bend" type="range" min="-8192" max="8191" step="1" value="0"></label>
+    <label>Octave
+      <span class="oct"><button id="oct-down" class="step">−</button><b id="oct">4</b><button id="oct-up" class="step">+</button></span>
+    </label>
+    <label>MIDI in <select id="midi-in"><option value="">all keyboards</option></select></label>
+    <button id="panic" class="step">All notes off</button>
+  </section>
+
+  <section class="keys-wrap">
+    <div id="keys" class="keys" aria-label="Keyboard"></div>
+  </section>
+
+  <p class="hint">Play with the mouse or a touch screen, your computer keys (A W S E D F T G Y H U J K O L, Z and X
+    change octave), or a MIDI keyboard (Chrome and Edge). <span id="midi-status"></span></p>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
