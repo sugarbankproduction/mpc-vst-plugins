@@ -483,6 +483,12 @@ void settings_midi_seen(ed_t *e, const void *events);   /* the host's MIDI (its 
 int settings_learn_pick(ed_t *e, int i);       /* a control clicked while LEARN waits for one (its own index) */
 void settings_tick(ed_t *e);                   /* the window's timer */
 void settings_midi_put(ed_t *e, const float *keep);
+/* (2026-11-01, owner: "the analog settings shouldn't change when I select a new preset") the ANALOG page's settings
+ * (drift, an_*) of all three Synths stay as they are when a preset or patch loads; a project, undo and COMPARE still
+ * restore them (patches.c) */
+#define ANALOG_KEEP 33
+void analog_keep(ed_t *e, float *keep);
+void analog_put(ed_t *e, const float *keep);
 void settings_open(ed_t *e);
 void settings_title(ed_t *e, char *out, int n);
 int settings_subs(ed_t *e);

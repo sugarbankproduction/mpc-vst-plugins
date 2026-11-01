@@ -455,7 +455,10 @@ static void load_factory(ed_t *e, int prog) {
         for (int k = 0; k < PRESETS[prog].n && used < (int)sizeof state; k++)
             used += snprintf(state + used, sizeof state - used, ";%s=%s", PARAMS[PRESETS[prog].values[k].param].key,
                              PRESETS[prog].values[k].value);
+        float an[ANALOG_KEEP];
+        analog_keep(e, an);
         if (used < (int)sizeof state) apply_state(e, state);
+        analog_put(e, an);
 #endif
     }
     e->pt.bank = BANK_FACTORY;
@@ -487,7 +490,10 @@ static int load_user(ed_t *e, const char *name_in) {
     if (e->lib) lib_meta_read(t, &e->lib->cur);   /* its tags and notes */
     parse(t, state, sizeof state, &r);
     free(t);
+    float an[ANALOG_KEEP];
+    analog_keep(e, an);
     apply_state(e, state);
+    analog_put(e, an);
     e->pt.bank = BANK_USER;
     snprintf(e->pt.name, sizeof e->pt.name, "%s", name);
     mark_clean(e);
@@ -1451,6 +1457,46 @@ void pt_vsay(ed_t *e, const char *fmt, va_list ap) {
     redraw(e);
 }
 void pt_apply_state(ed_t *e, const char *state) { apply_state(e, state); }
+
+/* ---- the ANALOG page stays across preset and patch loads (2026-11-01) ---- */
+static const char *const ANALOG_KEYS[] = {"drift", "an_cut", "an_res", "an_env", "an_lvl", "an_tune", "an_ladder",
+                                          "an_hq", "an_warm", "an_warm_amt", "an_warm_time"};
+enum { NANALOG = sizeof ANALOG_KEYS / sizeof ANALOG_KEYS[0] };
+_Static_assert(NANALOG * 3 <= ANALOG_KEEP, "keep[] holds all three Synths' ANALOG settings");
+static int analog_ix(int k) {   /* keep slot k (Synth k / NANALOG) -> its param index, or -1 */
+    static short ix[ANALOG_KEEP];
+    static int made;
+    if (!made) {
+        for (int j = 0; j < ANALOG_KEEP; j++) {
+            ix[j] = -1;
+            if (j >= NANALOG * 3) continue;
+            char key[48];
+            static const char *const PRE[3] = {"", "s2_", "s3_"};
+            snprintf(key, sizeof key, "%s%s", PRE[j / NANALOG], ANALOG_KEYS[j % NANALOG]);
+            for (int i = 0; i < NPARAMS; i++)
+                if (!strcmp(PARAMS[i].key, key)) { ix[j] = (short)i; break; }
+        }
+        made = 1;
+    }
+    return ix[k];
+}
+void analog_keep(ed_t *e, float *keep) {   /* before a load */
+    for (int k = 0; k < ANALOG_KEEP; k++) {
+        int i = analog_ix(k);
+        keep[k] = i >= 0 ? e->fx->getParameter(e->fx, i) : -1.0f;
+    }
+}
+void analog_put(ed_t *e, const float *keep) {   /* after it: put back, the host told (as settings_midi_put) */
+    for (int k = 0; k < ANALOG_KEEP; k++) {
+        int i = analog_ix(k);
+        if (i < 0 || keep[k] < 0.0f || e->fx->getParameter(e->fx, i) == keep[k]) continue;
+        e->fx->setParameter(e->fx, i, keep[k]);
+        if (!e->host) continue;
+        e->host(e->fx, audioMasterBeginEdit, i, 0, NULL, 0);
+        e->host(e->fx, audioMasterAutomate, i, 0, NULL, keep[k]);
+        e->host(e->fx, audioMasterEndEdit, i, 0, NULL, 0);
+    }
+}
 void pt_parse(char *text, char *state, int n, int *bad, int *header) {
     parsed_t r;
     parse(text, state, n, &r);

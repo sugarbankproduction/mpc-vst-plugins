@@ -17,7 +17,7 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   (the panel stays on the Synth it shows unless that one goes); off again, back to just the Synth shown. Ctrl-click,
   Shift+1-3 and Ctrl+Shift+F5-F7 light it too. The window's own state, never saved. (load_test: `together_test`.)
 - **M | S** beside each SYNTH button (2026-10-29): M switches the Synth off and on (its ON; red while off; saved with the
-  sound). S solos it (shortcut: a double-click on the SYNTH button; Shift-click adds a Synth to the ones edited together, 2026-10-30): while any
+  sound). S solos it (shortcut: a double-click on the SYNTH button, which since 2026-11-01 solos that Synth alone, the others' SOLO off, and on the one already soloed alone turns solo off; Shift-click adds a Synth to the ones edited together, 2026-10-30): while any
   Synth is soloed only the soloed ones are heard, the others keep playing silently; never saved (`syn_solo`, kept out
   of states, patches and the randomiser; a 10 ms glide so it never clicks).
 - **Shared** sections stay the same whichever Synth is in focus, and say so on the panel: MASTER EFFECTS, DELAY and
@@ -69,14 +69,18 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   - *Controllers* (in the engine, `src/synths.h` midi, as the X/Y pad's LINK `link_pad`): `link_mod` (the LINK under
     MOD), `link_bend` (under PITCH) and `link_ribbon` (at the ribbon's left end). Lit, the mod wheel (CC 1), the pitch
     bend, or the ribbon (CC 16 and 17) reach all three Synths whatever their MIDI channels: from the window, a hardware
-    controller or the host alike. A key never follows them. Off (the default): as before.
+    controller or the host alike. A key never follows them. Off: as before. On by default since 2026-11-01 (owner: it
+    makes testing sounds quicker), in every factory preset too.
   - *Settings* (in the window, gen_layout.py LINK_GROUPS, as the rate LINKs): `link_glide` (under glide's ON: ON, GLIDE
     RATE, TYPE, LEGATO, GATED, GLISS) and the pitch wheel's `link_bend` also keeps BEND RANGE (UP / DOWN) alike: lit, a
     change from the panel goes to all three Synths. The OCTAVE buttons need no LINK: they shift the window's own keyboard
     (one octave for whichever Synths it plays), not a setting of a Synth.
   - **LINK ALL** (after the pad's LINK, bottom right of the box): a plain click lights all five (pitch, mod, pad, ribbon,
     glide) as one undo step; it is lit when they all are, and then a click puts them all out. Not a param: the five are.
-  Shared, default Off, saved with the sound, never randomised (no rule; left out of the randomiser golden).
+  Shared, saved with the sound, never randomised (no rule; left out of the randomiser golden). Default On since
+  2026-11-01 for all five (`link_bend`, `link_mod`, `link_pad`, `link_ribbon`, `link_glide`), so LINK ALL starts lit;
+  the factory presets were made again with them On (`presets/make_presets.py`; nothing else in them changed). A sound
+  saved before keeps what it was saved with.
 - **SHARE** (2026-10-30, offline and the desktop window; `lfo1_share` .. `lfo4_share`, shared, default Off;
   `src/engine.c` `lfo_owner`, `control_lfos`; `test/lfoshare_check.c`): the button beside LINK at the bottom of each LFO
   panel (and on the LFO's MORE page). Lit, that LFO in Synths 2 and 3 *is* Synth 1's: rate, sync, timing, wave and
@@ -93,7 +97,8 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   Synths at once; pressed again while they are all still off, they bring back the ones they switched off.
 - **MASTER** (2026-10-30): the small MASTER button in SYNTH OUTPUT turns that section's VOLUME knob into MASTER, the
   shared master level of all three Synths (`master_level`, also on the SETUP page); off, the knob is the focused
-  Synth's own VOLUME again. The button is only a view (never saved).
+  Synth's own VOLUME again. The button is only a view (never saved). Lit when the window opens since 2026-11-01
+  (owner's wish), on the desktop and in the browser.
 - **OUTPUT: separate outputs per Synth** (2026-10-30, offline and the desktop DLL; `syn_out`, `src/synths.h`
   `one_ish_render_multi`, `desktop/hostrate.c`; `test/multiout_check.c`, load_test's rate tests). Since 2026-10-31
   (desktop) there are two DLLs: **Moo Won** is stereo (every Synth on its two outputs, whatever OUTPUT says), because

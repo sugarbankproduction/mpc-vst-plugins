@@ -1313,7 +1313,7 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 774 ke
 | `rev_gprand` | FX2 Pitch Random | number 0 to 100 %, whole numbers | `10` | shared |
 | `rev_greverse` | FX2 Reverse | number 0 to 100 %, whole numbers | `0` | shared |
 | `rev_gquant` | FX2 Pitch Quantise | option: `Free` / `Semitones` / `Octaves` / `Oct + 5ths` | `Free` | shared |
-| `link_pad` | Link X/Y Pad (3 Synths) | option: `Off` / `On` | `Off` | shared |
+| `link_pad` | Link X/Y Pad (3 Synths) | option: `Off` / `On` | `On` | shared |
 | `lfo1_share` | Share LFO 1 (3 Synths) | option: `Off` / `On` | `Off` | shared |
 | `lfo2_share` | Share LFO 2 (3 Synths) | option: `Off` / `On` | `Off` | shared |
 | `lfo3_share` | Share LFO 3 (3 Synths) | option: `Off` / `On` | `Off` | shared |

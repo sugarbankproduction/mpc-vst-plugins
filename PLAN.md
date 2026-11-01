@@ -191,6 +191,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      RANDOMISE writes a pattern with the sequence generator (`seq_random_notes`, desktop/seq_page.c: random GEN options,
      wider with WILD, in the KEY and SCALE just picked), MUTATE keeps the notes or with probability AMOUNT makes new ones;
      load_test checks every note is in key. The randomiser's UNDO does not bring back the sequence (Ctrl+Z does).
+     SERIES (2026-11-01, owner: "a low to medium value makes the effects more interesting"): with both a delay and a
+     reverb picked, RANDOMISE now sets MASTER EFFECTS' SERIES (`mfx_series`) 60% of the time (was 25%) at 12-35%, up to
+     55% at WILD 100%; WILD's own pass sets it 45% x WILD of the time (was 25%) at 20-40% rising to 40-80%; the cap is
+     60% + 25% x WILD (was 60%). The randomiser golden was made again for it (test/rnd_golden.c).
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27
@@ -748,7 +752,9 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      window; `src/hq.h`, `src/engine.c` render_voice_os / voice_os / warm_drift / warm_tick, `test/hq_check.c`
      (`offline_check hq`, `hqbench`), load_test `analog_test`). Both on the ANALOG page, per Synth (each Synth pays only
      for itself, and a sound made in HQ keeps it), saved with the sound, Off by default, never touched by the
-     randomiser. HQ MODE (`an_hq` Off / 2x / 4x; a click opens its list): the voice's three oscillators, ring mod,
+     randomiser. Since 2026-11-01 (owner: "the analog settings shouldn't change when I select a new preset") loading a
+     preset or patch leaves the whole ANALOG page (drift, `an_*`, all three Synths) as it is (desktop/patches.c
+     analog_keep / analog_put; load_test `analog_keep_test`); a project, undo and COMPARE still bring theirs back. HQ MODE (`an_hq` Off / 2x / 4x; a click opens its list): the voice's three oscillators, ring mod,
      linear FM, sync and both filters (the non-linear ladder and drive included) run at 2 or 4 times 44.1 kHz, each
      sample's noise, MACRO and EXT input held for the sub-samples; polyphase IIR half-bands (8 coefficients 2x to 1x,
      flat to 20 kHz and 106 dB down from 24.1 kHz; 4 more for 4x) bring the filters' mix back before the amp, which

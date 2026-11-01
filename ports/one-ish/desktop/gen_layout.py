@@ -742,7 +742,7 @@ def build(lay):
     L.page("RIBBON", "RIBBON", "The touch strip over the keys (MIDI CC 16 position, CC 17 touch).", [
         ("ribbon_dst", "Destination"), ("ribbon_amt", "Amount"), ("ribbon_mode", "Mode"), ("ribbon_origin", "Origin"),
         ("link_ribbon", "Link (3 Synths)")])
-    L.page("ANALOG", "ANALOG CHARACTER", "Per-voice differences, as between real analog voices. All 0 = exact.", [
+    L.page("ANALOG", "ANALOG CHARACTER", "Per-voice differences, as between real analog voices. All 0 = exact. Kept when a preset or patch loads.", [
         ("drift", "Drift"), ("an_cut", "Cutoff Spread"), ("an_res", "Resonance Spread"), ("an_env", "Envelope Spread"),
         ("an_lvl", "Level Spread"), ("an_tune", "Tuning Spread"), ("an_ladder", "Ladder Character"),
         # (2026-10-30) HQ MODE (the voice oversampled: cleaner sync, FM and driven ladder) and WARM-UP (a cold start)

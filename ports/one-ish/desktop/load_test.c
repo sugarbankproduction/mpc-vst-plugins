@@ -1936,18 +1936,26 @@ static void focus_test(AEffect *fx, HWND child, float s, const char *bmp, int w,
             shot(child, w, h, bmp, "_mute_solo");
             setkey(fx, "s3_syn_solo", 0.0f);
         }
+        setkey(fx, "s2_syn_solo", 1.0f);   /* (2026-11-01) Synth 2 soloed already: the double-click solos 3 alone */
         float m0 = getkey(fx, "s3_syn_solo");
         LPARAM at = MAKELPARAM((int)lroundf((FZ[2][0] + 12) * s), (int)lroundf((FZ[2][1] + 12) * s));
         SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);
         SendMessageA(child, WM_LBUTTONUP, 0, at);
         SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, at);
         SendMessageA(child, WM_LBUTTONUP, 0, at);
-        float m1 = getkey(fx, "s3_syn_solo");
+        float m1 = getkey(fx, "s3_syn_solo"), o2 = getkey(fx, "s2_syn_solo");
         intptr_t f = fx->dispatcher(fx, 50, TEST_FOCUS, -1, NULL, 0);
-        snprintf(what, sizeof what, "a double-click on SYNTH 3 picks it and solos it (focus %d, SOLO %.0f -> %.0f)",
-                 (int)(f % 4), m0, m1);
-        check(f % 4 == 2 && m0 == 0.0f && m1 == 1.0f, what);
+        snprintf(what, sizeof what, "a double-click on SYNTH 3 picks it and solos it alone (focus %d, SOLO %.0f -> %.0f, "
+                 "Synth 2's SOLO off: %.0f)", (int)(f % 4), m0, m1, o2);
+        check(f % 4 == 2 && m0 == 0.0f && m1 == 1.0f && o2 == 0.0f, what);
+        SendMessageA(child, WM_LBUTTONDOWN, MK_LBUTTON, at);   /* again, on the one soloed alone: solo off */
+        SendMessageA(child, WM_LBUTTONUP, 0, at);
+        SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, at);
+        SendMessageA(child, WM_LBUTTONUP, 0, at);
+        check(getkey(fx, "s3_syn_solo") == 0.0f && getkey(fx, "s2_syn_solo") == 0.0f,
+              "a double-click on SYNTH 3 again, soloed alone: solo off");
         setkey(fx, "s3_syn_solo", 0.0f);
+        setkey(fx, "s2_syn_solo", 0.0f);
         setkey(fx, "s2_syn_on", on0);
         setkey(fx, "s3_syn_on", s3_was);
     }
@@ -2464,10 +2472,27 @@ static void link_test(AEffect *fx, HWND child, float s, const char *bmp, int w, 
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 
+/* (2026-11-01) the ANALOG page stays when another preset loads (and in Synth 2 too); undo still brings it back */
+static void analog_keep_test(AEffect *fx) {
+    int prog = (int)fx->dispatcher(fx, 3 /* effGetProgram */, 0, 0, NULL, 0);
+    setkey(fx, "drift", 0.4f); setkey(fx, "an_cut", 0.3f); setkey(fx, "s2_an_tune", 0.6f);
+    fx->dispatcher(fx, 2 /* effSetProgram */, 0, prog == 5 ? 6 : 5, NULL, 0);
+    float d = pv(fx, "drift"), c = pv(fx, "an_cut"), t = pv(fx, "s2_an_tune");
+    fx->dispatcher(fx, 2 /* effSetProgram */, 0, prog, NULL, 0);
+    char what[200];
+    snprintf(what, sizeof what, "ANALOG: kept when a preset loads (drift %.2f, cutoff spread %.2f, Synth 2 tuning "
+             "spread %.2f; want 0.40, 0.30, 0.60)", d, c, t);
+    check(fabsf(d - 0.4f) < 0.01f && fabsf(c - 0.3f) < 0.01f && fabsf(t - 0.6f) < 0.01f, what);
+    setkey(fx, "drift", 0); setkey(fx, "an_cut", 0); setkey(fx, "s2_an_tune", 0);
+}
+
 static void master_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     char what[300];
     fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
     float m0 = pv(fx, "master_level"), v1 = pv(fx, "volume"), v2 = pv(fx, "s2_volume"), v3 = pv(fx, "s3_volume");
+    int at_start = (int)ht(fx, HT_VOL_MASTER, 0);   /* (2026-11-01) lit when the window opens */
+    check(at_start == 1, "MASTER: lit when the window opens (the VOLUME knob is MASTER)");
+    click_zone(child, s, ZONE_VOL_MASTER);   /* off for the checks below */
     wheel_ctl(child, s, "volume", -3);   /* off: the focused Synth's VOLUME */
     int own = pv(fx, "volume") < v1 && pv(fx, "s2_volume") == v2 && pv(fx, "master_level") == m0;
     setkey(fx, "volume", v1);
@@ -2491,6 +2516,7 @@ static void master_test(AEffect *fx, HWND child, float s, const char *bmp, int w
           before > 0.01 && after < 1e-4, what);
     click_zone(child, s, ZONE_VOL_MASTER);
     check(ht(fx, HT_VOL_MASTER, 0) == 0, "MASTER: off again, the knob is VOLUME");
+    click_zone(child, s, ZONE_VOL_MASTER);   /* (lit again, as the window starts) */
     setkey(fx, "master_level", m0);
     setkey(fx, "s2_syn_on", 0); setkey(fx, "s3_syn_on", 0); setkey(fx, "s2_syn_ch", c2); setkey(fx, "s3_syn_ch", c3);
     play(fx, 200, 512);
@@ -2743,6 +2769,7 @@ static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     follow_tempo_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     link_test(fx, child, s, bmp, w, h);
     master_test(fx, child, s, bmp, w, h);
+    analog_keep_test(fx);
     triangle_sub_test(fx, child, s, bmp, w, h);
     plain_test(fx, child, s, bmp, w, h);   /* (2026-10-30) every hidden gesture's visible way */
     nav_tests(fx, child, s, bmp, w, h);    /* (2026-10-30) BACK / FWD, the generator tabs, the overview */

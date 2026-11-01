@@ -342,6 +342,21 @@ static void synth_toggle(ed_t *e, int c, int solo) {   /* M (the Synth's ON) or 
     edit_abs(e, i, e->fx->getParameter(e->fx, i) > 0.5f ? 0.0f : 1.0f);
 }
 
+/* (2026-11-01, owner) a double-click on a SYNTH button: that Synth alone soloed (the others' SOLO off); on the one
+ * already soloed alone, solo off again. The S buttons still add a Synth to the soloed ones. One undo step. */
+static void synth_solo_only(ed_t *e, int c) {
+    int only = synth_soloed(e, c);
+    for (int k = 0; k < NSYNTHS; k++)
+        if (k != c && synth_soloed(e, k)) only = 0;
+    lib_hold(e, 1);
+    lib_touch(e, only ? "Solo off" : "Solo");
+    for (int k = 0; k < NSYNTHS; k++) {
+        int want = !only && k == c, i = syn_key(k, 1);
+        if (synth_soloed(e, k) != want) edit_abs(e, i, want ? 1.0f : 0.0f);
+    }
+    lib_hold(e, -1);
+}
+
 static int square_corners(HWND wnd);   /* (below: the host window's corners) */
 
 /* ---- what to repaint: only the parts a change touches (the whole window takes longer to paint) ---- */
@@ -1488,8 +1503,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         if (e->qm.src) { press(e, x, y); return 0; }   /* (quick assign on: a second click, not a reset) */
         if (seq_zone(i) && i < Z_SEQ_BASE + 200) { lib_touch(e, NULL); seq_double(e, i); lib_commit(e); }   /* an empty step cell: a new note */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);
-        else if (i >= Z_FOCUS1 && i <= Z_FOCUS3 && NSYNTHS > 1) synth_toggle(e, i - Z_FOCUS1, 1);   /* solo (the first
-                                                                                 * click picked the Synth already) */
+        else if (i >= Z_FOCUS1 && i <= Z_FOCUS3 && NSYNTHS > 1) synth_solo_only(e, i - Z_FOCUS1);   /* solo it alone
+                                                                                 * (the first click picked it already) */
         else if (i >= 0) press(e, x, y);   /* a second click on a button or a key counts as a click */
         return 0;
     }
@@ -1747,10 +1762,12 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
             char what[64] = "";
             if (ui) wrapped_dispatch(fx, effGetProgramNameIndexed, (int32_t)v, 0, what, 0);
             if (ui) lib_before_load(e, what);
-            float keep[SETTINGS_MIDI_KEEP];
+            float keep[SETTINGS_MIDI_KEEP], an[ANALOG_KEEP];
             int held = settings_midi_keep(e, keep);   /* MIDI I/O FROM PRESET off: the channels stay */
+            analog_keep(e, an);   /* (2026-11-01) the ANALOG page stays too */
             intptr_t r = wrapped_dispatch(fx, op, idx, v, ptr, opt);
             if (held) settings_midi_put(e, keep);
+            analog_put(e, an);
             if (v != before) parts_names_clear(e);   /* (2026-10-30) a factory preset has no Synth names */
             patches_program_set(e, before);
             if (ui) lib_after_load(e);
@@ -1802,6 +1819,7 @@ __declspec(dllexport) AEffect *VSTPluginMain(audioMasterCallback host) {
         e->ribbon = 0.5f;
         e->ribbon_cc = -1;
         e->rnd_amount = 0.2f;   /* (WILD 0, no ticks: rnd_wild and rnd_also start at 0) */
+        e->vol_master = master_param() >= 0;   /* (owner, 2026-11-01) SYNTH OUTPUT's MASTER starts lit */
         e->qm.dst = e->qm.ctl = e->qm.last_row = e->qm.last_dst = e->qm.mark = -1;   /* (quick assign: nothing yet) */
         e->nav.ov_synth = -1;   /* (the overview: the Synth in focus) */
         e->cb.sel = -1;         /* (the CABLES view: hidden, nothing selected) */
