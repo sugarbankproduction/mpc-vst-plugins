@@ -225,6 +225,11 @@ filter), `lad_kbd` (key tracking) and the filters' LFO amounts. See Appendix A: 
   file that leaves them out gets) plays in `key_root` / `key_scale`; anything else plays in that, whatever the main ones
   say. `gen_follow_keys` still takes the root from a key played, over an own key too; the own scale stays. A
   `gen_scale` other than `Held Notes` still wins over the scale for Turing. Moo Won's RANDOMISE and MUTATE never touch them.
+  (2026-11-02) **CHORDS** (`chd_*`) plays progressions in `chd_own_key` / `chd_own_scale` (or the main ones): `chd_jazz` 0 plain
+  triads up to 100 super jazz; **BASS** (`bass_*`) plays a line, on the chords when `bass_follow` is On (its default) and CHORDS is
+  on in any Synth of the sound, else in its own key. `gen_follow_chords=On` makes that Synth's other generators snap to the chord
+  of the moment; missing = Off, so a file written before them plays as it did. Moo Won's RANDOMISE and MUTATE, GENERATIVE lit, set
+  `chd_jazz` and `bass_jazz` from WILD; they never touch `bass_follow` or the own key and scale.
 - **Expression**: the matrix sources `Mod Wheel`, `Pitch Wheel`, `Aftertouch`, `Velocity`, `Ribbon`, `Pad X (CC 2)`,
   `Pad Y (CC 3)`, `Pad Gate (CC 18)`, `Exp 1 (CC 11)`, `Exp 2 (CC 4)`, `Sustain`. A good preset gives the mod wheel,
   aftertouch and the X/Y pad something musical to do, and says so in `notes=`.
@@ -1351,6 +1356,32 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 ke
 | `orb_own_scale` | Orbits Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
 | `pend_own_key` | Pendulums Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
 | `pend_own_scale` | Pendulums Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `gen_follow_chords` | Follow Chords | option: `Off` / `On` | `Off` | per Synth (2026-11-02) |
+| `chd_on` | Chords On | option: `Off` / `On` | `Off` | per Synth (2026-11-02) |
+| `chd_keys` | Chords Keys | option: `Free` / `Held Keys` / `Key Launch` | `Free` | per Synth (2026-11-02) |
+| `chd_jazz` | Chords Jazz | number 0 to 100 %, whole numbers | `25` | per Synth (2026-11-02) |
+| `chd_rate` | Chords Rate | option: `4 Bars` / `2 Bars` / `1 Bar` / `1/2` / `1/4` / `1/8` | `1 Bar` | per Synth (2026-11-02) |
+| `chd_voicing` | Chords Voicing | option: `Close` / `Open` / `Drop 2` / `Spread` | `Close` | per Synth (2026-11-02) |
+| `chd_inv` | Chords Inversions | option: `Root` / `Smooth` / `Climb` / `Fall` | `Smooth` | per Synth (2026-11-02) |
+| `chd_octave` | Chords Octave | option: `C1` / `C2` / `C3` / `C4` / `C5` / `C6` | `C3` | per Synth (2026-11-02) |
+| `chd_vel` | Chords Velocity | number 1 to 127, whole numbers | `85` | per Synth (2026-11-02) |
+| `chd_gate` | Chords Gate | number 5 to 100 %, whole numbers | `90` | per Synth (2026-11-02) |
+| `chd_strum` | Chords Strum | number 0 to 100 %, whole numbers | `0` | per Synth (2026-11-02) |
+| `chd_seed` | Chords Seed | number 0 to 99, whole numbers | `1` | per Synth (2026-11-02) |
+| `chd_own_key` | Chords Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `chd_own_scale` | Chords Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `bass_on` | Bass On | option: `Off` / `On` | `Off` | per Synth (2026-11-02) |
+| `bass_keys` | Bass Keys | option: `Free` / `Held Keys` / `Key Launch` | `Free` | per Synth (2026-11-02) |
+| `bass_follow` | Bass Follow Chords | option: `Off` / `On` | `On` | per Synth (2026-11-02) |
+| `bass_jazz` | Bass Jazz | number 0 to 100 %, whole numbers | `25` | per Synth (2026-11-02) |
+| `bass_pattern` | Bass Pattern | option: `Auto` / `Root` / `Root-Fifth` / `Octave` / `Arpeggio` / `Walking` | `Auto` | per Synth (2026-11-02) |
+| `bass_rate` | Bass Rate | option: `1/2` / `1/4` / `1/8` / `1/16` / `1/4T` / `1/8T` | `1/4` | per Synth (2026-11-02) |
+| `bass_octave` | Bass Octave | option: `C1` / `C2` / `C3` / `C4` / `C5` / `C6` | `C2` | per Synth (2026-11-02) |
+| `bass_vel` | Bass Velocity | number 1 to 127, whole numbers | `100` | per Synth (2026-11-02) |
+| `bass_gate` | Bass Gate | number 5 to 100 %, whole numbers | `85` | per Synth (2026-11-02) |
+| `bass_seed` | Bass Seed | number 0 to 99, whole numbers | `1` | per Synth (2026-11-02) |
+| `bass_own_key` | Bass Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
+| `bass_own_scale` | Bass Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
 
 ## Appendix B: the long option lists
 

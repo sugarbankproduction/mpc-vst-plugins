@@ -51,6 +51,11 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   rows, Follow by default: Follow plays in that Synth's main KEY and SCALE (the row along the screen's bottom), so LINK KEY
   and LINK SCALE reach it through them; a custom pick is not linked, except the balls' and particles' under their page's
   Link (3 Synths), which keeps every `phys_*` setting alike.
+- **CHORDS and the harmony the Synths share** (2026-11-02, offline and the desktop window, not on a device or heard): the lowest
+  Synth with CHORDS on leads and writes the chord of the moment; CHORDS on a higher Synth plays the leader's chord in its own voicing
+  and rate. BASS (`bass_follow`, on by default) and, with `gen_follow_chords` on, the other generators of any Synth follow it. In each
+  piece of a render every Synth's CHORDS runs first, then every Synth's BASS, then the rest, so a note on the very sample of a change
+  hears the new chord whichever Synth leads. No CHORDS on anywhere: nothing follows anything.
 - **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample (also the PLAY
   ALL button on the SEQUENCER module's title strip, 2026-10-30).
 - **Sequencer OUTPUT** (2026-10-30, offline and the desktop window; `seq_output`, `docs/SEQUENCER.md`): a Synth's

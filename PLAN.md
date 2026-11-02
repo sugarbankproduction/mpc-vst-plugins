@@ -1191,6 +1191,28 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      look-up per note; `offline_bench bench`, old and new in turn, shows no difference above the noise (8 voices 81.2 /
      77.2 us old, 82.2 / 78.5 new; all three of LIFE, ORBITS, PENDULUMS 54.6 / 52.5 old, 51.7 / 51.5 new). That measures
      Follow; a custom pick takes the same path.
+  50. (2026-11-02) CHORDS and BASS generators and shared harmony (owner: "add chords to generative mode", "as the wild slider
+     moves up the chords would get more jazzy, I'm talking super jazz", "all the random generator stuff and notes have some
+     harmony", "a bass generator as well"). Offline and the desktop window only: NOT heard, not on a device. src/gens_c.h
+     (the theory: pattern tables by jazz level, major and minor, then a weighted walk over the degrees; chords stacked in the
+     scale; voice leading), src/gens_c_run.h (the engine's side), test/chords_check.c (with chords_*.wav in test/out).
+     - CHORDS page (`chd_*`): ON, JAZZ, CHORD LENGTH (synced), VOICING (close, open, drop 2, spread), INVERSIONS (root, smooth,
+       climb, fall), OCTAVE, VELOCITY, GATE, STRUM, SEED, KEYS, own KEY and SCALE. RANDOMISE and MUTATE, GENERATIVE lit, set JAZZ
+       from WILD; the GENERATIVE page's own RANDOM and MUTATE read the RANDOM page's WILD for that alone.
+     - BASS page (`bass_*`): ON, FOLLOW CHORDS (on by default), JAZZ, PATTERN (auto by JAZZ, root, root-fifth, octave, arpeggio,
+       walking with approach notes), RATE, OCTAVE, VELOCITY, GATE, SEED, KEYS, own KEY and SCALE. Monophonic. No CHORDS: its own
+       plain chords in its KEY, a bar each.
+     - FOLLOW CHORDS (`gen_follow_chords`): one per Synth (the simpler choice), every other generator of that Synth joins; off by
+       default for old and new sounds. The notes snap as they play (engine.c gen_play), to the chord's notes, and from JAZZ 25%
+       also the tensions that suit it. Button on the hub's FOLLOW row (KEYS | CHORDS | TEMPO) and a row on each generator's page.
+     - Order within a block: each piece runs every Synth's CHORDS, then BASS, then the rest (synths.h render_to). The lowest Synth
+       with CHORDS on leads; a higher one plays the leader's chords.
+     - The hub page: 7 rows a column in the height of 6, for the two new rows. No front-panel button: there is no natural spot
+       for them; the sequencer's GEN view is untouched.
+     - CPU (PC, three rounds, this busy PC's noise large): 4 voices with both off 39.1-42.2 us a block before, 40.2-53.0 after, no
+       change beyond the noise; a chord worked out at JAZZ 100 about 1.5 us; CHORDS and BASS on, with their voices, 27-39 us. Device: not measured.
+     - Not done: no matrix sources from them. Pentatonic and blues scales use their parent scale's chords, so a chord's notes
+       can leave the five notes. Factory sounds keep 4 voices: a 5-note chord steals there.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly
