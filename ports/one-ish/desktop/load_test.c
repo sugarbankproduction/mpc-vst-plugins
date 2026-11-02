@@ -3376,6 +3376,7 @@ static void arp_link_all_test(AEffect *fx, HWND child, float s) {
 }
 
 static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-10-30) */
+static void analog_more_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h);   /* (2026-11-02) */
 static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     pad_link_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     hands_link_test(fx, child, s, bmp, w, h);   /* (2026-10-31) */
@@ -3398,6 +3399,7 @@ static void panel2_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     cables_more_test(fx, child, s, bmp, w, h);   /* (2026-10-31) double-click, right-click menu, drag the other way */
     analog_test(fx, child, s, bmp, w, h);   /* (2026-10-30) HQ MODE and WARM-UP on the ANALOG page */
     analog_amt_test(fx, child, s, bmp, w, h);   /* (2026-11-01) ANALOG AMOUNT, its big bar */
+    analog_more_test(fx, child, s, bmp, w, h);   /* (2026-11-02) the page's newer controls */
 }
 
 /* ---- (2026-10-30) the plain-click pass: what a modifier key, a double-click, a right-click or a keyboard key did,
@@ -3494,6 +3496,57 @@ static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w
     if (!help_hq) printf("     (help shown: %s)\n", hq_help);
     check(found == 2 && hq[0] == 0.0f && hq[1] == 0.5f && hq[2] == 1.0f && hq[3] == 0.0f && wu[0] == 0.0f &&
           wu[1] == 1.0f && wu[2] == 0.0f && help_hq && help_wu && getkey(fx, "s2_an_hq") == s2hq, what);
+    click_zone(child, s, ZONE_TAB_MATRIX);
+}
+
+/* (2026-11-02) the ANALOG page's newer controls: LADDER MISMATCH fills its first screen, the rest are on its second,
+ * under the same ANALOG AMOUNT bar. Each has a place and its help; a plain click turns SVF SELF-OSC on and off, the wheel
+ * moves a number. The second screen's screenshot: _analog_page2. */
+static void analog_more_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[500];
+    static const struct { const char *key, *help; int sub; } K[] = {
+        {"an_lad_match", "LADDER MISMATCH", 0}, {"an_svf", "NON-LINEAR SVF", 1}, {"an_svf_drive", "SVF DRIVE", 1},
+        {"an_svf_osc", "SVF SELF-OSC", 1}, {"an_mix_drive", "MIXER DRIVE", 1}, {"an_feedback", "FEEDBACK", 1},
+        {"an_osc_ac", "OSC AC COUPLING", 1}};
+    enum { NK = sizeof K / sizeof K[0] };
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);   /* Synth 1 alone */
+    click_zone(child, s, ZONE_TAB_ANALOG);
+    float sx0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
+    int pr = PT_ROWS - LT_AMT_ROWS, found = 0, helped = 0, on_sub = 1;
+    float x[NK] = {0}, y[NK] = {0};
+    for (int j = 0; j < NK && PG_ANALOG >= 0; j++)
+        for (int k = PAGES[PG_ANALOG].first; k < PAGES[PG_ANALOG].first + PAGES[PG_ANALOG].count; k++)
+            if (ITEMS[k].param == rnd_key(K[j].key)) {
+                int slot = k - PAGES[PG_ANALOG].first;
+                on_sub &= slot / (2 * pr) == K[j].sub;
+                slot %= 2 * pr;
+                x[j] = sx0 + (slot / pr) * (half + 8.0f) + half * 0.75f;
+                y[j] = ZONE_SCREEN[1] + 80.0f + 22.0f * (LT_AMT_ROWS + slot % pr) + 11.0f;
+                found++;
+            }
+    hover_at(child, s, x[0], y[0]);
+    helped += strstr(help_fresh(fx), K[0].help) != NULL;
+    click(child, s, ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f - 9.0f, ZONE_SCREEN[1] + 51.0f);   /* the title line's > */
+    int sub = (int)ht(fx, HT_SUB, 0);
+    for (int j = 1; j < NK; j++) {
+        hover_at(child, s, x[j], y[j]);
+        helped += strstr(help_fresh(fx), K[j].help) != NULL;
+    }
+    float o0 = getkey(fx, "an_svf_osc"), n0 = getkey(fx, "an_mix_drive");
+    click(child, s, x[3], y[3]);
+    float o1 = getkey(fx, "an_svf_osc");
+    if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_analog_page2"); }
+    click(child, s, x[3], y[3]);
+    float o2 = getkey(fx, "an_svf_osc");
+    wheel_at(child, s, x[4], y[4], 3);   /* (a number: the wheel, as on every page's row) */
+    float n1 = getkey(fx, "an_mix_drive"), s2 = getkey(fx, "s2_an_mix_drive");
+    setkey(fx, "an_mix_drive", n0);
+    click(child, s, ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8.0f - 55.0f, ZONE_SCREEN[1] + 51.0f);   /* the title line's < */
+    int back = (int)ht(fx, HT_SUB, 0);
+    snprintf(what, sizeof what, "the ANALOG page's newer controls: all %d of %d placed, on the screens they should be (%d), help for %d; the title "
+             "line's > goes to screen %d and < back to %d; SVF SELF-OSC clicks %.0f > %.0f > %.0f; the wheel sets MIXER DRIVE to %.2f (Synth 2's %.2f)",
+             found, NK, on_sub, helped, sub, back, o0, o1, o2, n1, s2);
+    check(found == NK && on_sub && helped == NK && sub == 1 && back == 0 && o0 == 0.0f && o1 == 1.0f && o2 == 0.0f && n1 > 0.0f && s2 == 0.0f, what);
     click_zone(child, s, ZONE_TAB_MATRIX);
 }
 

@@ -779,6 +779,7 @@ def build(lay):
         # (2026-10-30) HQ MODE (the voice oversampled: cleaner sync, FM and driven ladder) and WARM-UP (a cold start)
         ("an_hq", "HQ Mode"), ("an_warm", "Warm-Up"), ("an_warm_amt", "Warm-Up Amount"),
         ("an_warm_time", "Warm-Up Time"),
+        ("an_lad_match", "Ladder Mismatch"),   # (2026-11-02) fills this screen, under the ladder's other control
         # (2026-11-02) the saturating SVF (src/svf.h svf_tick_nl); the page's second screen
         ("an_svf", "SVF Character"), ("an_svf_drive", "SVF Drive"), ("an_svf_osc", "SVF Self-Osc"),
         # (2026-11-02) a soft clip on the mixer's sum, and each voice's filter output back into its mixer

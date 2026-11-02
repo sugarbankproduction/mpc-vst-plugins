@@ -164,8 +164,9 @@ enum { NC_RED, NC_WHITE, NC_PURPLE };           /* noise colours */
 static const int NOISE_PAIR[3][2] = {{NC_RED, NC_WHITE}, {NC_RED, NC_PURPLE}, {NC_WHITE, NC_PURPLE}};
 #define NDRIFT (NOSC + 1)                       /* drift: one wander per oscillator, one for the voice's cutoffs */
 /* a voice card's parts that differ from card to card: each is a fixed number in -1..1 per voice */
-enum { AX_SVF_NL = 1, AX_SVF_SAT = 2, AX_MIX = 4, AX_AC = 8 };   /* (2026-11-02) one_t an_x: which of the ANALOG page's newer sounds are on */
-enum { AC_LAD_CUT, AC_SVF_CUT, AC_LAD_RES, AC_SVF_RES, AC_ENV, AC_LVL = AC_ENV + 3, AC_TUNE, AC_COUNT = AC_TUNE + NOSC };
+enum { AX_SVF_NL = 1, AX_SVF_SAT = 2, AX_MIX = 4, AX_AC = 8, AX_MATCH = 16 };   /* (2026-11-02) one_t an_x: which of the ANALOG page's newer sounds are on */
+enum { AC_LAD_CUT, AC_SVF_CUT, AC_LAD_RES, AC_SVF_RES, AC_ENV, AC_LVL = AC_ENV + 3, AC_TUNE,
+       AC_MATCH = AC_TUNE + NOSC, AC_COUNT = AC_MATCH + 5 };   /* (2026-11-02: new parts go last, the others keep their cards) */
 enum { GLIDE_LCR, GLIDE_LCT, GLIDE_EXP };       /* "glide_type" options */
 enum { OSC_STRIDE = P_O2_WAVE - P_O1_WAVE, O_WAVE = 0, O_OCT, O_FREQ, O_BEAT, O_ANGLE, O_PW, O_MIX };
 /* each mixer channel's level and filter buttons, in channel order (osc 1-3, noise, ring mod, MACRO, EXT), and its
@@ -760,12 +761,19 @@ static void apply_analog(one_t *s) {
               (md > 0.0f || s->fb_k > 0.0f ? AX_MIX : 0);
     s->ac_hz = p[P_AN_OSC_AC] * a;   /* (2026-11-02) OSC AC COUPLING */
     if (s->ac_hz > 0.0f) s->an_x |= AX_AC;
+    /* (2026-11-02) LADDER MISMATCH: one lean per card (so every voice has some second harmonic) and the card's own
+     * spread on top of it; each stage's g from another of the card's five parts */
+    float mm = clampf(p[P_AN_LAD_MATCH] * 0.01f * a, 0.0f, 1.0f);
+    if (mm > 0.0f) s->an_x |= AX_MATCH;
     for (int i = 0; i < MAX_VOICES; i++) {
         voice_t *v = &s->voice[i];
         for (int f = 0; f < 2; f++) {
             v->an_cut[f] = v->card[AC_LAD_CUT + f] * cut;
             v->an_res[f] = v->card[AC_LAD_RES + f] * res;
         }
+        for (int k = 0; k < 5; k++)
+            v->lad.mo[k] = mm * LADDER_MM_O * ((v->card[AC_MATCH] < 0.0f ? -1.0f : 1.0f) + 0.5f * v->card[AC_MATCH + k]);
+        for (int k = 0; k < 4; k++) v->lad.mg[k] = 1.0f + mm * LADDER_MM_G * v->card[AC_MATCH + (k + 2) % 5];
         for (int n = 0; n < NENV; n++) v->an_env_dq[n] = log10f(1.0f + v->card[AC_ENV + n] * env);   /* 0 at 0 */
         v->an_gain = lvl > 0.0f ? exp2f(v->card[AC_LVL] * lvl / 6.0206f) : 1.0f;
         for (int n = 0; n < NOSC; n++) v->an_tune[n] = v->card[AC_TUNE + n] * tune;
@@ -2960,7 +2968,10 @@ static inline __attribute__((always_inline)) int render_voice_os(one_t *s, voice
             }
             if (run_lad) {
                 float in = lad_in + nz * NOISE_FLOOR;
-                if (hf & HF_LAD) {   /* a High LFO on its cutoff (with filter FM, if any) */
+                if (axf & AX_MATCH) {   /* (2026-11-02) LADDER MISMATCH, with the same cutoff modulation */
+                    float e = lad_fm > 0.0f ? exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)) : 1.0f;
+                    lad_out = ladder_next_mm(&v->lad, in, hf & HF_LAD ? e * hl[i] : e);
+                } else if (hf & HF_LAD) {   /* a High LFO on its cutoff (with filter FM, if any) */
                     float e = (lad_fm > 0.0f ? exp2_fast(lad_fm * (lad_src == 0 ? a : lad_src == 1 ? b : c)) : 1.0f) * hl[i];
                     lad_out = lad_nl ? ladder_next_nl_fm(&v->lad, in, e) : ladder_next_fm(&v->lad, in, e);
                 } else if (lad_nl)   /* NON-LINEAR LADDER (analog character) */

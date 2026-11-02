@@ -502,3 +502,66 @@ filter FM still read the oscillator itself. No corner is claimed to match any in
   the width moves no DC. Not measured separately.
 - CPU, 8 voices: +0.44 us a voice at 30 Hz (report's estimate +0.2-0.4); this figure also includes the second copy of
   the voice's loop, so that copy costs little.
+
+### Item 7: slightly mismatched ladder stages (`an_lad_match`)
+
+Built as: each saturator's gain read a small offset away, T(v + o), which leaves 0 at 0 and bends one side, on the input
+stage always and on the four stages by the amount of the Non-Linear Ladder; and each stage's g a little off. All fixed per
+voice from five new voice-card parts, so the existing cards keep their values.
+
+| 2nd harmonic of a sine, drive 30%, level 0.1 / 0.3 / 0.8 | |
+|---|---|
+| Off (non-linear ladder) | -114 / -123 / -130 dB: none |
+| 100%, linear ladder | -47.4 / -38.4 / -33.4 dB |
+| 100%, non-linear ladder | -44.7 / -35.5 / -34.7 dB |
+
+- Over the first 8 voices the 2nd harmonic runs from -38.1 to -30.1 dB, so voices do differ.
+- The ladder's self-oscillation at 1 kHz moves -1.0 cents on the first voice.
+- The size of the offset is a choice. No source gives real parts' figure.
+- CPU: about +0.8-1.3 us a voice with the Non-Linear Ladder off, +0.6 on top of it (report's estimate +0.1-0.3).
+
+### Item 1: RC attack
+
+**No code needed, and none written.** It is a setting: Amp Attack Curve and Filter Env Attack Curve at about -25%. The pair
+`analog_attack_curve_*.wav` plays it, for the ear. Making it a default would change sounds, so it is the owner's call.
+
+### Listening pairs
+
+`test/run.sh` writes them to `test/out/` (not committed), or `offline_check analogxwav <dir>/demo.wav`:
+`analog_<name>_before.wav` and `_after.wav`, for `svf`, `svf_whistle`, `mixdrive`, `feedback`, `osc_ac`, `mismatch` and
+`attack_curve`. Each pair is matched in rms loudness. Not named A and B at random, so they are not the blind test of
+section 5; the names say which is which.
+
+### CPU, all together
+
+`offline_check analogxbench`, this PC, 8 voices of the busy patch, per voice, with another test suite sometimes running
+on the same machine, so the run-to-run noise was 0.02-0.48 us. Nothing is measured on an MPC.
+
+| Setting | Added per voice | Report's estimate |
+|---|---|---|
+| All at 0 (old and new binaries in turn, 8 runs each) | none above the noise: old 9.12-9.72, new 8.86-9.87 | none |
+| Non-Linear SVF, one element | +1.1-1.4 us | +0.4-0.8 |
+| Series pair | +1.7 us | twice that |
+| Mixer Drive | +1.1-1.2 us | +0.3-0.5 with feedback |
+| Feedback | +1.4 us | the same |
+| Osc AC Coupling | +0.4 us | +0.2-0.4 |
+| Ladder Mismatch | +0.8-1.3 us alone, +0.6 on the Non-Linear Ladder | +0.1-0.3 |
+
+Most came out above the estimates. All only count while on, and divides are likely relatively dearer on small ARM cores,
+so this needs `tools/bench.sh` at the MPC milestone.
+
+### Skipped, and why
+
+- **Item 8, smoother cutoff (measure first):** the kit does not rule it out (-21 dB on a 1 ms envelope, -51 dB on 25 ms,
+  against the -70 dB gate), but a null says nothing about whether it is heard, and it only matters on the fastest envelopes.
+  Not built; worth an ear test on a fast resonant sweep first.
+- **Item 4, ladder calibration:** not in this round. The kit took away its main reason (section 9, findings 1 and 3). What
+  is left is the pitch across the range (finding 2) and a true bass control (finding 4).
+- **Items 6, 9, 10:** not in this round.
+- **Section 6 ("not recommended"):** nothing from it.
+- Not built: a negative feedback polarity, and a tap after the amp.
+
+### Not verified
+
+Nothing has been listened to, in Carla or anywhere; no device; whether any of it sounds analog or better is for the
+owner's ear. The reference model is the equations, not an instrument. The saturator's and mismatch's sizes are choices.

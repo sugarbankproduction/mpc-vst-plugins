@@ -847,6 +847,7 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 ke
 | `an_mix_drive` | Mixer Drive: a soft clip on the mixer's sum | number 0 to 100 %, whole numbers | `0` | per Synth |
 | `an_feedback` | Feedback: each voice's filter output back into its mixer | number 0 to 100 %, whole numbers | `0` | per Synth |
 | `an_osc_ac` | Osc AC Coupling: a capacitor after each oscillator, its corner | number 0 to 30 Hz, whole numbers | `0` | per Synth |
+| `an_lad_match` | Ladder Mismatch: the ladder's stages not quite alike, per voice | number 0 to 100 %, whole numbers | `0` | per Synth |
 
 ### RIBBON
 

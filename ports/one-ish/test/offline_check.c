@@ -6075,6 +6075,7 @@ int main(int argc, char **argv) {
         return failures != 0;
     }
     if (argc > 1 && !strcmp(argv[1], "analogbench")) { analog_bench(); return 0; }   /* (2026-11-01) */
+    if (argc > 2 && !strcmp(argv[1], "analogxwav")) { analogx_wavs(argv[2]); return 0; }   /* (2026-11-02) */
     if (argc > 1 && !strcmp(argv[1], "analogxbench")) { analogx_bench(); return 0; }   /* (2026-11-02) */
     if (argc > 1 && !strcmp(argv[1], "analogx")) {   /* (2026-11-02) just the ANALOG page's newer sounds */
         analogx_checks();
@@ -6251,6 +6252,7 @@ int main(int argc, char **argv) {
     oss_wavs(argc > 1 ? argv[1] : "demo.wav");
     fx2_wavs(argc > 1 ? argv[1] : "demo.wav");
     analog_wavs(argc > 1 ? argv[1] : "demo.wav");
+    analogx_wavs(argc > 1 ? argv[1] : "demo.wav");   /* (2026-11-02) the newer sounds, before and after */
     random_demo_wav(argc > 1 ? argv[1] : "demo.wav");
     arp_wav(argc > 1 ? argv[1] : "demo.wav");
     seq_wav(argc > 1 ? argv[1] : "demo.wav");

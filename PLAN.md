@@ -1195,7 +1195,10 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      its fixture not remade; a voice takes `render_voice_os` with `ax` 0, the old loop, unless one is on. Saturating
      SVF: `an_svf`, `an_svf_drive`, `an_svf_osc` (src/svf.h svf_tick_nl; test/analogx_check.c). Mixer drive and feedback: `an_mix_drive`, `an_feedback`
      (render_voice_os: a soft clip on the mixer's sum; a one-sample loop per voice, tapped before the amp). Oscillators
-     AC-coupled: `an_osc_ac` (0-30 Hz, on the way to the mixer only).
+     AC-coupled: `an_osc_ac` (0-30 Hz, on the way to the mixer only). Mismatched ladder stages: `an_lad_match`
+     (src/ladder.h ladder_tick_mm; five new voice-card parts). The RC attack needed no code: a setting, -25%. The page's
+     new controls but LADDER MISMATCH are on its second screen, under the ANALOG AMOUNT bar (load_test `analog_more_test`).
+     Listening pairs: `test/out/analog_*_before.wav` and `_after.wav`.
   Order now (owner, 2026-10-27): finish the Windows desktop version (sequencer, review fixes, the refreshed audit's
   remaining work incl. multitimbral, a hands-on Carla check, presets), then the web version, then the MPC port.
 - **Web version (started 2026-11-01, owner: "Sound only version first"):** the engine compiled to WebAssembly

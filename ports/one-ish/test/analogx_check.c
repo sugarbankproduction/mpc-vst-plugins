@@ -7,10 +7,11 @@
  *   MIXER DRIVE   a sine's harmonics rise with it; printed: level and brightness
  *   FEEDBACK      level, brightness and pitch at each setting; it is per voice (two notes are the sum of each alone)
  *   OSC AC COUPLING  a low pulse sags as its corner says, a high note hardly changes, the ring modulator not at all
+ *   LADDER MISMATCH  second harmonic where there was none, rising with level, different per voice; tuning stays close
  *   extremes      everything up in every mode, pair and route, HQ too: finite and bounded; after the release, exact 0
  *   bench         the CPU of each, on against off */
 
-static const char *const AX_KEYS[] = {"an_svf", "an_svf_drive", "an_svf_osc", "an_mix_drive", "an_feedback", "an_osc_ac"};
+static const char *const AX_KEYS[] = {"an_svf", "an_svf_drive", "an_svf_osc", "an_mix_drive", "an_feedback", "an_osc_ac", "an_lad_match"};
 enum { AX_NKEYS = sizeof AX_KEYS / sizeof AX_KEYS[0] };
 
 /* a sound that reaches both filters and the things the controls touch */
@@ -332,6 +333,75 @@ static void ax_ac_checks(void) {
     check(d == 0 && s > 0, what);
 }
 
+/* the second harmonic of a 200 Hz sine through the ladder, wide open, in dB against the sine */
+static double ax_h2(void *e, double amp, long *t, double *h3) {
+    ext_render(e, mz_x, SR / 2, 200, amp, t);
+    const float *x = mz_x + SR / 4;
+    double a = mz_db(mz_amp(x, SR / 4, 200));
+    if (h3) *h3 = mz_db(mz_amp(x, SR / 4, 600)) - a;
+    return mz_db(mz_amp(x, SR / 4, 400)) - a;
+}
+static void *ax_match_patch(int match, int nl) {
+    void *e = patch(SAW, 0, 1, 100, 10);
+    set(e, "voices", 0); set(e, "o1_level", 0); set(e, "ext_route", 2); set(e, "ext_level", 100); set(e, "volume", 70);
+    set(e, "flt_cut", knob_for_hz(5000)); set(e, "flt_kbd", 0); set(e, "lad_kbd", 0); set(e, "flt_drive", 30);
+    set(e, "an_lad_match", match); set(e, "an_ladder", nl);
+    return e;
+}
+static void ax_match_checks(void) {
+    char what[500];
+    /* against level, with the linear and the non-linear ladder */
+    static const double AMP[3] = {0.1, 0.3, 0.8};
+    double h2[3][3], h3[3];
+    static const struct { int match, nl; } C[3] = {{0, 100}, {100, 0}, {100, 100}};
+    for (int c = 0; c < 3; c++)
+        for (int k = 0; k < 3; k++) {
+            void *e = ax_match_patch(C[c].match, C[c].nl);
+            long t = 0;
+            note(e, 1, 60, 127);
+            h2[c][k] = ax_h2(e, AMP[k], &t, &h3[k]);
+            E->destroy(e);
+        }
+    snprintf(what, sizeof what, "LADDER MISMATCH: a sine at 0.1 / 0.3 / 0.8, drive 30%%, its 2nd harmonic: off (non-linear) %.0f / %.0f / %.0f dB; "
+             "100%% (linear) %.1f / %.1f / %.1f dB; 100%% (non-linear) %.1f / %.1f / %.1f dB", h2[0][0], h2[0][1], h2[0][2], h2[1][0], h2[1][1],
+             h2[1][2], h2[2][0], h2[2][1], h2[2][2]);
+    check(h2[0][1] < -90 && h2[1][1] > -70 && h2[2][1] > -50 && h2[2][1] > h2[1][1] && h2[2][2] > h2[2][0] + 6, what);
+    /* a voice at a time: k + 1 notes less k notes is the next voice's output alone */
+    double lo = 1e9, hi = -1e9;
+    {
+        static float prev[SR / 2], cur[SR / 2];
+        for (int k = 0; k <= 8; k++) {
+            void *e = ax_match_patch(100, 100);
+            long t = 0;
+            set(e, "voices", 7); set(e, "volume", 25);
+            for (int j = 0; j < k; j++) note(e, 1, 60 + j, 127);
+            ext_render(e, cur, SR / 2, 200, 0.3, &t);
+            E->destroy(e);
+            if (k) {
+                for (int i = 0; i < SR / 2; i++) mz_x[i] = cur[i] - prev[i];
+                double v = mz_db(mz_amp(mz_x + SR / 4, SR / 4, 400)) - mz_db(mz_amp(mz_x + SR / 4, SR / 4, 200));
+                lo = fmin(lo, v); hi = fmax(hi, v);
+            }
+            memcpy(prev, cur, sizeof prev);
+        }
+    }
+    snprintf(what, sizeof what, "LADDER MISMATCH per voice: over the first 8 voices the 2nd harmonic runs from %.1f to %.1f dB", lo, hi);
+    check(hi - lo > 0.5 && lo > -60, what);
+    /* tuning: self-oscillation against no mismatch */
+    double hz[2];
+    for (int k = 0; k < 2; k++) {
+        void *e = patch(SAW, 0, 1, 100, 10);
+        set(e, "voices", 0); set(e, "o1_level", 0); set(e, "flt_res", 100); set(e, "flt_cut", knob_for_hz(1000)); set(e, "flt_kbd", 0);
+        set(e, "lad_kbd", 0); set(e, "an_ladder", 100); set(e, "an_lad_match", k * 100);
+        note(e, 1, 60, 127);
+        hq_render(e, mz_x, SR * 2);
+        hz[k] = mz_freq(mz_x + SR, SR);
+        E->destroy(e);
+    }
+    snprintf(what, sizeof what, "LADDER MISMATCH 100%%: the ladder's self-oscillation at 1 kHz moves %+.1f cents (first voice)", 1200 * log2(hz[1] / hz[0]));
+    check(fabs(1200 * log2(hz[1] / hz[0])) < 30, what);
+}
+
 /* every sound up in every mode, pair and route; then the release ends in exact silence */
 static void ax_extremes(void) {
     char what[300];
@@ -377,7 +447,89 @@ static void analogx_checks(void) {
     ax_svf_checks();
     ax_mix_checks();
     ax_ac_checks();
+    ax_match_checks();
     ax_extremes();
+}
+
+/* ---- to listen to: <dir>/analog_<name>_before.wav and _after.wav, the same phrase with the control off and on. The two
+ * of a pair are matched in loudness (rms) to each other, as the report's listening rule asks, and neither clips. Item 1
+ * (a setting, no code) is among them. ---- */
+static void ax_w_svf(void *e, int on) {
+    route(e, "o1", 1); route(e, "o2", 1); set(e, "flt_mix", 0); set(e, "svf_cut", knob_for_hz(700)); set(e, "svf_res", 92);
+    if (on) { set(e, "an_svf", 100); set(e, "an_svf_drive", 25); }
+}
+static void ax_w_whistle(void *e, int on) {
+    route(e, "o1", 1); route(e, "o2", 1); set(e, "flt_mix", 0); set(e, "svf_cut", knob_for_hz(500)); set(e, "svf_res", 100);
+    set(e, "svf_env", 35); set(e, "o1_level", 40); set(e, "o2_level", 0);
+    if (on) { set(e, "an_svf", 100); set(e, "an_svf_osc", 1); }
+}
+static void ax_w_mix(void *e, int on) {
+    set(e, "flt_cut", knob_for_hz(900)); set(e, "flt_res", 40);
+    if (on) set(e, "an_mix_drive", 70);
+}
+static void ax_w_fb(void *e, int on) {
+    set(e, "flt_cut", knob_for_hz(800)); set(e, "flt_res", 50);
+    if (on) { set(e, "an_feedback", 80); set(e, "an_mix_drive", 50); }
+}
+static void ax_w_ac(void *e, int on) {
+    set_shape(e, "o1", SQUARE); set(e, "o2_level", 0); set(e, "flt_cut", 100);
+    if (on) set(e, "an_osc_ac", 30);
+}
+static void ax_w_match(void *e, int on) {
+    set(e, "flt_cut", knob_for_hz(1200)); set(e, "flt_drive", 60); set(e, "flt_res", 20); set(e, "an_ladder", 100);
+    if (on) set(e, "an_lad_match", 100);
+}
+static void ax_w_attack(void *e, int on) {
+    set(e, "amp_a", knob_ms(300)); set(e, "flt_cut", knob_for_hz(2500));
+    if (on) { set(e, "amp_acurve", -25); set(e, "fenv_acurve", -25); }
+}
+static void analogx_wavs(const char *demo_path) {
+    static const struct { const char *name; void (*fn)(void *, int); int oct; } W[] = {
+        {"svf", ax_w_svf, 0}, {"svf_whistle", ax_w_whistle, 0}, {"mixdrive", ax_w_mix, 0}, {"feedback", ax_w_fb, 0},
+        {"osc_ac", ax_w_ac, -12}, {"mismatch", ax_w_match, 0}, {"attack_curve", ax_w_attack, 12},
+    };
+    enum { BLOCK = 128, BLOCKS = 86, STEPS = 6, TAIL = 345, FR = BLOCK * (BLOCKS * STEPS + TAIL) };   /* six notes of 0.25 s, then 1 s */
+    static const int LINE[STEPS] = {36, 36, 48, 39, 43, 34};
+    static float lr[2][FR * 2];
+    static int16_t pcm[FR * 2];
+    char dir[256], path[320];
+    snprintf(dir, sizeof dir, "%s", demo_path);
+    char *slash = strrchr(dir, '/');
+    if (slash) slash[1] = 0; else dir[0] = 0;
+    for (unsigned k = 0; k < sizeof W / sizeof W[0]; k++) {
+        double rms[2], peak = 0;
+        for (int on = 0; on < 2; on++) {
+            void *e = patch(SAW, 2, 400, 70, 200);
+            float *o = lr[on];
+            set(e, "voices", 7); set(e, "o2_level", 70); set(e, "o2_freq", 0.08); set(e, "lad_kbd", 50); set(e, "svf_kbd", 50);
+            W[k].fn(e, on);
+            for (int st = 0; st < STEPS; st++) {
+                note(e, 1, LINE[st] + W[k].oct, 110);
+                for (int b = 0; b < BLOCKS; b++, o += 2 * BLOCK) {
+                    one_ish_render_float(e, o, BLOCK);
+                    if (b == BLOCKS - 8) note(e, 0, LINE[st] + W[k].oct, 0);
+                }
+            }
+            for (int b = 0; b < TAIL; b++, o += 2 * BLOCK) one_ish_render_float(e, o, BLOCK);
+            double s = 0;
+            int n = (int)(o - lr[on]);
+            for (int i = 0; i < n; i++) { s += (double)lr[on][i] * lr[on][i]; peak = fmax(peak, fabs(lr[on][i]) ); }
+            rms[on] = sqrt(s / n);
+            E->destroy(e);
+        }
+        /* both at one loudness, -20 dBFS unless a peak would clip */
+        double pk[2] = {0, 0};
+        for (int on = 0; on < 2; on++) for (int i = 0; i < FR * 2; i++) pk[on] = fmax(pk[on], fabs(lr[on][i]));
+        double target = fmin(0.1, 0.95 / fmax(pk[0] / rms[0], pk[1] / rms[1]));
+        for (int on = 0; on < 2; on++) {
+            double g = target / rms[on];
+            for (int i = 0; i < FR * 2; i++) pcm[i] = (int16_t)lrint(fmax(-1.0, fmin(1.0, lr[on][i] * g)) * 32767.0);
+            snprintf(path, sizeof path, "%sanalog_%s_%s.wav", dir, W[k].name, on ? "after" : "before");
+            write_wav(path, pcm, FR);
+        }
+        printf("analog: wrote analog_%s_before / _after.wav, matched in loudness (before the match: %.1f and %.1f dB rms)\n", W[k].name,
+               mz_db(rms[0]), mz_db(rms[1]));
+    }
 }
 
 /* the busy patch of the bench: 8 voices, 3 oscillators, into `svf` both filters in series */
@@ -408,6 +560,9 @@ static void ax_b_off_pair(void *e) { set(e, "svf_pair", 0); }
 static void ax_b_mixd(void *e) { set(e, "an_mix_drive", 100); }
 static void ax_b_fb(void *e) { set(e, "an_feedback", 100); }
 static void ax_b_ac(void *e) { set(e, "an_osc_ac", 30); }
+static void ax_b_mm(void *e) { set(e, "an_lad_match", 100); }
+static void ax_b_nl(void *e) { set(e, "an_ladder", 100); }
+static void ax_b_mmnl(void *e) { set(e, "an_ladder", 100); set(e, "an_lad_match", 100); }
 static void analogx_bench(void) {
     static const struct { const char *name; void (*fn)(void *); int base; } B[] = {
         {"all off", NULL, 0},
@@ -418,6 +573,9 @@ static void analogx_bench(void) {
         {"MIXER DRIVE 100%", ax_b_mixd, 0},
         {"FEEDBACK 100%", ax_b_fb, 0},
         {"OSC AC COUPLING 30 Hz", ax_b_ac, 0},
+        {"LADDER MISMATCH 100%", ax_b_mm, 0},
+        {"NON-LINEAR LADDER 100%", ax_b_nl, 0},
+        {"NON-LINEAR LADDER + LADDER MISMATCH 100%", ax_b_mmnl, 9},
     };
     double t[sizeof B / sizeof B[0]];
     for (unsigned k = 0; k < sizeof B / sizeof B[0]; k++) t[k] = ax_time(NULL);   /* (warm the caches, and a first noise figure) */

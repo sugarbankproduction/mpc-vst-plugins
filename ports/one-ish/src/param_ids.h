@@ -160,6 +160,8 @@ enum {
     P_AN_MIX_DRIVE, P_AN_FEEDBACK,
     /* (2026-11-02) the ANALOG page's OSC AC COUPLING: a capacitor after each oscillator (render_voice_os) */
     P_AN_OSC_AC,
+    /* (2026-11-02) the ANALOG page's LADDER MISMATCH (src/ladder.h ladder_tick_mm) */
+    P_AN_LAD_MATCH,
     P_COUNT
 };
 
@@ -309,4 +311,5 @@ static const char *const KEYS[P_COUNT] = {
     "an_svf", "an_svf_drive", "an_svf_osc",   /* (2026-11-02) */
     "an_mix_drive", "an_feedback",   /* (2026-11-02) */
     "an_osc_ac",   /* (2026-11-02) */
+    "an_lad_match",   /* (2026-11-02) */
 };

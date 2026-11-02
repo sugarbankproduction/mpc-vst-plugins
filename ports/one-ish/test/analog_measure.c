@@ -8,7 +8,7 @@
  * whole engine.
  *
  * THE REFERENCE MODEL: the published transistor ladder equations with perfectly matched parts (A. Huovilainen,
- * "Non-Linear Digital Implementation of the Moog Ladder Filter", DAFx 2004, eq. 10-17, and T. Stinchcombe's analysis),
+ * his non-linear digital ladder paper, DAFx 2004, eq. 10-17, and T. Stinchcombe's analysis; titles in the report),
  * in voltages scaled by the transistors' 2 Vt:
  *     y1' = wc (tanh(u - k y4) - tanh(y1))     yi' = wc (tanh(y(i-1)) - tanh(yi))     i = 2, 3, 4
  * solved by fourth-order Runge-Kutta in doubles, MZ_REF_OS times the sample rate per sample (16: about 700 kHz; the

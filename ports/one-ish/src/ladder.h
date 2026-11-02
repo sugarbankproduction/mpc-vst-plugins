@@ -16,7 +16,13 @@
  * `nl` (0..1) blends T towards 1: at 0 the variant is the linear ladder (to rounding). Per sample: five T values and
  * four stage divisions more than the linear ladder, none of them on the signal's own chain (they depend on the states
  * only); about +21% per voice in the PC bench. Self-oscillation comes out about 8 dB quieter and up to 30 cents flat
- * at low cutoffs (the saturated stages slow down), as a driven transistor ladder does. */
+ * at low cutoffs (the saturated stages slow down), as a driven transistor ladder does.
+ *
+ * Mismatched stages (2026-11-02, ladder_tick_mm, the ANALOG page's LADDER MISMATCH): the analyses above all assume
+ * perfectly matched parts (Huovilainen says so, as does Stinchcombe), and with them the saturators are symmetric and
+ * there are no even harmonics. Here each saturator's gain is read a small offset away, T(v + o) (the asymmetric
+ * saturation of Zavalishin 6.12), which leaves 0 at 0 and bends one side more; and each stage's g differs by a little.
+ * Offset and differences are fixed per voice (the voice's card). How large real parts' effect is, is not published. */
 #pragma once
 #include <math.h>
 
@@ -36,8 +42,11 @@ typedef struct {
     float mix[5];               /* output = mix . (u, y1, y2, y3, y4) for the mode and slope */
     float nl;                   /* the non-linear variant's amount, 0..1 (read by ladder_next_nl only) */
     float u;                    /* its last input-stage output, for the first stage's gain */
+    float mo[5], mg[4];         /* LADDER MISMATCH: each saturator's offset, each stage's g factor (ladder_tick_mm only) */
 } ladder_t;
 
+#define LADDER_MM_O 0.1f     /* LADDER MISMATCH at 100%: a saturator's offset, in its input's units */
+#define LADDER_MM_G 0.015f   /* and how far a stage's g sits from the others, at most (about 26 cents) */
 #define LADDER_NL_HOT 2.5f   /* the stages' f(v) = tanh(h v) / h: they flatten towards +-1/h of the internal level */
 
 /* tanh-like soft clip (3rd-order Pade): within 2% of tanh, exactly +-1 from |x| = 3, no library call */
@@ -137,4 +146,41 @@ static inline float ladder_next_nl(ladder_t *l, float x) { return ladder_tick_nl
 static inline float ladder_next_nl_fm(ladder_t *l, float x, float e) {
     float g = l->g * e;
     return ladder_tick_nl(l, x, g < LADDER_G_MIN ? LADDER_G_MIN : g > LADDER_G_MAX ? LADDER_G_MAX : g);
+}
+
+/* one sample with mismatched stages at tan(pi fc / sr) = g: ladder_tick_nl with the offsets and g factors; nl 0 leaves
+ * the stages' gains at 1 and only the input saturator bends. A little dearer than ladder_tick_nl at any nl. */
+static inline float ladder_tick_mm(ladder_t *l, float x, float g) {
+    float *s = l->s, n = l->nl, h = LADDER_NL_HOT;
+    const float *o = l->mo;
+    float t[5] = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f}, a[4], b[4];
+    if (n > 0.0f) {
+        t[0] = 1.0f + n * (ladder_tanh_gain(h * l->u + o[0]) - 1.0f);
+        for (int i = 0; i < 4; i++) t[i + 1] = 1.0f + n * (ladder_tanh_gain(h * s[i] + o[i + 1]) - 1.0f);
+    }
+    float A = 1.0f, B = 0.0f;
+    for (int i = 0; i < 4; i++) {
+        float gi = g * l->mg[i], r = 1.0f / (1.0f + gi * t[i + 1]);
+        a[i] = gi * t[i] * r;
+        b[i] = s[i] * r;
+        A *= a[i];
+        B = B * a[i] + b[i];
+    }
+    float in = x * l->gain_in * l->bass;
+    float v = (in - l->k * B) / (1.0f + l->k * A);
+    float y[5];
+    y[0] = v * ladder_tanh_gain(v + o[0]);   /* (o 0: ladder_sat) */
+    l->u = y[0];
+    for (int i = 0; i < 4; i++) {
+        y[i + 1] = a[i] * y[i] + b[i];
+        s[i] = 2.0f * y[i + 1] - s[i];
+    }
+    const float *m = l->mix;
+    return (m[0] * y[0] + m[1] * y[1] + m[2] * y[2] + m[3] * y[3] + m[4] * y[4]) * l->gain_out;
+}
+
+/* with the cutoff times e (1: no filter FM), as ladder_next_nl_fm */
+static inline float ladder_next_mm(ladder_t *l, float x, float e) {
+    float g = l->g * e;
+    return ladder_tick_mm(l, x, g < LADDER_G_MIN ? LADDER_G_MIN : g > LADDER_G_MAX ? LADDER_G_MAX : g);
 }
