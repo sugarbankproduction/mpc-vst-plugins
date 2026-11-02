@@ -224,7 +224,7 @@ static void defaults_randomiser(void) {
     int wired = 0, distinct = 0, heard = 0, kept = 0, analog = 0, n = 0, mono = 0, poly = 0, locked = 0;   /* (n: a count here) */
     for (int s = 0; s < 150; s++) {
         uint32_t seed = 400 + s;
-        rnd_opts_t o = {(s % 3) * 0.5f, 0, 0, s % 2 ? RV_MONO : RV_POLY};
+        rnd_opts_t o = {(s % 3) * 0.5f, 0, 0, s % 2 ? RV_MONO : RV_POLY, 0.0f};
         float cur[NPARAMS];
         memcpy(cur, def, sizeof cur);
         cur[rnd_key("drift")] = 0.3f;   /* (someone's ANALOG settings: kept) */
@@ -290,8 +290,8 @@ static void defaults_follow_keys(void) {
         for (int s = 0; s < 30; s++) {
             cur[fk] = (float)v;
             uint32_t seed = 4100 + 17 * s + v;
-            rnd_opts_t o = {(s % 3) * 0.5f, (1u << RS_ARP) | (1u << RS_GEN) | (1u << RS_SEQ), 0, RV_BOTH};
-            if (s % 3 == 2) rnd_generate_x(cur, out, (1u << RS_COUNT) - 1u, &seed, &(rnd_opts_t){0.0f, 1u << RS_GEN, 0, RV_BOTH});
+            rnd_opts_t o = {(s % 3) * 0.5f, (1u << RS_ARP) | (1u << RS_GEN) | (1u << RS_SEQ), 0, RV_BOTH, 0.0f};
+            if (s % 3 == 2) rnd_generate_x(cur, out, (1u << RS_COUNT) - 1u, &seed, &(rnd_opts_t){0.0f, 1u << RS_GEN, 0, RV_BOTH, 0.0f});
             else if (s % 2) rnd_mutate_x(cur, out, 0.8f, 0, &seed, &o);
             else rnd_generate_x(cur, out, 0, &seed, &o);
             n++;
@@ -312,7 +312,7 @@ static void defaults_gens(void) {
     int n = 0, onok = 0, heard = 0, finite = 1, inkey = 0, keyed = 0, sound_same = 0, notes = 0;
     for (int s = 0; s < 24; s++) {
         uint32_t seed = 1200 + 31 * s;
-        rnd_opts_t o = {0.0f, 1u << RS_GEN, 0, RV_BOTH};
+        rnd_opts_t o = {0.0f, 1u << RS_GEN, 0, RV_BOTH, 0.0f};
         rnd_generate_x(def, out, all_sound, &seed, &o);
         n++;
         int on = 0, same = 1;
@@ -336,6 +336,9 @@ static void defaults_gens(void) {
         heard += ne > 0;
         notes += ne;
         int tm_own = dc_opt(out, "gen_tm_on") == 1;   /* (Turing: its own SCALE, not KEY / SCALE) */
+        /* (2026-11-02) CHORDS and BASS have their own harmony test (test/chords_check.c): their chords use a pentatonic
+         * or blues scale's parent scale; FOLLOW CHORDS on their chords likewise */
+        if (dc_opt(out, "chd_on") == 1 || dc_opt(out, "bass_on") == 1) tm_own = 1;
         if (!tm_own && ne) { keyed++; inkey += pg_in_key(pg_a, ne, root, scale); }
         E->destroy(e);
     }

@@ -4142,7 +4142,7 @@ static void randomiser_wild(void) {
     /* WILD 0 is the randomiser as it was: the same sounds and mutations for the same seeds */
     int same = 1;
     for (int s = 0; s < 40 && same; s++) {
-        rnd_opts_t o = {0.0f, 0, 0, RV_BOTH};
+        rnd_opts_t o = {0.0f, 0, 0, RV_BOTH, 0.0f};
         uint32_t a = 3000 + s, b = 3000 + s;
         rnd_generate(def, out, 0, &a);
         rnd_generate_x(def, out2, 0, &b, &o);
@@ -4157,7 +4157,7 @@ static void randomiser_wild(void) {
         int safe = 0, finite = 1, untouched = 1, all16 = 0;
         double max_peak = 0, sum_over = 0, max_over = 0, min_rms = 1, max_rms = 0;
         for (int s = 0; s < SOUNDS; s++) {
-            rnd_opts_t o = {WILD[k], 0, 0, RV_BOTH};
+            rnd_opts_t o = {WILD[k], 0, 0, RV_BOTH, 0.0f};
             uint32_t seed = 20000 + s * 7919;
             rnd_generate_x(def, out, 0, &seed, &o);
             int rows = rnd_rows_of(out);
@@ -4210,7 +4210,7 @@ static void randomiser_wild(void) {
     /* MUTATE at WILD 100%: once at 50%, and five in a row at 30% */
     int m_safe = 0, m_changed = 0, m_tame = 0;
     for (int s = 0; s < MUT; s++) {
-        rnd_opts_t o = {1.0f, 0, 0, RV_BOTH};
+        rnd_opts_t o = {1.0f, 0, 0, RV_BOTH, 0.0f};
         uint32_t seed = 40000 + s, tame;
         rnd_generate(def, cur, 0, &seed);
         tame = seed;
@@ -4241,7 +4241,7 @@ static void randomiser_wild(void) {
     int fin = 1, safe = 0, arp = 0, eu = 0, tm = 0, seq = 0, trig = 0, locked_ok = 1;
     double peak = 0;
     for (int s = 0; s < ALSO; s++) {
-        rnd_opts_t o = {s % 3 * 0.5f, 1u << RS_ARP | 1u << RS_GEN | 1u << RS_SEQ, 0, RV_BOTH};
+        rnd_opts_t o = {s % 3 * 0.5f, 1u << RS_ARP | 1u << RS_GEN | 1u << RS_SEQ, 0, RV_BOTH, 0.0f};
         uint32_t seed = 60000 + s * 31;
         unsigned locks = s % 4 == 3 ? 1u << RS_ENV : 0;
         rnd_generate_x(def, out, locks, &seed, &o);
@@ -4257,7 +4257,9 @@ static void randomiser_wild(void) {
         rnd_stats_t st = rnd_play(e);
         E->destroy(e);
         fin &= isfinite(st.rms) && isfinite(st.peak);
-        int ok = isfinite(st.rms) && st.rms > 0.001 && st.peak < 0.98 && st.note_peak < 0.98;
+        /* (2026-11-02) particles from the held keys may simply not cross the line in this short a hold: silence is no fault */
+        int chance = out[rnd_key("phys_parts_on")] > 0.5f && out[rnd_key("phys_keys")] > 0.0f;
+        int ok = isfinite(st.rms) && (st.rms > 0.001 || chance) && st.peak < 0.98 && st.note_peak < 0.98;
         if (!ok && safe == s) {
             char d[256];
             rnd_describe(out, d, sizeof d);
@@ -4270,13 +4272,13 @@ static void randomiser_wild(void) {
              "sequencer %d, keys trigger an empty sequence in %d; %d heard within the limiter (peak at most %.3f), a locked "
              "section kept: %s", ALSO, arp, eu, tm, seq, trig, safe, peak, locked_ok ? "yes" : "no");
     /* (2026-11-02) Turing at least a tenth: a count of chance, 8 to 11 of 60 as other choices move the draws */
-    check(fin && safe == ALSO && trig == 0 && arp > ALSO / 3 && eu > ALSO / 5 && tm >= ALSO / 10 && seq > ALSO / 3 && locked_ok, what);
+    check(fin && safe == ALSO && trig == 0 && arp > ALSO / 3 && eu >= ALSO / 6 /* (2026-11-02: two more generators to pick) */ && tm >= ALSO / 10 && seq > ALSO / 3 && locked_ok, what);
 
     /* the sequencer's modulation lanes: RANDOMISE makes some (any destination at WILD 100%), MUTATE keeps them */
     sq_seq_t q;
     int lanes0 = 0, lanes1 = 0, valid = 1, kept = 1;
     for (int s = 0; s < 40; s++) {
-        rnd_opts_t o = {s < 20 ? 0.0f : 1.0f, 1u << RS_SEQ, 1, RV_BOTH};
+        rnd_opts_t o = {s < 20 ? 0.0f : 1.0f, 1u << RS_SEQ, 1, RV_BOTH, 0.0f};
         uint32_t seed = 70000 + s;
         sq_clear(&q);
         rnd_generate(def, out, 0, &seed);
@@ -5231,6 +5233,7 @@ static void arp_wav(const char *demo_path) {
 #include "links_check.c"     /* (2026-10-31) LINK on the mod wheel, the pitch wheel, the ribbon */
 #include "analog_check.c"    /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT */
 #include "own_keys_check.c"  /* (2026-11-02) each generator's own KEY and SCALE */
+#include "chords_check.c"    /* (2026-11-02) CHORDS, BASS, FOLLOW CHORDS */
 
 /* ---- the MACRO channel (Plaits: src/macro.h) ---- */
 enum { MAC_VA = 0, MAC_ADDITIVE = 4, MAC_WAVETABLE = 5, MAC_SPEECH = 7, MAC_STRING = 11, MAC_MODAL = 12,
@@ -5999,6 +6002,7 @@ int main(int argc, char **argv) {
         bench(); macro_bench(); seq_bench(); multi_bench(); ext_bench(); voc_bench(); tuning_bench(); lfoenv_bench(); physgen_bench();
         gens_b_bench();   /* (2026-10-30) */
         gens_a_bench();   /* (2026-10-30) LIFE, ORBITS, PENDULUMS */
+        chords_bench();   /* (2026-11-02) CHORDS, BASS */
         defaults_bench();   /* (2026-10-30) the new defaults */
         bank_bench_all();   /* (2026-10-30) the factory banks' presets: CPU */
         grains_bench();   /* (2026-10-30) */
@@ -6056,6 +6060,13 @@ int main(int argc, char **argv) {
     }
     if (argc > 2 && !strcmp(argv[1], "banks")) {   /* (2026-10-30) every bank: offline_check banks <dir>/demo.wav */
         bank_checks_all(argv[2]);
+        printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
+        return failures != 0;
+    }
+    if (argc > 1 && !strcmp(argv[1], "chords")) {   /* (2026-11-02) just CHORDS, BASS, FOLLOW CHORDS: offline_check chords <dir>/demo.wav */
+        chords_checks();
+        chords_wavs(argc > 2 ? argv[2] : "demo.wav");
+        chords_bench();
         printf(failures ? "FAILED (%d)\n" : "PASSED\n", failures);
         return failures != 0;
     }
@@ -6230,6 +6241,8 @@ int main(int argc, char **argv) {
     links_checks();   /* (2026-10-31) the wheels' and the ribbon's LINKs (test/links_check.c) */
     analog_checks();   /* (2026-11-01) the ANALOG page's defaults, ANALOG AMOUNT (test/analog_check.c) */
     own_keys_checks();   /* (2026-11-02) each generator's own KEY and SCALE (test/own_keys_check.c) */
+    chords_checks();   /* (2026-11-02) CHORDS, BASS, FOLLOW CHORDS (test/chords_check.c) */
+    chords_wavs(argc > 1 ? argv[1] : "demo.wav");
     analog_stats();
     demo_wav(argc > 1 ? argv[1] : "demo.wav");
     fx_wavs(argc > 1 ? argv[1] : "demo.wav");

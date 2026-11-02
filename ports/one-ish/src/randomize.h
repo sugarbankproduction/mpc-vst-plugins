@@ -52,7 +52,7 @@ __attribute__((unused)) static const char *const RND_SECTION[RS_ALL] = {"OSCILLA
 /* the window's further choices: WILD 0..1 (0: exactly the tame randomiser; 1: any source to any destination, every
  * matrix slot, odd routings...), the tick buttons (bit RS_ARP / RS_GEN / RS_SEQ: randomise that section too), and
  * whether the sequence has notes (only then may the keys trigger or transpose it: else they would play nothing) */
-typedef struct { float wild; unsigned also; int seq_notes; int voicing; } rnd_opts_t;
+typedef struct { float wild; unsigned also; int seq_notes; int voicing; float jazz_wild; } rnd_opts_t;   /* jazz_wild (2026-11-02): the RANDOM page's WILD for the generators' JAZZ when wild stays 0 (the GENERATIVE page's own buttons) */
 /* (2026-10-30) the RANDOM page's MONO / POLY / BOTH: what RANDOMISE's sounds may be (BOTH, 0: either, as before) */
 enum { RV_BOTH, RV_MONO, RV_POLY, RV_COUNT };
 enum { RA_BASS, RA_LEAD, RA_PAD, RA_PLUCK, RA_POLY, RA_TEXTURE, RA_COUNT };
@@ -291,6 +291,15 @@ __attribute__((unused)) static const rnd_rule_t RND_RULES[] = {
     RCODEW("pend_trigger", RS_GEN, "3 1 1", 1), RDEF("pend_restart", RS_GEN, 0), RCODE("pend_len", RS_GEN, 20, 70, 0.06f),
     RCODEW("pend_octave", RS_GEN, "0 1 3 3 1 0", 1), RCODE("pend_max", RS_GEN, 4, 12, 0.05f),
     RCODE("pend_dyn", RS_GEN, 30, 85, 0.06f),
+    /* (2026-11-02) CHORDS and BASS: their JAZZ comes from WILD (rnd_jazz); the player's FOLLOW on the BASS page stays */
+    RCODEW("gen_follow_chords", RS_GEN, NULL, 0), RCODEW("chd_on", RS_GEN, NULL, 0), RCODEW("bass_on", RS_GEN, NULL, 0), RCODEW("chd_keys", RS_GEN, "3 1", 0),
+    RCODEW("bass_keys", RS_GEN, "3 1", 0), RCODE("chd_jazz", RS_GEN, 0, 100, 0.0f), RCODE("bass_jazz", RS_GEN, 0, 100, 0.0f),
+    RCODEW("chd_rate", RS_GEN, "1 3 4 2 0.5 0", 1), RCODEW("chd_voicing", RS_GEN, "3 2 3 1", 1),
+    RCODEW("chd_inv", RS_GEN, "0.5 6 1 1", 1), RCODEW("chd_octave", RS_GEN, "0 1 4 2 0 0", 1), RCODE("chd_vel", RS_GEN, 65, 105, 0.05f),
+    RCODE("chd_gate", RS_GEN, 60, 100, 0.06f), RCODE("chd_strum", RS_GEN, 0, 25, 0.05f), RCODE("chd_seed", RS_GEN, 0, 99, 0.1f),
+    RCODEW("bass_pattern", RS_GEN, "6 1 1 1 1 1", 1), RCODEW("bass_rate", RS_GEN, "1 5 3 0.5 0.5 0.5", 1),
+    RCODEW("bass_octave", RS_GEN, "2 4 0 0 0 0", 1), RCODE("bass_vel", RS_GEN, 85, 115, 0.05f), RCODE("bass_gate", RS_GEN, 50, 95, 0.06f),
+    RCODE("bass_seed", RS_GEN, 0, 99, 0.1f),
 
     /* ---- SEQUENCER (its tick button): its own settings (the steps' notes are not made here: rnd_seq_lanes and the
      * window do the modulation lanes; the transport, recording and the factory sequences are never touched) ---- */
@@ -337,6 +346,7 @@ typedef struct {
     uint32_t *seed;
     int arch;
     float wild;                    /* rnd_opts_t.wild (0: every step below exactly as without WILD) */
+    float jazz_wild;               /* (2026-11-02) what sets CHORDS' and BASS's JAZZ: the larger of wild and jazz_wild */
     int seq_notes;                 /* rnd_opts_t.seq_notes */
     int voicing;                   /* rnd_opts_t.voicing (RV_*) */
 } rnd_ctx_t;
@@ -464,6 +474,7 @@ static inline void rnd_init(rnd_ctx_t *c, const float *cur, unsigned locks, uint
     c->seed = seed;
     c->arch = RA_POLY;
     c->wild = o ? rnd_clamp(o->wild, 0.0f, 1.0f) : 0.0f;
+    c->jazz_wild = o ? fmaxf(c->wild, rnd_clamp(o->jazz_wild, 0.0f, 1.0f)) : 0.0f;
     c->seq_notes = o ? o->seq_notes : 0;
     c->voicing = o ? o->voicing : RV_BOTH;
     for (int i = 0; i < NPARAMS; i++) {
@@ -1212,11 +1223,18 @@ static inline void rnd_gen_seq(rnd_ctx_t *c) {   /* the sequencer's settings; th
  * choice includes Euclid and Turing, so it replaces rnd_gen_gen's. Enough to hear, not so many that they crowd the
  * 16 voices. ---- */
 __attribute__((unused)) static const char *const RND_GEN_ON[] = {
-    "gen_euclid_on", "gen_tm_on", "phys_balls_on", "phys_parts_on", "life_on", "orb_on", "pend_on", "rain_on", "mkv_on"};
+    "gen_euclid_on", "gen_tm_on", "phys_balls_on", "phys_parts_on", "life_on", "orb_on", "pend_on", "rain_on", "mkv_on",
+    "chd_on", "bass_on"};
 #define RND_NGEN ((int)(sizeof RND_GEN_ON / sizeof RND_GEN_ON[0]))
 static inline int rnd_newer_gen(const char *k) {   /* a key of the newer generators */
     return !strncmp(k, "phys_", 5) || !strncmp(k, "rain_", 5) || !strncmp(k, "mkv_", 4) || !strncmp(k, "life_", 5) ||
-           !strncmp(k, "orb_", 4) || !strncmp(k, "pend_", 5);
+           !strncmp(k, "orb_", 4) || !strncmp(k, "pend_", 5) || !strncmp(k, "chd_", 4) || !strncmp(k, "bass_", 5);
+}
+/* (2026-11-02) WILD 0: low JAZZ; WILD 100%: super jazz (RANDOMISE and MUTATE, the section open; a little either way) */
+static inline void rnd_jazz(rnd_ctx_t *c) {
+    float j = c->jazz_wild * 100.0f;
+    rnd_set(c, "chd_jazz", roundf(rnd_clamp(j + rnd_range(c, -6, 6), j > 90.0f ? 90.0f : 0.0f, 100.0f)));
+    rnd_set(c, "bass_jazz", roundf(rnd_clamp(j + rnd_range(c, -10, 10), j > 90.0f ? 85.0f : 0.0f, 100.0f)));
 }
 static inline void rnd_gen_gens(rnd_ctx_t *c) {
     if (!rnd_open(c, RS_GEN)) return;
@@ -1233,11 +1251,13 @@ static inline void rnd_gen_gens(rnd_ctx_t *c) {
     if (rnd_chance(c, 0.5f)) rnd_set(c, "phys_attract", 0.0f);   /* (often none: they fall straight) */
     if (rnd_chance(c, 0.5f)) rnd_set(c, "orb_gravity", 0.0f);
     if (rnd_chance(c, 0.5f)) rnd_set(c, "pend_damp", 0.0f);
+    rnd_jazz(c);   /* (2026-11-02) */
+    rnd_seto(c, "gen_follow_chords", rnd_chance(c, 0.75f) ? "On" : "Off");   /* (harmony unless the dice say otherwise) */
     int n = rnd_chance(c, 0.6f) ? 1 : 2, pick[3] = {-1, -1, -1};
     if (c->wild > 0.0f && rnd_chance(c, 0.4f * c->wild)) n = 3;
     for (int g = 0; g < RND_NGEN; g++) rnd_seto(c, RND_GEN_ON[g], "Off");
     for (int k = 0; k < n; k++) {
-        int g = rnd_pickw(c, "1 1 1.3 1 1 1 1 1.3 0.8", RND_NGEN);
+        int g = rnd_pickw(c, "1 1 1.3 1 1 1 1 1.3 0.8 1.3 1", RND_NGEN);
         for (int t = 0; t < 8 && (g == pick[0] || g == pick[1]); t++) g = (g + 1) % RND_NGEN;
         pick[k] = g;
         rnd_seto(c, RND_GEN_ON[g], "On");
@@ -1679,6 +1699,8 @@ static inline int rnd_relevant(const rnd_ctx_t *c, int i) {
     if (!strncmp(k, "life_", 5)) return rnd_on(c, "life_on");
     if (!strncmp(k, "orb_", 4)) return rnd_on(c, "orb_on");
     if (!strncmp(k, "pend_", 5)) return rnd_on(c, "pend_on");
+    if (!strncmp(k, "chd_", 4)) return rnd_on(c, "chd_on");   /* (2026-11-02) */
+    if (!strncmp(k, "bass_", 5)) return rnd_on(c, "bass_on");
     /* the tick buttons' sections: a setting matters only while what it belongs to is on */
     if (strncmp(k, "arp_", 4) && strncmp(k, "gen_", 4) && strncmp(k, "seq_", 4) && strcmp(k, "clock_swing")) return 1;
     int arp = rnd_on(c, "arp_on"), eu = rnd_on(c, "gen_euclid_on"), tm = rnd_on(c, "gen_tm_on");
@@ -1760,6 +1782,7 @@ static inline int rnd_mutate_x(const float *cur, float *out, float amount, unsig
         c.w[i] = rnd_clamp(v + rnd_gauss(&c) * amount * r->mut * span * (1.0f + 2.0f * w), fmaxf(lo, p->min), fminf(hi, p->max));
     }
     rnd_mutate_matrix(&c, amount);
+    if (rnd_open(&c, RS_GEN) && (rnd_on(&c, "chd_on") || rnd_on(&c, "bass_on"))) rnd_jazz(&c);   /* (2026-11-02) JAZZ from WILD */
     if (amount * w > 0.0f) rnd_gen_wild(&c, amount * w);
     rnd_safety(&c);
     return rnd_finish(&c, cur, out);

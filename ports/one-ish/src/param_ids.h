@@ -154,6 +154,11 @@ enum {
     P_GEN_OWN_KEY, P_GEN_OWN_SCALE, P_BALL_OWN_KEY, P_BALL_OWN_SCALE, P_PART_OWN_KEY, P_PART_OWN_SCALE, P_RAIN_OWN_KEY,
     P_RAIN_OWN_SCALE, P_MKV_OWN_KEY, P_MKV_OWN_SCALE, P_LIFE_OWN_KEY, P_LIFE_OWN_SCALE, P_ORB_OWN_KEY, P_ORB_OWN_SCALE,
     P_PEND_OWN_KEY, P_PEND_OWN_SCALE,
+    P_GEN_FOLLOW_CHORDS,   /* (2026-11-02) */
+    P_CHD_ON, P_CHD_KEYS, P_CHD_JAZZ, P_CHD_RATE, P_CHD_VOICING, P_CHD_INV, P_CHD_OCT, P_CHD_VEL, P_CHD_GATE, P_CHD_STRUM,
+    P_CHD_SEED, P_CHD_OWN_KEY, P_CHD_OWN_SCALE,
+    P_BASS_ON, P_BASS_KEYS, P_BASS_FOLLOW, P_BASS_JAZZ, P_BASS_PATTERN, P_BASS_RATE, P_BASS_OCT, P_BASS_VEL, P_BASS_GATE,
+    P_BASS_SEED, P_BASS_OWN_KEY, P_BASS_OWN_SCALE,
     P_COUNT
 };
 
@@ -300,4 +305,9 @@ static const char *const KEYS[P_COUNT] = {
     "gen_own_key", "gen_own_scale", "phys_ball_own_key", "phys_ball_own_scale", "phys_part_own_key", "phys_part_own_scale",
     "rain_own_key", "rain_own_scale", "mkv_own_key", "mkv_own_scale", "life_own_key", "life_own_scale", "orb_own_key",
     "orb_own_scale", "pend_own_key", "pend_own_scale",   /* (2026-11-02) */
+    "gen_follow_chords",   /* (2026-11-02) */
+    "chd_on", "chd_keys", "chd_jazz", "chd_rate", "chd_voicing", "chd_inv", "chd_octave", "chd_vel", "chd_gate", "chd_strum",
+    "chd_seed", "chd_own_key", "chd_own_scale",
+    "bass_on", "bass_keys", "bass_follow", "bass_jazz", "bass_pattern", "bass_rate", "bass_octave", "bass_vel", "bass_gate",
+    "bass_seed", "bass_own_key", "bass_own_scale",
 };

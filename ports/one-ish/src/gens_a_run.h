@@ -506,7 +506,7 @@ static int64_t ga_play_due(one_t *s, ga_out_t *o, float len_knob, int64_t d, int
     int gone = (s->ga.held & bit) && !(s->running && s->keys.n);   /* (2026-10-30) HELD KEYS let go: the waiting go */
     for (int i = 0; i < o->nq;) {
         if (o->q[i].at <= s->now || gone) {
-            if (!gone) play_step(s, o->q[i].note, o->q[i].vel, s->now + (len > 1 ? len : 1));
+            if (!gone) gen_play(s, o->q[i].note, o->q[i].vel, s->now + (len > 1 ? len : 1));
             o->q[i] = o->q[--o->nq];
         } else {
             if (o->q[i].at - s->now < d) d = o->q[i].at - s->now;

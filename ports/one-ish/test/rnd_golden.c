@@ -51,7 +51,11 @@ static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the ma
     /* (2026-11-02) each generator's own KEY and SCALE (no rule: never touched) */
     "gen_own_key", "gen_own_scale", "phys_ball_own_key", "phys_ball_own_scale", "phys_part_own_key", "phys_part_own_scale",
     "rain_own_key", "rain_own_scale", "mkv_own_key", "mkv_own_scale", "life_own_key", "life_own_scale", "orb_own_key",
-    "orb_own_scale", "pend_own_key", "pend_own_scale"};
+    "orb_own_scale", "pend_own_key", "pend_own_scale",
+    /* (2026-11-02) CHORDS, BASS, FOLLOW CHORDS (GENERATIVE lit only) */
+    "gen_follow_chords", "chd_on", "chd_keys", "chd_jazz", "chd_rate", "chd_voicing", "chd_inv", "chd_octave", "chd_vel", "chd_gate",
+    "chd_strum", "chd_seed", "chd_own_key", "chd_own_scale", "bass_on", "bass_keys", "bass_follow", "bass_jazz", "bass_pattern",
+    "bass_rate", "bass_octave", "bass_vel", "bass_gate", "bass_seed", "bass_own_key", "bass_own_scale"};
 static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
                                       "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
 
@@ -114,7 +118,7 @@ int main(int argc, char **argv) {
             double a1 = 0, a2 = 0, am = 0, nz = 0, non = 0, quiet = 0;
             for (int s = 0; s < 400; s++) {
                 uint32_t seed = 9100u + (uint32_t)s;
-                rnd_opts_t op = {w * 0.5f, 0, 0, RV_BOTH};
+                rnd_opts_t op = {w * 0.5f, 0, 0, RV_BOTH, 0.0f};
                 rnd_generate_x(d, o, 0, &seed, &op);
                 float v1 = rnd_real(s1, o[s1]), v2 = rnd_real(s2, o[s2]);
                 a1 += v1; a2 += v2;
@@ -149,7 +153,7 @@ int main(int argc, char **argv) {
     for (int w = 0; w < 3; w++)
         for (int a = 0; a < 2; a++)
             for (int s = 0; s < 20; s++) {
-                rnd_opts_t o = {WILD[w], ALSO[a], 0, RV_BOTH};
+                rnd_opts_t o = {WILD[w], ALSO[a], 0, RV_BOTH, 0.0f};
                 uint32_t seed = 7000u + 97u * (uint32_t)s + 13u * (uint32_t)w + (uint32_t)a, seed2 = seed ^ 0x5bd1e995u;
                 int arch = rnd_generate_x(def, out, 0, &seed, &o);
                 if (getenv("RND_GOLDEN_DUMP")) printf("arch=%d\n", arch);

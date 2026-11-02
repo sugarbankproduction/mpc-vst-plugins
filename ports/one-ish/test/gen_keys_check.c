@@ -167,7 +167,7 @@ static void gen_keys_checks(void) {
         int loud = 0, worst_s = -1;
         double worst = 0;
         for (int s = 0; s < 12; s++) {
-            rnd_opts_t o = {1.0f, 1u << RS_ARP | 1u << RS_GEN, 0, 0};
+            rnd_opts_t o = {1.0f, 1u << RS_ARP | 1u << RS_GEN, 0, 0, 0.0f};
             uint32_t seed = 777 + 131 * s;
             rnd_generate_x(def, out, 0, &seed, &o);
             void *a = pg_patch();

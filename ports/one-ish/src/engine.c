@@ -72,6 +72,7 @@
 #include "physgen.h"
 #include "gens_b.h"   /* (2026-10-30) rain and ripples, the Markov melody */
 #include "gens_a.h"   /* (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS */
+#include "gens_c.h"   /* (2026-11-02) CHORDS, BASS, the harmony they share */
 #include "stepseq.h"
 #include "macro.h"
 #include "tuning.h"
@@ -480,6 +481,8 @@ typedef struct one_s {
     ph_run_t ph;             /* THE BOUNCING BALLS AND PARTICLES (src/physgen_run.h; runtime only, never saved) */
     gb_run_t gb;             /* (2026-10-30) RAIN AND RIPPLES, MARKOV MELODY (src/gens_b_run.h; runtime only, never saved) */
     ga_run_t ga;             /* (2026-10-30) LIFE, ORBITS, PENDULUMS (src/gens_a_run.h; runtime only, never saved) */
+    gc_run_t gc;             /* (2026-11-02) CHORDS, BASS (src/gens_c_run.h; runtime only, never saved) */
+    hm_share_t *harm;        /* (2026-11-02) the instance's current chord (src/gens_c.h), set at create */
     int ctrl_seen;           /* (2026-10-30) the state being loaded is from since Auto's CTRL targets changed */
     struct one_s *syn1;      /* (2026-10-30) Synth 1 of the instance (src/synths.h create): a SHARED LFO's owner */
     int64_t lfo_at[NLFO];    /* (2026-10-30) the sample (now) its free-running LFO n last stepped (-1: not yet) */
@@ -502,6 +505,7 @@ static void synth_switch(one_t *s);
 static void ph_apply(one_t *s);   /* src/physgen_run.h */
 static void gb_apply(one_t *s);   /* src/gens_b_run.h */
 static void ga_apply(one_t *s);   /* src/gens_a_run.h */
+static void gc_apply(one_t *s);   /* src/gens_c_run.h */
 
 static int slot(const char *key) {
     for (int i = 0; i < P_COUNT; i++)
@@ -776,6 +780,7 @@ static void apply(one_t *s) {
     ph_apply(s);
     gb_apply(s);
     ga_apply(s);
+    gc_apply(s);
     for (int n = 0; n < NOSC; n++) {
         const float *o = &s->val[P_O1_WAVE + OSC_STRIDE * n];
         s->ratio[n] = powf(2.0f, (o[O_OCT] - OCT_CENTRE) + o[O_FREQ] / 12.0f);
@@ -1578,7 +1583,7 @@ static const int CHANGED_SLOT[CHORD_MAX + 4] = {P_CHORD_SHAPE, P_CHORD_IV1, P_CH
 
 static int route_of(const one_t *s) {
     if (s->val[P_CHORD_LEARN] > 0.5f) return ROUTE_LEARN;
-    if ((s->seq_on && s->gk != GK_FREE) || s->ph.takes || s->gb.rn_takes || s->gb.mk_takes || s->ga.takes) return ROUTE_SEQ;   /* (the balls' HELD KEYS, LAUNCH, EMIT and the rain's / Markov's HELD KEYS take the keys the same way) */
+    if ((s->seq_on && s->gk != GK_FREE) || s->ph.takes || s->gb.rn_takes || s->gb.mk_takes || s->ga.takes || s->gc.takes) return ROUTE_SEQ;   /* (the balls' HELD KEYS, LAUNCH, EMIT and the rain's / Markov's HELD KEYS take the keys the same way) */
     return s->val[P_CHORD_ON] > 0.5f ? ROUTE_CHORD : ROUTE_PLAIN;
 }
 
@@ -1638,6 +1643,7 @@ static void gen_stop(one_t *s) {
     s->npend = 0;
     s->ph.nq = 0;   /* the balls' and particles' notes still waiting */
     s->gb.nq = 0;   /* (2026-10-30) the rain's and the Markov melody's */
+    s->gc.ncq = s->gc.nbq = 0;   /* (2026-11-02) the chords' and the bass's */
     sq_forget(s);
     memset(s->cmem_n, 0, sizeof s->cmem_n);
     s->keys.n = s->phys = s->running = s->start_pending = 0;
@@ -1805,6 +1811,12 @@ static void play_step(one_t *s, int note, int vel, int64_t off) {
     for (int i = 0; i < n; i++)
         if (out[i] >= 0 && out[i] <= 127) { out_on(s, out[i], vel); pend_add(s, out[i], off); }
 }
+/* (2026-11-02) a generator's note: FOLLOW CHORDS (per Synth, Off by default) snaps it to the nearest chord tone or tension
+ * of the chord CHORDS plays now in any Synth (src/gens_c_run.h); nothing to follow: as it is */
+static void gen_play(one_t *s, int note, int vel, int64_t off) {
+    if (s->val[P_GEN_FOLLOW_CHORDS] > 0.5f && s->harm->valid) note = hm_snap(note, (unsigned)s->harm->cur.tones | s->harm->cur.tens);
+    play_step(s, note, vel, off);
+}
 
 static void arp_rebuild(one_t *s) {
     const float *p = s->val;
@@ -1888,11 +1900,11 @@ static void fire_step(one_t *s, int64_t k) {
         int v = tm_step(s->tm_reg, (int)roundf(p[P_GEN_TM_LEN]), &s->tm_pos, p[P_GEN_TM_CHANGE] * 0.01f, &s->grng);
         s->ph.m_tm = v * (1.0f / 255.0f);   /* (2026-10-30) the matrix's TURING VALUE */
         if (s->gk == GK_HELD)
-            play_step(s, tm_note(v, (int)p[P_GEN_SCALE], (int)p[P_GEN_RANGE] + 1, &s->keys), s->keys.vel[s->keys.n - 1], off);
+            gen_play(s, tm_note(v, (int)p[P_GEN_SCALE], (int)p[P_GEN_RANGE] + 1, &s->keys), s->keys.vel[s->keys.n - 1], off);
         else
-            play_step(s, gen_tm_note(s, v), s->gk == GK_LAUNCH ? s->gl_vel : GEN_FREE_VEL, off);
+            gen_play(s, gen_tm_note(s, v), s->gk == GK_LAUNCH ? s->gl_vel : GEN_FREE_VEL, off);
     } else if (s->gk != GK_HELD) {   /* (2026-10-30) FREE and KEY LAUNCH: EUCLID NOTES in the KEY and SCALE */
-        play_step(s, gen_eu_note(s), s->gk == GK_LAUNCH ? s->gl_vel : GEN_FREE_VEL, off);
+        gen_play(s, gen_eu_note(s), s->gk == GK_LAUNCH ? s->gl_vel : GEN_FREE_VEL, off);
     } else if (p[P_ARP_ON] > 0.5f) {
         int vel, note = arp_next(s, &vel);
         if (note >= 0) play_step(s, note, vel, off);
@@ -1986,11 +1998,13 @@ static void seq_unlatch(one_t *s) {   /* latch or the pedal let go: the keys no 
 #include "physgen_run.h"   /* THE BOUNCING BALLS AND PARTICLES: part of this file */
 #include "gens_b_run.h"    /* (2026-10-30) RAIN AND RIPPLES, MARKOV MELODY: part of this file */
 #include "gens_a_run.h"    /* (2026-10-30) LIFE, ORBITS, PENDULUMS: part of this file */
+#include "gens_c_run.h"    /* (2026-11-02) CHORDS, BASS: part of this file */
 
 static void key_on(one_t *s, int note, int vel) {
     ph_key_on(s, note, vel);   /* KEY RESTARTS, KEY LAUNCH, KEY EMIT (src/physgen_run.h) */
     gb_key_on(s, note, vel);   /* the Markov melody learns the keys played */
     ga_key_on(s, note);   /* RESTART ON KEY: the pendulums' swing */
+    gc_key_on(s, note);   /* (2026-11-02) KEY LAUNCH: the chords, the bass */
     if (sq_key_on(s, note, vel)) return;   /* NOTE TRIG / TRANSPOSE keys move the sequencer instead of sounding */
     switch (s->route) {
     case ROUTE_SEQ: seq_key_on(s, note, vel); return;
@@ -2057,6 +2071,7 @@ static void synth_song_pos(one_t *s, double ppq, double bpm, int playing, int fr
     s->ph.sp_at = s->now;   /* (the balls' SYNC: the sample this song position is at) */
     s->gb.sp_at = s->now;   /* (2026-10-30: the rain's and the Markov melody's) */
     s->ga.sp_at = s->now;   /* (and LIFE's, the orbits' and the pendulums') */
+    s->gc.sp_at = s->now;   /* (2026-11-02: the chords' and the bass's) */
     /* RECEIVE START/STOP (seq_host_ss, 2026-10-29): the host's start plays the sequence (ON, the Synth on, NOTE TRIG
      * off), its stop stops it; PLAY follows and the host is told */
     if (s->val[P_SEQ_HOST_SS] < 0.5f || (!started && !stopped)) return;
@@ -2255,6 +2270,9 @@ static int synth_get(one_t *s, const char *key, char *buf, int n) {
     if (!strcmp(key, "life_view")) return ga_view_text(s, GA_LIFE, buf, n);    /* (2026-10-30) LIFE, ORBITS, */
     if (!strcmp(key, "orbit_view")) return ga_view_text(s, GA_ORB, buf, n);    /* PENDULUMS: the window's views */
     if (!strcmp(key, "pend_view")) return ga_view_text(s, GA_PEND, buf, n);   /* the balls and particles (the window's view) */   /* the sequencer's readout (a "display": "string" param) */
+    if (!strcmp(key, "chd_view")) return gc_view_text(s, GC_CHD, buf, n);     /* (2026-11-02) the window's views */
+    if (!strcmp(key, "bass_view")) return gc_view_text(s, GC_BASS, buf, n);
+    if (!strcmp(key, "chd_log")) return gc_log_text(s, buf, n);   /* (for the tests, as gen_log) */
     if (!strcmp(key, "gen_log")) {   /* readouts for the tests, not params: the generated notes since the last read ... */
         int used = 0;
         buf[0] = 0;

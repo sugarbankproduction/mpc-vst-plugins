@@ -495,7 +495,7 @@ static void gb_due(one_t *s, int *n) {
     for (int i = 0; i < g->nq;) {
         int gone = !keys && (g->q[i].who ? g->mk_held : g->rn_held);
         if (g->q[i].at <= s->now || gone) {
-            if (!gone) play_step(s, g->q[i].note, g->q[i].vel, s->now + g->q[i].len);
+            if (!gone) gen_play(s, g->q[i].note, g->q[i].vel, s->now + g->q[i].len);
             g->q[i] = g->q[--g->nq];
         } else {
             if (g->q[i].at - s->now < d) d = g->q[i].at - s->now;

@@ -44,6 +44,7 @@ typedef struct inst {
     midi_in_t mi;            /* the MIDI input settings (the window's SETTINGS page: src/midi_in.h) */
     float solo_g[NSYN];      /* SOLO: each Synth's gain, gliding to 1 (heard) or 0 (another Synth soloed) */
     mo_buf_t mob;            /* (2026-10-30) MIDI OUT: the events of the current render (src/midi_out.h) */
+    hm_share_t harm;         /* (2026-11-02) the chord CHORDS plays now, shared by the Synths (src/gens_c.h) */
 } inst_t;
 
 /* the shared params: one copy, in Synth 1's values (presets/make_synths.py GLOBAL keeps the same list) */
@@ -731,6 +732,8 @@ static void *create(const char *data_dir) {
     for (int c = 0; c < NSYN; c++) in->solo_g[c] = 1.0f;
     for (int c = 0; c < NSYN; c++) in->syn[c]->syn1 = in->syn[0];   /* (2026-10-30) SHARE's LFOs: engine.c lfo_owner */
     for (int c = 0; c < NSYN; c++) in->syn[c]->mob = &in->mob;   /* (2026-10-30) MIDI OUT (off until enabled) */
+    in->harm.leader = -1;
+    for (int c = 0; c < NSYN; c++) in->syn[c]->harm = &in->harm;   /* (2026-11-02) */
     return in;
 }
 
@@ -843,11 +846,23 @@ static void render_to(void *inst, int16_t *out, float *fout, float *const *sout,
     if (sout)   /* each Synth's own pair: silent unless that Synth is on it */
         for (int c = 0; c < NSYN; c++)
             if (sout[c]) memset(sout[c], 0, sizeof(float) * 2 * frames);
+    /* (2026-11-02) the harmony's leader: the lowest Synth with CHORDS on; none: nothing to follow */
+    int gc_any = 0;
+    in->harm.leader = -1;
+    for (int j = nl - 1; j >= 0; j--) {
+        gc_any |= live[j]->gc.on;
+        if (live[j]->gc.on & GC_CHD) in->harm.leader = live[j]->idx;
+    }
+    if (in->harm.leader < 0) in->harm.valid = 0;
     int done = 0;
     while (done < frames) {
         if (in->heal) heal(in);
         int n = CR - s0->phase;
         if (n > frames - done) n = frames - done;
+        if (gc_any) {   /* (2026-11-02) every Synth's CHORDS, then BASS, then the rest: all hear this sample's chord */
+            for (int j = 0; j < nl; j++) if (live[j]->gc.on & GC_CHD) gc_chords_due(live[j], &n);
+            for (int j = 0; j < nl; j++) if (live[j]->gc.on & GC_BASS) gc_bass_due(live[j], &n);
+        }
         for (int j = 0; j < nl; j++) synth_due(live[j], &n);   /* steps and note ends at this sample, first */
         if (n > 128) n = 128;
         for (int j = 0; j < nl; j++) live[j]->ext = ext ? ext + done : NULL;

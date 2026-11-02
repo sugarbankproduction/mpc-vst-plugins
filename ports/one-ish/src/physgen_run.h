@@ -397,7 +397,7 @@ static void ph_due(one_t *s, int *n) {
     int gone = r->held && !(s->running && s->keys.n);   /* (2026-10-30) HELD KEYS let go: what waits for SYNC never plays */
     for (int i = 0; i < r->nq;) {
         if (r->q[i].at <= s->now || gone) {
-            if (!gone) play_step(s, r->q[i].note, r->q[i].vel, s->now + (len > 1 ? len : 1));
+            if (!gone) gen_play(s, r->q[i].note, r->q[i].vel, s->now + (len > 1 ? len : 1));
             r->q[i] = r->q[--r->nq];
         } else {
             if (r->q[i].at - s->now < d) d = r->q[i].at - s->now;
