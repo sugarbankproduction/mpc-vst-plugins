@@ -185,6 +185,7 @@ MFX_COMMON = [("mix", "Mix"), ("gain", "Gain")]
 PICS = {"ENV": 1, "LFO": 2, "FILTER": 3, "MIXER": 4, "PHYS": 5}   # PHYS: the box (2026-10-29)
 PICS.update({"RAIN": 6, "MARKOV": 7})   # (2026-10-30) the pond; the Markov melody's notes and choices
 PICS.update({"LIFE": 10, "ORBITS": 11, "PEND": 12})   # (2026-10-30) the grid, the orbits, the pendulums (moving)
+PICS.update({"CHORDS": 13, "BASS": 14})   # (2026-11-02) the chord now, the bass line
 PIC_ROWS = 3
 # the rate LEDs (rate_leds.c): what each flashes with
 RATE_KINDS = {"LFO": 0, "ARP": 1, "SEQ": 2, "TEMPO": 3}
@@ -451,7 +452,7 @@ def build(lay):
     own_key = lambda pre: [(pre + "_key", "Key"), (pre + "_scale", "Scale")]
     L.placed.update(k for k in ("key_root", "key_scale", "link_key", "link_scale") if k in L.index)
     # (2026-10-30) KEYS (FREE / HELD / LAUNCH), FOLLOW KEYS and GEN TEMPO: every generator page lists them (gen_more)
-    gen_more = [it for it in (("gen_follow_keys", "Follow Keys"), ("gen_tempo_src", "Gen Tempo"),
+    gen_more = [it for it in (("gen_follow_keys", "Follow Keys"), ("gen_follow_chords", "Follow Chords"), ("gen_tempo_src", "Gen Tempo"),
                               ("gen_bpm", "Own BPM", "gen_tempo_src", [1])) if it[0] in L.index]
     L.page("GEN", "GENERATIVE", "Euclidean rhythm and Turing machine melodies: on their own, or from the keys.", [
         ("gen_euclid_on", "Euclid On")] + [it for it in (("gen_keys", "Keys"),) if it[0] in L.index] + [
@@ -515,6 +516,17 @@ def build(lay):
             ("pend_spread", "Spread"), ("pend_damp", "Damping"), ("pend_trigger", "Plays At"), ("pend_restart", "Key Restarts"),
             ("pend_max", "Max Notes/s"), ("pend_dyn", "Dynamics"), ("pend_len", "Note Length"), ("pend_keys", "Keys"),
             ("pend_octave", "Low Octave")] + own_key("pend_own") + gen_more, pic=("PEND", "pend_"))
+    # (2026-11-02) CHORDS and BASS: a page each; a chord does not follow itself, and BASS has its own FOLLOW
+    more_c = [it for it in gen_more if it[0] != "gen_follow_chords"]
+    L.page("CHORDS", "CHORDS", "Plays chord progressions in the KEY. JAZZ: from plain triads to super jazz. WILD sets it on RANDOMISE.",
+           [("chd_on", "Chords On"), ("chd_jazz", "Jazz"), ("chd_rate", "Chord Length"), ("chd_voicing", "Voicing"),
+            ("chd_inv", "Inversions"), ("chd_octave", "Octave"), ("chd_vel", "Velocity"), ("chd_gate", "Gate"),
+            ("chd_strum", "Strum"), ("chd_seed", "Seed"), ("chd_keys", "Keys")] + own_key("chd_own") + more_c,
+           pic=("CHORDS", "chd_"))
+    L.page("BASS", "BASS", "A bass line, one note at a time, under the chords CHORDS plays in any Synth, or in the KEY.",
+           [("bass_on", "Bass On"), ("bass_follow", "Follow Chords"), ("bass_jazz", "Jazz"), ("bass_pattern", "Pattern"),
+            ("bass_rate", "Rate"), ("bass_octave", "Octave"), ("bass_vel", "Velocity"), ("bass_gate", "Gate"),
+            ("bass_seed", "Seed"), ("bass_keys", "Keys")] + own_key("bass_own") + more_c, pic=("BASS", "bass_"))
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)
@@ -794,7 +806,7 @@ HUB_KEYS = {"gen_euclid_on": "gen_keys", "gen_tm_on": "gen_keys", "phys_balls_on
 # (2026-10-30) the rows' names, short enough to fit beside their KEYS button
 HUB_SHORT = {"BOUNCING BALLS": "BALLS", "GAME OF LIFE": "LIFE", "GRAVITY ORBITS": "ORBITS", "RAIN AND RIPPLES": "RAIN",
              "MARKOV MELODY": "MARKOV"}
-HUB_LATER = ("LIFE", "ORBITS", "PEND", "RAIN", "MARKOV")
+HUB_LATER = ("LIFE", "ORBITS", "PEND", "RAIN", "MARKOV", "CHORDS", "BASS")
 # the LINKs (shared params): which settings each one keeps the same in all three Synths
 LINK_GROUPS = [("link_key", ("key_root",)), ("link_scale", ("key_scale",)),
                ("link_arp", ("arp_div", "arp_timing", "arp_sync", "arp_rate")),
@@ -846,7 +858,7 @@ def hub_and_links(lay, pages, page_ix, lines):
 # (2026-10-30) the generator tabs (desktop/nav.c): one per generator page in HUB order, a short name each (EUCLID and
 # TURING share the GEN page); a page added to HUB_LATER joins with the first five letters of its id
 HUB_TAB_NAMES = {"GEN": "EUC", "BALLS": "BALLS", "PARTICLES": "PART", "LIFE": "LIFE", "ORBITS": "ORB", "PEND": "PEND",
-                 "RAIN": "RAIN", "MARKOV": "MKV"}
+                 "RAIN": "RAIN", "MARKOV": "MKV", "CHORDS": "CHRD", "BASS": "BASS"}
 
 
 def hub_tabs(lay, page_ix, lines):
@@ -964,7 +976,7 @@ def emit(lay, zones, out):
                 "FILTERS", "OTHER", "BALLS", "PARTICLES", "PITCHMOD", "RINGMOD", "WAVEMOD", "FMMOD", "NOISE", "CUTMOD",
                 "OUTPUT", "BEND") + HUB_LATER:
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
-    for pid in ("LIFE", "ORBITS", "PEND"):   # (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS
+    for pid in ("LIFE", "ORBITS", "PEND", "CHORDS", "BASS"):   # (2026-10-30) GAME OF LIFE, GRAVITY ORBITS, PENDULUMS; (2026-11-02)
         lines.append("#define PG_%s %d" % (pid, page_ix.get(pid, -1)))
     # (2026-11-01) ANALOG AMOUNT: the ANALOG page's big bar (its param, -1 without it)
     lines.append("#define PI_ANALOG_AMT %d" % lay.index.get("analog_amt", -1))

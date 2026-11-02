@@ -50,6 +50,7 @@ AEffect *one_ish_wrapped_main(audioMasterCallback host);   /* wrapper/vst2_wrap.
 /* ---- the panel, scaled to fit the screen (layout.h is in base units) ---- */
 /* what the centre screen shows: the mod matrix, the list of MORE pages, the randomiser, or one MORE page (0..NPAGES-1) */
 enum { SCR_MATRIX = -1, SCR_INDEX = -2, SCR_RANDOM = -3 };
+enum { HUB_ROWS = 7 };   /* (2026-11-02, was 6) the hub page's generator rows per column, in the height of six screen rows */
 enum { ROWS = 8, SLOTS = 2 * ROWS, KEYS_WHITE = 36, KEY_BASE = 36 };   /* 61 keys, C2..C7 at octave 0 */
 enum { Z_KEYS = 100000, Z_PITCH, Z_MODW, Z_PAD, Z_OCT_DOWN, Z_OCT_UP, Z_PREV, Z_NEXT, Z_NAME, Z_ENCODER,
        Z_TAB_MATRIX, Z_TAB_MORE, Z_TAB_ANALOG, Z_SUB_PREV, Z_SUB_NEXT, Z_RIBBON, Z_TAB_RANDOM,
@@ -546,7 +547,8 @@ RECT hub_link_rect(int row);                   /* the hub page's KEY (0) / SCALE
 RECT hub_value_rect(int row);                  /* ... and its value */
 RECT hub_follow_rect(void);                     /* (2026-10-30) the hub page's FOLLOW TEMPO button */
 RECT hub_keys_rect(int k);                      /* (2026-10-30) generator k's KEYS button on the hub page */
-RECT hub_gen_rect(int part);                    /* ... GEN TEMPO (0), its < (1), BPM (2), > (3); FOLLOW KEYS (4) */
+RECT hub_gen_rect(int part);                    /* ... GEN TEMPO (0), its < (1), BPM (2), > (3); FOLLOW KEYS (4), FOLLOW CHORDS (5) */
+RECT hub_entry_rect(int k);                     /* (2026-11-02) the hub's row k, generators first */
 void hub_follow_text(ed_t *e, char *out, int n);   /* ... and the text beside it (how much faster) */
 int hub_hit(ed_t *e, POINT pt);                /* the hub page's zones (and KEY, SCALE, their LINKs: params) */
 int hub_hit_console(POINT pt);                 /* the console's third row */

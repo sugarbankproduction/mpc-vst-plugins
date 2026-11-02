@@ -21,8 +21,8 @@
 #include "editor.h"
 #include "library.h"
 
-enum { HUB_ROWS = 6, GENS_ARM_MS = 4000 };
-_Static_assert(NHUB <= HUB_ROWS + 3, "the hub page's RANDOMISE row sits under GEN TEMPO and FOLLOW KEYS (hub.c)");
+enum { GENS_ARM_MS = 4000 };
+_Static_assert(NHUB <= 2 * HUB_ROWS - 3, "the hub page's RANDOMISE row sits under GEN TEMPO and FOLLOW KEYS (hub.c)");
 
 static int key_of(const char *k) {
     for (int i = 0; i < NPARAMS; i++)
@@ -34,7 +34,7 @@ static int key_of(const char *k) {
 int gen_param(int i) {
     if (i < 0 || i >= NPARAMS || synth_of(i) || shared_param(i)) return 0;
     const char *k = PARAMS[i].key;
-    static const char *const PRE[] = {"gen_", "phys_", "rain_", "mkv_", "life_", "orb_", "pend_"};
+    static const char *const PRE[] = {"gen_", "phys_", "rain_", "mkv_", "life_", "orb_", "pend_", "chd_", "bass_"};
     for (unsigned p = 0; p < sizeof PRE / sizeof PRE[0]; p++)
         if (!strncmp(k, PRE[p], strlen(PRE[p]))) return 1;
     return 0;
@@ -43,12 +43,7 @@ int gen_param(int i) {
 /* ---- where they sit (2026-10-30, with the generators' GEN TEMPO and FOLLOW KEYS rows): RANDOMISE | ALL and
  * MUTATE | ALL the right column's last row (under FOLLOW KEYS | FOLLOW TEMPO), RESET | ALL beside ALL OFF ---- */
 static RECT row_rect(int n) {   /* n: 0 the RANDOMISE / MUTATE row, 1 the bottom row's left half (ALL OFF, RESET) */
-    RECT nm, c;
-    if (n == 0) {
-        slot_rects(ROWS + HUB_ROWS - 1, &nm, &c);
-        RECT r = {nm.left, nm.top + sc(2), c.right, nm.bottom - sc(2)};
-        return r;
-    }
+    if (n == 0) return hub_entry_rect(2 * HUB_ROWS - 1);
     int half = (rw(&L.row[0]) - sc(8)) / 2;
     RECT r = {L.row[0].left, L.row[ROWS - 1].top + sc(2), L.row[0].left + half, L.row[ROWS - 1].bottom - sc(2)};
     return r;

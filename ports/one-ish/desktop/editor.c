@@ -736,7 +736,7 @@ static void keylock_keep(ed_t *e, const float *cur, float *out) {
 /* a new sound for the focused Synth: RANDOMISE (0) or MUTATE (1) of cur; returns the archetype (RANDOMISE). SEQUENCER
  * lit: its notes (the hook), then its modulation lanes go to the engine here, the settings with the rest of out. */
 static int rnd_make(ed_t *e, const float *cur, float *out, int mutate) {
-    rnd_opts_t o = {e->rnd_wild, e->rnd_also, 0, mutate ? RV_BOTH : e->rnd_voicing};   /* (MUTATE keeps the voices) */
+    rnd_opts_t o = {e->rnd_wild, e->rnd_also, 0, mutate ? RV_BOTH : e->rnd_voicing, 0.0f};   /* (MUTATE keeps the voices) */
     int seq = e->rnd_also >> RS_SEQ & 1u;
     if (seq) o.seq_notes = 1;   /* (the sequence always has notes after: kept, or new ones from the generator below) */
     int a = mutate ? (rnd_mutate_x(cur, out, e->rnd_amount, e->rnd_locks, &e->rnd_seed, &o), 0)
@@ -838,7 +838,7 @@ void ed_rnd_gens(ed_t *e, int mutate, int all) {
         e->focus = c;
         e->focus_mask = 1u << c;   /* (each Synth on its own) */
         rnd_snapshot(e, cur);
-        rnd_opts_t o = {0.0f, 1u << RS_GEN, 0, RV_BOTH};
+        rnd_opts_t o = {0.0f, 1u << RS_GEN, 0, RV_BOTH, e->rnd_wild};   /* (2026-11-02: WILD sets JAZZ) */
         const unsigned sound = (1u << RS_COUNT) - 1u;   /* every sound section locked */
         /* (2026-10-31) MUTATE nudges each setting by chance, so now and then it nudged none and the click did nothing:
          * try again (a few times) until something moves */

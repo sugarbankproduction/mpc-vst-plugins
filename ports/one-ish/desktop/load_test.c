@@ -2485,10 +2485,12 @@ static void wheel_ctl(HWND child, float s, const char *key, int clicks) {   /* o
     for (int c = 0; c < NCTLS; c++)
         if (CTLS[c].param == i) wheel_at(child, s, CTLS[c].x + CTLS[c].w / 2.0f, CTLS[c].y + CTLS[c].h / 2.0f, clicks);
 }
+#define HUB_RW 7                /* (2026-11-02) hub.c: 7 rows a column in the height of 6 screen rows */
+#define HUB_RH (22.0f * 6 / HUB_RW)
 static void hub_xy(int k, int part, float *x, float *y) {   /* generator k's row on the hub page: ON (0) or its name */
     float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
-    *x = x0 + (k / 6) * (half + 8.0f) + (part ? 70.0f : 16.0f);
-    *y = ZONE_SCREEN[1] + 80.0f + 22.0f * (k % 6) + 11.0f;
+    *x = x0 + (k / HUB_RW) * (half + 8.0f) + (part ? 70.0f : 16.0f);
+    *y = ZONE_SCREEN[1] + 80.0f + HUB_RH * (k % HUB_RW) + HUB_RH / 2;
 }
 static void hub_key_xy(int row, int link, float *x, float *y) {   /* the hub's KEY (0) / SCALE (1): value or LINK */
     float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2;
@@ -3416,8 +3418,8 @@ static void follow_tempo_test(AEffect *fx, HWND child, float s, const char *bmp,
     fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
     click_zone(child, s, ZONE_TAB_GEN);
     float x, y, f0 = pv(fx, "gen_follow_tempo");
-    hub_xy(2 * 6 - 2, 0, &x, &y);   /* (row 10, the right half: hub.c hub_follow_rect) */
-    x += (ZONE_SCREEN[2] - 16.0f - 8.0f) / 4 + 3.0f;
+    hub_xy(2 * HUB_RW - 2, 0, &x, &y);   /* (the FOLLOW row's last button: hub.c hub_follow_rect) */
+    x += 148.0f;
     hover_at(child, s, x, y);
     int helped = strstr(help_fresh(fx), "Follow tempo") != NULL;
     click(child, s, x, y);
@@ -3497,7 +3499,7 @@ static void analog_test(AEffect *fx, HWND child, float s, const char *bmp, int w
  * MUTATE / RESET (each with ALL), the RANDOM page's BOTH / MONO / POLY and the pad wired by RANDOMISE ---- */
 enum { HT_GEN_ARMED = 10, HT_RND_VOICING };   /* (after HT_HELP, as editor.h) */
 static int lt_gen_key(const char *k) {   /* hub_gens.c gen_param(): a generator's own setting (Synth 1's key) */
-    static const char *const PRE[] = {"gen_", "phys_", "rain_", "mkv_", "life_", "orb_", "pend_"};
+    static const char *const PRE[] = {"gen_", "phys_", "rain_", "mkv_", "life_", "orb_", "pend_", "chd_", "bass_"};
     if (!strcmp(k, "gen_follow_tempo")) return 0;
     for (unsigned p = 0; p < sizeof PRE / sizeof PRE[0]; p++)
         if (!strncmp(k, PRE[p], strlen(PRE[p]))) return 1;
@@ -3570,8 +3572,8 @@ static void defaults_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     gens_count(a, b, gen, other);
     int on = 0;
     static const char *const GON[] = {"gen_euclid_on", "gen_tm_on", "phys_balls_on", "phys_parts_on", "life_on", "orb_on",
-                                      "pend_on", "rain_on", "mkv_on"};
-    for (int g = 0; g < 9; g++) on += getkey(fx, GON[g]) > 0.5f;
+                                      "pend_on", "rain_on", "mkv_on", "chd_on", "bass_on"};
+    for (int g = 0; g < 11; g++) on += getkey(fx, GON[g]) > 0.5f;
     if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_randomise"); }
     snprintf(what, sizeof what, "GENERATIVE page RANDOMISE: Synth 1's generators change (%d settings), Synths 2 and 3's not "
              "(%d, %d), nothing else (%d %d %d), %d generator(s) on, one undo step (%d)", gen[0], gen[1], gen[2], other[0],
@@ -4058,9 +4060,9 @@ static void seq_output_ui_test(AEffect *fx, HWND child, float s, const char *bmp
 /* (2026-10-30) the GENERATIVE page: each generator row's KEYS button (a plain click opens its list), GEN TEMPO (GLOBAL /
  * OWN, < > on its BPM) and FOLLOW KEYS, all plain clicks on the Synth in focus's params */
 static void hub_part_xy(int slot, float from_left, float *x, float *y) {   /* from_left < 0: from the row's right end */
-    float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2, left = x0 + (slot / 6) * (half + 8.0f);
+    float x0 = ZONE_SCREEN[0] + 8.0f, half = (ZONE_SCREEN[2] - 16.0f - 8.0f) / 2, left = x0 + (slot / HUB_RW) * (half + 8.0f);
     *x = from_left >= 0 ? left + from_left : left + half + from_left;
-    *y = ZONE_SCREEN[1] + 80.0f + 22.0f * (slot % 6) + 11.0f;
+    *y = ZONE_SCREEN[1] + 80.0f + HUB_RH * (slot % HUB_RW) + HUB_RH / 2;
 }
 static void gen_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     char what[400];
@@ -4091,10 +4093,10 @@ static void gen_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     /* GEN TEMPO: GLOBAL -> OWN, > > < (one BPM a click), back to GLOBAL; FOLLOW KEYS off and on */
     float gx, gy, ux, uy, dx, dy, fx_, fy;
     click_zone(child, s, ZONE_TAB_GEN);
-    hub_part_xy(9, 30.0f, &gx, &gy);
-    hub_part_xy(9, -7.0f, &ux, &uy);
-    hub_part_xy(9, 77.0f, &dx, &dy);
-    hub_part_xy(10, 50.0f, &fx_, &fy);
+    hub_part_xy(2 * HUB_RW - 3, 30.0f, &gx, &gy);
+    hub_part_xy(2 * HUB_RW - 3, -7.0f, &ux, &uy);
+    hub_part_xy(2 * HUB_RW - 3, 77.0f, &dx, &dy);
+    hub_part_xy(2 * HUB_RW - 2, 50.0f, &fx_, &fy);
     float s0 = getkey(fx, "gen_tempo_src"), b0 = getkey(fx, "gen_bpm");
     click(child, s, gx, gy);
     float s1 = getkey(fx, "gen_tempo_src");
@@ -4120,6 +4122,80 @@ static void gen_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
     hover_at(child, s, 0, 0);
 }
 
+/* (2026-11-02) CHORDS and BASS: each page shows its params and its picture, which moves as they play; the hub lists both,
+ * a plain click on a row's ON and name works; FOLLOW CHORDS is a plain button on the hub (a param of the Synth in focus) */
+static void gens_c_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
+    char what[240];
+    static const struct { int page, pic; const char *on, *param, *suffix, *fast, *rate; } P[] = {
+        {PG_CHORDS, PIC_CHORDS, "chd_on", "chd_jazz", "_more_chords", "chd_rate", "1/4"},
+        {PG_BASS, PIC_BASS, "bass_on", "bass_pattern", "_more_bass", "bass_rate", "1/8"}};
+    int x0 = (int)((ZONE_SCREEN[0] + 8) * s), x1 = (int)((ZONE_SCREEN[0] + ZONE_SCREEN[2] - 8) * s);
+    int y0 = (int)((ZONE_SCREEN[1] + 80 + 22 * (PT_ROWS - PIC_ROWS)) * s), y1 = (int)((ZONE_SCREEN[1] + 80 + 22 * PT_ROWS) * s);
+    fx->dispatcher(fx, 50, TEST_FOCUS, 1, NULL, 0);
+    for (int k = 0; k < 2; k++) {
+        int ok = P[k].page >= 0 && PAGES[P[k].page].pic == P[k].pic;
+        snprintf(what, sizeof what, "%s: a page with its picture and its params", P[k].suffix + 6);
+        check(ok && page_has(fx, P[k].page, P[k].on) && page_has(fx, P[k].page, P[k].param), what);
+        if (!ok) continue;
+        set_option(fx, P[k].fast, P[k].rate);
+        setkey(fx, P[k].on, 1);
+        click_zone(child, s, ZONE_TAB_MATRIX);
+        open_page(child, s, P[k].page);
+        play(fx, 30, 512);
+        int st = phys_grab(child, w, h, phys_px[0]), moved = 0;
+        play(fx, 60, 512);
+        phys_grab(child, w, h, phys_px[1]);
+        for (int y = y0; st && y < y1 && y < h; y++)
+            for (int x = x0; x < x1 && x < w; x++) moved += memcmp(&phys_px[0][y * st + 3 * x], &phys_px[1][y * st + 3 * x], 3) != 0;
+        snprintf(what, sizeof what, "the %s page's picture moves as it plays (%d pixels changed 0.7 s later)", P[k].suffix + 6, moved);
+        check(moved > 20, what);
+        if (bmp) shot(child, w, h, bmp, P[k].suffix);
+        setkey(fx, P[k].on, 0);
+        set_option(fx, P[k].fast, k ? "1/4" : "1 Bar");
+    }
+    /* the hub's rows: found by HUB[], a plain click on ON and on the name */
+    int found = 0;
+    for (int r = 0; r < NHUB; r++) {
+        const char *key = PARAMS[HUB[r].on].key;
+        if (strcmp(key, "chd_on") && strcmp(key, "bass_on")) continue;
+        float x, y;
+        click_zone(child, s, ZONE_TAB_GEN);
+        hub_xy(r, 0, &x, &y);
+        click(child, s, x, y);
+        int lit = (int)ht(fx, HT_GEN_LIT, 0);
+        float on1 = getkey(fx, key);
+        click(child, s, x, y);
+        float on0 = getkey(fx, key);
+        hub_xy(r, 1, &x, &y);
+        click(child, s, x, y);
+        int page = screen_now(fx) == HUB[r].page;
+        snprintf(what, sizeof what, "GENERATIVE: %s's row: a click on (%.0f), GEN ON lit (%d), a click off (%.0f), its name opens its page (%d)",
+                 key, on1, lit, on0, page);
+        check(on1 > 0.5f && lit == 1 && on0 < 0.5f && page, what);
+        found++;
+    }
+    check(found == 2, "GENERATIVE: CHORDS and BASS each have a row");
+    /* FOLLOW CHORDS: the FOLLOW row's middle button */
+    {
+        float x, y;
+        click_zone(child, s, ZONE_TAB_GEN);
+        hub_xy(2 * HUB_RW - 2, 0, &x, &y);
+        x += 97.0f;
+        float a = getkey(fx, "gen_follow_chords");
+        hover_at(child, s, x, y);
+        int helped = strstr(help_fresh(fx), "Follow chords") != NULL;
+        click(child, s, x, y);
+        float b = getkey(fx, "gen_follow_chords"), b2 = getkey(fx, "s2_gen_follow_chords");
+        if (bmp) { InvalidateRect(child, NULL, FALSE); shot(child, w, h, bmp, "_gen_hub_chords"); }
+        click(child, s, x, y);
+        float c = getkey(fx, "gen_follow_chords");
+        snprintf(what, sizeof what, "FOLLOW CHORDS on the GENERATIVE page: off to start (%.0f), a click on (%.0f), not Synth 2's (%.0f), off (%.0f), "
+                 "its help (%d), on the generators' own pages (%d)", a, b, b2, c, helped, page_has(fx, PG_RAIN, "gen_follow_chords"));
+        check(a < 0.5f && b > 0.5f && b2 < 0.5f && c < 0.5f && helped && page_has(fx, PG_RAIN, "gen_follow_chords"), what);
+    }
+    hover_at(child, s, 0, 0);
+}
+
 /* (2026-11-02) each generator's page: its own Key and Scale rows in place of the main ones, Follow to start; a plain click on
  * the row opens its list, an item sets that generator's own, not the main ones, not Synth 2's */
 static void own_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
@@ -4129,7 +4205,8 @@ static void own_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
         {PG_GEN, "gen_own_key", "gen_own_scale"}, {PG_BALLS, "phys_ball_own_key", "phys_ball_own_scale"},
         {PG_PARTICLES, "phys_part_own_key", "phys_part_own_scale"}, {PG_RAIN, "rain_own_key", "rain_own_scale"},
         {PG_MARKOV, "mkv_own_key", "mkv_own_scale"}, {PG_LIFE, "life_own_key", "life_own_scale"},
-        {PG_ORBITS, "orb_own_key", "orb_own_scale"}, {PG_PEND, "pend_own_key", "pend_own_scale"}};
+        {PG_ORBITS, "orb_own_key", "orb_own_scale"}, {PG_PEND, "pend_own_key", "pend_own_scale"},
+        {PG_CHORDS, "chd_own_key", "chd_own_scale"}, {PG_BASS, "bass_own_key", "bass_own_scale"}};
     for (unsigned g = 0; g < sizeof P / sizeof P[0]; g++) {
         int on = page_has(fx, P[g].page, P[g].key) && page_has(fx, P[g].page, P[g].scale),
             main_gone = !page_has(fx, P[g].page, "key_root") && !page_has(fx, P[g].page, "key_scale");
@@ -4175,6 +4252,7 @@ static void own_keys_ui_test(AEffect *fx, HWND child, float s, const char *bmp, 
 static void plain_test(AEffect *fx, HWND child, float s, const char *bmp, int w, int h) {
     gen_keys_ui_test(fx, child, s, bmp, w, h);   /* (2026-10-30) */
     own_keys_ui_test(fx, child, s, bmp, w, h);   /* (2026-11-02) */
+    gens_c_test(fx, child, s, bmp, w, h);   /* (2026-11-02) CHORDS, BASS */
     zone_help_test(fx, child, s);
     seq_output_ui_test(fx, child, s, bmp, w, h);
     oct_panic_test(fx, child, s);
@@ -4289,7 +4367,7 @@ static void nav_tests(AEffect *fx, HWND child, float s, const char *bmp, int w, 
 
     /* the overview: every generator on in Synth 1, drawn small; they move; a click opens a page */
     static const char *const ON[] = {"gen_euclid_on", "gen_tm_on", "phys_balls_on", "phys_parts_on", "life_on", "orb_on",
-                                     "pend_on", "rain_on", "mkv_on"};
+                                     "pend_on", "rain_on", "mkv_on", "chd_on", "bass_on"};
     int non = 0;
     for (unsigned k = 0; k < sizeof ON / sizeof ON[0]; k++)
         if (rnd_key(ON[k]) < NPARAMS) { setkey(fx, ON[k], 1); non++; }

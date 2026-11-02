@@ -627,6 +627,70 @@ static void pic_pend(HDC dc, ed_t *e, RECT a) {
     pic_lines(dc, pic_note_rect(a, x0 + w), t1, t2, t3);
 }
 
+/* ---- (2026-11-02) CHORDS: the notes of the chord now on a row of keys (3 octaves from its lowest C), its name and those
+ * before it. BASS: its last notes, the newest on the right ---- */
+static void pic_chords(HDC dc, ed_t *e, RECT a) {
+    char v[256] = "", t1[96] = "", t2[96], t3[96], nm[5][16];
+    int on = 0, nn = 0, used = 0, notes[8];
+    memset(nm, 0, sizeof nm);
+    if (e->hr && hr_peek_named(e->hr, e->focus, "chd_view", v, sizeof v) > 0) sscanf(v, "%d %d;%n", &on, &nn, &used);
+    const char *p = v + used;
+    for (int k = 0; k < 5; k++) {
+        const char *q = strchr(p, ';');
+        if (!q) break;
+        snprintf(nm[k], sizeof nm[k], "%.*s", (int)(q - p) < 15 ? (int)(q - p) : 15, p);
+        p = q + 1;
+    }
+    int got = 0, u;
+    while (got < nn && got < 8 && sscanf(p, "%d,%n", &notes[got], &u) == 1) { p += u; got++; }
+    float hgt = (float)(a.bottom - a.top) - sc(6.0f), w = 2.0f * hgt, x0 = a.left + sc(8.0f), y0 = a.top + sc(3.0f);
+    gfx_rect(x0, y0, w, hgt, C_DIM);
+    int low = 127;
+    for (int i = 0; i < got; i++) if (notes[i] < low) low = notes[i];
+    int c0 = got ? low - low % 12 : 48;
+    float cw = w / 36.0f;
+    static const unsigned char BLACK[12] = {0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0};
+    for (int k = 0; k < 36; k++) {
+        int lit = 0;
+        for (int i = 0; i < got; i++) lit |= notes[i] == c0 + k;
+        float top = y0 + (BLACK[k % 12] ? 0.0f : hgt * 0.45f), h = BLACK[k % 12] ? hgt * 0.55f : hgt * 0.55f;
+        gfx_rect(x0 + k * cw + 0.5f, top, cw - 1.0f, h, lit ? C_TRACE : C_GRID);
+    }
+    gfx_frame(x0, y0, w, hgt, 1.0f, C_RULE);
+    if (!on) snprintf(t1, sizeof t1, "Off: switch CHORDS on");
+    else snprintf(t1, sizeof t1, "%s  <  %s  %s  %s", nm[0], nm[1], nm[2], nm[3]);
+    snprintf(t2, sizeof t2, "Jazz %.0f%%, each %s", val(e, ix("chd_", "jazz"), 0), opt_name(e, ix("chd_", "rate")));
+    pic_key_line(e, "chd_", t3, sizeof t3);
+    pic_lines(dc, pic_note_rect(a, x0 + w), t1, t2, t3);
+}
+static void pic_bass(HDC dc, ed_t *e, RECT a) {
+    char v[128] = "", t1[96], t2[96], t3[96];
+    int on = 0, nb = 0, used = 0, h[16];
+    if (e->hr && hr_peek_named(e->hr, e->focus, "bass_view", v, sizeof v) > 0) sscanf(v, "%d %d;%n", &on, &nb, &used);
+    const char *p = v + used;
+    int got = 0, u, lo = 127, hi = 0;
+    while (got < nb && got < 16 && sscanf(p, "%d,%n", &h[got], &u) == 1) {
+        p += u;
+        if (h[got] < lo) lo = h[got];
+        if (h[got] > hi) hi = h[got];
+        got++;
+    }
+    float hgt = (float)(a.bottom - a.top) - sc(6.0f), w = 2.0f * hgt, x0 = a.left + sc(8.0f), y0 = a.top + sc(3.0f);
+    gfx_rect(x0, y0, w, hgt, C_DIM);
+    float cw = w / 16.0f, span = hi - lo + 1 < 12 ? 12.0f : (float)(hi - lo + 1);
+    for (int i = 0; i < got; i++) {
+        float y = y0 + hgt - (h[i] - lo + 1) * hgt / span, x = x0 + w - (i + 1) * cw;
+        if (i == 0) gfx_rect(x, y - 1.0f, cw - 1.0f, 3.0f * L.s + 2.0f, C_GLOW);
+        gfx_rect(x + 0.5f, y, cw - 1.0f, 3.0f * L.s, i == 0 ? C_TRACE : C_LIT);
+    }
+    gfx_frame(x0, y0, w, hgt, 1.0f, C_RULE);
+    if (!on) snprintf(t1, sizeof t1, "Off: switch BASS on");
+    else snprintf(t1, sizeof t1, "%s, Jazz %.0f%%", opt_name(e, ix("bass_", "pattern")), val(e, ix("bass_", "jazz"), 0));
+    snprintf(t2, sizeof t2, "%s", opt(e, ix("bass_", "follow")) ? "On the chords, when CHORDS plays" : "In its KEY and SCALE");
+    pic_key_line(e, "bass_", t3, sizeof t3);
+    pic_lines(dc, pic_note_rect(a, x0 + w), t1, t2, t3);
+}
+
 /* the rate timer (every RATE_TIMER_MS): the balls' box (and LIFE's, the orbits' and the pendulums' pictures), every
  * other tick (about 33 a second), only its own area */
 void pics_tick(ed_t *e) {
@@ -634,7 +698,7 @@ void pics_tick(ed_t *e) {
     if (!e->wnd || e->screen < 0 || e->screen >= NPAGES || ++n % 2) return;
     int pic = PAGES[e->screen].pic;
     if (pic != PIC_PHYS && pic != PIC_RAIN && pic != PIC_MARKOV && pic != PIC_LIFE && pic != PIC_ORBITS &&
-        pic != PIC_PEND) return;
+        pic != PIC_PEND && pic != PIC_CHORDS && pic != PIC_BASS) return;
     RECT a = {L.row[0].left, L.row[ROWS - PIC_ROWS].top, L.row[0].right, L.row[ROWS - 1].bottom};
     InvalidateRect(e->wnd, &a, FALSE);
 }
@@ -656,6 +720,8 @@ void pics_draw(HDC dc, ed_t *e, int page, RECT a) {
     case PIC_LIFE: pic_life(dc, e, a); break;       /* (2026-10-30) */
     case PIC_ORBITS: pic_orbits(dc, e, a); break;
     case PIC_PEND: pic_pend(dc, e, a); break;
+    case PIC_CHORDS: pic_chords(dc, e, a); break;   /* (2026-11-02) */
+    case PIC_BASS: pic_bass(dc, e, a); break;
     }
     gfx_end();
     skin_bind(NULL);
@@ -668,7 +734,7 @@ int pics_tile(HDC dc, ed_t *e, int page, int part, RECT a) {
     float ratio = 1.0f, extra = 0.0f;   /* the picture's box: width = ratio x height + extra */
     switch (pic) {
     case PIC_PHYS: case PIC_RAIN: case PIC_ORBITS: break;
-    case PIC_LIFE: case PIC_PEND: ratio = 2.0f; break;
+    case PIC_LIFE: case PIC_PEND: case PIC_CHORDS: case PIC_BASS: ratio = 2.0f; break;
     case PIC_MARKOV: ratio = 2.6f; extra = (float)sc(8); break;   /* (the roll, then the choice's bars) */
     default: return 0;
     }
@@ -689,6 +755,8 @@ int pics_tile(HDC dc, ed_t *e, int page, int part, RECT a) {
     case PIC_LIFE: pic_life(dc, e, b); break;
     case PIC_ORBITS: pic_orbits(dc, e, b); break;
     case PIC_PEND: pic_pend(dc, e, b); break;
+    case PIC_CHORDS: pic_chords(dc, e, b); break;
+    case PIC_BASS: pic_bass(dc, e, b); break;
     }
     tile_mode = tile_part = 0;
     gfx_end();

@@ -46,7 +46,6 @@
 #include "library.h"
 #include "hostrate.h"
 
-enum { HUB_ROWS = 6 };   /* generator rows per column (two columns) */
 _Static_assert(NHUB < 2 * HUB_ROWS, "FOLLOW TEMPO takes the hub page's last generator row");
 /* (2026-10-30) GEN TEMPO and FOLLOW KEYS take the two rows before FOLLOW TEMPO's */
 enum { HUB_GTEMPO = 2 * HUB_ROWS - 3, HUB_FKEYS = 2 * HUB_ROWS - 2 };
@@ -121,12 +120,14 @@ int panel_source(ed_t *e, int i) {
 }
 
 /* ---- the page's and the console's places ---- */
-static RECT hub_entry(int k) {   /* generator k's row */
+static RECT hub_entry(int k) {   /* generator k's row (2026-11-02: HUB_ROWS share the height of six screen rows) */
     RECT nm, c;
-    slot_rects(k % HUB_ROWS + (k / HUB_ROWS) * ROWS, &nm, &c);
-    RECT r = {nm.left, nm.top + sc(2), c.right, nm.bottom - sc(2)};
+    slot_rects((k / HUB_ROWS) * ROWS, &nm, &c);
+    int top = L.row[0].top, h = L.row[5].bottom - top, row = k % HUB_ROWS;
+    RECT r = {nm.left, top + h * row / HUB_ROWS + sc(1), c.right, top + h * (row + 1) / HUB_ROWS - sc(1)};
     return r;
 }
+RECT hub_entry_rect(int k) { return hub_entry(k); }
 static RECT half_row(int row, int right) {
     int half = (rw(&L.row[0]) - sc(8)) / 2, x = L.row[0].left + (right ? half + sc(8) : 0);
     RECT r = {x, L.row[row].top + sc(2), x + half, L.row[row].bottom - sc(2)};
@@ -151,9 +152,15 @@ static RECT row_half(RECT r, int right) {   /* half of a row, 6 apart */
     else r.right = r.left + w;
     return r;
 }
-RECT hub_follow_rect(void) {   /* (2026-10-30) FOLLOW TEMPO's button: FOLLOW KEYS' row, its right half */
-    return row_half(hub_entry(HUB_FKEYS), 1);
+/* (2026-11-02) the FOLLOW row: the word, then KEYS, CHORDS, TEMPO */
+static RECT follow_part(int k) {
+    RECT r = hub_entry(HUB_FKEYS);
+    int x = r.left + sc(44), w = (r.right - x - 2 * sc(3)) / 3;
+    r.left = x + k * (w + sc(3));
+    r.right = r.left + w;
+    return r;
 }
+RECT hub_follow_rect(void) { return follow_part(2); }   /* (2026-10-30) FOLLOW TEMPO's button */
 /* (2026-10-30) generator k's KEYS button (FREE / HELD / LAUNCH / EMIT): its row's right end */
 RECT hub_keys_rect(int k) {
     RECT r = hub_entry(k);
@@ -162,8 +169,8 @@ RECT hub_keys_rect(int k) {
 }
 /* (2026-10-30) GEN TEMPO's row: GLOBAL / OWN (part 0), its BPM's < (1), the readout (2), > (3); FOLLOW KEYS (4) */
 RECT hub_gen_rect(int part) {
-    RECT r = hub_entry(part == 4 ? HUB_FKEYS : HUB_GTEMPO);
-    if (part == 4) return row_half(r, 0);   /* (FOLLOW TEMPO the other half) */
+    if (part == 4 || part == 5) return follow_part(part - 4);   /* FOLLOW KEYS, FOLLOW CHORDS */
+    RECT r = hub_entry(HUB_GTEMPO);
     if (part == 0) { r.right = r.left + sc(66); return r; }
     int x = r.left + sc(70), w = r.right - x;
     if (part == 1) r.right = x + sc(14);
@@ -216,8 +223,8 @@ int hub_hit(ed_t *e, POINT pt) {   /* the hub page (the screen shows it) */
         /* (2026-10-30) its KEYS: the param itself (a plain click opens its list; two options: a toggle) */
         if (HUB[k].keys >= 0 && PtInRect(&ks, pt)) { e->hit_screen = 1; e->hit_rect = ks; return HUB[k].keys; }
     }
-    static const char *const GP[5] = {"gen_tempo_src", NULL, "gen_bpm", NULL, "gen_follow_keys"};   /* (2026-10-30) */
-    for (int part = 0; part < 5; part++) {   /* GEN TEMPO, its BPM (a drag, the wheel, or < >), FOLLOW KEYS */
+    static const char *const GP[6] = {"gen_tempo_src", NULL, "gen_bpm", NULL, "gen_follow_keys", "gen_follow_chords"};   /* (2026-10-30) */
+    for (int part = 0; part < 6; part++) {   /* GEN TEMPO, its BPM (a drag, the wheel, or < >), FOLLOW KEYS */
         RECT r = hub_gen_rect(part);
         if (!PtInRect(&r, pt)) continue;
         if (part == 1 || part == 3) return key_ix("gen_bpm") >= 0 ? (part == 1 ? Z_HUB_BPM_DOWN : Z_HUB_BPM_UP) : -1;

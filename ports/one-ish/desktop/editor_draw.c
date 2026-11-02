@@ -293,6 +293,33 @@ static const char *help_for(int i) {
         {"pend_octave", "Low octave: where the first pendulum's note is (with Free keys)."},
         {"pend_max", "Max notes/s: at most this many pendulum notes a second (the rest are not played)."},
         {"pend_dyn", "Dynamics: how much a big, fast swing plays louder than a small one. 0: every note at the same velocity."},
+        /* (2026-11-02) CHORDS, BASS, FOLLOW CHORDS */
+        {"gen_follow_chords", "Follow chords: while CHORDS plays in any Synth, this Synth's generators (Euclid, Turing, balls, particles, rain, Markov, Life, orbits, pendulums) snap their notes to the nearest note of the chord, or a tension that suits it. Off, or no CHORDS on: their notes as they are."},
+        {"chd_on", "Chords: plays chord progressions in its KEY and SCALE. Other generators can follow them (FOLLOW CHORDS), BASS does by itself. With CHORDS in two Synths, the lower Synth leads: the other plays its chords in its own voicing."},
+        {"chd_jazz", "Jazz: 0 plain triads and common progressions; rising: 7ths, 9ths, 11ths, 13ths, secondary dominants, ii-V-I; at the top altered dominants, tritone substitutions, borrowed and chromatic passing chords. RANDOMISE and MUTATE set it from WILD, with GENERATIVE lit."},
+        {"chd_rate", "Chord length: how long each chord lasts, on the tempo (a jazzy chord that leads into the next takes half of it)."},
+        {"chd_voicing", "Voicing: Close keeps the notes together; Open lifts every other note an octave; Drop 2 lowers the second from the top an octave (a jazz piano sound); Spread opens the lowest and highest an octave."},
+        {"chd_inv", "Inversions: Root always plays the root lowest; Smooth picks the inversion that moves the fewest semitones from the chord before; Climb and Fall do that while drifting up or down an octave."},
+        {"chd_octave", "Octave: where the chords sit."},
+        {"chd_vel", "Velocity: how hard the chords play."},
+        {"chd_gate", "Gate: how much of its length a chord holds."},
+        {"chd_strum", "Strum: the chord's notes one after another, from the lowest, up to 80 ms apart. 0: together."},
+        {"chd_seed", "Seed: which progressions. The same seed plays the same chords."},
+        {"chd_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, the lowest one the key (with FOLLOW KEYS); Key Launch: each key plays four chords from that key."},
+        {"chd_own_key", "Key (this generator's own): Follow plays in the Synth's main KEY, the row along the screen's bottom. Pick a note and the chords plays from that root, whatever the main KEY says. FOLLOW KEYS on: notes from a key you play still start from that key."},
+        {"chd_own_scale", "Scale (this generator's own): Follow plays in the Synth's main SCALE, the row along the screen's bottom. Pick a scale and the chords plays in it, whatever the main SCALE says."},
+        {"bass_on", "Bass: a bass line, one note at a time, on the chords CHORDS plays in any Synth, or in its KEY and SCALE."},
+        {"bass_follow", "Follow chords: on, the line follows the chord CHORDS plays in any Synth. Off, or no CHORDS on: its own plain chords in its KEY and SCALE, one a bar."},
+        {"bass_jazz", "Jazz: with Pattern on Auto, from the root alone, through root and fifth, octaves and arpeggios to walking lines; in a walking line how bold its approach notes are. RANDOMISE and MUTATE set it from WILD, with GENERATIVE lit."},
+        {"bass_pattern", "Pattern: Auto goes by JAZZ, a new choice each chord; or always the root, root and fifth, octaves, an arpeggio of the chord, or a walking line that leads into the next chord."},
+        {"bass_rate", "Rate: how often a note plays, on the tempo."},
+        {"bass_octave", "Octave: the line's lowest octave."},
+        {"bass_vel", "Velocity: how hard it plays (the first note of a chord a little harder)."},
+        {"bass_gate", "Gate: how much of its step each note holds."},
+        {"bass_seed", "Seed: which line. The same seed plays the same notes."},
+        {"bass_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys; Key Launch: each key plays eight notes from that key."},
+        {"bass_own_key", "Key (this generator's own): Follow plays in the Synth's main KEY, the row along the screen's bottom. Pick a note and the bass plays from that root, whatever the main KEY says. FOLLOW KEYS on: notes from a key you play still start from that key."},
+        {"bass_own_scale", "Scale (this generator's own): Follow plays in the Synth's main SCALE, the row along the screen's bottom. Pick a scale and the bass plays in it, whatever the main SCALE says."},
         /* the macro oscillator */
         {"mac_model", "Macro oscillator model: the kind of sound it makes (virtual analog, FM, wavetables, chords, speech, percussion and more)."},
         {"mac_harm", "Harmonics: the model's main tone control (what it does depends on the model)."},
@@ -1205,9 +1232,14 @@ static void draw_hub(HDC dc, ed_t *e) {
         param_text(e, gbpm, bv, sizeof bv);
         text(dc, &vr, bv, font_cell, own ? T_LCD : T_LCD_DIM, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
+    int gfc = rnd_key("gen_follow_chords") < NPARAMS ? rnd_key("gen_follow_chords") : -1;   /* (2026-11-02) */
     if (gfk >= 0) {
-        screen_button(dc, hub_gen_rect(4), "FOLLOW KEYS", option_of(e, gfk) == 1, gfk == e->hover, font_cell);
+        RECT fw = hub_gen_rect(4);
+        RECT fl = {fw.left - sc(44), fw.top, fw.left - sc(2), fw.bottom};
+        text(dc, &fl, "FOLLOW", font_tiny, T_LCD_DIM, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        screen_button(dc, fw, "KEYS", option_of(e, gfk) == 1, gfk == e->hover, font_tiny);
     }
+    if (gfc >= 0) screen_button(dc, hub_gen_rect(5), "CHORDS", option_of(e, gfc) == 1, gfc == e->hover, font_tiny);
     static const char *const NAME[2] = {"KEY", "SCALE"}, *const KEY[2] = {"key_root", "key_scale"},
                       *const LNK[2] = {"link_key", "link_scale"};
     for (int row = 0; row < 2; row++) {   /* KEY and SCALE of the Synth in focus, and their LINKs */
@@ -1224,9 +1256,9 @@ static void draw_hub(HDC dc, ed_t *e) {
         char ftx[64], lb[72];   /* (lit: how much faster, on the button itself: "FOLLOW x 1.25") */
         hub_follow_text(e, ftx, sizeof ftx);
         int on = option_of(e, ft) == 1;
-        if (on && !strncmp(ftx, "speed ", 6)) snprintf(lb, sizeof lb, "FOLLOW %s", ftx + 6);
-        else snprintf(lb, sizeof lb, "FOLLOW TEMPO");
-        screen_button(dc, hub_follow_rect(), lb, on, ft == e->hover, font_cell);
+        if (on && !strncmp(ftx, "speed x ", 8)) snprintf(lb, sizeof lb, "x%s", ftx + 8);   /* (2026-11-02: shorter, three on the row) */
+        else snprintf(lb, sizeof lb, "TEMPO");
+        screen_button(dc, hub_follow_rect(), lb, on, ft == e->hover, font_tiny);
     }
     RECT a = hub_rect(Z_HUB_ALLOFF);
     int back = hub_restore_n(e);
