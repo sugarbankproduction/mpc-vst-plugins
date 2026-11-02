@@ -120,12 +120,13 @@ int lib_filtering(ed_t *e);
 int lib_step_filtered(ed_t *e, int d);       /* PREV / NEXT through the filtered list; 0: not filtering */
 int lib_load_pos(ed_t *e, int pos);          /* patches_load_pos with autosave and undo */
 int lib_view_index(ed_t *e, int pos);        /* where list position pos is in its column after the filters (-1) */
+#define LIB_MOO "Moo Won"   /* the GROUP of the sounds on the PATCHES page's orange tab */
 int lib_cats(ed_t *e, char (*names)[TAG_LEN + 1], int *counts, int max);   /* the category tabs: ALL, then each */
 const char *lib_cat_filter(ed_t *e);         /* the CATEGORY filter ("" none) */
 const char *lib_type_filter(ed_t *e);        /* (2026-11-02) the TYPE filter ("" none) */
 void lib_type_pick(ed_t *e, const char *type); /* the bottom row's SINGLE, LAYER, SPLIT, MULTI: again, off */
 const char *lib_group_filter(ed_t *e);       /* (2026-11-02) the GROUP filter ("" none) */
-void lib_group_pick(ed_t *e, const char *group); /* the bottom row's MOO WON: again, off */
+void lib_group_pick(ed_t *e, const char *group); /* the MOO WON tab: again, off */
 void lib_cat_pick(ed_t *e, const char *cat); /* a category tab clicked ("ALL": no CATEGORY filter) */
 void lib_end_compare(ed_t *e);               /* COMPARE off (the edit back) before a save reads the sound */
 int lib_save_dialog(ed_t *e, char *name, meta_t *m);   /* the save box: name, tags, notes; 0 cancelled */

@@ -661,12 +661,27 @@ static void category_tabs(void) {
         snprintf(what, sizeof what, "PATCHES: the bottom row's filters list their type (factory:%s), over a category tab too "
                  "(%d), and again list all (%d of 4)", tn, kept, off);
         check(good && kept && off == 4, what);
-        click_z(Z_PATCH_MOO);   /* MOO WON: Steveo's 222 */
-        int moo = (int)lt(LT_VIEW, 0, NULL) / 1000;
-        click_z(Z_PATCH_MOO);
+        /* the orange tab right after ALL: Steveo's 222; a category narrows them; again, or ALL: everything */
+        lt(LT_CATS, 0, cats);
+        int moo_tab = tab_of(cats, "Moo Won", &(int){0});
+        click_z(Z_PATCH_CAT + moo_tab);
+        int moo = (int)lt(LT_VIEW, 0, NULL) / 1000, moo_pads = 0, want_pads = 0;
+        shot("_lib_patches_moo");
+        for (int p = 0; p < NFACTORY_TAGS; p++)
+            want_pads += !strcmp(FACTORY_TAG[p].group, "Moo Won") && !strcmp(FACTORY_TAG[p].cat, "Pad");
+        lt(LT_CATS, 0, cats);
+        click_z(Z_PATCH_CAT + tab_of(cats, "Pad", &(int){0}));
+        moo_pads = (int)lt(LT_VIEW, 0, NULL) / 1000;
+        click_z(Z_PATCH_CAT + moo_tab);   /* off (the Pad tab stays) */
+        click_z(Z_PATCH_CAT + 0);
         int all2 = (int)lt(LT_VIEW, 0, NULL) / 1000;
-        snprintf(what, sizeof what, "PATCHES: MOO WON lists the 222 Moo Won sounds (%d), again all (%d)", moo, all2);
-        check(moo == 222 && all2 == fx->numPrograms, what);
+        click_z(Z_PATCH_CAT + moo_tab);
+        click_z(Z_PATCH_CAT + 0);   /* ALL takes it off as well */
+        int all3 = (int)lt(LT_VIEW, 0, NULL) / 1000;
+        snprintf(what, sizeof what, "PATCHES: the MOO WON tab (%d) lists the 222 Moo Won sounds (%d), its pads with the Pad tab "
+                 "(%d of %d), again all (%d), ALL too (%d)", moo_tab, moo, moo_pads, want_pads, all2, all3);
+        check(moo_tab == 1 && moo == 222 && want_pads > 0 && moo_pads == want_pads && all2 == fx->numPrograms &&
+              all3 == fx->numPrograms, what);
     }
     {   /* (2026-11-02) INIT: the Init patch at one click */
         int vk = -1;

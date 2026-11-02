@@ -872,12 +872,13 @@ int lib_cats(ed_t *e, char (*names)[TAG_LEN + 1], int *counts, int max) {
         snprintf(names[n], TAG_LEN + 1, "%s", L->list[TAG_CAT][j]);
         counts[n++] = 0;
     }
-    int nf = nfactory(e);
+    int nf = nfactory(e), moo = 0;
     for (int p = 0; p < nf + e->pt.count; p++) {
         meta_t m;
         if (p < nf) factory_meta(e, p, &m);
         else if (p - nf < L->nlm) memcpy(m.tag, L->lm[p - nf].tag, sizeof m.tag);
         else continue;
+        moo += !_stricmp(m.tag[TAG_GROUP], LIB_MOO);
         if (!match_but(L, m.tag, TAG_CAT)) continue;
         counts[0]++;
         if (m.tag[TAG_CAT][0]) cat_count(names, counts, &n, max, m.tag[TAG_CAT]);
@@ -887,6 +888,17 @@ int lib_cats(ed_t *e, char (*names)[TAG_LEN + 1], int *counts, int max) {
         if (!counts[j] && _stricmp(names[j], L->filter[TAG_CAT])) continue;
         if (out != j) snprintf(names[out], TAG_LEN + 1, "%s", names[j]);
         counts[out++] = counts[j];
+    }
+    /* (2026-11-02, owner) the Moo Won sounds' own tab, right after ALL (a group, not a category: patches.c) */
+    if (moo) {
+        if (out == max) out--;
+        for (int j = out; j > 1; j--) {
+            memcpy(names[j], names[j - 1], TAG_LEN + 1);
+            counts[j] = counts[j - 1];
+        }
+        snprintf(names[1], TAG_LEN + 1, "%s", LIB_MOO);
+        counts[1] = moo;
+        out++;
     }
     return out;
 }

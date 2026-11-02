@@ -1204,6 +1204,7 @@ static char cat_name[PATCH_CATS][TAG_LEN + 1];
 static int cat_n[PATCH_CATS];
 static int cats_now;
 static int cats(ed_t *e) { return cats_now = lib_cats(e, cat_name, cat_n, PATCH_CATS); }
+static int cat_moo(int k) { return !_stricmp(cat_name[k], LIB_MOO); }   /* the orange tab: the GROUP filter */
 static void cat_label(int k, char *out, int n) {
     static const char *const SHORT[][2] = {{"Sequence", "SEQ"}, {"Performance", "PERF"}, {"Generative", "GEN"}};
     const char *s = cat_name[k];
@@ -1213,24 +1214,29 @@ static void cat_label(int k, char *out, int n) {
     int i = 0;
     for (; s[i] && i < 8; i++) u[i] = (char)toupper((unsigned char)s[i]);
     u[i] = 0;
-    if (cats_now > 16) snprintf(out, n, "%.5s", u);   /* (2026-11-02) many tabs: short names, no counts */
+    if (cat_moo(k)) snprintf(out, n, "%s", u);
+    else if (cats_now > 16) snprintf(out, n, "%.5s", u);   /* (2026-11-02) many tabs: short names, no counts */
     else snprintf(out, n, "%s %d", u, cat_n[k]);
+}
+static int cat_units(int k) {   /* a tab's share of its line (the orange one a little more, so its name always fits) */
+    char t[48];
+    cat_label(k, t, sizeof t);
+    return (int)strlen(t) + 3 + (cat_moo(k) ? 5 : 0);
 }
 static RECT cat_rect(int ncat, int k) {   /* tab k of ncat (call cats() first) */
     int first = (ncat + 1) / 2, line = k >= first, a = line ? first : 0, b = line ? ncat : first, total = 0, x = 0;
     int gap = sc(3), y = L.row[0].top + line * sc(CAT_LINE);
-    char t[48];
-    for (int j = a; j < b; j++) { cat_label(j, t, sizeof t); total += (int)strlen(t) + 3; }
+    for (int j = a; j < b; j++) total += cat_units(j);
     float unit = (rw(&L.row[0]) - gap * (b - a - 1)) / (float)(total ? total : 1);
-    for (int j = a; j < k; j++) { cat_label(j, t, sizeof t); x += (int)((strlen(t) + 3) * unit) + gap; }
-    cat_label(k, t, sizeof t);
-    RECT r = {L.row[0].left + x, y + sc(1), L.row[0].left + x + (int)((strlen(t) + 3) * unit), y + sc(CAT_LINE) - sc(1)};
+    for (int j = a; j < k; j++) x += (int)(cat_units(j) * unit) + gap;
+    RECT r = {L.row[0].left + x, y + sc(1), L.row[0].left + x + (int)(cat_units(k) * unit), y + sc(CAT_LINE) - sc(1)};
     if (k == b - 1) r.right = L.row[0].right;   /* (the line ends square) */
     return r;
 }
 static int cat_on(ed_t *e, int k) {   /* the tab showing now */
     const char *f = lib_cat_filter(e);
-    return k == 0 ? !f[0] : !_stricmp(cat_name[k], f);
+    int moo = !_stricmp(lib_group_filter(e), LIB_MOO);
+    return cat_moo(k) ? moo : k == 0 ? !f[0] && !moo : !_stricmp(cat_name[k], f);
 }
 
 static int entry_pos(ed_t *e, int col, int row) {   /* the list position shown at col/row of this sub-page, or -1 */
@@ -1247,14 +1253,8 @@ static RECT type_rect(int k) {
     RECT r = {L.row[0].left + k * (w + gap), y, L.row[0].left + k * (w + gap) + w, y + sc(17)};
     return r;
 }
-static RECT moo_rect(void) {   /* MOO WON: Steveo's sounds, after the types */
-    RECT r = type_rect(3);
-    r.left = r.right + sc(3);
-    r.right = r.left + sc(60);
-    return r;
-}
 static RECT lib_arrow_rect(int next) {
-    RECT t = moo_rect(), r = t;
+    RECT t = type_rect(3), r = t;
     if (next) { r.right = L.row[0].right; r.left = r.right - sc(18); }
     else { r.left = t.right + sc(8); r.right = r.left + sc(18); }
     return r;
@@ -1269,7 +1269,6 @@ int patches_hit(ed_t *e, POINT pt) {
         RECT r = type_rect(k);
         if (PtInRect(&r, pt)) return Z_PATCH_TYPE + k;
     }
-    { RECT r = moo_rect(); if (PtInRect(&r, pt)) return Z_PATCH_MOO; }
     for (int k = 0; k < 2; k++) {
         RECT r = lib_arrow_rect(k);
         if (PtInRect(&r, pt)) return k ? Z_PATCH_LIB_NEXT : Z_PATCH_LIB_PREV;
@@ -1298,14 +1297,6 @@ int patches_press(ed_t *e, int z) {   /* 1: z was the page's */
         redraw(e);
         return 1;
     }
-    if (z == Z_PATCH_MOO) {   /* only Steveo's sounds; again: all */
-        patches_rescan(e);
-        lib_group_pick(e, "Moo Won");
-        e->sub = 0;
-        follow(e);
-        redraw(e);
-        return 1;
-    }
     if (z == Z_PATCH_LIB_PREV || z == Z_PATCH_LIB_NEXT) {   /* another library's patches in the USER column */
         parts_lib_step(e, z == Z_PATCH_LIB_NEXT ? 1 : -1);
         patches_rescan(e);
@@ -1317,7 +1308,15 @@ int patches_press(ed_t *e, int z) {   /* 1: z was the page's */
         patches_rescan(e);
         int k = z - Z_PATCH_CAT;
         if (k < cats(e)) {
-            lib_cat_pick(e, cat_name[k]);
+            /* MOO WON: all its sounds (a category tab then narrows them); again, or ALL: everything */
+            int moo = !_stricmp(lib_group_filter(e), LIB_MOO);
+            if (cat_moo(k)) {
+                if (!moo) lib_cat_pick(e, "ALL");
+                lib_group_pick(e, LIB_MOO);
+            } else {
+                lib_cat_pick(e, cat_name[k]);
+                if (k == 0 && moo) lib_group_pick(e, LIB_MOO);
+            }
             e->sub = 0;
             follow(e);   /* (the current patch's page, when it is in the category) */
         }
@@ -1341,6 +1340,9 @@ int patches_press(ed_t *e, int z) {   /* 1: z was the page's */
 #define P_FRAME_HOT RGB(0x96, 0xD7, 0xE8)
 #define P_FILL_HOT RGB(0x16, 0x2C, 0x3A)
 #define P_SEL RGB(0x1F, 0x46, 0x5A)
+#define P_MOO RGB(255, 150, 40)
+#define P_MOO_FILL RGB(0x45, 0x26, 0x08)
+#define P_MOO_HOT RGB(0x7A, 0x42, 0x0C)
 
 static void fill(HDC dc, RECT r, COLORREF c) {
     HBRUSH b = CreateSolidBrush(c);
@@ -1380,6 +1382,12 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
         int hot = e->hover == Z_PATCH_CAT + k, on = cat_on(e, k);
         char t[48];
         cat_label(k, t, sizeof t);
+        if (cat_moo(k)) {   /* (2026-11-02, owner) orange, to draw the eye */
+            fill(dc, r, on ? P_MOO : hot ? P_MOO_HOT : P_MOO_FILL);
+            frame(dc, r, P_MOO);
+            label(dc, r, t, font_tiny, on ? RGB(0, 0, 0) : hot ? P_HOT : P_MOO, DT_CENTER);
+            continue;
+        }
         if (on) fill(dc, r, P_SEL);
         else if (hot) fill(dc, r, P_FILL_HOT);
         frame(dc, r, hot || on ? P_FRAME_HOT : P_FRAME);
@@ -1392,14 +1400,6 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
         else if (hot) fill(dc, r, P_FILL_HOT);
         frame(dc, r, hot || on ? P_FRAME_HOT : P_FRAME);
         label(dc, r, TYPE_BTN[k], font_tiny, hot || on ? P_HOT : P_LCD, DT_CENTER);
-    }
-    {
-        RECT r = moo_rect();
-        int hot = e->hover == Z_PATCH_MOO, on = !_stricmp(lib_group_filter(e), "Moo Won");
-        if (on) fill(dc, r, P_SEL);
-        else if (hot) fill(dc, r, P_FILL_HOT);
-        frame(dc, r, hot || on ? P_FRAME_HOT : P_FRAME);
-        label(dc, r, "MOO WON", font_tiny, hot || on ? P_HOT : P_LCD, DT_CENTER);
     }
     for (int k = 0; k < 2; k++) {
         RECT r = lib_arrow_rect(k);
@@ -1486,12 +1486,13 @@ const char *patches_zone_help(int z) {
     if (z >= Z_PATCH_TYPE && z < Z_PATCH_TYPE + 4)
         return "TYPE: the list shows only sounds of this type: SINGLE one Synth, LAYER Synths stacked, SPLIT apart on the "
                "keyboard, MULTI any other mix. Click again for all. It stays while you click through the categories.";
-    if (z == Z_PATCH_MOO) return "MOO WON: the list shows only the Moo Won sounds, made by Steveo. Click again for all.";
     if (z == Z_PATCH_LIB_PREV || z == Z_PATCH_LIB_NEXT)
         return "LIB: < > the library of your own patches shown in the USER column on the right (your default one "
                "and any others you have made or imported).";
     if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS)
-        return z == Z_PATCH_CAT ? "ALL: the list shows every category (the TAGS page's other filters still apply)."
+        return cat_moo(z - Z_PATCH_CAT) ? "MOO WON: the list shows only the Moo Won sounds, made by Steveo. A category tab then "
+                                          "narrows them (say, Moo Won pads). Click it again, or ALL, for everything."
+               : z == Z_PATCH_CAT ? "ALL: the list shows every category (the TAGS page's other filters still apply)."
                                 : "Click: the list shows only this category (the number: how many). ALL shows them all. "
                                   "Page through with < > or the mouse wheel.";
     if (z >= Z_PATCH_ITEM) return "Click to load this patch. The sound you have now is replaced: SAVE it first to keep "
@@ -1530,7 +1531,6 @@ int patches_zone_rect(ed_t *e, int z, RECT *r) {
     if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { *r = action_rect(z - Z_PATCH_ACT); return 1; }
     if (z >= Z_PATCH_TYPE && z < Z_PATCH_TYPE + 4) { *r = type_rect(z - Z_PATCH_TYPE); return 1; }
     if (z == Z_PATCH_LIB_PREV || z == Z_PATCH_LIB_NEXT) { *r = lib_arrow_rect(z == Z_PATCH_LIB_NEXT); return 1; }
-    if (z == Z_PATCH_MOO) { *r = moo_rect(); return 1; }
     if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS) {
         int n = cats(e);
         if (z - Z_PATCH_CAT >= n) return 0;
