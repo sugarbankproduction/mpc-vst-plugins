@@ -661,6 +661,23 @@ static void category_tabs(void) {
         snprintf(what, sizeof what, "PATCHES: the bottom row's filters list their type (factory:%s), over a category tab too "
                  "(%d), and again list all (%d of 4)", tn, kept, off);
         check(good && kept && off == 4, what);
+        click_z(Z_PATCH_MOO);   /* MOO WON: Steveo's 222 */
+        int moo = (int)lt(LT_VIEW, 0, NULL) / 1000;
+        click_z(Z_PATCH_MOO);
+        int all2 = (int)lt(LT_VIEW, 0, NULL) / 1000;
+        snprintf(what, sizeof what, "PATCHES: MOO WON lists the 222 Moo Won sounds (%d), again all (%d)", moo, all2);
+        check(moo == 222 && all2 == fx->numPrograms, what);
+    }
+    {   /* (2026-11-02) INIT: the Init patch at one click */
+        int vk = -1;
+        for (int i = 0; i < NPARAMS && vk < 0; i++) if (!strcmp(PARAMS[i].key, "flt_res")) vk = i;
+        float was = ((AEffect *)fx)->getParameter((AEffect *)fx, vk);
+        ((AEffect *)fx)->setParameter((AEffect *)fx, vk, 0.77f);
+        click_z(Z_INIT);
+        int at_init = title_starts("F 001") && ((AEffect *)fx)->getParameter((AEffect *)fx, vk) != 0.77f;
+        snprintf(what, sizeof what, "INIT: a click loads F 001 Init (%d)", at_init);
+        check(at_init, what);
+        ((AEffect *)fx)->setParameter((AEffect *)fx, vk, was);
     }
     check(v / 1000 == fx->numPrograms && v % 1000 == (int)pt(PT_COUNT, NULL, NULL, 0), "PATCHES: ALL lists everything again");
     click_z(Z_LIB_TAB + 5);   /* (back to the TAGS page for the tests after) */

@@ -60,5 +60,5 @@ EXPORTS='["_main","_web_start","_web_info","_web_event","_web_midi","_web_last_s
   -sEXPORTED_RUNTIME_METHODS='["FS","IDBFS","UTF8ToString","stringToNewUTF8","HEAPU8","HEAPU32","HEAP32","HEAPF32","wasmMemory"]' \
   -lidbfs.js -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=256MB -sMAXIMUM_MEMORY=1GB -sSTACK_SIZE=2MB \
   -sDEFAULT_PTHREAD_STACK_SIZE=2MB -sPTHREAD_POOL_SIZE=3 -sFORCE_FILESYSTEM=1 \
-  --embed-file "$F/fonts@/fonts" --embed-file "$P/libraries@/bundled" --exclude-file "*.py" -fno-exceptions
+  --embed-file "$F/fonts@/fonts" -fno-exceptions
 ls -l "$SITE"

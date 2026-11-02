@@ -226,6 +226,11 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      (Off, 1-16 passes) and `seq_rot_by` (-8..+8): it moves on by itself. A row over the KEY and SCALE row on the SEQ page, also
      on its MORE page; host automation and MIDI Learn reach it as any param. Not a matrix destination yet (the matrix is per
      voice; the sequencer isn't). Offline: stepseq_check, 1138 ok, golden unchanged. CPU: one table look-up per step.
+     STEVEO IN THE FACTORY LIST (2026-11-02, owner): his 222 sounds are presets 297-518 (`make_presets.py` steveo(), exact values:
+     `gen_vst.py` keeps a preset's digits with "exact"), GROUP Moo Won (MOO WON on PATCHES' bottom row), notes "By Steveo", his
+     categories merged into the tabs (new: Classic, Cinematic); no longer separate libraries. `test/steveo_check.c`: same settings as
+     the files; 158 sample-identical, 64 within -40 dB (worst -44 dB; where a free-running part starts). 8 VOICES for new sounds.
+     INIT on the console (one undo step); TOGETHER after the SYNTHs, SETUP after GEN ON. Web: starts on Init, LAST SESSION.
   8. Later (owner, 2026-10-27): generative features inside the plugin (it plays its own voices, so it works even
      though MPC ignores plugin MIDI out): Euclidean rhythms, probability/random note and step generators, a
      Turing-machine-style looping random sequence, with the arpeggiator (Tier 4) as their base. Done 2026-10-27

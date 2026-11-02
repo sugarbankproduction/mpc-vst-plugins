@@ -24,15 +24,3 @@ if [ -f "$MSRC" ]; then
     cp "$MSRC" "$DEST/$MNAME"
     echo "installed: $(cygpath -w "$DEST/$MNAME")"
 fi
-# (2026-11-01) the bundled libraries (libraries/<BANK>/*.oneish: Steveo's sounds, libraries/make_bundled.py) into the
-# user's library folder, each bank only when it isn't there yet: once copied, it is the user's (edits, deletions and
-# renames stay); delete a bank's folder to get it fresh again. ONEISH_LIB_DIR moves the library folder, as in parts.c.
-LIBS="${ONEISH_LIB_DIR:-$USERPROFILE/Documents/ONE-ish/Libraries}"
-for bank in "$(dirname "$0")"/../libraries/*/; do
-    name="$(basename "$bank")"
-    if [ ! -d "$LIBS/$name" ]; then
-        mkdir -p "$LIBS/$name"
-        cp "$bank"*.oneish "$LIBS/$name/"
-        echo "library added: $(cygpath -w "$LIBS/$name") ($(ls "$bank"*.oneish | wc -l) patches)"
-    fi
-done

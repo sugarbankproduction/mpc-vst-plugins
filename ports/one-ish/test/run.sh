@@ -28,6 +28,10 @@ TEST="$OC" build "$P/build/obj_o2" "$P/build/offline_bench" -O2
 # old sounds play exactly as before (test/golden_check.c against test/golden_states.txt, made by test/golden_gen.sh)
 TEST="$P/test/golden_check.c $P/test/golden_rng.cc" build "$P/build/obj_o2" "$P/build/golden_check" -O2
 "$P/build/golden_check" check "$P/test/golden_states.txt"
+# (2026-11-02) Steveo's sounds as factory presets play as their patch files (test/steveo_check.c)
+TEST="$P/test/steveo_check.c $P/test/golden_rng.cc" build "$P/build/obj_o2" "$P/build/steveo_check" -O2
+python3 "$P/test/steveo_check.py" "$P/build/steveo_list.txt"
+"$P/build/steveo_check" "$P/build/steveo_list.txt"
 # (2026-10-30) the randomiser gives what it gave before but for that day's deliberate changes (test/rnd_golden.c)
 gcc -std=gnu11 -Wall -Wextra -O1 "${INC[@]}" "$P/test/rnd_golden.c" -lm -o "$P/build/rnd_golden"
 "$P/build/rnd_golden" check "$P/test/rnd_golden.txt"

@@ -169,6 +169,7 @@ static void defaults_hands(void) {
     void *a = fresh(), *b = E->create(NULL);
     set(a, "s2_syn_on", 0); set(a, "s3_syn_on", 0);
     set(a, "spread", 0);   /* (2026-11-02: new sounds start at 50%; b is E's, at 0) */
+    set(a, "voices", 3);   /* (and at 8 voices; b: 4) */
     set(a, "analog_amt", 0);   /* (2026-11-01: b has the old ANALOG page, all 0; a's new one at AMOUNT 0 is exactly that) */
     note(a, 1, 60, 100);
     note(b, 1, 60, 100);

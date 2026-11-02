@@ -160,6 +160,7 @@ static void *create_one(const char *data_dir) {
     E_REAL->set_param(e, "s2_syn_on", "0");
     E_REAL->set_param(e, "s3_syn_on", "0");
     E_REAL->set_param(e, "spread", "0");   /* (2026-11-02: new sounds start at 50%; these checks are of one centred voice) */
+    E_REAL->set_param(e, "voices", "3");   /* (2026-11-02: new sounds start at 8; these checks were written with 4) */
     static const char *const F[] = {"src", "dst", "amt"};
     for (int r = 13; r <= 16; r++)
         for (int f = 0; f < 3; f++) {

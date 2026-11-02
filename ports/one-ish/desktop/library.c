@@ -595,6 +595,8 @@ static void factory_meta(ed_t *e, int p, meta_t *m) {
     snprintf(m->tag[TAG_TYPE], sizeof m->tag[0], "%s", FACTORY_TAG[p].type);
     snprintf(m->tag[TAG_CAT], sizeof m->tag[0], "%s", FACTORY_TAG[p].cat);
     snprintf(m->tag[TAG_MOOD], sizeof m->tag[0], "%s", FACTORY_TAG[p].mood);
+    snprintf(m->tag[TAG_GROUP], sizeof m->tag[0], "%s", FACTORY_TAG[p].group);   /* (2026-11-02) Steveo's banks */
+    snprintf(m->notes, sizeof m->notes, "%s", FACTORY_TAG[p].notes);
 }
 /* TYPE from the three Synths: one on Single; their key ranges apart Split, all overlapping Layer, else Multi */
 static const char *auto_type(ed_t *e) {
@@ -890,6 +892,17 @@ int lib_cats(ed_t *e, char (*names)[TAG_LEN + 1], int *counts, int max) {
 }
 const char *lib_cat_filter(ed_t *e) { return LIB(e) ? LIB(e)->filter[TAG_CAT] : ""; }
 const char *lib_type_filter(ed_t *e) { return LIB(e) ? LIB(e)->filter[TAG_TYPE] : ""; }
+const char *lib_group_filter(ed_t *e) { return LIB(e) ? LIB(e)->filter[TAG_GROUP] : ""; }
+void lib_group_pick(ed_t *e, const char *group) {
+    lib_t *L = LIB(e);
+    if (!L) return;
+    int off = !_stricmp(L->filter[TAG_GROUP], group);
+    snprintf(L->filter[TAG_GROUP], sizeof L->filter[TAG_GROUP], "%s", off ? "" : group);
+    views(e);
+    if (off) say(e, "PATCHES lists every group.");
+    else say(e, "PATCHES lists only %s sounds (%d factory, %d yours). Click it again for all.", group,
+             lib_view_count(e, 0), lib_view_count(e, 1));
+}
 void lib_type_pick(ed_t *e, const char *type) {
     lib_t *L = LIB(e);
     if (!L) return;
@@ -1317,6 +1330,7 @@ static int zone_rect(ed_t *e, int z, RECT *r) {
     int s = e->screen;
     if (z == Z_COMPARE) { *r = L.compare; return !IsRectEmpty(r); }
     if (z == Z_SNAPSHOT) { *r = L.snapshot; return !IsRectEmpty(r); }
+    if (z == Z_INIT) { *r = L.init; return !IsRectEmpty(r); }
     if (!lib_screen(s)) return 0;
     if (z >= Z_LIB_TAB && z < Z_LIB_TAB + NTABS) { *r = tab_rect(z - Z_LIB_TAB); return 1; }
     if (s == SCR_PATCHES) return patches_zone_rect(e, z, r);
@@ -1723,6 +1737,12 @@ int lib_press(ed_t *e, int z) {   /* 1: z was the library's */
     lib_t *L_ = LIB(e);
     if (!L_) return 0;
     if (z == Z_COMPARE) { lib_compare(e); redraw(e); return 1; }
+    if (z == Z_INIT) {   /* (2026-11-02) back to the Init patch, all three Synths; one undo step */
+        lib_touch(e, "INIT");
+        patches_load_pos(e, 0);
+        redraw(e);
+        return 1;
+    }
     if (z == Z_SNAPSHOT) {
         if (e->screen == SCR_SNAPS) { e->screen = SCR_MATRIX; e->sub = 0; redraw(e); }
         else lib_open(e, SCR_SNAPS);
@@ -2065,6 +2085,7 @@ void lib_help(ed_t *e, char *out, int n) {
 const char *lib_zone_help(int z) {
     if (z == Z_COMPARE) return "COMPARE: hear the saved version of this patch; again: back to your edit. Loading another "
                                "sound ends it (your edit is autosaved as a snapshot).";
+    if (z == Z_INIT) return "INIT: back to the Init patch, a clean start on all three Synths. UNDO brings your sound back.";
     if (z == Z_SNAPSHOT) return "SNAPSHOT: the snapshots page: timestamped saves of the sound with notes, the autosaves, "
                                 "and UNDO / REDO of any edit (also on the console, beside TEMPO).";
     if (z >= Z_LIB_TAB && z < Z_LIB_TAB + NTABS) {

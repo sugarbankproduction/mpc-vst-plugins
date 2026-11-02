@@ -415,7 +415,7 @@ static const char *zone_help(ed_t *e, int z) {
             ? "SYNTH 1 / 2 / 3, TOGETHER lit: a click adds this Synth to the ones edited together (lit) or takes it out; "
               "the panel shows the last one clicked. TOGETHER again: back to one Synth. S solos, M mutes."
             : "SYNTH 1 / 2 / 3 (Panel Focus): the panel, the MORE pages, the matrix and the step editor show and edit this "
-              "Synth. To edit several at once, Shift-click them (or light TOGETHER below and click). S beside it solos (or double-click), M mutes. Sections "
+              "Synth. To edit several at once, Shift-click them (or light TOGETHER beside them and click). S beside it solos (or double-click), M mutes. Sections "
               "marked SHARED are the same for all three. Shortcuts: keys 1 / 2 / 3, Ctrl-click adds.";
     case Z_MUTE1: case Z_MUTE2: case Z_MUTE3:
         return "M (MUTE): red, this Synth is off (its ON on the SETUP page): it stops and plays nothing. Saved with the "
@@ -1346,9 +1346,9 @@ void help_line(ed_t *e, char *out, int n) {
         snprintf(help, sizeof help, "%s", zh);
     } else if (lib_notes_help(e, help, sizeof help)) {   /* SHOW NOTES: the patch's notes */
     } else if (e->screen == SCR_RANDOM) {
-        snprintf(help, sizeof help, "RANDOMISE makes a new sound; MUTATE a variation of this one (AMOUNT: how far; WILD: how "
-                                    "strange). Light a LOCK to keep a section, a tick to change the arp, GENERATIVE or sequencer too. UNDO / REDO step through the last sounds. Keys: R, M; Shift: all 3 Synths. Like it? "
-                                    "Save it in your host (a preset or the project).");
+        snprintf(help, sizeof help, "Shortcuts: R randomises the selected Synth, Shift+R all three. M mutates it, Shift+M all "
+                                    "three. RANDOMISE: a new sound. MUTATE: a variation (AMOUNT: how far; WILD: how strange). "
+                                    "LOCK keeps a section; a tick changes the arp, generators or sequencer too.");
     } else if (lib_screen(e->screen)) {
         lib_help(e, help, sizeof help);
     } else if (e->screen == SCR_SETTINGS) {
@@ -1520,6 +1520,7 @@ static void draw_console(HDC dc, ed_t *e) {
     panel_button(dc, &L.bnext, "NEXT", 0, e->hover == Z_NEXT);
     panel_button(dc, &L.compare, "COMPARE", lib_comparing(e), e->hover == Z_COMPARE);   /* (library.c) */
     panel_button(dc, &L.snapshot, "SNAP", e->screen == SCR_SNAPS, e->hover == Z_SNAPSHOT);
+    panel_button(dc, &L.init, "INIT", 0, e->hover == Z_INIT);
     if (vis(&L.vol_master, sc(6)) && !IsRectEmpty(&L.vol_master)) {   /* SYNTH OUTPUT's MASTER (hub.c) */
         const RECT *r = &L.vol_master;
         int bh = sc(10), bw = sc(18), h = e->hover == Z_VOL_MASTER;

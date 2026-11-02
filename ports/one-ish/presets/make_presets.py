@@ -383,20 +383,61 @@ def banks():   # (2026-10-30) the factory banks in presets/banks/bank_*.py, each
     return out
 
 
+# (2026-11-02, owner: "they shouldn't be hard to get to, include them in the main presets") Steveo's sounds, the banks in
+# libraries/<BANK>/*.oneish, after every other preset (no program number moves). Those files leave out what was at that
+# day's default (dv=1), so a key they leave out takes what it meant then: see the state_absent and LEGACY_AN notes in
+# src/synths.h. test/steveo_check.c plays each both ways and compares the samples.
+STEVEO_ABSENT = {"gen_keys": "Held Keys", "gen_follow_keys": "Off", "key_scale": "Minor", "spread": 0, "voices": "4",
+                 "drift": 0, "an_cut": 0, "an_env": 0, "an_lvl": 0, "an_tune": 0, "an_res": 0}
+# his categories onto the list's, so the tabs stay readable (Classic and Cinematic are new tabs)
+STEVEO_CAT = {"Leads": "Lead", "Mono": "Lead", "Arpeggio": "Arp", "Plucked": "Pluck", "Organs": "Organ", "Percussion": "Drum",
+              "Winds": "Brass", "Lush": "Pad", "Atmospheric": "Pad", "Evolving": "Pad", "Chord": "Keys", "Modern": "Cinematic",
+              "": "Classic"}
+STEVEO_SKIP = {"name", "type", "category", "mood", "group", "notes", "dv", "ctl", "v"}
+
+
+def steveo():
+    import glob
+    out = []
+    for f in sorted(glob.glob(os.path.join(HERE, "..", "libraries", "*", "*.oneish"))):
+        bank = os.path.basename(os.path.dirname(f))
+        meta, values = {}, {}
+        with open(f, encoding="utf-8", errors="replace", newline="") as fh:
+            for line in fh.read().split("\n")[1:]:
+                k, eq, v = line.partition("=")
+                if not eq or k.startswith("#"):
+                    continue
+                if k in STEVEO_SKIP:
+                    meta[k] = v
+                elif not k.endswith("syn_name"):
+                    values[k] = float(v)
+        out.append((bank, meta["name"], values, {"type": meta.get("type", "Single"), "category": STEVEO_CAT.get(meta.get("category", ""), meta.get("category", "")),
+                                                  "mood": meta.get("mood", ""), "group": "Moo Won", "notes": meta.get("notes", "")}))
+    return out
+
+
+def steveo_absent(key, by_key):
+    base = key[3:] if key[:3] in ("s2_", "s3_") else key
+    if base in STEVEO_ABSENT:
+        return STEVEO_ABSENT[base]
+    return by_key[key].get("default", by_key[key].get("min", 0))
+
+
 def write_tags_h(entries, tags, bank_of):   # desktop/factory_tags.h: every preset's tags, in program order
     def c(s):
         return json.dumps(s, ensure_ascii=True)   # (a C string for plain ASCII names and tags)
     rows = []
     for name, _ in entries:
         t = tags.get(name, {})
-        rows.append("    {%s, %s, %s, %s, %s}," % (c(name), c(t.get("type", "Single")), c(t.get("category", "")),
-                                                   c(t.get("mood", "")), c(bank_of.get(name, ""))))
+        rows.append("    {%s, %s, %s, %s, %s, %s, %s}," % (c(name), c(t.get("type", "Single")), c(t.get("category", "")),
+                                                           c(t.get("mood", "")), c(bank_of.get(name, "")),
+                                                           c(t.get("group", "")), c(t.get("notes", ""))))
     with open(os.path.join(HERE, "..", "desktop", "factory_tags.h"), "w", encoding="utf-8", newline="\n") as f:
         f.write("/* Written by presets/make_presets.py (do not edit): the factory presets' browser tags in program order (as\n"
                 " * presets.json). bank: the factory bank it came from (presets/banks/bank_<x>.py), \"\" for the first ones.\n"
                 " * desktop/library.c reads it; test/bank_check.c finds a bank's presets by it. */\n"
                 "#pragma once\n"
-                "typedef struct { const char *name, *type, *cat, *mood, *bank; } factory_tag_t;\n"
+                "typedef struct { const char *name, *type, *cat, *mood, *bank, *group, *notes; } factory_tag_t;\n"
                 "static const factory_tag_t FACTORY_TAG[] = {\n")
         f.write("\n".join(rows) + "\n};\n#define NFACTORY_TAGS %d\n" % len(rows))
 
@@ -448,7 +489,20 @@ def main():
         entries.append((name, pv))
         tags[name] = tg
         bank_of[name] = bank
+    steveos = set()
+    taken = {n for n, _ in entries}
+    for bank, name, pv, tg in steveo():
+        unique, k = name[:24].rstrip(), 2   # (a program's name: 24 characters)
+        while unique in taken:
+            unique, k = "%s %d" % (name[:21].rstrip(), k), k + 1
+        taken.add(unique)
+        steveos.add(unique)
+        entries.append((unique, pv))
+        tags[unique] = tg
+        bank_of[unique] = "S"
     for name, pv in entries:
+        if name in steveos:   # (Off in a preset, as below: both cutoffs land as written, so the sound is the same)
+            pv = {k: v for k, v in pv.items() if k not in ("flt_link", "s2_flt_link", "s3_flt_link")}
         for k in pv:
             if k not in by_key:
                 raise SystemExit("%s: %r is not a parameter" % (name, k))
@@ -466,6 +520,8 @@ def main():
                 continue
             if name == "Init":
                 v = pv.get(p["key"], p.get("default", p.get("min", 0)))
+            elif name in steveos:
+                v = pv[p["key"]] if p["key"] in pv else "Off" if p["key"].endswith("flt_link") else steveo_absent(p["key"], by_key)
             elif p["key"] in pv:
                 v = pv[p["key"]]
             elif unused_gen_keys(p["key"], pv) or unused_follow_keys(p["key"], pv, by_key):
@@ -475,7 +531,8 @@ def main():
             if "options" in p and isinstance(v, (int, float)):
                 v = p["options"][int(v)]
             values[p["key"]] = v
-        presets.append({"name": name, "values": values, **({"tags": tags[name]} if name in tags else {})})
+        presets.append({"name": name, "values": values, **({"tags": tags[name]} if name in tags else {}),
+                        **({"exact": True} if name in steveos else {})})
     out = os.path.join(HERE, "..", "presets.json")
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write('{\n "presets": [\n')

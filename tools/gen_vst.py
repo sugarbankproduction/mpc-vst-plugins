@@ -230,7 +230,7 @@ def gen_params(cfg, params, out, shown=None):
     open(out, "w").write("\n".join(lines) + "\n")
 
 
-def preset_value(p, v, where):
+def preset_value(p, v, where, exact=False):
     """A preset's value for parameter p, as the string the engine's set_param() gets (what the wrapper itself sends:
     an option's index, a whole number, or a number in the parameter's own units)."""
     opts = [str(o) for o in p.get("options") or []]
@@ -247,6 +247,8 @@ def preset_value(p, v, where):
     lo, hi = p.get("min", 0), p.get("max", 1)
     if not lo <= v <= hi:
         raise SystemExit("%s: %s=%g is outside %g..%g" % (where, p["key"], v, lo, hi))
+    if exact:   # (a sound from outside: its knobs aren't on whole numbers, and every digit counts)
+        return "%.7g" % v
     return str(int(round(v))) if p.get("display") == "int" else "%g" % v
 
 
@@ -274,7 +276,7 @@ def program_lines(cfg, params, key_to_index):
             for k, v in pr.get("values", {}).items():   # in file order: the engine may need one set first
                 if k not in key_to_index:
                     raise SystemExit("%s: %r is not a parameter" % (where, k))
-                vals.append("{%d, %s}" % (key_to_index[k], c_str(preset_value(params[key_to_index[k]], v, where))))
+                vals.append("{%d, %s}" % (key_to_index[k], c_str(preset_value(params[key_to_index[k]], v, where, pr.get("exact", False)))))
             if not vals:
                 raise SystemExit("%s: no values" % where)
             out.append("static const preset_value_t PRESET_%d[] = {%s};" % (n, ", ".join(vals)))

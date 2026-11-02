@@ -236,7 +236,9 @@ static void layout(void) {
     /* COMPARE and SNAPSHOT (library.c) under PREV and NEXT, where the console's name was */
     /* (a little further apart than PREV and NEXT: their names are longer) */
     SetRect(&L.compare, sc(ZONE_PREV[0] - 9), sc(ZONE_FOCUS1[1]), sc(ZONE_PREV[0] + ZONE_PREV[2] - 9), sc(ZONE_FOCUS1[1] + ZONE_FOCUS1[3]));
-    SetRect(&L.snapshot, sc(ZONE_NEXT[0] - 2), sc(ZONE_FOCUS1[1]), sc(ZONE_NEXT[0] + ZONE_NEXT[2] - 2), sc(ZONE_FOCUS1[1] + ZONE_FOCUS1[3]));
+    /* (2026-11-02, owner) SNAP moves over for INIT: back to the Init patch in one click */
+    SetRect(&L.snapshot, sc(1122), sc(ZONE_FOCUS1[1]), sc(1146), sc(ZONE_FOCUS1[1] + ZONE_FOCUS1[3]));
+    SetRect(&L.init, sc(1150), sc(ZONE_FOCUS1[1]), sc(1172), sc(ZONE_FOCUS1[1] + ZONE_FOCUS1[3]));
     SetRectEmpty(&L.brand);
     L.oct_leds = zone(ZONE_OCT_LEDS);
     L.oct_down = zone(ZONE_OCT_DOWN);
@@ -506,6 +508,7 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     case Z_EUCLID: r = &L.euclid; break;
     case Z_COMPARE: r = &L.compare; break;
     case Z_SNAPSHOT: r = &L.snapshot; break;
+    case Z_INIT: r = &L.init; break;
     case Z_TAB_GEN: r = &L.tab_gen; break;   /* (the console's third row, hub.c) */
     case Z_GEN_OFF: r = &L.gen_off; break;
     case Z_VOL_MASTER: invalidate(e, &L.vol_master); r = &L.ctl[rnd_key("volume") < NPARAMS ? rnd_key("volume") : 0]; break;
@@ -1063,7 +1066,7 @@ static int hit(ed_t *e, int x, int y) {
         {&L.bnext, Z_NEXT}, {&L.name, Z_NAME}, {&L.encoder, Z_ENCODER}, {&L.tab_matrix, Z_TAB_MATRIX},
         {&L.tab_more, Z_TAB_MORE}, {&L.tab_analog, Z_TAB_ANALOG}, {&L.tab_random, Z_TAB_RANDOM}, {&L.tab_seq, Z_TAB_SEQ},
         {&L.focus[0], Z_FOCUS1}, {&L.focus[1], Z_FOCUS2}, {&L.focus[2], Z_FOCUS3}, {&L.tab_setup, Z_TAB_SETUP},
-        {&L.euclid, Z_EUCLID}, {&L.compare, Z_COMPARE}, {&L.snapshot, Z_SNAPSHOT},
+        {&L.euclid, Z_EUCLID}, {&L.compare, Z_COMPARE}, {&L.snapshot, Z_SNAPSHOT}, {&L.init, Z_INIT},
         {&L.tab_settings, Z_TAB_SETTINGS}};   /* (euclid: empty when there is no GENERATIVE section) */
     for (unsigned k = 0; k < sizeof Z / sizeof Z[0]; k++)
         if (PtInRect(Z[k].r, pt)) return Z[k].z;

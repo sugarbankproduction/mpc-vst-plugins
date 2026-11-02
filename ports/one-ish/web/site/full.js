@@ -636,30 +636,9 @@ async function load() {
   M.FS.mkdir("/Users");
   M.FS.mount(M.IDBFS, {}, "/Users");
   await new Promise((res) => M.FS.syncfs(true, () => res()));
-  addBundled();
   $("status").textContent = "Ready. Sound starts when you click.";
   $("start").disabled = false;
 }
-// the bundled libraries (ports/one-ish/libraries, in the module at /bundled): a bank not in the browser's library
-// folder yet is copied there; once copied it is the user's (edits and deletions stay), as the Windows installer does
-function addBundled() {
-  const libs = "/Users/web/Documents/ONE-ish/Libraries";
-  const mk = (p) => { try { M.FS.mkdir(p); } catch { /* there already */ } };
-  let banks = [];
-  try { banks = M.FS.readdir("/bundled").filter((n) => n !== "." && n !== ".."); } catch { return; }
-  let added = 0;
-  for (const bank of banks) {
-    const to = `${libs}/${bank}`;
-    try { M.FS.stat(to); continue; } catch { /* not there: copy it */ }
-    for (const p of ["/Users/web", "/Users/web/Documents", "/Users/web/Documents/ONE-ish", libs, to]) mk(p);
-    for (const f of M.FS.readdir(`/bundled/${bank}`)) {
-      if (f.endsWith(".oneish")) M.FS.writeFile(`${to}/${f}`, M.FS.readFile(`/bundled/${bank}/${f}`));
-    }
-    added++;
-  }
-  if (added) syncSoon();
-}
-
 async function start() {
   $("start").disabled = true;
   $("status").textContent = "Starting…";

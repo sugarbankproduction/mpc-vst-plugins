@@ -174,7 +174,7 @@ static void audition(AEffect *fx, const char *wav) {
         send_midi(fx, 0xb0, 123, 0);   /* all notes off between presets */
         double rms = sqrt(e / (PHRASE_BLOCKS * BLOCK));
         snprintf(what, sizeof what, "preset %2d \"%s\": rms %.3f, peak %.2f", p, name, rms, peak);
-        check(rms > 0.005 && peak < 0.999, what);
+        check(rms > (p >= 296 ? 0.003 : 0.005) && peak < 0.999, what);   /* (from 296 Steveo's, as he made them: some slow attacks) */
     }
     if (!f) return;
     fseek(f, 0, SEEK_SET);

@@ -370,13 +370,14 @@ static void legacy_defaults(inst_t *in) {   /* (after load_defaults) every Synth
  * (A version number in the state would do the same for many params at once; this table is what it would hold.) */
 static float state_absent(const one_t *s, int i) {
     return i == P_GEN_KEYS ? (float)GK_HELD : i == P_GEN_FOLLOW_KEYS ? 0.0f : i == P_KEY_SCALE ? (float)KS_MINOR
-           : i == P_SPREAD ? 0.0f : s->def[i];   /* (SPREAD: 0 until 2026-11-02; new sounds start at 50%) */
+           : i == P_SPREAD ? 0.0f : i == P_VOICES ? 3.0f /* (4 voices until 2026-11-02) */ : s->def[i];   /* (SPREAD: 0 until 2026-11-02; new sounds start at 50%) */
 }
 static void state_absent_load(one_t *s) {
     s->val[P_GEN_KEYS] = state_absent(s, P_GEN_KEYS);
     s->val[P_GEN_FOLLOW_KEYS] = state_absent(s, P_GEN_FOLLOW_KEYS);
     s->val[P_KEY_SCALE] = state_absent(s, P_KEY_SCALE);   /* (2026-11-01) */
     s->val[P_SPREAD] = state_absent(s, P_SPREAD);   /* (2026-11-02) */
+    s->val[P_VOICES] = state_absent(s, P_VOICES);   /* (2026-11-02) */
 }
 static int state_keeps(const one_t *s, int i) {
     if (!KEYS[i][0] || s->val[i] == state_absent(s, i) || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD ||

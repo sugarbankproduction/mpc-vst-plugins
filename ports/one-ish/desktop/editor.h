@@ -123,6 +123,7 @@ typedef struct {
     RECT tab_matrix, tab_more, tab_analog, tab_random, tab_seq, encoder, bprev, bnext, brand;
     RECT seq_leds;                            /* the SEQUENCER module's page LEDs (seq_page.c) */
     RECT focus[NSYNTHS], tab_setup;           /* PANEL FOCUS: SYNTH 1-3, and the SETUP page's button */
+    RECT init;                                /* (2026-11-02) INIT, after them */
     RECT compare, snapshot;                   /* COMPARE and SNAPSHOT, under PREV / NEXT (library.c) */
     RECT tab_settings;                        /* the SETTINGS page's button (settings.c) */
     RECT oct_leds, oct_down, oct_up, pitch, modw, pad, keys, ribbon, euclid;   /* euclid: GENERATIVE's ring */

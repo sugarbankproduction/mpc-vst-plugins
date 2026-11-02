@@ -538,12 +538,12 @@ def build(lay):
              # PANEL FOCUS: which Synth the panel shows and edits (multitimbral), and the SETUP page of all three
              # (on the row above's grid, so the SETTINGS page's button fits at the end: desktop/settings.c)
              "FOCUS1": (769, 432, 48, 42), "FOCUS2": (817, 432, 48, 42), "FOCUS3": (865, 432, 48, 42),
-             "TAB_SETUP": (913, 432, 48, 42), "TAB_SETTINGS": (961, 432, 44, 42),
+             "TOGETHER": (917, 432, 48, 42), "TAB_SETTINGS": (975, 432, 40, 42),   # (2026-11-02, owner: TOGETHER after the SYNTHs)
              # (2026-10-30) the third row: TOGETHER (lit: the SYNTH buttons add and remove Synths edited together,
              # hub.c), GENERATIVE (the generators' hub page) and GEN OFF (every generator off in all three Synths;
              # again: back on); the global TEMPO readout with HOST / OWN (the SETTINGS page's RECEIVE MIDI CLOCK and
              # TEMPO); UNDO and REDO (library.c's undo, as Ctrl+Z / Ctrl+Y). Spaced for their labels, not the grid.
-             "TOGETHER": (769, 478, 54, 42), "TAB_GEN": (827, 478, 62, 42), "GEN_OFF": (893, 478, 48, 42),
+             "TAB_GEN": (769, 478, 62, 42), "GEN_OFF": (833, 478, 48, 42), "TAB_SETUP": (885, 478, 48, 42),   # (SETUP after GEN ON)
              "TEMPO": (946, 482, 80, 24), "TEMPO_HOST": (1032, 481, 54, 15), "TEMPO_OWN": (1032, 498, 54, 15),
              "UNDO": (1102, 478, 34, 42), "REDO": (1136, 478, 34, 42)}
     # Synth 2 and 3's copies are reached through the Panel Focus; the setup keys live on the SETUP page

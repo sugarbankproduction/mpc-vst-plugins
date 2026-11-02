@@ -188,7 +188,13 @@ Code: `desktop/parts.c`; tested by `desktop/parts_test.c` inside load_test. Ever
   as `-  name *` (SAVE AS keeps it in the new one). The settings file keeps `library=<name>` and `import_dup=<0-3>`;
   RESTORE DEFAULTS leaves both. A library that is gone when Moo Won starts: Default.
 
-## The bundled libraries: Steveo's sounds (2026-11-01, the desktop window and the browser)
+## Steveo's sounds (2026-11-01; in the main preset list since 2026-11-02, the desktop window and the browser)
+
+Since 2026-11-02 the 222 sounds are factory presets 297-518 on the PATCHES page's left column, in the category tabs and
+the type filters (`presets/make_presets.py`, `steveo()`; `test/steveo_check.c`), with `libraries/<BANK>/` as their source.
+Their GROUP tag is Moo Won (the MOO WON button on the PATCHES page's bottom row lists them), their notes say "By Steveo". They are no longer copied as separate libraries. What follows is
+how they came to be.
+
 
 Six libraries come with Moo Won: **CLASSICS** (51 patches), **KING** (26), **MOO MOO** (25), **POLYPHONIC
 DESTINATIONS** (22), **STEREO FUTURES** (45) and **TRANSFORMERS** (53), 222 sounds that Steveo, a friend of the

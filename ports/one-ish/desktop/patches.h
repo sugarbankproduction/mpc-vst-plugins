@@ -11,13 +11,14 @@
 enum { PATCH_NAME_MAX = 32, PATCH_STATE_MAX = VST2_CHUNK_MAX };   /* a name's characters; the engine's state and the chunk */
 enum { SCR_PATCHES = -10 };                             /* the centre screen showing the patch list (see SCR_MATRIX) */
 enum { Z_PATCH_ACT = 100300, Z_PATCH_ITEM = 200000 };   /* hit codes: an action button (+ PA_), a list entry (+ pos) */
-enum { Z_PATCH_TYPE = 100482, Z_PATCH_LIB_PREV = 100486, Z_PATCH_LIB_NEXT = 100487 };   /* (2026-11-02) the bottom row */
+enum { Z_PATCH_TYPE = 100482, Z_PATCH_LIB_PREV = 100486, Z_PATCH_LIB_NEXT = 100487,
+       Z_PATCH_MOO = 100488 };   /* (2026-11-02) the bottom row */
 enum { Z_PATCH_CAT = 100450, PATCH_CATS = 32 };          /* (2026-10-30) a category tab (+ k; 0 is ALL) */
 /* the library's pages (library.c): performance SET, ALL SETS, ARRANGE (sets), SNAPSHOTS, TAGS; and their hit codes:
  * the page tabs, the buttons on each page, the console's COMPARE and SNAPSHOT, the list entries */
 enum { SCR_SET = -12, SCR_SETS = -13, SCR_ARRANGE = -14, SCR_SNAPS = -15, SCR_TAGS = -16 };
 enum { Z_LIB_TAB = 100320, Z_SNAP_ACT = 100340, Z_TAG_ACT = 100360, Z_ARR_ACT = 100380, Z_SET_BANK = 100400,
-       Z_SET_SIDE = 100410, Z_COMPARE = 100430, Z_SNAPSHOT = 100431,
+       Z_SET_SIDE = 100410, Z_COMPARE = 100430, Z_SNAPSHOT = 100431, Z_INIT = 100432,
        Z_SNAP_ITEM = 210000, Z_TAG_ITEM = 220000 /* + 1000 * kind + tag */, Z_SET_SLOT = 230000, Z_SETS_ITEM = 240000 };
 /* (2026-10-31) IMPORT .M1P and REPORT: Moog One presets into user patches, the last import's report (m1p_import.c) */
 enum { PA_SAVE, PA_SAVE_AS, PA_RENAME, PA_DELETE, PA_IMPORT, PA_EXPORT, PA_INTO, PA_SAVE_SYNTH, PA_M1P, PA_REPORT, PA_COUNT };
