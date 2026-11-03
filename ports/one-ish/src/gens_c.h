@@ -586,6 +586,10 @@ typedef struct {
     int ncq;
     /* BASS */
     int64_t bt_next;
+    /* (2026-11-03) FEED, [0] CHORDS [1] BASS: the notes for the keys, when; still held by the Synths */
+    int64_t fd_at[2], fd_until[2];
+    uint8_t fd_note[2][HM_NOTES];
+    int fd_n[2], fd_vel[2], fd_wait[2], fd_held[2];
     hm_bass_t bl;
     hm_seq_t bw;             /* no CHORDS to follow: its own plain chords */
     hm_chord_t bwc;

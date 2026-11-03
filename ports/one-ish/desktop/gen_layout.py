@@ -521,12 +521,14 @@ def build(lay):
     L.page("CHORDS", "CHORDS", "Plays chord progressions in the KEY. JAZZ: from plain triads to super jazz. WILD sets it on RANDOMISE.",
            [("chd_on", "Chords On"), ("chd_jazz", "Jazz"), ("chd_rate", "Chord Length"), ("chd_voicing", "Voicing"),
             ("chd_inv", "Inversions"), ("chd_octave", "Octave"), ("chd_vel", "Velocity"), ("chd_gate", "Gate"),
-            ("chd_strum", "Strum"), ("chd_seed", "Seed"), ("chd_keys", "Keys")] + own_key("chd_own") + more_c,
+            ("chd_strum", "Strum"), ("chd_seed", "Seed"), ("chd_keys", "Keys"), ("chd_feed", "Feed"), ("chd_feed_to", "Feed To"),
+            ("time_sig", "Time Signature")] + own_key("chd_own") + more_c,
            pic=("CHORDS", "chd_"))
     L.page("BASS", "BASS", "A bass line, one note at a time, under the chords CHORDS plays in any Synth, or in the KEY.",
            [("bass_on", "Bass On"), ("bass_follow", "Follow Chords"), ("bass_jazz", "Jazz"), ("bass_pattern", "Pattern"),
             ("bass_rate", "Rate"), ("bass_octave", "Octave"), ("bass_vel", "Velocity"), ("bass_gate", "Gate"),
-            ("bass_seed", "Seed"), ("bass_keys", "Keys")] + own_key("bass_own") + more_c, pic=("BASS", "bass_"))
+            ("bass_seed", "Seed"), ("bass_keys", "Keys"), ("bass_feed", "Feed"), ("bass_feed_to", "Feed To"),
+            ("time_sig", "Time Signature")] + own_key("bass_own") + more_c, pic=("BASS", "bass_"))
 
     L.panel(622, YB, 120, HB, "POLYPHONY", more="POLY")
     L.ctl("unison", "toggle", 626, YA, 64, 14, "UNISON", SIDE)

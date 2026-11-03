@@ -230,6 +230,9 @@ filter), `lad_kbd` (key tracking) and the filters' LFO amounts. See Appendix A: 
   on in any Synth of the sound, else in its own key. `gen_follow_chords=On` makes that Synth's other generators snap to the chord
   of the moment; missing = Off, so a file written before them plays as it did. Moo Won's RANDOMISE and MUTATE, GENERATIVE lit, set
   `chd_jazz` and `bass_jazz` from WILD; they never touch `bass_follow` or the own key and scale.
+  (2026-11-03) `chd_feed` and `bass_feed`: `Play + Feed` also sends what plays into the generators, as if held on the keys, `Feed
+  Only` sends it without playing it; `chd_feed_to` / `bass_feed_to`: `This Synth` or `All Synths`. `time_sig` (shared) is what a
+  bar is for `chd_rate`'s bars, BASS and the pendulums. Missing = `Off` and `4/4`, as before. RANDOMISE never touches them.
 - **Expression**: the matrix sources `Mod Wheel`, `Pitch Wheel`, `Aftertouch`, `Velocity`, `Ribbon`, `Pad X (CC 2)`,
   `Pad Y (CC 3)`, `Pad Gate (CC 18)`, `Exp 1 (CC 11)`, `Exp 2 (CC 4)`, `Sustain`. A good preset gives the mod wheel,
   aftertouch and the X/Y pad something musical to do, and says so in `notes=`.
@@ -1206,7 +1209,7 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 ke
 
 | Key | Name | Value | Default | Scope |
 |---|---|---|---|---|
-| `master_level` | Master Level | number 0 to 100 %, whole numbers | `100` | shared |
+| `master_level` | Master Level | number 0 to 100 %, whole numbers | `70` (a file without it: 100; a load in the window leaves it) | shared |
 | `seq_all` | Seq Play All | option: `Off` / `On` | `Off` | shared |
 
 ### EXT IN
@@ -1382,6 +1385,11 @@ Generated from Moo Won's own parameter list (`ports/one-ish/params.json`, 779 ke
 | `bass_seed` | Bass Seed | number 0 to 99, whole numbers | `1` | per Synth (2026-11-02) |
 | `bass_own_key` | Bass Key | option: `Follow` / `C` / `C#` / `D` / `D#` / `E` / `F` / `F#` / `G` / `G#` / `A` / `A#` / `B` | `Follow` | per Synth (2026-11-02) |
 | `bass_own_scale` | Bass Scale | option: `Follow` / `Major` / `Minor` / `Dorian` / `Phrygian` / `Lydian` / `Mixolydian` / `Locrian` / `Harmonic Minor` / `Melodic Minor` / `Pent Major` / `Pent Minor` / `Blues` / `Whole Tone` / `Chromatic` | `Follow` | per Synth (2026-11-02) |
+| `chd_feed` | Chords Feed | option: `Off` / `Play + Feed` / `Feed Only` | `Off` | per Synth (2026-11-03) |
+| `chd_feed_to` | Chords Feed To | option: `This Synth` / `All Synths` | `All Synths` | per Synth (2026-11-03) |
+| `bass_feed` | Bass Feed | option: `Off` / `Play + Feed` / `Feed Only` | `Off` | per Synth (2026-11-03) |
+| `bass_feed_to` | Bass Feed To | option: `This Synth` / `All Synths` | `All Synths` | per Synth (2026-11-03) |
+| `time_sig` | Time Signature | option: `4/4` / `2/4` / `3/4` / `5/4` / `6/4` / `7/4` / `5/8` / `6/8` / `7/8` / `9/8` / `11/8` / `12/8` / `13/8` / `15/8` | `4/4` | shared (2026-11-03) |
 
 ## Appendix B: the long option lists
 

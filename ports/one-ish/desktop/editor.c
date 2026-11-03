@@ -186,8 +186,12 @@ static void layout(void) {
         if (s < 0.5f) s = 0.5f;
     }
     const char *force = getenv("ONEISH_EDITOR_SCALE");   /* e.g. 1.5 on a big screen, 0.8 to test a small one */
+    s = view_base(s);   /* (2026-11-03) WINDOW SIZE, if it is set */
     if (force && atof(force) >= 0.5 && atof(force) <= 2.0) s = (float)atof(force);
     L.s = s;
+    L.vw = sc(BASE_W);
+    L.vh = sc(BASE_H);
+    L.s = s * view_zoom();   /* (PANEL ZOOM: all of it larger, the host's window shows a part) */
     L.w = sc(BASE_W);
     L.h = sc(BASE_H);
     for (int c = 0; c < NCTLS; c++) {
@@ -476,6 +480,12 @@ static void invalidate_zone(ed_t *e, int z) {   /* the hover moved onto or off z
     if (z >= Z_RND_KEYLOCK && z < Z_RND_KEYLOCK + KL_PARTS) {
         RECT k = keylock_rect(z - Z_RND_KEYLOCK);
         invalidate(e, &k);
+        invalidate(e, &L.help);
+        return;
+    }
+    if (z >= Z_WINV && z < Z_WINV + VW_COUNT) {
+        RECT vr;
+        if (winv_rect(z, &vr)) invalidate(e, &vr);
         invalidate(e, &L.help);
         return;
     }
@@ -1035,6 +1045,8 @@ static int hit_on_screen(ed_t *e, POINT pt) {   /* a param or a page entry on th
 static int hit(ed_t *e, int x, int y) {
     POINT pt = {x, y};
     e->hit_screen = 0;
+    int vz = view_hit(e, pt);   /* (2026-11-03) */
+    if (vz >= 0) return vz;
     int cz = cb_hit(e, pt);   /* (2026-10-30) CABLES, and while it shows a cable, its knob, X or a jack (cables.c) */
     if (cz >= 0) return cz;
     int q = qm_hit(e, pt);   /* a DEST button (quickmod.c) */
@@ -1370,6 +1382,7 @@ int ed_hit(ed_t *e, int x, int y) {   /* (2026-10-31) the panel under a cable be
 
 static void press(ed_t *e, int x, int y) {
     int i = hit(e, x, y);
+    if (view_press(e, i, x, y)) return;   /* (2026-11-03) the window's size, PANEL ZOOM */
     if (cb_press(e, i, x, y)) return;   /* the CABLES view (cables.c): its button, a cable, a knob, X, a jack */
     if (qm_press(e, i, x, y)) return;   /* QUICK ASSIGN: a source picked, a knob connected (quickmod.c) */
     if (seq_zone(i)) {   /* the step editor and the page LEDs (seq_page.c); a drag on a note or a value follows */
@@ -1543,6 +1556,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             return 0;
         }
         if (e->mode == M_SEQ) { seq_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
+        if (e->mode == M_VIEW) { view_drag(e, x, y); return 0; }
         if (e->mode == M_QMOD) { qm_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode == M_CABLE) { cb_drag(e, x, y, (wp & MK_SHIFT) != 0); return 0; }
         if (e->mode != M_NONE) { controller_move(e, x, y); return 0; }
@@ -1651,6 +1665,8 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             qm_release(e);
         } else if (e->mode == M_CABLE) {   /* (let go: a drop there; the capture lost: cancelled) */
             cb_release(e, msg == WM_LBUTTONUP, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+        } else if (e->mode == M_VIEW) {
+            view_release(e, msg == WM_LBUTTONUP);
         } else if (e->mode == M_PARAM) {
             if (e->drag >= 0) begin_edit(e, e->drag, 1);
             e->drag = -1;
@@ -1746,6 +1762,17 @@ static void free_window_class(void) {
     class_ready = 0;
 }
 
+static void make_fonts(void);
+void editor_relayout(void) {   /* (2026-11-03) a new scale; the next paint bakes the panel again (skin_frame) */
+    L.ready = 0;
+    layout();
+    if (!class_ready) return;
+    for (unsigned k = 0; k < sizeof FONTS / sizeof FONTS[0]; k++) {
+        if (*FONTS[k]) DeleteObject(*FONTS[k]);
+        *FONTS[k] = NULL;
+    }
+    make_fonts();
+}
 static void init_window_class(void) {
     if (class_ready) return;
     GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
@@ -1757,6 +1784,10 @@ static void init_window_class(void) {
     wc.hCursor = LoadCursor(NULL, IDC_ARROW);
     wc.lpszClassName = CLASS_NAME;
     RegisterClassA(&wc);
+    make_fonts();
+    class_ready = 1;
+}
+static void make_fonts(void) {
     font_title = font(10, FW_BOLD, "Segoe UI");
     font_label = font(9, FW_SEMIBOLD, "Segoe UI");
     font_value = font(9, FW_NORMAL, "Segoe UI");
@@ -1765,7 +1796,6 @@ static void init_window_class(void) {
     font_cell = font(10.5f, FW_NORMAL, "Segoe UI");
     font_big = font(18, FW_SEMIBOLD, "Segoe UI");
     font_brand = font(17, FW_LIGHT, "Segoe UI");
-    class_ready = 1;
 }
 
 /* a message-only window per instance: its timer loads what a MIDI program change asked for while the editor is closed
@@ -1821,7 +1851,7 @@ static int square_corners(HWND wnd) {
     HWND root = wnd ? GetAncestor(wnd, GA_ROOT) : NULL;
     RECT c;
     if (!root || root == wnd || !GetClientRect(root, &c)) return 0;
-    if (abs(rw(&c) - L.w) > 8 || abs(rh(&c) - L.h) > 8) return 0;
+    if (abs(rw(&c) - L.vw) > 8 || abs(rh(&c) - L.vh) > 8) return 0;
     if (!looked) {
         looked = 1;
         HMODULE m = LoadLibraryExA("dwmapi.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
@@ -1844,12 +1874,13 @@ static intptr_t dispatcher(AEffect *fx, int32_t op, int32_t idx, intptr_t v, voi
     case effEditGetRect: {
         static ERect r;
         layout();
-        r.top = 0; r.left = 0; r.bottom = (int16_t)L.h; r.right = (int16_t)L.w;
+        r.top = 0; r.left = 0; r.bottom = (int16_t)L.vh; r.right = (int16_t)L.vw;
         if (ptr) *(ERect **)ptr = &r;
         return 1;
     }
     case effEditOpen: {
         if (!e || !ptr) return 0;
+        view_open();   /* (2026-11-03) the whole instrument, not a panel */
         layout();
         init_window_class();
         if (e->wnd) DestroyWindow(e->wnd);

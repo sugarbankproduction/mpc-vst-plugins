@@ -159,6 +159,7 @@ static void *create_one(const char *data_dir) {
     if (!e) return NULL;
     E_REAL->set_param(e, "s2_syn_on", "0");
     E_REAL->set_param(e, "s3_syn_on", "0");
+    E_REAL->set_param(e, "master_level", "100");   /* (2026-11-03: new instances start at 70%; these checks measure at 100%) */
     E_REAL->set_param(e, "spread", "0");   /* (2026-11-02: new sounds start at 50%; these checks are of one centred voice) */
     E_REAL->set_param(e, "voices", "3");   /* (2026-11-02: new sounds start at 8; these checks were written with 4) */
     static const char *const F[] = {"src", "dst", "amt"};
@@ -4170,6 +4171,7 @@ static void randomiser_wild(void) {
             }
             void *e = E->create(NULL);
             rnd_apply_norm(e, out);
+            set(e, "master_level", 100);   /* (2026-11-03: these limits were set at 100%) */
             rnd_stats_t st = rnd_play(e);
             E->destroy(e);
             int fin = isfinite(st.rms) && isfinite(st.peak) && isfinite(st.note_peak);

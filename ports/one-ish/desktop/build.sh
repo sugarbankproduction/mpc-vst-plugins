@@ -53,13 +53,14 @@ $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/quickmod.c" -o "$OUT/quickmod.o"
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/hub.c" -o "$OUT/hub.o"
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/nav.c" -o "$OUT/nav.o"
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/hub_gens.c" -o "$OUT/hub_gens.o"   # (2026-10-30)
+$CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/view.c" -o "$OUT/view.o"   # (2026-11-03)
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/cables.c" -o "$OUT/cables.o"   # (2026-10-30) the CABLES view
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/matrix_page.c" -o "$OUT/matrix_page.o"   # (2026-10-30)
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/parts.c" -o "$OUT/parts.o"         # (2026-10-30) presets, names, libraries
 $CC "${FLAGS[@]}" -I"$P/src" -c "$P/desktop/m1p.c" -o "$OUT/m1p.o"   # (2026-10-31) Moog One presets: the converter
 $CC "${FLAGS[@]}" -I"$OUT" -c "$P/desktop/m1p_import.c" -o "$OUT/m1p_import.o"   # ... and IMPORT .M1P, REPORT
 # -static: winpthreads and libgcc go inside the DLL, so it needs nothing else installed
-DLL_OBJS=("$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/editor_draw.o" "$OUT/skin.o" "$OUT/patches.o" "$OUT/library.o" "$OUT/settings.o" "$OUT/scala.o" "$OUT/seq_page.o" "$OUT/more_pics.o" "$OUT/rate_leds.o" "$OUT/quickmod.o" "$OUT/hub.o" "$OUT/nav.o" "$OUT/hub_gens.o" "$OUT/cables.o" "$OUT/matrix_page.o" "$OUT/parts.o" "$OUT/m1p.o" "$OUT/m1p_import.o" "$OUT/hostrate.o" "$OUT/resample.o")
+DLL_OBJS=("$OUT/vst2_wrap.o" "$OUT/editor.o" "$OUT/view.o" "$OUT/editor_draw.o" "$OUT/skin.o" "$OUT/patches.o" "$OUT/library.o" "$OUT/settings.o" "$OUT/scala.o" "$OUT/seq_page.o" "$OUT/more_pics.o" "$OUT/rate_leds.o" "$OUT/quickmod.o" "$OUT/hub.o" "$OUT/nav.o" "$OUT/hub_gens.o" "$OUT/cables.o" "$OUT/matrix_page.o" "$OUT/parts.o" "$OUT/m1p.o" "$OUT/m1p_import.o" "$OUT/hostrate.o" "$OUT/resample.o")
 $LINK -shared "${OBJS[@]}" "${DLL_OBJS[@]}" "$P/desktop/vst2.def" $LIBS -static -lpthread -lgdiplus -lgdi32 -luser32 \
   -lcomdlg32 -lshell32 \
   -o "$OUT/ONE-ish.dll"

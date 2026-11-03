@@ -44,7 +44,7 @@ for f in $SOURCES; do cc "$f" "$OUT/obj_$(echo "${f%.*}" | tr '/' '_').o"; done
 # the wrapper, renamed as in desktop/build.sh: editor.c's VSTPluginMain wraps it; hostrate.c's table feeds it
 cc wrapper/vst2_wrap.c "$OUT/vst2_wrap.o" -DVSTPluginMain=one_ish_wrapped_main -Dmpc_engine=one_ish_desktop_engine \
   -Dmpc_engine_changed=one_ish_desktop_changed
-for f in editor editor_draw skin patches library settings scala seq_page more_pics rate_leds quickmod hub nav hub_gens \
+for f in editor view editor_draw skin patches library settings scala seq_page more_pics rate_leds quickmod hub nav hub_gens \
          cables matrix_page parts m1p_import hostrate resample; do
   cc "$P/desktop/$f.c" "$OUT/$f.o" "${WIN[@]}" -Wno-comment -Wno-string-plus-int
 done

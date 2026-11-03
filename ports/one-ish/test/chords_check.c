@@ -551,6 +551,95 @@ static void chords_checks(void) {
             }
         check(fine, "CHORDS, BASS: every scale with every voicing and inversion: notes in range");
     }
+    /* (2026-11-03) FEED: the chords into the arpeggiator as keys, here or in another Synth; one way; it leaves with them */
+    {
+        char what2[400];
+        int counts[6], inchord = 0, total = 0, roots = 0;
+        static const char *const KV[6] = {
+            "chd_on=1,chd_jazz=0,chd_rate=2,chd_feed=2,arp_on=1,gen_keys=1",                 /* Feed Only into its arp */
+            "chd_on=1,chd_jazz=0,chd_rate=2,chd_feed=0,arp_on=1,gen_keys=1",                 /* off: only the chords */
+            "chd_on=1,chd_jazz=0,chd_rate=2,chd_feed=2",                                     /* Feed Only, nothing to take it */
+            "chd_on=1,chd_jazz=0,chd_rate=2,chd_feed=2,chd_keys=1,arp_on=1,gen_keys=1",      /* Held Keys: fed notes never start it */
+            "bass_on=1,bass_rate=1,bass_feed=2,arp_on=1,gen_keys=1",                         /* the bass, likewise */
+            "bass_on=1,bass_rate=1,bass_feed=0,arp_on=1,gen_keys=1"};
+        for (int k = 0; k < 6; k++) {
+            void *a = pg_patch();
+            setkv(a, KV[k]);
+            int n = 0, nc = 0;
+            cch_run(a, 9.0, "", cc_ev, &n, "", cc_c, &nc);
+            counts[k] = n;
+            if (k == 0) {
+                unsigned seen = 0;
+                for (int i = 0; i < nc; i++) seen |= 1u << cc_c[i].root;
+                for (; seen; seen &= seen - 1) roots++;
+                for (int i = 0; i < n; i++) {
+                    const cc_chord_t *c = cc_at(cc_c, nc, cc_ev[i].t);
+                    total++;
+                    inchord += c && (c->tones >> (cc_ev[i].note % 12) & 1u);
+                }
+                set(a, "chd_on", 0);
+                int16_t buf[256];
+                for (long at = 0; at < (long)(1.0 * SR); at += 128) E->render(a, buf, 128);
+                n = 0;
+                pg_run(a, 0.1, "gen_log", pg_a, &n);
+                for (long at = 0; at < (long)(3.0 * SR); at += 128) E->render(a, buf, 128);
+                n = 0;
+                pg_run(a, 3.0, "gen_log", pg_a, &n);
+                snprintf(what2, sizeof what2, "FEED: into the arp, %d notes, %d in the chord of the moment, %d chord roots; CHORDS off: %d notes after",
+                         total, inchord, roots, n);
+                check(total > 30 && inchord == total && roots >= 2 && n == 0, what2);
+            }
+            E->destroy(a);
+        }
+        snprintf(what2, sizeof what2, "FEED: Feed Only with no arp or generator is silent (%d); off, the arp gets nothing, only the chords play (%d, a few); "
+                 "Held Keys chords are never started by what they feed (%d); BASS feeds too (%d, off %d)", counts[2], counts[1], counts[3], counts[4], counts[5]);
+        check(counts[2] == 0 && counts[1] > 0 && counts[1] < counts[0] && counts[3] == 0 && counts[4] > 0, what2);
+        void *a = pg_patch();
+        setkv(a, "chd_on=1,chd_jazz=0,chd_rate=2,chd_feed=2,chd_feed_to=1,s2_syn_on=1,s2_arp_on=1,s2_gen_keys=1");
+        int n1 = 0, n2 = 0;
+        cch_run(a, 6.0, "s2_", cc_ev2, &n1, "", NULL, NULL);
+        E->destroy(a);
+        a = pg_patch();
+        setkv(a, "chd_on=1,chd_jazz=0,chd_rate=2,chd_feed=2,chd_feed_to=0,s2_syn_on=1,s2_arp_on=1,s2_gen_keys=1");
+        cch_run(a, 6.0, "s2_", cc_ev2, &n2, "", NULL, NULL);
+        E->destroy(a);
+        snprintf(what2, sizeof what2, "FEED TO: All Synths plays Synth 2's arp (%d notes), This Synth does not (%d)", n1, n2);
+        check(n1 > 10 && n2 == 0, what2);
+    }
+    /* (2026-11-03) TIME SIGNATURE: CHORDS' bars and BASS on the bar line */
+    {
+        char what2[300];
+        static const struct { const char *v; double beats; } SIG[3] = {{"0", 4.0}, {"2", 3.0}, {"8", 3.5}};
+        double got[3];
+        for (int k = 0; k < 3; k++) {
+            void *a = pg_patch();
+            char kv[120];
+            snprintf(kv, sizeof kv, "chd_on=1,chd_jazz=0,chd_rate=2,time_sig=%s", SIG[k].v);
+            setkv(a, kv);
+            int nc = 0;
+            cch_run(a, 20.0, "", NULL, NULL, "", cc_c, &nc);
+            got[k] = nc > 3 ? (double)(cc_c[nc - 1].t - cc_c[1].t) / (nc - 2) : 0.0;
+            E->destroy(a);
+        }
+        snprintf(what2, sizeof what2, "TIME SIGNATURE: a bar's chord lasts %.0f samples in 4/4, %.0f in 3/4 (ratio %.3f), %.0f in 7/8 (ratio %.3f)",
+                 got[0], got[1], got[1] / got[0], got[2], got[2] / got[0]);
+        check(fabs(got[1] / got[0] - 0.75) < 0.01 && fabs(got[2] / got[0] - 0.875) < 0.01, what2);
+        void *a = pg_patch();
+        setkv(a, "bass_on=1,bass_rate=1,time_sig=8");
+        int n = 0;
+        cch_run(a, 12.0, "", cc_ev, &n, "", NULL, NULL);
+        E->destroy(a);
+        int shortgap = 0, longgap = 0;
+        double q = 0.0;
+        for (int i = 1; i < n; i++) { double d = (double)(cc_ev[i].t - cc_ev[i - 1].t); if (d > q) q = d; }
+        for (int i = 1; i < n; i++) {
+            double d = (double)(cc_ev[i].t - cc_ev[i - 1].t);
+            if (fabs(d / q - 0.5) < 0.02) shortgap++;
+            if (fabs(d / q - 1.0) < 0.02) longgap++;
+        }
+        snprintf(what2, sizeof what2, "TIME SIGNATURE: BASS in 7/8, 1/4s: %d notes, %d quarters, %d short ones on the bar's end (one in four)", n, longgap, shortgap);
+        check(n > 10 && shortgap > 0 && longgap / 3 >= shortgap - 1 && longgap / 3 <= shortgap + 1, what2);
+    }
 }
 
 /* ---- the demo WAVs ---- */
@@ -645,10 +734,12 @@ static void chords_bench(void) {
     clock_gettime(CLOCK_MONOTONIC, &t1);
     printf("bench: chords, one chord worked out at JAZZ 100 (progression, notes, voicing): %6.3f us\n",
            ((t1.tv_sec - t0.tv_sec) * 1e9 + (t1.tv_nsec - t0.tv_nsec)) / 1e3 / CC_N);
-    static const char *const KV[3] = {"", "chd_on=1,chd_jazz=100,chd_rate=3,bass_on=1,bass_rate=2,s2_syn_on=0,s3_syn_on=0",
-                                      "chd_on=1,chd_jazz=100,chd_rate=5,bass_on=1,bass_rate=3,rain_on=1,gen_follow_chords=1"};
-    static const char *const NM[3] = {"off", "chords and bass on (their voices too)", "chords on 1/8, bass, rain following"};
-    for (int k = 0; k < 3; k++) {
+    static const char *const KV[4] = {"", "chd_on=1,chd_jazz=100,chd_rate=3,bass_on=1,bass_rate=2,s2_syn_on=0,s3_syn_on=0",
+                                      "chd_on=1,chd_jazz=100,chd_rate=5,bass_on=1,bass_rate=3,rain_on=1,gen_follow_chords=1",
+                                      "chd_on=1,chd_jazz=100,chd_rate=3,chd_feed=1,arp_on=1,gen_keys=1,s2_syn_on=0,s3_syn_on=0"};
+    static const char *const NM[4] = {"off", "chords and bass on (their voices too)", "chords on 1/8, bass, rain following",
+                                      "chords feeding the arp (2026-11-03)"};
+    for (int k = 0; k < 4; k++) {
         void *a = pg_patch();
         if (*KV[k]) setkv(a, KV[k]);
         int16_t buf[256];

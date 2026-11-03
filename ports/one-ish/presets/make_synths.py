@@ -26,7 +26,8 @@ GLOBAL_PREFIX = ("dly_", "rev_", "link_")   # the master effect slots' controls;
 GLOBAL = {"mfx_on", "mfx_series", "mfx_width", "mfx_buss", "clock_swing", "master_tune", "fine_tune", "midi_ch",
           "learn_mode", "master_level", "seq_all", "gen_follow_tempo",
           "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   # (2026-10-30) SHARE: Synth 1's LFO n in all 3
-          "analog_amt"}   # (2026-11-01) ANALOG AMOUNT: scales every Synth's ANALOG page at once
+          "analog_amt",   # (2026-11-01) ANALOG AMOUNT: scales every Synth's ANALOG page at once
+          "time_sig"}   # (2026-11-03) what CHORDS, BASS and the pendulums count a bar in
 SYNTH_DEFAULTS = {"s2_": {"syn_on": "On", "syn_ch": "2", "mout_ch": "2", "o1_oct": "16'", "volume": 45},
                   "s3_": {"syn_on": "On", "syn_ch": "3", "mout_ch": "3", "o1_oct": "4'", "o1_wave": "Tri", "volume": 35}}
 # (2026-10-30) MIDI OUT's channel: Synth n sends on channel n (mout_ch, new: no old default to keep)

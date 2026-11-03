@@ -53,7 +53,8 @@ static int engine_global(int k) {
                                          "fine_tune", "midi_ch", "learn_mode", "master_level", "seq_all",
                                          "gen_follow_tempo",   /* (2026-10-30: the generators follow the tempo) */
                                          "lfo1_share", "lfo2_share", "lfo3_share", "lfo4_share",   /* (2026-10-30) */
-                                         "analog_amt"};   /* (2026-11-01) ANALOG AMOUNT */
+                                         "analog_amt",   /* (2026-11-01) ANALOG AMOUNT */
+                                         "time_sig"};   /* (2026-11-03) */
     const char *key = KEYS[k];
     if (!strncmp(key, "dly_", 4) || !strncmp(key, "rev_", 4)) return 1;   /* the master effect slots' controls */
     if (!strncmp(key, "link_", 5)) return 1;   /* the window's LINKs across the Synths (2026-10-30) */
@@ -258,6 +259,16 @@ static void set_param(void *inst, const char *key, const char *val) {
             if (nl && c < NSYN) sq_command(in->syn[c], nl + 1);
             return;
         }
+        if (!strncmp(val, "seqput", 6)) {   /* (2026-11-03) SEQ LOCK: "seqput<n>\n<sequence text>" puts Synth n's sequence
+                                              * back after a load (no text: none) */
+            int c = val[6] >= '1' && val[6] <= '9' ? val[6] - '1' : 0;
+            const char *nl = strchr(val, '\n');
+            if (!nl || c >= NSYN) return;
+            sq_clear(&in->syn[c]->sq.q);
+            if (nl[1]) sq_decode(nl + 1, &in->syn[c]->sq.q, MD_COUNT, MS_COUNT);
+            sq_lanes_changed(in->syn[c]);
+            return;
+        }
         if (!strncmp(val, "tun", 3)) {   /* MICROTUNING from the window: "tunscl<n>\n<scale>", "tunkbm<n>\n<map>",
                                           * "tunclear<n>\n" (src/tuning.h's compact texts; Synth n, 1 if left out) */
             const char *nl = strchr(val, '\n'), *d = val + 3 + strcspn(val + 3, "123456789\n");
@@ -367,11 +378,12 @@ static void legacy_defaults(inst_t *in) {   /* (after load_defaults) every Synth
  * equal to it is the one left out, and a new sound at today's default writes its key). Those today:
  *   gen_keys: Euclid and Turing played only from the held keys until 2026-10-30 (Held Keys); new sounds start Free;
  *   gen_follow_keys: until 2026-10-30 the notes from the keys stayed in the Synth's KEY (Off); new sounds follow (On);
- *   key_scale: the Synth's SCALE (what the generators play in) was Minor until 2026-11-01; new sounds start Major.
+ *   key_scale: the Synth's SCALE (what the generators play in) was Minor until 2026-11-01; new sounds start Major;
+ *   master_level: 100% until 2026-11-03; a new instance starts at 70% (a project saved before plays as it was).
  * (A version number in the state would do the same for many params at once; this table is what it would hold.) */
 static float state_absent(const one_t *s, int i) {
     return i == P_GEN_KEYS ? (float)GK_HELD : i == P_GEN_FOLLOW_KEYS ? 0.0f : i == P_KEY_SCALE ? (float)KS_MINOR
-           : i == P_SPREAD ? 0.0f : i == P_VOICES ? 3.0f /* (4 voices until 2026-11-02) */ : s->def[i];   /* (SPREAD: 0 until 2026-11-02; new sounds start at 50%) */
+           : i == P_MASTER_LEVEL ? 100.0f : i == P_SPREAD ? 0.0f : i == P_VOICES ? 3.0f /* (4 voices until 2026-11-02) */ : s->def[i];   /* (SPREAD: 0 until 2026-11-02; new sounds start at 50%) */
 }
 static void state_absent_load(one_t *s) {
     s->val[P_GEN_KEYS] = state_absent(s, P_GEN_KEYS);
@@ -379,6 +391,7 @@ static void state_absent_load(one_t *s) {
     s->val[P_KEY_SCALE] = state_absent(s, P_KEY_SCALE);   /* (2026-11-01) */
     s->val[P_SPREAD] = state_absent(s, P_SPREAD);   /* (2026-11-02) */
     s->val[P_VOICES] = state_absent(s, P_VOICES);   /* (2026-11-02) */
+    s->val[P_MASTER_LEVEL] = state_absent(s, P_MASTER_LEVEL);   /* (2026-11-03) */
 }
 static int state_keeps(const one_t *s, int i) {
     if (!KEYS[i][0] || s->val[i] == state_absent(s, i) || i == P_SEQ_PLAY || i == P_SEQ_REC || i == P_SEQ_STEP_MOD ||
@@ -854,6 +867,8 @@ static void render_to(void *inst, int16_t *out, float *fout, float *const *sout,
         if (live[j]->gc.on & GC_CHD) in->harm.leader = live[j]->idx;
     }
     if (in->harm.leader < 0) in->harm.valid = 0;
+    int gc_feeding = 0;
+    for (int c = 0; c < NSYN; c++) gc_feeding |= gc_feed_busy(in->syn[c]);
     int done = 0;
     while (done < frames) {
         if (in->heal) heal(in);
@@ -863,6 +878,7 @@ static void render_to(void *inst, int16_t *out, float *fout, float *const *sout,
             for (int j = 0; j < nl; j++) if (live[j]->gc.on & GC_CHD) gc_chords_due(live[j], &n);
             for (int j = 0; j < nl; j++) if (live[j]->gc.on & GC_BASS) gc_bass_due(live[j], &n);
         }
+        if (gc_feeding) gc_feed_due(in->syn, NSYN, &n);   /* (2026-11-03) FEED: the keys for what plays next, on this sample */
         for (int j = 0; j < nl; j++) synth_due(live[j], &n);   /* steps and note ends at this sample, first */
         if (n > 128) n = 128;
         for (int j = 0; j < nl; j++) live[j]->ext = ext ? ext + done : NULL;

@@ -2143,3 +2143,16 @@ s3_bass_gate
 s3_bass_seed
 s3_bass_own_key
 s3_bass_own_scale
+chd_feed
+chd_feed_to
+bass_feed
+bass_feed_to
+time_sig
+s2_chd_feed
+s2_chd_feed_to
+s2_bass_feed
+s2_bass_feed_to
+s3_chd_feed
+s3_chd_feed_to
+s3_bass_feed
+s3_bass_feed_to

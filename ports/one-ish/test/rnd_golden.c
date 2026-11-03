@@ -55,7 +55,8 @@ static const char *const NEWER[] = {"dly_on", "rev_on",   /* (2026-10-30) the ma
     /* (2026-11-02) CHORDS, BASS, FOLLOW CHORDS (GENERATIVE lit only) */
     "gen_follow_chords", "chd_on", "chd_keys", "chd_jazz", "chd_rate", "chd_voicing", "chd_inv", "chd_octave", "chd_vel", "chd_gate",
     "chd_strum", "chd_seed", "chd_own_key", "chd_own_scale", "bass_on", "bass_keys", "bass_follow", "bass_jazz", "bass_pattern",
-    "bass_rate", "bass_octave", "bass_vel", "bass_gate", "bass_seed", "bass_own_key", "bass_own_scale"};
+    "bass_rate", "bass_octave", "bass_vel", "bass_gate", "bass_seed", "bass_own_key", "bass_own_scale",
+    "chd_feed", "chd_feed_to", "bass_feed", "bass_feed_to", "time_sig"};   /* (2026-11-03: no rule, never touched) */
 static const char *const CHANGED[] = {"drift", "spread", "mfx_send1", "mfx_send2", "modfx_mix",
                                       "link_send"};   /* (LINK SENDS: its default is On now; never randomised) */
 
@@ -88,7 +89,8 @@ static uint64_t hash(const float *n, uint32_t seed) {
     char t[96];
     for (int j = 0; j < no; j++) {
         int i = order[j];
-        snprintf(t, sizeof t, "%s=%.5g;", PARAMS[i].key, rnd_real(i, n[i]));
+        /* (master_level: 70 for a new instance since 2026-11-03, 100 in the list; never randomised) */
+        snprintf(t, sizeof t, "%s=%.5g;", PARAMS[i].key, !strcmp(PARAMS[i].key, "master_level") ? 100.0f : rnd_real(i, n[i]));
         if (getenv("RND_GOLDEN_DUMP")) printf("%s\n", t);   /* (to see what differs: run old and new, diff) */
         for (const char *p = t; *p; p++) h = (h ^ (unsigned char)*p) * 1099511628211ull;
     }

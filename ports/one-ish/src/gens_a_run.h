@@ -330,7 +330,7 @@ static void pd_tick(one_t *s, int64_t t, int go) {
     for (int i = 0; i < PD_MAX; i++) if (r->pflash[i]) r->pflash[i]--;
     int n = (int)clampf(roundf(p[P_PEND_COUNT]), 2, PD_MAX), sw = (int)clampf(roundf(p[P_PEND_SPEED]), 1, 32);
     int spread = (int)clampf(roundf(p[P_PEND_SPREAD]), 1, 8), trig = (int)clampf(p[P_PEND_TRIGGER], 0, 2);
-    double cyc = 4.0 * PD_BARS[(int)clampf(p[P_PEND_CYCLE], 0, 5)];
+    double cyc = bar_beats(s) * PD_BARS[(int)clampf(p[P_PEND_CYCLE], 0, 5)];
     double c0 = (ga_beat_at(r, t) - r->pstart) / cyc, c1 = (ga_beat_at(r, t + GA_STEP) - r->pstart) / cyc;
     float damp = clampf(p[P_PEND_DAMP] * 0.01f, 0.0f, 1.0f);
     if (floor(c1) > floor(c0) && !(r->launch & GA_PEND)) r->pamp = 1.0f;   /* a new cycle: pushed again (LAUNCH: the key) */

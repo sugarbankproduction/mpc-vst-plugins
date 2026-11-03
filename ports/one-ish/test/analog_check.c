@@ -11,6 +11,7 @@
 
 static void *an_solo(const mpc_engine_t *eng) {   /* Synth 1 alone, a held two-saw sound into the ladder */
     void *e = eng->create(NULL);
+    set(e, "master_level", 100);   /* (2026-11-03: a new instance's 70% is not what this compares) */
     set(e, "s2_syn_on", 0);
     set(e, "s3_syn_on", 0);
     set(e, "o2_level", 70);

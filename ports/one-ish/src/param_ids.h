@@ -159,6 +159,8 @@ enum {
     P_CHD_SEED, P_CHD_OWN_KEY, P_CHD_OWN_SCALE,
     P_BASS_ON, P_BASS_KEYS, P_BASS_FOLLOW, P_BASS_JAZZ, P_BASS_PATTERN, P_BASS_RATE, P_BASS_OCT, P_BASS_VEL, P_BASS_GATE,
     P_BASS_SEED, P_BASS_OWN_KEY, P_BASS_OWN_SCALE,
+    P_CHD_FEED, P_CHD_FEED_TO, P_BASS_FEED, P_BASS_FEED_TO,   /* (2026-11-03) FEED: into the other generators, as keys */
+    P_TIME_SIG,   /* (2026-11-03) shared */
     P_COUNT
 };
 
@@ -310,4 +312,6 @@ static const char *const KEYS[P_COUNT] = {
     "chd_seed", "chd_own_key", "chd_own_scale",
     "bass_on", "bass_keys", "bass_follow", "bass_jazz", "bass_pattern", "bass_rate", "bass_octave", "bass_vel", "bass_gate",
     "bass_seed", "bass_own_key", "bass_own_scale",
+    "chd_feed", "chd_feed_to", "bass_feed", "bass_feed_to",
+    "time_sig",
 };

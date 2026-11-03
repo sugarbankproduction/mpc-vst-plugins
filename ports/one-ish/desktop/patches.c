@@ -400,10 +400,11 @@ static void mark_clean(ed_t *e) {   /* what is loaded now is what the patch hold
     redraw(e);
 }
 
+static int not_the_sound(int i) { return !strcmp(PARAMS[i].key, "master_level"); }   /* (2026-11-03) MASTER: no *, a load leaves it */
 int patches_edited_now(ed_t *e) {
     if (e->pt.forced_edit) return 1;
     for (int i = 0; i < NPARAMS; i++)
-        if (e->fx->getParameter(e->fx, i) != e->pt.base[i]) return 1;
+        if (e->fx->getParameter(e->fx, i) != e->pt.base[i] && !not_the_sound(i)) return 1;
     return 0;
 }
 
@@ -413,7 +414,7 @@ int patches_tick(ed_t *e) {
     int was = p->edited;
     p->edited = p->forced_edit;
     for (int i = 0; i < NPARAMS && !p->edited; i++)
-        if (e->shown[i] != p->base[i]) p->edited = 1;
+        if (e->shown[i] != p->base[i] && !not_the_sound(i)) p->edited = 1;
     int expired = p->msg[0] && !patches_message(e);
     if (expired) p->msg[0] = 0;
     return was != p->edited || expired;
@@ -553,7 +554,9 @@ static int into_pos(ed_t *e, int pos) {
     snprintf(cmd, sizeof cmd, "synthload%d\n%s", e->focus + 1, state);
     static float before[NPARAMS];
     for (int i = 0; i < NPARAMS; i++) before[i] = e->fx->getParameter(e->fx, i);
+    lock_keep(e);
     wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(cmd) + 1, cmd, 0);
+    lock_put(e);
     for (int i = 0; i < NPARAMS; i++) {
         float v = e->fx->getParameter(e->fx, i);
         if (v == before[i] || !e->host) continue;
@@ -1253,6 +1256,13 @@ static RECT type_rect(int k) {
     RECT r = {L.row[0].left + k * (w + gap), y, L.row[0].left + k * (w + gap) + w, y + sc(17)};
     return r;
 }
+static RECT lock_rect(int seq) {   /* (2026-11-03) GEN LOCK, SEQ LOCK: over the bottom row, at its right */
+    RECT r = type_rect(0);
+    OffsetRect(&r, 0, -sc(20));
+    r.right = L.row[0].right - (seq ? 0 : sc(66));
+    r.left = r.right - sc(62);
+    return r;
+}
 static RECT lib_arrow_rect(int next) {
     RECT t = type_rect(3), r = t;
     if (next) { r.right = L.row[0].right; r.left = r.right - sc(18); }
@@ -1272,6 +1282,8 @@ int patches_hit(ed_t *e, POINT pt) {
     for (int k = 0; k < 2; k++) {
         RECT r = lib_arrow_rect(k);
         if (PtInRect(&r, pt)) return k ? Z_PATCH_LIB_NEXT : Z_PATCH_LIB_PREV;
+        r = lock_rect(k);
+        if (PtInRect(&r, pt)) return Z_PATCH_LOCK + k;
     }
     for (int k = 0, n = cats(e); k < n; k++) {
         RECT r = cat_rect(n, k);
@@ -1294,6 +1306,13 @@ int patches_press(ed_t *e, int z) {   /* 1: z was the page's */
         lib_type_pick(e, TYPE_TAG[z - Z_PATCH_TYPE]);
         e->sub = 0;
         follow(e);
+        redraw(e);
+        return 1;
+    }
+    if (z == Z_PATCH_LOCK || z == Z_PATCH_LOCK + 1) {
+        settings_lock_toggle(e, z - Z_PATCH_LOCK);
+        say(e, "%s %s.", z == Z_PATCH_LOCK ? "GEN LOCK" : "SEQ LOCK",
+            settings_lock(z - Z_PATCH_LOCK) ? "on: a load changes the sound only" : "off: a load brings its own");
         redraw(e);
         return 1;
     }
@@ -1401,6 +1420,15 @@ void patches_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dra
         frame(dc, r, hot || on ? P_FRAME_HOT : P_FRAME);
         label(dc, r, TYPE_BTN[k], font_tiny, hot || on ? P_HOT : P_LCD, DT_CENTER);
     }
+    for (int k = 0; k < 2; k++) {   /* GEN LOCK, SEQ LOCK: lit orange while they hold */
+        static const char *const NAME[2] = {"GEN LOCK", "SEQ LOCK"};
+        RECT r = lock_rect(k);
+        int hot = e->hover == Z_PATCH_LOCK + k, on = settings_lock(k);
+        if (on) fill(dc, r, hot ? P_MOO_HOT : P_MOO);
+        else if (hot) fill(dc, r, P_FILL_HOT);
+        frame(dc, r, on ? P_MOO : hot ? P_FRAME_HOT : P_FRAME);
+        label(dc, r, NAME[k], font_tiny, on ? (hot ? P_HOT : RGB(0, 0, 0)) : hot ? P_HOT : P_LCD, DT_CENTER);
+    }
     for (int k = 0; k < 2; k++) {
         RECT r = lib_arrow_rect(k);
         int hot = e->hover == (k ? Z_PATCH_LIB_NEXT : Z_PATCH_LIB_PREV);
@@ -1486,6 +1514,12 @@ const char *patches_zone_help(int z) {
     if (z >= Z_PATCH_TYPE && z < Z_PATCH_TYPE + 4)
         return "TYPE: the list shows only sounds of this type: SINGLE one Synth, LAYER Synths stacked, SPLIT apart on the "
                "keyboard, MULTI any other mix. Click again for all. It stays while you click through the categories.";
+    if (z == Z_PATCH_LOCK)
+        return "GEN LOCK: lit, a preset or patch you load changes the sound only: the arpeggiator, the chord memory, every "
+               "generator, KEY and SCALE stay as you set them. Not lit, it brings its own.";
+    if (z == Z_PATCH_LOCK + 1)
+        return "SEQ LOCK: lit, a preset or patch you load leaves the sequencer as it is, notes and settings, KEY and SCALE. "
+               "Not lit, it brings its own.";
     if (z == Z_PATCH_LIB_PREV || z == Z_PATCH_LIB_NEXT)
         return "LIB: < > the library of your own patches shown in the USER column on the right (your default one "
                "and any others you have made or imported).";
@@ -1531,6 +1565,7 @@ int patches_zone_rect(ed_t *e, int z, RECT *r) {
     if (z >= Z_PATCH_ACT && z < Z_PATCH_ACT + PA_COUNT) { *r = action_rect(z - Z_PATCH_ACT); return 1; }
     if (z >= Z_PATCH_TYPE && z < Z_PATCH_TYPE + 4) { *r = type_rect(z - Z_PATCH_TYPE); return 1; }
     if (z == Z_PATCH_LIB_PREV || z == Z_PATCH_LIB_NEXT) { *r = lib_arrow_rect(z == Z_PATCH_LIB_NEXT); return 1; }
+    if (z == Z_PATCH_LOCK || z == Z_PATCH_LOCK + 1) { *r = lock_rect(z - Z_PATCH_LOCK); return 1; }
     if (z >= Z_PATCH_CAT && z < Z_PATCH_CAT + PATCH_CATS) {
         int n = cats(e);
         if (z - Z_PATCH_CAT >= n) return 0;
@@ -1557,7 +1592,8 @@ void pt_apply_state(ed_t *e, const char *state) { apply_state(e, state); }
 /* ---- the ANALOG page stays across preset and patch loads (2026-11-01) ---- */
 static const char *const ANALOG_KEYS[] = {"drift", "an_cut", "an_res", "an_env", "an_lvl", "an_tune", "an_ladder",
                                           "an_hq", "an_warm", "an_warm_amt", "an_warm_time",
-                                          "analog_amt"};   /* (2026-11-01) shared: Synth 2's and 3's copies don't exist */
+                                          "analog_amt",   /* (2026-11-01) shared: Synth 2's and 3's copies don't exist */
+                                          "master_level"};   /* (2026-11-03, owner) so is the master level, shared too */
 enum { NANALOG = sizeof ANALOG_KEYS / sizeof ANALOG_KEYS[0] };
 _Static_assert(NANALOG * 3 <= ANALOG_KEEP, "keep[] holds all three Synths' ANALOG settings");
 static int analog_ix(int k) {   /* keep slot k (Synth k / NANALOG) -> its param index, or -1 */
@@ -1577,13 +1613,90 @@ static int analog_ix(int k) {   /* keep slot k (Synth k / NANALOG) -> its param 
     }
     return ix[k];
 }
+/* ---- GEN LOCK, SEQ LOCK (2026-11-03, owner): set up a generative part, then try sounds on it. Lit, a load (a preset, a patch,
+ * PREV and NEXT, INTO SYNTH, the host's program list while the window's plugin is loaded) changes the sound only; these
+ * settings come back after it, and the host is told. Settings.txt remembers the two buttons. A project restores everything. */
+static int lock_param(int i, int gen, int seq) {
+    const char *k = PARAMS[i].key;
+    if (k[0] == 's' && (k[1] == '2' || k[1] == '3') && k[2] == '_') k += 3;
+    if (!strcmp(k, "key_root") || !strcmp(k, "key_scale") || !strcmp(k, "clock_swing") || !strcmp(k, "time_sig")) return gen || seq;
+    if (seq && (!strcmp(k, "seq_play") || !strcmp(k, "seq_rec") || !strcmp(k, "seq_step_mod"))) return 0;
+    if (seq && (!strncmp(k, "seq_", 4) || !strcmp(k, "link_seq"))) return 1;
+    if (!gen) return 0;
+    static const char *const PRE[] = {"gen_", "phys_", "rain_", "mkv_", "life_", "orb_", "pend_", "chd_", "bass_", "arp_", "chord_"};
+    for (unsigned p = 0; p < sizeof PRE / sizeof PRE[0]; p++)
+        if (!strncmp(k, PRE[p], strlen(PRE[p]))) return 1;
+    return !strcmp(k, "link_arp");
+}
+static void lock_set(ed_t *e, int i, float v) {
+    if (e->fx->getParameter(e->fx, i) == v) return;
+    e->fx->setParameter(e->fx, i, v);
+    if (!e->host) return;
+    e->host(e->fx, audioMasterBeginEdit, i, 0, NULL, 0);
+    e->host(e->fx, audioMasterAutomate, i, 0, NULL, v);
+    e->host(e->fx, audioMasterEndEdit, i, 0, NULL, 0);
+}
+void lock_keep(ed_t *e) {
+    int gen = settings_lock(0), seq = settings_lock(1);
+    e->lock_held = gen || seq;
+    if (!e->lock_held) return;
+    for (int i = 0; i < NPARAMS; i++) e->lock_v[i] = e->fx->getParameter(e->fx, i);
+    void *chunk = NULL;
+    intptr_t len = seq ? wrapped_call(e->fx, effGetChunk, 0, 0, &chunk, 0) : 0;
+    for (int c = 0; c < 3; c++) {
+        free(e->lock_seq[c]);
+        e->lock_seq[c] = NULL;
+        if (!seq || len <= 0 || !chunk) continue;
+        char k[16];
+        snprintf(k, sizeof k, c ? ";s%d_seq=" : ";seq=", c + 1);
+        const char *p = strstr((const char *)chunk, k);
+        p = p ? p + strlen(k) : "";
+        size_t m = strcspn(p, ";");
+        e->lock_seq[c] = malloc(m + 16);
+        if (e->lock_seq[c]) snprintf(e->lock_seq[c], m + 16, "seqput%d\n%.*s", c + 1, (int)m, p);
+    }
+}
+void lock_put(ed_t *e) {
+    if (!e->lock_held) return;
+    e->lock_held = 0;
+    int gen = settings_lock(0), seq = settings_lock(1);
+    for (int c = 0; c < 3; c++) {
+        if (!e->lock_seq[c]) continue;
+        wrapped_call(e->fx, effSetChunk, 0, (intptr_t)strlen(e->lock_seq[c]) + 1, e->lock_seq[c], 0);
+        free(e->lock_seq[c]);
+        e->lock_seq[c] = NULL;
+    }
+    for (int i = 0; i < NPARAMS; i++)
+        if (lock_param(i, gen, seq)) lock_set(e, i, e->lock_v[i]);
+    /* a Synth that was playing kept parts stays on, though the sound loaded leaves it off */
+    static const char *const ON[] = {"gen_euclid_on", "gen_tm_on", "phys_balls_on", "phys_parts_on", "rain_on", "mkv_on", "life_on",
+                                     "orb_on", "pend_on", "chd_on", "bass_on", "arp_on", "seq_on"};
+    static const char *const PRE[3] = {"", "s2_", "s3_"};
+    for (int c = 0; c < 3; c++) {
+        char key[48];
+        snprintf(key, sizeof key, "%ssyn_on", PRE[c]);
+        int on = -1, any = 0;
+        for (int i = 0; i < NPARAMS && on < 0; i++)
+            if (!strcmp(PARAMS[i].key, key)) on = i;
+        if (on < 0 || e->lock_v[on] < 0.5f) continue;
+        for (unsigned g = 0; g < sizeof ON / sizeof ON[0]; g++) {
+            snprintf(key, sizeof key, "%s%s", PRE[c], ON[g]);
+            for (int i = 0; i < NPARAMS; i++)
+                if (!strcmp(PARAMS[i].key, key)) any |= lock_param(i, gen, seq) && e->lock_v[i] > 0.5f;
+        }
+        if (any) lock_set(e, on, e->lock_v[on]);
+    }
+}
+
 void analog_keep(ed_t *e, float *keep) {   /* before a load */
+    lock_keep(e);
     for (int k = 0; k < ANALOG_KEEP; k++) {
         int i = analog_ix(k);
         keep[k] = i >= 0 ? e->fx->getParameter(e->fx, i) : -1.0f;
     }
 }
 void analog_put(ed_t *e, const float *keep) {   /* after it: put back, the host told (as settings_midi_put) */
+    lock_put(e);
     for (int k = 0; k < ANALOG_KEEP; k++) {
         int i = analog_ix(k);
         if (i < 0 || keep[k] < 0.0f || e->fx->getParameter(e->fx, i) == keep[k]) continue;

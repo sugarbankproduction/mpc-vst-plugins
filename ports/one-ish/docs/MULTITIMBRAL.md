@@ -56,6 +56,9 @@ and 3), and the window (`desktop/editor.c`, `editor_draw.c`, `seq_page.c`, `patc
   and rate. BASS (`bass_follow`, on by default) and, with `gen_follow_chords` on, the other generators of any Synth follow it. In each
   piece of a render every Synth's CHORDS runs first, then every Synth's BASS, then the rest, so a note on the very sample of a change
   hears the new chord whichever Synth leads. No CHORDS on anywhere: nothing follows anything.
+- **FEED** (2026-11-03, offline, not heard): CHORDS' or BASS's notes go into the generators as if held on the keys, in this Synth or
+  all (`chd_feed_to`, `bass_feed_to`), so a pad on Synth 1 can drive an arpeggio on Synth 2. Only a Synth with the arpeggiator or a
+  generator on receives them; nothing else in it sounds. One way only: CHORDS and BASS never read what was fed.
 - **PLAY ALL SEQS** starts (or stops) every Synth that is on with its sequencer ON on the same sample (also the PLAY
   ALL button on the SEQUENCER module's title strip, 2026-10-30).
 - **Sequencer OUTPUT** (2026-10-30, offline and the desktop window; `seq_output`, `docs/SEQUENCER.md`): a Synth's

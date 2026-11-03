@@ -97,6 +97,7 @@ static void *fresh(void) {
     void *e = E->create(NULL);
     golden_reseed();
     E->set_param(e, "lfo_bpm", "120");
+    E->set_param(e, "master_level", "100");   /* (a preset has no level of its own since 2026-11-03: the sounds at the old 100%) */
     return e;
 }
 

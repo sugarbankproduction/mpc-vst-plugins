@@ -40,7 +40,7 @@ static const char HEADER[] = "ONE-ish settings";
 enum { FORMAT_VERSION = 1, FILE_MAX = 65536 };
 
 /* ---- the settings ---- */
-enum { SI_AUTOLOAD, SI_BANK_PREVIEW, SI_RX_CLOCK, SI_TEMPO, SI_MIDI_IO, SI_SUSTAIN, SI_EXP1, SI_EXP2, SI_COUNT };
+enum { SI_AUTOLOAD, SI_BANK_PREVIEW, SI_RX_CLOCK, SI_TEMPO, SI_MIDI_IO, SI_SUSTAIN, SI_EXP1, SI_EXP2, SI_ROWS, SI_GEN_LOCK = SI_ROWS, SI_SEQ_LOCK, SI_UI_SIZE, SI_COUNT };   /* (the page's rows end at SI_ROWS: the rest have buttons) */
 enum { IK_ONOFF, IK_NUM };
 typedef struct { const char *label, *key; int kind; float lo, hi, step, def; const char *unit, *help; } item_t;
 static const item_t ITEM[SI_COUNT] = {
@@ -65,6 +65,15 @@ static const item_t ITEM[SI_COUNT] = {
      "EXP 1 PEDAL: the CC number of the pedal the mod matrix reads as Exp 1 (11, expression, on most)."},
     {"EXP 2 PEDAL CC", "exp2_cc", IK_NUM, 0, 119, 1, 4, "",
      "EXP 2 PEDAL: the CC number of the pedal the mod matrix reads as Exp 2 (4, foot controller, on most)."},
+    {"GEN LOCK", "gen_lock", IK_ONOFF, 0, 1, 1, 0, "",
+     "GEN LOCK: On, a preset or patch you load changes the sound only: the arpeggiator, the chord memory, every generator, "
+     "KEY and SCALE stay as you set them. Off, it brings its own. A project always restores everything."},
+    {"SEQ LOCK", "seq_lock", IK_ONOFF, 0, 1, 1, 0, "",
+     "SEQ LOCK: On, a preset or patch you load leaves the sequencer as it is, its notes and its settings, KEY and SCALE. "
+     "Off, it brings its own. A project always restores everything."},
+    {"WINDOW SIZE", "window_size", IK_NUM, 0, 200, 5, 0, "%",
+     "WINDOW SIZE: the plugin window as a percent of the panel's full size, 50-200; 0: FIT, as large as the screen allows. The "
+     "- + FIT buttons under the keys and the corner's grip set it too. (Not in the browser, whose page fits itself.)"},
 };
 typedef struct { int cc, bits; char key[48]; } mapping_t;   /* a learned CC: the param's key, 7 or 14 bits */
 typedef struct {
@@ -244,12 +253,14 @@ static void change_ex(ed_t *e, int k, float v, int save) {
         }
         v = (float)cc;
     }
+    if (k == SI_UI_SIZE && v > 0.0f && v < 50.0f) v = v > G.v[k] ? 50.0f : 0.0f;   /* (0 is FIT, then 50 upwards) */
     if (v == G.v[k] && !(save && unsaved)) return;
     G.v[k] = v;
     int gone = is_pedal(k) ? map_drop_cc((int)v) : 0;   /* a pedal on a learned CC: the pedal wins */
     apply_all();
     if (gone) say(e, "CC %d was a learned mapping; it is the pedal's now (the mapping is gone).", (int)v);
     unsaved = !save;
+    if (k == SI_UI_SIZE) view_settings_changed(e);
     if (save && !save_file()) say(e, "Couldn't save the settings file (the folder may be read-only); they apply until you close.");
 }
 
@@ -319,6 +330,19 @@ int settings_cue_load(ed_t *e) {   /* a click on the PRESET knob or the name: lo
     patches_load_pos(e, c);
     redraw_one(e);
     return 1;
+}
+
+int settings_ui_size(void) {
+    if (!g_loaded) load_file();
+    return (int)G.v[SI_UI_SIZE];
+}
+void settings_ui_size_set(ed_t *e, int pct) { change(e, SI_UI_SIZE, (float)pct); }
+int settings_lock(int seq) {   /* (2026-11-03) GEN LOCK, SEQ LOCK */
+    if (!g_loaded) load_file();
+    return G.v[seq ? SI_SEQ_LOCK : SI_GEN_LOCK] > 0.5f;
+}
+void settings_lock_toggle(ed_t *e, int seq) {
+    change(e, seq ? SI_SEQ_LOCK : SI_GEN_LOCK, settings_lock(seq) ? 0.0f : 1.0f);
 }
 
 /* ---- MIDI I/O LOAD FROM PRESET off: a load keeps the MIDI channels ---- */
@@ -651,7 +675,7 @@ int settings_hit(ed_t *e, POINT pt) {
         if (PtInRect(&r, pt)) return Z_TAB + t;
     }
     if (e->st.tab == ST_GLOBAL || e->st.tab == ST_TUNING) {
-        int rows = e->st.tab == ST_GLOBAL ? SI_COUNT : NTUNING;
+        int rows = e->st.tab == ST_GLOBAL ? SI_ROWS : NTUNING;
         for (int row = 0; row < rows; row++) {
             RECT nm, v, d, u;
             row_parts(row, &nm, &v, &d, &u);
@@ -747,7 +771,7 @@ int settings_press(ed_t *e, int z) {   /* 1: z was the page's */
         if (k >= 0 && part == PART_UP) { map_remove(k); map_changed(e); }
     } else if (z >= Z_ROW) {
         int row = (z - Z_ROW) / 4, part = (z - Z_ROW) % 4, dir = part == PART_DOWN ? -1 : 1;
-        if (e->st.tab == ST_GLOBAL && row < SI_COUNT && (part != PART_MAIN || ITEM[row].kind == IK_ONOFF))
+        if (e->st.tab == ST_GLOBAL && row < SI_ROWS && (part != PART_MAIN || ITEM[row].kind == IK_ONOFF))
             step_item(e, row, dir, fine);
         if (e->st.tab == ST_TUNING && part != PART_MAIN) tune_step(e, row, dir, fine);
     }
@@ -758,7 +782,7 @@ int settings_press(ed_t *e, int z) {   /* 1: z was the page's */
 int settings_wheel(ed_t *e, int z, int dir, int fine) {   /* 1: used (a row's value steps) */
     if (e->screen != SCR_SETTINGS || z < Z_ROW || z >= Z_BTN) return 0;
     int row = (z - Z_ROW) / 4;
-    if (e->st.tab == ST_GLOBAL && row < SI_COUNT) {
+    if (e->st.tab == ST_GLOBAL && row < SI_ROWS) {
         if (ITEM[row].kind == IK_ONOFF) change(e, row, dir > 0 ? 1.0f : 0.0f);
         else step_item(e, row, dir, fine);
     }
@@ -861,7 +885,7 @@ void settings_draw(HDC dc, ed_t *e) {   /* under the title line, which editor_dr
     if (e->st.tab == ST_MIDI) {
         draw_midi(dc, e);
     } else if (e->st.tab == ST_GLOBAL) {
-        for (int k = 0; k < SI_COUNT; k++) {
+        for (int k = 0; k < SI_ROWS; k++) {
             const item_t *it = &ITEM[k];
             if (is_pedal(k)) snprintf(v, sizeof v, "CC %d", (int)G.v[k]);
             else snprintf(v, sizeof v, "%g%s", G.v[k], it->unit);
@@ -964,7 +988,7 @@ const char *settings_zone_help(ed_t *e, int z) {
              : part == PART_UP ? "DELETE: this CC no longer moves the control."
                                : "A learned mapping: this CC, from any MIDI channel, moves this control (and the host "
                                  "sees it as automation). NRPN messages after the instrument's table always work too.";
-    if (e->st.tab == ST_GLOBAL && z >= Z_ROW && row < SI_COUNT) return ITEM[row].help;
+    if (e->st.tab == ST_GLOBAL && z >= Z_ROW && row < SI_ROWS) return ITEM[row].help;
     if (e->st.tab == ST_TUNING && z >= Z_ROW && row == 0)
         return "MASTER FREQUENCY: the pitch of the A above middle C, 400-480 Hz (440 standard). Click < > or scroll: "
                "1 Hz, Shift 0.1 Hz. Part of the sound (shared by its three Synths).";

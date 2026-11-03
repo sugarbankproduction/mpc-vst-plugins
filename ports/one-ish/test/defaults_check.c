@@ -15,7 +15,11 @@
  *                 never adds, moves or removes them; the ANALOG page and SPREAD never change; MONO / POLY;
  *                 GENERATIVE only: one or two generators on, heard, finite, in key */
 
-static void *fresh(void) { return E_REAL->create(NULL); }
+static void *fresh(void) {   /* (at the old 100%: compared with the checks' own instances) */
+    void *e = E_REAL->create(NULL);
+    E_REAL->set_param(e, "master_level", "100");
+    return e;
+}
 static double peak_rms(void *e, int frames, double *rms) {   /* both channels; peak and RMS */
     int16_t buf[256];
     double pk = 0, s = 0;

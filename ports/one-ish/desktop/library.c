@@ -701,13 +701,13 @@ static int list_has(lib_t *L, int k, const char *tag) {
         if (!_stricmp(L->list[k][j], tag)) return 1;
     return 0;
 }
-/* every category and mood a factory preset has is in the lists (an older tags file, a new factory bank) */
+/* every category, mood and group a factory preset has is in the lists (an older tags file, a new factory bank) */
 static void lists_add_factory(ed_t *e) {
     lib_t *L = LIB(e);
     for (int p = 0; p < NFACTORY_TAGS && p < nfactory(e); p++) {
-        const char *t[2] = {FACTORY_TAG[p].cat, FACTORY_TAG[p].mood};
-        for (int i = 0; i < 2; i++) {
-            int k = i ? TAG_MOOD : TAG_CAT;
+        const char *t[3] = {FACTORY_TAG[p].cat, FACTORY_TAG[p].mood, FACTORY_TAG[p].group};   /* (2026-11-03: Moo Won in GROUP) */
+        for (int i = 0; i < 3; i++) {
+            int k = i == 2 ? TAG_GROUP : i ? TAG_MOOD : TAG_CAT;
             if (t[i][0] && !list_has(L, k, t[i]) && L->nlist[k] < TAG_LIST_MAX)
                 snprintf(L->list[k][L->nlist[k]++], TAG_LEN + 1, "%s", t[i]);
         }
@@ -1340,6 +1340,7 @@ static RECT tag_cell(int kind, int row) {
 static int zone_rect(ed_t *e, int z, RECT *r) {
     lib_t *L_ = LIB(e);
     int s = e->screen;
+    if (winv_rect(z, r)) return 1;   /* (2026-11-03) */
     if (z == Z_COMPARE) { *r = L.compare; return !IsRectEmpty(r); }
     if (z == Z_SNAPSHOT) { *r = L.snapshot; return !IsRectEmpty(r); }
     if (z == Z_INIT) { *r = L.init; return !IsRectEmpty(r); }

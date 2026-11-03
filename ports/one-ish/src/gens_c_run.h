@@ -24,6 +24,16 @@
  * all the rest. So a generator or a bass note on the very sample of a chord change, in any Synth, already hears the new
  * chord, whichever Synth leads. A piece never runs past the next chord step, so this holds inside a block.
  *
+ * FEED (chd_feed, bass_feed, per Synth, Off for every sound old and new; 2026-11-03, owner): what it plays also goes into the
+ * other generators as if held on the keys, in this Synth or all (FEED TO): Play + Feed or Feed Only (not heard itself). Each
+ * chord is held until the next one, whatever its GATE, so an arpeggio carries on through the change (the new notes
+ * arrive before the old ones leave). Only a Synth with something that takes keys (ROUTE_SEQ: the arp, a generator) receives:
+ * nothing else in it sounds. One way only: CHORDS and BASS never read what was fed (gc_hand_keys), so no loops. Keys by
+ * hand and fed ones mix; a key by hand stays when the feed leaves.
+ *
+ * TIME SIGNATURE (time_sig, shared; bar_beats in engine.c): what "a bar" is for CHORD LENGTH's bars, BASS's own chords and the
+ * pendulums' cycle. BASS's steps start again on each bar line, so 1/4s fit 7/8 (the last one is short). At 4/4 as before.
+ *
  * Off (both): no work at all. Deterministic: each Synth has its own seeds. Nothing here allocates, locks or touches a file. */
 
 static const float GC_RATE_BEATS[] = {16.0f, 8.0f, 4.0f, 2.0f, 1.0f, 0.5f};                          /* "chd_rate" */
@@ -50,9 +60,14 @@ static void gc_beat(one_t *s, int64_t t) {   /* the beat clock (the host's song 
         r->follow = 0;
     }
 }
+static int gc_hand_keys(const one_t *s) {   /* the keys held by hand: what was fed never drives CHORDS or BASS */
+    int n = 0;
+    for (int i = 0; i < s->keys.n; i++) n += !s->keys.fed[i];
+    return n;
+}
 static int gc_lowest_key(const one_t *s) {
-    int low = s->keys.note[0];
-    for (int i = 1; i < s->keys.n; i++) if (s->keys.note[i] < low) low = s->keys.note[i];
+    int low = 127;
+    for (int i = 0; i < s->keys.n; i++) if (!s->keys.fed[i] && s->keys.note[i] < low) low = s->keys.note[i];
     return low;
 }
 
@@ -205,6 +220,78 @@ static int gc_log_text(one_t *s, char *buf, int n) {
     return used;
 }
 
+/* ---- FEED: what plays, into the generators as keys ---- */
+static void gc_feed_load(gc_run_t *r, int k, int64_t at, int64_t until, const uint8_t *notes, int n, int vel) {
+    r->fd_at[k] = at;
+    r->fd_until[k] = until + 2 * GC_STEP;   /* (the next one arrives first; none does: it leaves) */
+    r->fd_n[k] = n;
+    r->fd_vel[k] = vel;
+    memcpy(r->fd_note[k], notes, (size_t)n);
+    r->fd_wait[k] = 1;
+}
+static int gc_feed_busy(const one_t *s) {
+    return s->val[P_CHD_FEED] > 0.5f || s->val[P_BASS_FEED] > 0.5f || s->gc.fd_held[0] || s->gc.fd_held[1];
+}
+static int gc_note_in(const uint8_t *notes, int n, int note) {
+    for (int i = 0; i < n; i++) if (notes[i] == note) return 1;
+    return 0;
+}
+/* the notes one sender holds down in Synth t now become these (none: it lets go). New ones first: the keys never run out
+ * between two chords, so an arpeggio goes on */
+static void gc_feed_to(one_t *t, int slot, const uint8_t *notes, int n, int vel) {
+    uint8_t *old = t->fed_note[slot];
+    int nold = t->fed_n[slot];
+    if (t->route != ROUTE_SEQ || t->val[P_SYN_ON] < 0.5f) n = 0;
+    for (int i = 0; i < n; i++) {
+        if (gc_note_in(old, nold, notes[i])) continue;
+        ph_key_on(t, notes[i], vel);
+        gb_key_on(t, notes[i], vel);
+        ga_key_on(t, notes[i]);
+        if (sq_key_on(t, notes[i], vel)) continue;   /* NOTE TRIG / TRANSPOSE: it moves the sequencer, as a key does */
+        int at = seq_find(&t->keys, notes[i]);
+        if (at >= 0 && !t->keys.fed[at]) continue;   /* (held by hand: it stays the hand's) */
+        seq_key_on(t, notes[i], vel);
+        t->keys.fed[t->keys.n - 1] = 1;
+    }
+    for (int i = 0; i < nold; i++) {
+        int note = old[i], other = gc_note_in(notes, n, note);
+        for (int o = 0; o < 6 && !other; o++) other = o != slot && gc_note_in(t->fed_note[o], t->fed_n[o], note);
+        if (other || sq_key_off(t, note)) continue;
+        int at = seq_find(&t->keys, note);
+        if (at < 0 || !t->keys.fed[at]) continue;
+        t->phys -= t->keys.down[at];
+        seq_remove(&t->keys, at);
+        t->adirty = 1;
+        if (t->keys.n == 0 && !(t->seq_on && t->gk == GK_LAUNCH)) t->running = 0;
+    }
+    memcpy(old, notes, (size_t)n);
+    t->fed_n[slot] = (uint8_t)n;
+}
+static void gc_feed_due(one_t *const *syn, int nsyn, int *np) {
+    static const int ON[2] = {GC_CHD, GC_BASS}, FEED[2] = {P_CHD_FEED, P_BASS_FEED}, TO[2] = {P_CHD_FEED_TO, P_BASS_FEED_TO};
+    for (int c = 0; c < nsyn; c++) {
+        one_t *s = syn[c];
+        gc_run_t *r = &s->gc;
+        for (int k = 0; k < 2; k++) {
+            int active = (r->on & ON[k]) && s->val[FEED[k]] > 0.5f, send = 0;
+            if (active && r->fd_wait[k]) {
+                int64_t d = r->fd_at[k] - s->now;
+                if (d <= 0) send = 1;
+                else if (d < *np) *np = (int)d;
+            }
+            int leave = r->fd_held[k] && !send && (!active || s->now > r->fd_until[k]);
+            if (!send && !leave) continue;
+            int all = s->val[TO[k]] > 0.5f;
+            for (int t = 0; t < nsyn; t++) {
+                int to = send && (all || t == c);
+                gc_feed_to(syn[t], c * 2 + k, r->fd_note[k], to ? r->fd_n[k] : 0, r->fd_vel[k]);
+            }
+            r->fd_wait[k] = 0;
+            r->fd_held[k] = send;
+        }
+    }
+}
+
 /* ---- CHORDS ---- */
 static void gc_chord_fire(one_t *s, int64_t at, int64_t len, double beats) {
     gc_run_t *r = &s->gc;
@@ -216,7 +303,7 @@ static void gc_chord_fire(one_t *s, int64_t at, int64_t len, double beats) {
         if (!h->valid) return;   /* (the leader has not played yet) */
         r->cur = h->cur;   /* a higher Synth: the leader's chord */
     } else {
-        int key = r->chd_mode == GK_LAUNCH ? r->ckey : r->chd_mode == GK_HELD && s->keys.n ? gc_lowest_key(s) : -1;
+        int key = r->chd_mode == GK_LAUNCH ? r->ckey : r->chd_mode == GK_HELD && gc_hand_keys(s) ? gc_lowest_key(s) : -1;
         int tonic = gen_root_of(s, key, P_CHD_OWN_KEY), scale = gen_scale_in(p, P_CHD_OWN_KEY), next = 0;
         hm_item_t it = hm_seq_next(&r->seq, jazz, scale, &next);
         hm_build(&r->cur, &it, tonic, scale, jazz);
@@ -239,7 +326,8 @@ static void gc_chord_fire(one_t *s, int64_t at, int64_t len, double beats) {
     if (off > at + len - 2) off = at + len - 2;   /* (it ends before the next one starts: no tie to a note the same) */
     if (off <= at) off = at + 1;
     int64_t strum = (int64_t)(clampf(p[P_CHD_STRUM], 0.0f, 100.0f) * 0.8f * 0.001f * SR);
-    for (int i = 0; i < n && r->ncq < GC_Q; i++) {
+    if (p[P_CHD_FEED] > 0.5f) gc_feed_load(r, 0, at, at + len, notes, n, vel);
+    for (int i = 0; i < n && r->ncq < GC_Q && p[P_CHD_FEED] < 1.5f; i++) {
         int64_t t = at + strum * i;
         r->cq[r->ncq++] = (gc_note_t){t, off > t ? off : t + 1, notes[i], (uint8_t)vel};
     }
@@ -261,10 +349,11 @@ static void gc_chord_tick(one_t *s, int64_t t) {
     gc_beat(s, t);
     if (r->bps0 <= 0.0) return;
     double b0 = gc_beat_at(r, t), b1 = gc_beat_at(r, t + GC_STEP), rate = GC_RATE_BEATS[(int)clampf(p[P_CHD_RATE], 0, 5)];
+    if ((int)clampf(p[P_CHD_RATE], 0, 5) < 3) rate *= bar_beats(s) / 4.0;   /* (its bars, in the TIME SIGNATURE) */
     if (b0 < r->cblast - 0.5 || b0 > r->cblast + 1.0) r->cfirst = 1;   /* (the song position jumped) */
     r->cblast = b1;
     if (r->chd_mode == GK_HELD) {
-        int keys = s->running && s->keys.n;
+        int keys = s->running && gc_hand_keys(s);
         if (!keys) { r->cwas = 0; return; }
         if (!r->cwas) { r->cwas = 1; r->cfirst = 1; r->canchor = b0; }
     } else if (r->chd_mode == GK_LAUNCH) {
@@ -303,7 +392,7 @@ static void gc_bass_step(one_t *s, int64_t at, int64_t step, double beat) {
     const hm_share_t *h = s->harm;
     float adv = clampf(p[P_BASS_JAZZ] * 0.01f, 0.0f, 1.0f);
     int pat = (int)clampf(p[P_BASS_PATTERN], 0, 5), lo = 12 * ((int)clampf(p[P_BASS_OCT], 0, 5) + 2);
-    int key = r->bass_mode == GK_LAUNCH ? r->bkey : r->bass_mode == GK_HELD && s->keys.n ? gc_lowest_key(s) : -1;
+    int key = r->bass_mode == GK_LAUNCH ? r->bkey : r->bass_mode == GK_HELD && gc_hand_keys(s) ? gc_lowest_key(s) : -1;
     int tonic = gen_root_of(s, key, P_BASS_OWN_KEY), scale = gen_scale_in(p, P_BASS_OWN_KEY);
     const hm_chord_t *c;
     int next, left;
@@ -318,7 +407,7 @@ static void gc_bass_step(one_t *s, int64_t at, int64_t step, double beat) {
         if (beat >= r->bwend - 1e-6) {
             hm_item_t it = hm_seq_next(&r->bw, 0.0f, scale, &r->bwnext);
             hm_build(&r->bwc, &it, tonic, scale, 0.0f);
-            r->bwend = (floor(beat / 4.0 + 1e-9) + 1.0) * 4.0;
+            r->bwend = (floor(beat / bar_beats(s) + 1e-9) + 1.0) * bar_beats(s);
             hm_bass_chord(&r->bl, pat, adv);
         }
         c = &r->bwc;
@@ -331,7 +420,11 @@ static void gc_bass_step(one_t *s, int64_t at, int64_t step, double beat) {
     int64_t off = at + (int64_t)((double)step * clampf(p[P_BASS_GATE] * 0.01f, 0.05f, 1.0f));
     if (off > at + step - 2) off = at + step - 2;   /* (one note at a time) */
     if (off <= at) off = at + 1;
-    if (r->nbq < 2) r->bq[r->nbq++] = (gc_note_t){at, off, (uint8_t)note, (uint8_t)vel};
+    if (p[P_BASS_FEED] > 0.5f) {
+        uint8_t one = (uint8_t)note;
+        gc_feed_load(r, 1, at, at + step, &one, 1, vel);
+    }
+    if (r->nbq < 2 && p[P_BASS_FEED] < 1.5f) r->bq[r->nbq++] = (gc_note_t){at, off, (uint8_t)note, (uint8_t)vel};
     gc_view_bass(r, note);
 }
 static void gc_bass_tick(one_t *s, int64_t t) {
@@ -342,7 +435,7 @@ static void gc_bass_tick(one_t *s, int64_t t) {
     if (b0 < r->bblast - 0.5 || b0 > r->bblast + 1.0) r->bfirst = 1;
     r->bblast = b1;
     if (r->bass_mode == GK_HELD) {
-        int keys = s->running && s->keys.n;
+        int keys = s->running && gc_hand_keys(s);
         if (!keys) { r->bwas = 0; return; }
         if (!r->bwas) { r->bwas = 1; r->bfirst = 1; r->banchor = b0; }
     } else if (r->bass_mode == GK_LAUNCH) {
@@ -358,6 +451,10 @@ static void gc_bass_tick(one_t *s, int64_t t) {
     double frac = (r->bnext - b0) / (b1 - b0), beat = r->bnext;
     int64_t at = t + (int64_t)(clampf((float)frac, 0.0f, 0.999f) * GC_STEP);
     r->bnext += step;
+    if (bar_beats(s) != 4.0) {   /* the steps start again on each bar line: the last of a bar may be shorter */
+        double bar = bar_beats(s), line = r->banchor + (floor((beat - r->banchor) / bar + 1e-9) + 1.0) * bar;
+        if (r->bnext > line - 1e-6) { r->bnext = line; step = line - beat; }
+    }
     gc_bass_step(s, at, (int64_t)(step / r->bps0), beat);
     if (r->bass_mode == GK_LAUNCH && --r->bleft <= 0) r->bgo = 0;
 }

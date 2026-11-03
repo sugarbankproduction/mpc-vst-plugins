@@ -516,6 +516,8 @@ def main():
         # the knob, so the preset's other values would not land
         first = ("flt_link", "s2_flt_link", "s3_flt_link", "seq_step_mod", "s2_seq_step_mod", "s3_seq_step_mod")
         for p in sorted(PARAMS, key=lambda p: first.index(p["key"]) if p["key"] in first else len(first)):   # VST order
+            if p["key"] == "master_level":   # (2026-11-03, owner) a preset leaves the master level where it is
+                continue
             if p.get("display") == "string":   # a readout (seq_pos), not a setting
                 continue
             if name == "Init":

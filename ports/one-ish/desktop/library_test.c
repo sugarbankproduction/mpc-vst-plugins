@@ -683,6 +683,83 @@ static void category_tabs(void) {
         check(moo_tab == 1 && moo == 222 && want_pads > 0 && moo_pads == want_pads && all2 == fx->numPrograms &&
               all3 == fx->numPrograms, what);
     }
+    {   /* (2026-11-03) Moo Won is one of the TAGS page's GROUP tags */
+        char tags[1024];
+        lt(LT_TAGS, 3, tags);   /* (GROUP) */
+        snprintf(what, sizeof what, "TAGS: Moo Won in the GROUP list (%.120s)", tags);
+        check(strstr(tags, "Moo Won") != NULL, what);
+    }
+    {   /* (2026-11-03) GEN LOCK, SEQ LOCK: lit, a load leaves them; not lit, it brings its own. MASTER stays whatever loads */
+        int gs = -1, ml = -1, sr = -1;
+        for (int i = 0; i < NPARAMS; i++) {
+            if (!strcmp(PARAMS[i].key, "gen_steps")) gs = i;
+            if (!strcmp(PARAMS[i].key, "master_level")) ml = i;
+            if (!strcmp(PARAMS[i].key, "seq_rate")) sr = i;
+        }
+        AEffect *a = (AEffect *)fx;
+        float mw = a->getParameter(a, ml);
+        a->setParameter(a, ml, 0.33f);
+        click_z(Z_PATCH_LOCK);
+        a->setParameter(a, gs, 0.77f);
+        a->setParameter(a, sr, 0.77f);
+        click_z(Z_INIT);
+        float g_on = a->getParameter(a, gs), s_off = a->getParameter(a, sr), m = a->getParameter(a, ml);
+        click_z(Z_PATCH_LOCK);
+        click_z(Z_PATCH_LOCK + 1);
+        a->setParameter(a, gs, 0.66f);
+        a->setParameter(a, sr, 0.66f);
+        click_z(Z_INIT);
+        float g_off = a->getParameter(a, gs), s_on = a->getParameter(a, sr);
+        click_z(Z_PATCH_LOCK + 1);
+        a->setParameter(a, gs, 0.55f);
+        a->setParameter(a, sr, 0.55f);
+        click_z(Z_INIT);
+        float g_none = a->getParameter(a, gs), s_none = a->getParameter(a, sr);
+        a->setParameter(a, ml, mw);
+        snprintf(what, sizeof what, "GEN LOCK keeps a generator (%.2f), not the sequencer (%.2f); SEQ LOCK keeps the sequencer (%.2f), "
+                 "not a generator (%.2f); neither keeps them (%.2f %.2f); MASTER stays (%.2f)", g_on, s_off, s_on, g_off, g_none, s_none, m);
+        check(fabsf(g_on - 0.77f) < 0.01f && fabsf(s_off - 0.77f) > 0.01f && fabsf(s_on - 0.66f) < 0.01f && fabsf(g_off - 0.66f) > 0.01f &&
+              fabsf(g_none - 0.55f) > 0.01f && fabsf(s_none - 0.55f) > 0.01f && fabsf(m - 0.33f) < 0.01f, what);
+    }
+    {   /* (2026-11-03) the window's size and PANEL ZOOM */
+        struct { int16_t top, left, bottom, right; } *er = NULL;
+        RECT cr, wr;
+        POINT at = {0, 0};
+        fx->dispatcher(fx, 13, 0, 0, &er, 0);
+        int w0 = er->right;
+        click_z(Z_WINV + VW_PLUS);
+        fx->dispatcher(fx, 13, 0, 0, &er, 0);
+        int w1 = er->right;
+        GetClientRect(child, &cr);
+        int sized = cr.right == w1;
+        shot("_view_plus");
+        click_z(Z_WINV + VW_FIT);
+        fx->dispatcher(fx, 13, 0, 0, &er, 0);
+        int w2 = er->right;
+        snprintf(what, sizeof what, "SIZE: + makes the window larger (%d to %d, the window %d), FIT back (%d)", w0, w1, cr.right, w2);
+        check(w1 > w0 && sized && w2 == w0, what);
+        click_z(Z_WINV + VW_ZOOM);
+        click_base(100, 100);   /* LFO 1's panel */
+        Sleep(60);
+        GetClientRect(child, &cr);
+        GetWindowRect(child, &wr);
+        MapWindowPoints(child, GetParent(child), &at, 1);
+        fx->dispatcher(fx, 13, 0, 0, &er, 0);
+        int big = cr.right, reported = er->right, offx = at.x, offy = at.y, x, y, onbar = where(Z_WINV + VW_BACK, &x, &y), off_rail = !where(Z_WINV + VW_PLUS, &x, &y);
+        shot("_view_zoom");
+        click_z(Z_WINV + VW_NEXT);
+        POINT at2 = {0, 0};
+        MapWindowPoints(child, GetParent(child), &at2, 1);
+        shot("_view_zoom2");
+        click_z(Z_WINV + VW_BACK);
+        GetClientRect(child, &cr);
+        POINT at3 = {0, 0};
+        MapWindowPoints(child, GetParent(child), &at3, 1);
+        snprintf(what, sizeof what, "PANEL ZOOM: a panel fills the window (drawn %d wide, %d shows, at %d,%d), BACK on the bar (%d), > moves (%d,%d), BACK: all of it (%d at %d,%d)",
+                 big, reported, offx, offy, onbar, at2.x, at2.y, cr.right, at3.x, at3.y);
+        check(big > w0 && reported == w0 && onbar && off_rail && (at2.x != offx || at2.y != offy) && cr.right == w0 && at3.x == 0 && at3.y == 0, what);
+        (void)offy;
+    }
     {   /* (2026-11-02) INIT: the Init patch at one click */
         int vk = -1;
         for (int i = 0; i < NPARAMS && vk < 0; i++) if (!strcmp(PARAMS[i].key, "flt_res")) vk = i;

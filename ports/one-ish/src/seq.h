@@ -21,6 +21,7 @@ enum { ARP_OCT_UP, ARP_OCT_DOWN, ARP_OCT_UPDOWN, ARP_OCT_DOWNUP }; /* "arp_dir":
 typedef struct {
     int16_t note[SEQ_KEYS];
     uint8_t vel[SEQ_KEYS], down[SEQ_KEYS];
+    uint8_t fed[SEQ_KEYS];   /* (2026-11-03) from CHORDS' or BASS's FEED, not a hand on a key */
     int n;
 } seq_keys_t;
 
@@ -43,6 +44,7 @@ static inline void seq_remove(seq_keys_t *k, int i) {
     memmove(k->note + i, k->note + i + 1, sizeof k->note[0] * (k->n - i));
     memmove(k->vel + i, k->vel + i + 1, sizeof k->vel[0] * (k->n - i));
     memmove(k->down + i, k->down + i + 1, sizeof k->down[0] * (k->n - i));
+    memmove(k->fed + i, k->fed + i + 1, sizeof k->fed[0] * (k->n - i));
 }
 
 /* ---- the arpeggiator's pattern ---------------------------------------------------------------------------------- */

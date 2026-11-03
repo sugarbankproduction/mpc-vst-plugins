@@ -925,6 +925,8 @@ static void patch_tests(AEffect *fx) {
     snprintf(path, sizeof path, "%s\\Broken.oneish", patch_dir);
     write_file(path, "ONE-ish patch 1\r\nname=Broken\r\nnonsense line\r\n=5\r\nflt_res=abc\r\nno_such_param=3\r\n"
                      "o2_level = 55 \r\no2_wave=tri\r\n\x01\x02junk=\r\nflt_res\r\n");
+    float ml_was = fx->getParameter(fx, rnd_key("master_level"));
+    fx->setParameter(fx, rnd_key("master_level"), 1.0f);   /* (2026-11-03: a load leaves MASTER; an old state restored says 100%) */
     int r = (int)pt(fx, PT_LOAD, "Broken", NULL, 0);
     pt(fx, PT_MESSAGE, NULL, buf, 0);
     snprintf(what, sizeof what, "a damaged file loads what makes sense and says so (\"%.80s...\")", buf);
@@ -950,6 +952,7 @@ static void patch_tests(AEffect *fx) {
              !strcmp(state, ref) ? "the same" : "NOT the same", state);
     check(!strcmp(state, ref) && strstr(state, "o2_level=55") && strstr(state, "o2_wave=0") && !strstr(state, "flt_res"),
           what);
+    fx->setParameter(fx, rnd_key("master_level"), ml_was);
     for (int c = 0; c < 3; c++)   /* (2026-11-01) the ANALOG page back as it was */
         for (int k = 0; k < 6; k++) {
             char key[24];

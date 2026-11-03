@@ -52,6 +52,16 @@ offline): `desktop/library.c`, `desktop/library.h`, tested by `desktop/library_t
 - **The home line** under the patch name shows its tags (TYPE, CATEGORY, MOOD, GROUP), `NOTES` when it has notes, and
   the host's tempo when the host reports one (2026-10-29, offline).
 
+## GEN LOCK, SEQ LOCK and the master level (2026-11-03, offline and the desktop window)
+
+- **GEN LOCK** and **SEQ LOCK**, over the bottom row of the PATCHES page, lit orange while they hold: a preset or patch you load
+  then changes the sound only. GEN LOCK keeps the arpeggiator, the chord memory and every generator (CHORDS and BASS too); SEQ LOCK
+  keeps the sequencer, its notes and its settings; either keeps KEY, SCALE, swing and the time signature. Not lit, a load brings its
+  own, as before. A Synth that was on and playing kept parts stays on, though the sound leaves it off. Moo Won remembers both buttons
+  (Settings.txt). Restoring a project always restores everything.
+- **The master level** starts at 70% in a new instance; a load leaves it, and moving it marks nothing as edited. A project saved
+  before keeps the 100% it played at.
+
 ## Factory bank A (2026-10-30, offline)
 
 `presets/banks/bank_a.py`: 128 presets after the original 40, tagged for the browser: 32 Bass, 32 Lead, 20 Keys,

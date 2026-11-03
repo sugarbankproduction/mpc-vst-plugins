@@ -466,6 +466,7 @@ typedef struct one_s {
     short sq_md[P_COUNT];    /* the matrix destination a knob's move records into (-1: none) ... */
     float sq_sc[P_COUNT];    /* ... and how far one unit of the knob moves it (1 = the destination's whole +-100%) */
     char sq_text[SQ_TEXT_MAX];   /* get_state's encoding of the sequence */
+    uint8_t fed_note[6][HM_NOTES], fed_n[6];   /* (2026-11-03) what each sender's FEED holds down here: Synth * 2 + (BASS) */
     int heals;               /* how often heal() ran (src/synths.h) */
     /* THE SYNTHS (src/synths.h): this Synth in its instance */
     struct inst *in;         /* the instance, and this Synth's place in it (0: Synth 1) */
@@ -1953,6 +1954,7 @@ static void seq_key_on(one_t *s, int note, int vel) {
     if (k->n == SEQ_KEYS) { s->phys -= k->down[0]; seq_remove(k, 0); }
     k->note[k->n] = (int16_t)note;
     k->vel[k->n] = (uint8_t)vel;
+    k->fed[k->n] = 0;
     k->down[k->n++] = 1;
     s->phys++;
     s->adirty = 1;
@@ -1992,6 +1994,12 @@ static void seq_unlatch(one_t *s) {   /* latch or the pedal let go: the keys no 
     }
     s->adirty = 1;
     if (s->keys.n == 0 && !(s->seq_on && s->gk == GK_LAUNCH)) s->running = 0;
+}
+
+/* (2026-11-03) TIME SIGNATURE (shared, 4/4 for every sound old and new): how many quarter notes make a bar */
+static double bar_beats(const one_t *s) {
+    static const double BEATS[] = {4.0, 2.0, 3.0, 5.0, 6.0, 7.0, 2.5, 3.0, 3.5, 4.5, 5.5, 6.0, 6.5, 7.5};   /* "time_sig" */
+    return BEATS[(int)clampf(s->val[P_TIME_SIG], 0, 13)];
 }
 
 #include "stepseq_run.h"   /* THE STEP SEQUENCER: part of this file */

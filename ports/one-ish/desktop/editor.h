@@ -42,6 +42,7 @@ typedef struct {
 enum { effSetProgram = 2, effGetProgram = 3, effGetParamLabel = 6, effGetParamDisplay = 7, effSetSampleRate = 10,
        effMainsChanged = 12, effEditGetRect = 13,
        effEditOpen = 14, effEditClose = 15, effEditIdle = 19, effProcessEvents = 25, effGetProgramNameIndexed = 29 };
+enum { audioMasterSizeWindow = 15 };   /* (2026-11-03) view.c */
 enum { audioMasterAutomate = 0, audioMasterUpdateDisplay = 42, audioMasterBeginEdit = 43, audioMasterEndEdit = 44 };
 #define effFlagsHasEditor 1
 
@@ -115,6 +116,7 @@ extern const short MXC[MX_COLS + 2];   /* the matrix columns: #, then each MX_ c
 
 typedef struct {
     int ready, w, h;
+    int vw, vh;                               /* (2026-11-03) what shows: the host's window; w, h are more while zoomed (view.c) */
     float s;                                  /* scale: base units to pixels */
     RECT ctl[NPARAMS];
     int kind[NPARAMS], size[NPARAMS];
@@ -313,10 +315,28 @@ typedef struct {
     cb_ui_t cb;                                /* (2026-10-30) the CABLES view (cables.c) */
     mx_ui_t mx;                                /* (2026-10-30) the MATRIX page's filters, KEY RANGE by a key (matrix_page.c) */
     parts_ui_t pa;                             /* (2026-10-30) effect / matrix presets, names, libraries (parts.c) */
+    float lock_v[NPARAMS];        /* (2026-11-03) GEN LOCK, SEQ LOCK: the values before a load */
+    char *lock_seq[3];            /* each Synth's sequence text before a load */
+    int lock_held;
 } ed_t;
+/* (2026-11-03) the window's size and PANEL ZOOM (view.c): the rail's parts, then the bar while zoomed */
+float view_base(float fit);       /* the layout's scale: WINDOW SIZE, or what fits the screen */
+float view_zoom(void);
+void view_open(void);
+void view_settings_changed(ed_t *e);
+int view_hit(ed_t *e, POINT pt);
+int view_press(ed_t *e, int z, int x, int y);
+void view_drag(ed_t *e, int x, int y);
+void view_release(ed_t *e, int commit);
+void view_draw(HDC dc, ed_t *e);
+const char *view_help(int z);
+int winv_rect(int z, RECT *r);
+void editor_relayout(void);       /* a new scale: the layout and the fonts (editor.c) */
+int settings_ui_size(void);       /* WINDOW SIZE: a percent, 0: fit the screen */
+void settings_ui_size_set(ed_t *e, int pct);
 enum { M_NONE, M_PARAM, M_KEY, M_PITCH, M_MODW, M_PAD, M_ENC, M_RIBBON, M_RND_AMOUNT, M_SEQ, M_OCT, M_LIB, M_RND_WILD,
        M_QMOD, M_TEMPO,     /* M_TEMPO: a drag on the TEMPO readout (hub.c) */
-       M_CABLE };           /* (2026-10-30) a drag on a cable's amount knob (cables.c) */
+       M_CABLE, M_VIEW };           /* (2026-10-30) a drag on a cable's amount knob (cables.c) */
 
 #define MAX_INSTANCES 32
 extern HFONT font_title, font_label, font_value, font_tiny, font_screen, font_cell, font_big, font_brand;
@@ -514,10 +534,14 @@ void settings_midi_seen(ed_t *e, const void *events);   /* the host's MIDI (its 
 int settings_learn_pick(ed_t *e, int i);       /* a control clicked while LEARN waits for one (its own index) */
 void settings_tick(ed_t *e);                   /* the window's timer */
 void settings_midi_put(ed_t *e, const float *keep);
+int settings_lock(int seq);   /* (2026-11-03) GEN LOCK (0), SEQ LOCK (1): what a load leaves alone (patches.c lock_keep) */
+void settings_lock_toggle(ed_t *e, int seq);
+void lock_keep(ed_t *e);      /* before a load, after it (analog_keep and analog_put call them) */
+void lock_put(ed_t *e);
 /* (2026-11-01, owner: "the analog settings shouldn't change when I select a new preset") the ANALOG page's settings
  * (drift, an_*) of all three Synths stay as they are when a preset or patch loads; a project, undo and COMPARE still
  * restore them (patches.c); (2026-11-01) ANALOG AMOUNT too (shared: one value) */
-#define ANALOG_KEEP 36
+#define ANALOG_KEEP 39
 void analog_keep(ed_t *e, float *keep);
 void analog_put(ed_t *e, const float *keep);
 void settings_open(ed_t *e);

@@ -305,6 +305,15 @@ static const char *help_for(int i) {
         {"chd_gate", "Gate: how much of its length a chord holds."},
         {"chd_strum", "Strum: the chord's notes one after another, from the lowest, up to 80 ms apart. 0: together."},
         {"chd_seed", "Seed: which progressions. The same seed plays the same chords."},
+        {"chd_feed", "Feed: Play + Feed also sends each chord into the generators, as if held on the keys: an arpeggio walks through "
+                     "the progression. Feed Only: you hear them, not the chord. Generators on Free ignore it, unless they follow keys."},
+        {"chd_feed_to", "Feed To: This Synth, or All Synths (a pad on Synth 1, its arpeggio on Synth 2). Only a Synth with the "
+                        "arpeggiator or a generator on receives it."},
+        {"bass_feed", "Feed: Play + Feed also sends each bass note into the generators, as if held on the keys: good for Euclid and "
+                      "Turing's root. Feed Only: you hear them, not the bass."},
+        {"bass_feed_to", "Feed To: This Synth, or All Synths. Only a Synth with the arpeggiator or a generator on receives it."},
+        {"time_sig", "Time signature, shared by the Synths: what a bar is for CHORDS' bars, BASS and the pendulums. Set it to match "
+                     "your project."},
         {"chd_keys", "Keys: Free plays whenever it is on; Held Keys plays only while you hold keys, the lowest one the key (with FOLLOW KEYS); Key Launch: each key plays four chords from that key."},
         {"chd_own_key", "Key (this generator's own): Follow plays in the Synth's main KEY, the row along the screen's bottom. Pick a note and the chords plays from that root, whatever the main KEY says. FOLLOW KEYS on: notes from a key you play still start from that key."},
         {"chd_own_scale", "Scale (this generator's own): Follow plays in the Synth's main SCALE, the row along the screen's bottom. Pick a scale and the chords plays in it, whatever the main SCALE says."},
@@ -378,6 +387,7 @@ static const char *help_for(int i) {
 static const char *zone_help(ed_t *e, int z) {
     if (seq_zone(z)) return seq_zone_help(e, z);   /* the step editor, the page LEDs */
     if (z >= Z_QM && z < Z_QM_END) return qm_zone_help(e, z);   /* a DEST button (quickmod.c) */
+    if (z >= Z_WINV && z < Z_WINV + VW_COUNT) return view_help(z);   /* (2026-11-03) */
     if (z >= Z_HUB_ON && z < Z_HUB_END) return hub_zone_help(e, z);   /* the hub page, the console's third row */
     if (z >= Z_NAV_BACK && z < Z_NAV_END) return nav_zone_help(e, z);   /* BACK / FWD, the tabs, the overview (nav.c) */
     if (z >= Z_PARTS && z < Z_PARTS_END) return parts_zone_help(e, z);   /* (2026-10-30, parts.c) */
@@ -1909,6 +1919,7 @@ static void paint_rect(ed_t *e, HDC out, const RECT *r) {   /* everything that s
     gfx_end();
     skin_bind(NULL);
     cb_draw(dc, e, &clipr);   /* (2026-10-30) the CABLES view over all of it, when shown (cables.c: its own surface) */
+    view_draw(dc, e);   /* (2026-11-03) the window's size, PANEL ZOOM: over everything */
     RestoreDC(dc, saved);
     skin_present(out, &clipr);
 }

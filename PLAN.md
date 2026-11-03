@@ -1236,6 +1236,16 @@ for MPC afterwards. Work through the steps without stopping for approval at each
   budget there; measured 2026-10-27 after Tier 1).
 - **Quick check after a restart:** start Docker Desktop, then `win/run.sh bash ports/one-ish/test/run.sh` must print
   PASSED; `Play ONE-ish.bat` in `%USERPROFILE%\Tools` opens Carla with ONE-ish.
+  51. (2026-11-03) MASTER, locks, FEED, time signature, window size, PANEL ZOOM (owner: "yes build all three and also master at
+     70% and build the window resize and panel zoom"). Offline and the desktop window: NOT heard, not on a device, zoom and size
+     not tried in a host other than the tests' unless noted below.
+     MASTER: a new instance starts at 70% (Init's 3-note chord was at -1.4 dB with 22% of its samples in the limiter at 100%).
+     Presets carry no master level and a load leaves it (`analog_keep`); no * for it. An old project (no `master_level` key)
+     still plays at 100%. GEN LOCK and SEQ LOCK (PATCHES page, Settings.txt): `lock_keep` / `lock_put` in desktop/patches.c,
+     around every window load and INTO SYNTH; the sequence's own text through the new engine command `seqput`. A load through the
+     host's program list only while the plugin's window code is there (always, on desktop); the bare wrapper knows no locks.
+     MOO WON: an orange tab after ALL, and a tag in the TAGS page's GROUP list. FEED and TIME SIGNATURE: see src/gens_c_run.h,
+     test/chords_check.c. Window size and PANEL ZOOM: desktop/view.c; web page not affected (it has its own camera).
 
 ## Risks and open questions
 
