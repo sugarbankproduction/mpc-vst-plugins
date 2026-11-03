@@ -1246,6 +1246,14 @@ for MPC afterwards. Work through the steps without stopping for approval at each
      host's program list only while the plugin's window code is there (always, on desktop); the bare wrapper knows no locks.
      MOO WON: an orange tab after ALL, and a tag in the TAGS page's GROUP list. FEED and TIME SIGNATURE: see src/gens_c_run.h,
      test/chords_check.c. Window size and PANEL ZOOM: desktop/view.c; web page not affected (it has its own camera).
+  52. (2026-11-03) Zoom bar and mouse zoom in the plugin window (owner: "some sort of locked small window horizontal strip", "middle
+     mouse button can pan", "very responsive"). desktop/view.c: while zoomed a bar stays along the bottom edge, at the same size at
+     any zoom: each Synth's select (double-click: solo alone), M, S, then < > - + BACK. Hold the middle button and drag: pan. The
+     wheel with Ctrl or the middle button held, or over an empty part of the panel, zooms at the pointer. A wheel notch stretches
+     the picture already there (2.5 ms measured), the sharp one follows 130 ms after the wheel stops: about 0.9 s for a size not
+     made yet at the largest, 0.2 s for one made before (skin.c keeps eight baked layers). A pan repaints at most about 23 ms.
+     Tried in Carla: the wheel, the bar's look, BACK. The middle button's drag and the bar's buttons by test messages only, not by
+     a real middle button. Other hosts untested. Not in the web page, which has its own camera.
 
 ## Risks and open questions
 

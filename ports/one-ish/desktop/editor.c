@@ -1499,7 +1499,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(w, &ps);
-        if (e) paint(e, dc);
+        if (e && !view_previewing()) paint(e, dc);   /* (the wheel going: the stretched picture stays till it stops) */
         EndPaint(w, &ps);
         return 0;
     }
@@ -1508,6 +1508,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_TIMER: {   /* values the host or a preset changed: redraw */
         if (!e) return 0;
+        if (wp == 3) { KillTimer(w, 3); view_commit(e); return 0; }   /* (2026-11-03) */
         if (wp == 2) { rate_leds_tick(e); pics_tick(e); nav_tick(e); return 0; }   /* the rate LEDs: only the ones that changed
                                                                          * repaint; the balls' box while it shows */
         if (e->corners == 0 && e->corner_tries < 100) {   /* the host's window sized to us yet? (for 5 s) */
@@ -1515,6 +1516,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
             e->corners = square_corners(w);
         }
         octave_hold(e);
+        view_tick(e);   /* (2026-11-03) the zoom bar's Synths */
         lib_tick(e);   /* an undo step after a pause, a set's number held, a MIDI program change, the tempo */
         qm_tick(e);   /* quick assign's message runs out */
         cb_tick(e);   /* (2026-10-30) the CABLES view: a matrix row changed, an amount moved (cables.c) */
@@ -1654,6 +1656,15 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts > 1) pick_option(e, i, e->hit_rect);
         return 0;
     }
+#ifndef __EMSCRIPTEN__
+    case WM_MBUTTONDOWN:   /* (2026-11-03) held and dragged: pan the zoomed panel (view.c) */
+        if (e) view_pan_start(e, GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+        return 0;
+    case WM_MBUTTONUP:
+        if (e) view_pan_end(e);
+        if (GetCapture() == w) ReleaseCapture();
+        return 0;
+#endif
     case WM_LBUTTONUP:
     case WM_CAPTURECHANGED:
         if (!e) return 0;
@@ -1684,6 +1695,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         if (e->qm.src) { press(e, x, y); return 0; }   /* (quick assign on: a second click, not a reset) */
         if (seq_zone(i) && i < Z_SEQ_BASE + 200) { lib_touch(e, NULL); seq_double(e, i); lib_commit(e); }   /* an empty step cell: a new note */
         else if (i >= 0 && i < NPARAMS && PARAMS[i].nopts == 0) edit_value(e, i, PARAMS[i].def);
+        else if (i >= Z_WINV + VW_SYN1 && i <= Z_WINV + VW_SYN3 && NSYNTHS > 1) synth_solo_only(e, i - Z_WINV - VW_SYN1);   /* (the zoom bar's) */
         else if (i >= Z_FOCUS1 && i <= Z_FOCUS3 && NSYNTHS > 1) synth_solo_only(e, i - Z_FOCUS1);   /* solo it alone
                                                                                  * (the first click picked it already) */
         else if (i >= 0) press(e, x, y);   /* a second click on a button or a key counts as a click */
@@ -1694,6 +1706,7 @@ static LRESULT CALLBACK wndproc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
         POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         ScreenToClient(w, &pt);
         int i = hit(e, pt.x, pt.y), dir = GET_WHEEL_DELTA_WPARAM(wp) > 0 ? 1 : -1;
+        if (view_wheel(e, pt.x, pt.y, dir, (GET_KEYSTATE_WPARAM(wp) & (MK_CONTROL | MK_MBUTTON)) != 0, i)) return 0;   /* (view.c) */
         if (i == Z_ENCODER) { patches_step(e, -dir); return 0; }
         if (settings_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;
         if (tempo_wheel(e, i, dir, (GET_KEYSTATE_WPARAM(wp) & MK_SHIFT) != 0)) return 0;   /* (hub.c) */
@@ -1762,6 +1775,10 @@ static void free_window_class(void) {
     class_ready = 0;
 }
 
+void synth_bar_press(ed_t *e, int c, int what) {
+    if (what) { synth_toggle(e, c, what == 2); return; }
+    set_focus(e, c, e->together || GetKeyState(VK_CONTROL) < 0 || GetKeyState(VK_SHIFT) < 0);
+}
 static void make_fonts(void);
 void editor_relayout(void) {   /* (2026-11-03) a new scale; the next paint bakes the panel again (skin_frame) */
     L.ready = 0;

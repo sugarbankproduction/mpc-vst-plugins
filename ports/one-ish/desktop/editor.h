@@ -329,6 +329,13 @@ int view_press(ed_t *e, int z, int x, int y);
 void view_drag(ed_t *e, int x, int y);
 void view_release(ed_t *e, int commit);
 void view_draw(HDC dc, ed_t *e);
+void view_tick(ed_t *e);
+void view_commit(ed_t *e);        /* the wheel has stopped: the sharp picture (WM_TIMER 3) */
+int view_previewing(void);
+int view_wheel(ed_t *e, int x, int y, int dir, int forced, int z);
+void view_pan_start(ed_t *e, int x, int y);
+void view_pan_end(ed_t *e);
+void synth_bar_press(ed_t *e, int c, int what);   /* the zoom bar's: 0 select, 1 M, 2 S, as the panel's own (editor.c) */
 const char *view_help(int z);
 int winv_rect(int z, RECT *r);
 void editor_relayout(void);       /* a new scale: the layout and the fonts (editor.c) */

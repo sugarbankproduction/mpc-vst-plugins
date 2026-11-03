@@ -121,7 +121,45 @@ static void free_surface(int k) {
 }
 static void free_text(void);
 static void free_wheels(void);
-static void free_all(void) {
+/* (2026-11-03) the static layers already baked, one per size: a zoom back to a size is at once, no new bake (about 1 s at the
+ * largest). The window's few sizes in a session; all freed with the last window. */
+enum { NBAKED = 8 };
+typedef struct { int w, h; float s; HDC dc; HBITMAP bm; HGDIOBJ old; simg_t img; } baked_t;
+static baked_t baked[NBAKED];
+static void baked_free(baked_t *b) {
+    SelectObject(b->dc, b->old);
+    DeleteDC(b->dc);
+    DeleteObject(b->bm);
+    memset(b, 0, sizeof *b);
+}
+static void baked_keep(void) {   /* the static layer now goes on the shelf */
+    if (!S.dc[0] || S.w <= 0) return;
+    int k = 0;
+    while (k < NBAKED && baked[k].dc) k++;
+    if (k == NBAKED) {
+        baked_free(&baked[0]);
+        memmove(baked, baked + 1, sizeof baked[0] * (NBAKED - 1));
+        memset(&baked[NBAKED - 1], 0, sizeof baked[0]);
+        k = NBAKED - 1;
+    }
+    baked[k] = (baked_t){S.w, S.h, S.s, S.dc[0], S.bm[0], S.old[0], S.img[0]};
+    S.dc[0] = NULL;
+    S.bm[0] = NULL;
+    memset(&S.img[0], 0, sizeof S.img[0]);
+}
+static int baked_take(int w, int h, float s) {   /* back off the shelf: 1 */
+    for (int k = 0; k < NBAKED; k++)
+        if (baked[k].dc && baked[k].w == w && baked[k].h == h && baked[k].s == s) {
+            S.dc[0] = baked[k].dc;
+            S.bm[0] = baked[k].bm;
+            S.old[0] = baked[k].old;
+            S.img[0] = baked[k].img;
+            memset(&baked[k], 0, sizeof baked[k]);
+            return 1;
+        }
+    return 0;
+}
+static void free_for_resize(void) {
     free_surface(0);
     free_surface(1);
     free_sprites();
@@ -129,6 +167,11 @@ static void free_all(void) {
     free_wheels();
     S.tgt = NULL;
     S.w = S.h = 0;
+}
+static void free_all(void) {
+    free_for_resize();
+    for (int k = 0; k < NBAKED; k++)
+        if (baked[k].dc) baked_free(&baked[k]);
 }
 static int make_surface(int k, int w, int h) {
     BITMAPINFO bi;
@@ -161,21 +204,25 @@ void skin_release(void) {
 HDC skin_frame(int w, int h, float s, const RECT *clip, skin_bake_fn bake) {
     if (w <= 0 || h <= 0) return NULL;
     if (w != S.w || h != S.h || s != S.s || !S.dc[0] || !S.dc[1]) {
-        free_all();
-        if (!make_surface(0, w, h) || !make_surface(1, w, h)) { free_all(); return NULL; }
+        baked_keep();
+        free_for_resize();
+        int ready = baked_take(w, h, s);
+        if ((!ready && !make_surface(0, w, h)) || !make_surface(1, w, h)) { free_all(); return NULL; }
         S.w = w;
         S.h = h;
         S.s = s;
-        LARGE_INTEGER f, t0, t1;
-        QueryPerformanceFrequency(&f);
-        QueryPerformanceCounter(&t0);
-        S.tgt = &S.img[0];
-        SetRect(&S.clip, 0, 0, w, h);
-        bake(S.dc[0]);
-        S.g = NULL;
-        GdiFlush();
-        QueryPerformanceCounter(&t1);
-        S.bake_ms = (t1.QuadPart - t0.QuadPart) * 1000.0 / f.QuadPart;
+        if (!ready) {
+            LARGE_INTEGER f, t0, t1;
+            QueryPerformanceFrequency(&f);
+            QueryPerformanceCounter(&t0);
+            S.tgt = &S.img[0];
+            SetRect(&S.clip, 0, 0, w, h);
+            bake(S.dc[0]);
+            S.g = NULL;
+            GdiFlush();
+            QueryPerformanceCounter(&t1);
+            S.bake_ms = (t1.QuadPart - t0.QuadPart) * 1000.0 / f.QuadPart;
+        }
     }
     S.tgt = &S.img[1];
     S.clip = *clip;
@@ -186,6 +233,11 @@ HDC skin_frame(int w, int h, float s, const RECT *clip, skin_bake_fn bake) {
     return S.dc[1];
 }
 
+int skin_snapshot(HDC out, int x, int y, int w, int h) {   /* what the window last showed (view.c's quick zoom) */
+    if (!S.dc[1]) return 0;
+    GdiFlush();
+    return BitBlt(out, 0, 0, w, h, S.dc[1], x, y, SRCCOPY) != 0;
+}
 void skin_present(HDC out, const RECT *clip) {
     GdiFlush();
     BitBlt(out, clip->left, clip->top, clip->right - clip->left, clip->bottom - clip->top, S.dc[1], clip->left,

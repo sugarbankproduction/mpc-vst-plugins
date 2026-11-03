@@ -12,7 +12,8 @@ enum { PATCH_NAME_MAX = 32, PATCH_STATE_MAX = VST2_CHUNK_MAX };   /* a name's ch
 enum { SCR_PATCHES = -10 };                             /* the centre screen showing the patch list (see SCR_MATRIX) */
 enum { Z_PATCH_ACT = 100300, Z_PATCH_ITEM = 200000 };   /* hit codes: an action button (+ PA_), a list entry (+ pos) */
 enum { Z_WINV = 699000 };   /* (2026-11-03) the window's size, PANEL ZOOM (view.c) */
-enum { VW_MINUS, VW_SIZE, VW_PLUS, VW_FIT, VW_ZOOM, VW_GRIP, VW_PREV, VW_TITLE, VW_NEXT, VW_BACK, VW_COUNT };
+enum { VW_MINUS, VW_SIZE, VW_PLUS, VW_FIT, VW_ZOOM, VW_GRIP, VW_PREV, VW_TITLE, VW_NEXT, VW_BACK, VW_ZIN, VW_ZOUT,
+       VW_SYN1, VW_SYN2, VW_SYN3, VW_M1, VW_M2, VW_M3, VW_S1, VW_S2, VW_S3, VW_COUNT };
 enum { Z_PATCH_LOCK = 100488 };   /* (2026-11-03) GEN LOCK, SEQ LOCK (+ 0, 1) */
 enum { Z_PATCH_TYPE = 100482, Z_PATCH_LIB_PREV = 100486, Z_PATCH_LIB_NEXT = 100487 };   /* (2026-11-02) the bottom row */
 enum { Z_PATCH_CAT = 100450, PATCH_CATS = 32 };          /* (2026-10-30) a category tab (+ k; 0 is ALL) */

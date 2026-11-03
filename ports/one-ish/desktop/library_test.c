@@ -759,6 +759,103 @@ static void category_tabs(void) {
                  big, reported, offx, offy, onbar, at2.x, at2.y, cr.right, at3.x, at3.y);
         check(big > w0 && reported == w0 && onbar && off_rail && (at2.x != offx || at2.y != offy) && cr.right == w0 && at3.x == 0 && at3.y == 0, what);
         (void)offy;
+        /* the wheel and the middle button; the bar along the bottom */
+        POINT sp = {w0 / 2, 200};
+        ClientToScreen(child, &sp);
+        LARGE_INTEGER qf, q0, q1;
+        QueryPerformanceFrequency(&qf);
+        SendMessageA(child, WM_PRINTCLIENT, (WPARAM)GetDC(child), 0);
+        QueryPerformanceCounter(&q0);
+        SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(MK_CONTROL, 120), MAKELPARAM(sp.x, sp.y));
+        QueryPerformanceCounter(&q1);
+        double notch_ms = (q1.QuadPart - q0.QuadPart) * 1000.0 / qf.QuadPart;
+        GetClientRect(child, &cr);
+        int before_commit = cr.right;
+        SendMessageA(child, WM_TIMER, 3, 0);   /* the wheel has stopped */
+        GetClientRect(child, &cr);
+        int w_in = cr.right;
+        for (int k = 0; k < 3; k++) {
+            sp.x = w0 / 2;
+            sp.y = 200;
+            ClientToScreen(child, &sp);
+            SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(MK_CONTROL, 120), MAKELPARAM(sp.x, sp.y));
+        }
+        SendMessageA(child, WM_TIMER, 3, 0);
+        GetClientRect(child, &cr);
+        int w_more = cr.right;
+        printf("     (a wheel notch shows in %.2f ms, the window still %d wide till the wheel stops)\n", notch_ms, before_commit);
+        POINT a0 = {0, 0}, a1 = {0, 0};
+        MapWindowPoints(child, GetParent(child), &a0, 1);
+        LPARAM pat = MAKELPARAM(-a0.x + 400, -a0.y + 200);
+        SendMessageA(child, WM_MBUTTONDOWN, MK_MBUTTON, pat);
+        SendMessageA(child, WM_MOUSEMOVE, MK_MBUTTON, MAKELPARAM(-a0.x + 400 - 60, -a0.y + 200 - 30));
+        SendMessageA(child, WM_MBUTTONUP, 0, 0);
+        MapWindowPoints(child, GetParent(child), &a1, 1);
+        snprintf(what, sizeof what, "ZOOM by mouse: Ctrl + wheel: a notch %.2f ms (the stretched picture), then %d wide; more: %d; the middle button's drag pans (%d,%d to %d,%d)",
+                 notch_ms, w_in, w_more, a0.x, a0.y, a1.x, a1.y);
+        check(notch_ms < 50.0 && before_commit == w0 && w_in > w0 && w_more > w_in && a1.x == a0.x - 60 && a1.y == a0.y - 30, what);
+        shot("_view_bar");
+        {   /* how long a zoom step and a pan's repaint take */
+            HDC sdc = GetDC(child), mem = CreateCompatibleDC(sdc);
+            RECT big;
+            GetClientRect(child, &big);
+            HBITMAP bm = CreateCompatibleBitmap(sdc, big.right, big.bottom), oldb = SelectObject(mem, bm);
+            LARGE_INTEGER f, a, b;
+            QueryPerformanceFrequency(&f);
+            double ms[4] = {0};
+            SendMessageA(child, WM_PRINTCLIENT, (WPARAM)mem, 0);
+            QueryPerformanceCounter(&a);
+            SendMessageA(child, WM_PRINTCLIENT, (WPARAM)mem, 0);
+            QueryPerformanceCounter(&b);
+            ms[0] = (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart;
+            HRGN part = CreateRectRgn(0, 0, 200, 400);
+            SelectClipRgn(mem, part);
+            QueryPerformanceCounter(&a);
+            SendMessageA(child, WM_PRINTCLIENT, (WPARAM)mem, 0);
+            QueryPerformanceCounter(&b);
+            ms[1] = (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart;
+            SelectClipRgn(mem, NULL);
+            DeleteObject(part);
+            sp.x = w0 / 2; sp.y = 200;
+            ClientToScreen(child, &sp);
+            QueryPerformanceCounter(&a);
+            SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(MK_CONTROL, -120), MAKELPARAM(sp.x, sp.y));
+            SendMessageA(child, WM_TIMER, 3, 0);
+            SendMessageA(child, WM_PRINTCLIENT, (WPARAM)mem, 0);
+            QueryPerformanceCounter(&b);
+            ms[2] = (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart;
+            QueryPerformanceCounter(&a);
+            SendMessageA(child, WM_MOUSEWHEEL, MAKEWPARAM(MK_CONTROL, 120), MAKELPARAM(sp.x, sp.y));
+            SendMessageA(child, WM_TIMER, 3, 0);
+            SendMessageA(child, WM_PRINTCLIENT, (WPARAM)mem, 0);
+            QueryPerformanceCounter(&b);
+            ms[3] = (b.QuadPart - a.QuadPart) * 1000.0 / f.QuadPart;
+            printf("     (zoomed: a whole repaint %.1f ms, a 200 x 400 part %.1f ms; a step to a new size %.1f ms, back to a size made before %.1f ms)\n", ms[0], ms[1], ms[2], ms[3]);
+            check(ms[3] < ms[2] * 0.6, "a zoom back to a size made before is quicker than a new size");
+            SelectObject(mem, oldb); DeleteObject(bm); DeleteDC(mem); ReleaseDC(child, sdc);
+        }
+        int mi = -1;
+        for (int i = 0; i < NPARAMS; i++) if (!strcmp(PARAMS[i].key, "s2_syn_on")) mi = i;
+        float m0 = ((AEffect *)fx)->getParameter((AEffect *)fx, mi);
+        click_z(Z_WINV + VW_M2);
+        float m1 = ((AEffect *)fx)->getParameter((AEffect *)fx, mi);
+        click_z(Z_WINV + VW_M2);
+        click_z(Z_WINV + VW_SYN2);
+        int bx = 0, by = 0, si = -1;
+        for (int i = 0; i < NPARAMS; i++) if (!strcmp(PARAMS[i].key, "s2_syn_solo")) si = i;
+        where(Z_WINV + VW_SYN2, &bx, &by);
+        SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, MAKELPARAM(bx, by));
+        SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(bx, by));
+        float so = ((AEffect *)fx)->getParameter((AEffect *)fx, si);
+        SendMessageA(child, WM_LBUTTONDBLCLK, MK_LBUTTON, MAKELPARAM(bx, by));
+        SendMessageA(child, WM_LBUTTONUP, 0, MAKELPARAM(bx, by));
+        float so2 = ((AEffect *)fx)->getParameter((AEffect *)fx, si);
+        click_z(Z_WINV + VW_SYN1);
+        click_z(Z_WINV + VW_BACK);
+        GetClientRect(child, &cr);
+        snprintf(what, sizeof what, "the zoom bar: M on Synth 2 (%.0f to %.0f), double-click SYNTH 2 solos it (%.0f), again off (%.0f), BACK: %d wide",
+                 m0, m1, so, so2, cr.right);
+        check(m0 != m1 && so > 0.5f && so2 < 0.5f && cr.right == w0, what);
     }
     {   /* (2026-11-02) INIT: the Init patch at one click */
         int vk = -1;

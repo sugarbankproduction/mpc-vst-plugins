@@ -22,6 +22,7 @@ typedef void (*skin_bake_fn)(HDC dc);
 HDC skin_frame(int w, int h, float s, const RECT *clip, skin_bake_fn bake);
 void skin_present(HDC out, const RECT *clip);
 void skin_bind(void *gdiplus_graphics);   /* the GDI+ surface drawing now (flushed before pixel writes) or NULL */
+int skin_snapshot(HDC out, int x, int y, int w, int h);
 double skin_bake_ms(void);                /* how long the last static layer took to make */
 void skin_clip_push(const RECT *r);       /* the skin_ pixel writes only inside r, until skin_clip_pop() */
 void skin_clip_pop(void);
